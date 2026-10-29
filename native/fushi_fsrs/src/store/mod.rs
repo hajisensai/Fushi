@@ -49,6 +49,10 @@ pub struct SrsCore {
     sessions: Mutex<Vec<Weak<ReadSession>>>,
     /// 正在进行的分批收段会话（[SrsCore::sync2_ingest_begin]）；None = 没有。
     ingest_session: Mutex<Option<sync2::transport::IngestSession>>,
+    /// 测试钩子：收段预处理拿完公钥、开始解码之前调用（测预处理不持写锁）。
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) ingest_prepare_hook: Mutex<Option<Box<dyn Fn() + Send>>>,
 }
 
 /// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
@@ -188,6 +192,8 @@ impl SrsCore {
             path: path.to_path_buf(),
             sessions: Mutex::new(Vec::new()),
             ingest_session: Mutex::new(None),
+            #[cfg(test)]
+            ingest_prepare_hook: Mutex::new(None),
         })
     }
 

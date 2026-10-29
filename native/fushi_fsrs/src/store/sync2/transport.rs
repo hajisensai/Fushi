@@ -364,9 +364,10 @@ fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<(), S
 /// 在内存里按设备排队：每一遍只看各设备的队首，整体是 O(操作数 + 遍数 × 设备数)。（逐遍重扫整张缓冲表在
 /// 新设备追赶两台互相同步过上千次的设备时是平方级的。）
 ///
-/// 一次收段调用里只开一个：缓冲表只读一次，每解开一段就 [Delivery::push] + [Delivery::drain]，投上的操作当场
-/// 释放，[Delivery::finish] 最后一次写设备进度、把没投上的写进缓冲。所以收段的内存是「一段 + 等依赖的操作」，
-/// 不随一批里有几段增长；结果与整批一起投相同（等价于每批只收一段，Dart 侧本来就按任意段边界切批）。
+/// 一次收段调用里只开一个：缓冲表只读一次，每投一段就 [Delivery::push] + [Delivery::drain]，投上的操作当场
+/// 释放，[Delivery::finish] 最后一次写设备进度、把没投上的写进缓冲。所以收段的内存是「锁外预处理留下的操作
+/// （有上限 [PREPARED_RAW_BUDGET]）+ 等依赖的操作」，不随一批的解压后体积增长；结果与整批一起投相同（等价于
+/// 每批只收一段，Dart 侧本来就按任意段边界切批）。
 struct Delivery {
     vv: Vv,
     queues: BTreeMap<Id, BTreeMap<u64, Held>>,
@@ -529,11 +530,13 @@ fn store_pending(c: &Connection, profile: &str, device: &Id, seq: u64, op: &Op, 
     Ok(())
 }
 
-/// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份与跨批累积的分叉点。
+/// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份、跨批累积的分叉点，以及锁外预处理好、
+/// 等投递的那一批（[SrsCore::sync2_ingest_prepare] 放进来，[SrsCore::sync2_ingest_commit] 取走）。
 pub(crate) struct IngestSession {
     profile: String,
     device: Id,
     fork_at: Option<u64>,
+    prepared: Option<PreparedIngest<'static>>,
 }
 
 impl IngestSession {
@@ -543,78 +546,230 @@ impl IngestSession {
     }
 }
 
-/// 收一批段（不换身份）：远端操作投递进投影 / 缓冲，返回应用条数；本机身份的段只比链，把分叉点（第一处不同的
-/// 前一个 seq）取最小累积进 [fork_at]。
-///
-/// 逐段处理：按（设备, 起始 seq）排好，解开一段就投一段（[Delivery]），同时在内存里的只有当前这段与等依赖的
-/// 操作。以前先把一批里全部段的操作解码攒齐再投，一批的字节预算按压缩后体积算，重复度高的正文解开能大两个数量级。
-#[allow(clippy::too_many_arguments)]
-fn ingest_segments(
+/// 一批段在锁外预处理时保留的已解码操作上限（解压后字节，按 [held_bytes] 同一口径估）。超出的段照样验签、
+/// 重算链，只是不留操作，投递时在锁内重开再流式解一遍。一批的字节预算按压缩后体积算，正文重复度高时解开能大
+/// 两个数量级；有了这条，预处理的内存峰值与收段原先一样不随一批的解压后体积增长。
+const PREPARED_RAW_BUDGET: u64 = 2 * segment::SEGMENT_MAX_RAW_BYTES;
+
+/// 一个段在锁外预处理的结论。
+enum Outcome {
+    /// 预处理时这台设备没有登记公钥。
+    Unknown,
+    /// 验签 / 解密 / 链校验没过：报错原文（带设备前缀）。
+    Bad(String),
+    /// 链已对上的全部操作与各自的链值，按 seq 升序。
+    Ops(Vec<(Op, Chain)>),
+    /// 校验已过、操作没留（超大旧段或超出 [PREPARED_RAW_BUDGET]）：投递时重开流式解。
+    Deferred,
+}
+
+struct PreparedSegment {
+    header: segment::SegmentHeader,
+    /// 在 [PreparedIngest::segments] 里的下标。
+    index: usize,
+    /// 预处理时用的公钥（本机身份的段是本机公钥）；None = 没登记。投递时在锁内与当时的对照，变了就按当时的重验。
+    public: Option<[u8; 32]>,
+    outcome: Outcome,
+}
+
+/// 锁外预处理好的一批段（[prepare_ingest] → [PreparedIngest::verify] → 锁内 [deliver_prepared]）：解压、解密、
+/// 验签、重算链这些纯 CPU 的活都在这里做完，锁内只剩比链、因果投递、落库与重放。
+pub(crate) struct PreparedIngest<'a> {
+    profile: String,
+    /// 预处理时的本机身份；锁内对不上（身份换过）就按当时的身份整批重做。
+    device: Id,
+    local_public: [u8; 32],
+    collection: Id,
+    key: Option<[u8; 32]>,
+    /// 一次收完时借调用方的；会话里留到投递，是自己的一份。
+    segments: std::borrow::Cow<'a, [Vec<u8>]>,
+    /// 段头都读不出的报错（按输入顺序，排在各段的报错之前，与逐段处理时相同）。
+    peek_errors: Vec<String>,
+    /// 本集合的段，按（设备, 起始 seq）排好。
+    items: Vec<PreparedSegment>,
+}
+
+/// 预处理的读库部分：读段头、排序、查各设备公钥（[c] 用读连接即可，查完就放）。
+fn prepare_ingest<'a>(
     c: &Connection,
     profile: &str,
     local: &Local,
-    segments: &[Vec<u8>],
+    segments: std::borrow::Cow<'a, [Vec<u8>]>,
+    key: Option<[u8; 32]>,
+) -> Result<PreparedIngest<'a>, String> {
+    let mut peek_errors = Vec::new();
+    let mut items: Vec<PreparedSegment> = Vec::with_capacity(segments.len());
+    for (index, bytes) in segments.iter().enumerate() {
+        match segment::peek_header(bytes) {
+            Ok(h) if h.collection == local.collection => {
+                items.push(PreparedSegment { header: h, index, public: None, outcome: Outcome::Unknown })
+            }
+            Ok(_) => {}
+            Err(e) => peek_errors.push(e.to_string()),
+        }
+    }
+    // 稳定排序：同一（设备, 起始 seq）的重复段保持输入顺序，与原先逐段处理相同。
+    items.sort_by_key(|s| (s.header.device, s.header.first));
+    let local_public = local.key.public();
+    for item in &mut items {
+        item.public = if item.header.device == local.device {
+            Some(local_public)
+        } else {
+            device_public(c, profile, &item.header.device)?
+        };
+    }
+    Ok(PreparedIngest {
+        profile: profile.to_owned(),
+        device: local.device,
+        local_public,
+        collection: local.collection,
+        key,
+        segments,
+        peek_errors,
+        items,
+    })
+}
+
+/// 一台设备登记的公钥（没登记 / 格式不对 = None）。
+fn device_public(c: &Connection, profile: &str, device: &Id) -> Result<Option<[u8; 32]>, String> {
+    let public: Option<Vec<u8>> = c
+        .query_row(
+            "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
+            params![profile, device.0.to_vec()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(sql)?
+        .flatten();
+    Ok(public.and_then(|p| <[u8; 32]>::try_from(p).ok()))
+}
+
+/// 验一段：签名 → 解密 → 解压 → 解码 → 重算链。[budget] 是还能留的已解码字节，留下的从里面扣。
+fn verify_segment(bytes: &[u8], header: &segment::SegmentHeader, public: Option<[u8; 32]>, key: Option<&CollectionKey>, budget: &mut u64) -> Outcome {
+    let Some(public) = public else {
+        return Outcome::Unknown;
+    };
+    let bad = |e: segment::SegmentError| Outcome::Bad(format!("{}: {e}", header.device.text()));
+    let seg = match segment::open_verified(bytes, &public, key) {
+        Ok(s) => s,
+        Err(e) => return bad(e),
+    };
+    // 整段校验（签名已过，这里重算链）；超大旧段校验时不留操作，投递时再流式解一遍。
+    let ops = match seg.verify() {
+        Ok(segment::Verified::Whole(ops)) => ops,
+        Ok(segment::Verified::Stream(_)) => return Outcome::Deferred,
+        Err(e) => return bad(e),
+    };
+    let raw: u64 = ops.as_slice().iter().map(|op| held_bytes(op) as u64).sum();
+    if raw > *budget {
+        return Outcome::Deferred;
+    }
+    *budget -= raw;
+    let mut chain = seg.header.prev_chain;
+    Outcome::Ops(
+        ops.map(|op| {
+            chain = chain_next(&chain, &op);
+            (op, chain)
+        })
+        .collect(),
+    )
+}
+
+impl PreparedIngest<'_> {
+    /// 预处理的纯计算部分（不碰库、不持任何锁）：逐段验签、解密、解压、重算链。
+    fn verify(&mut self) {
+        let ck = self.key.map(CollectionKey);
+        let mut budget = PREPARED_RAW_BUDGET;
+        for item in &mut self.items {
+            item.outcome = verify_segment(&self.segments[item.index], &item.header, item.public, ck.as_ref(), &mut budget);
+        }
+    }
+}
+
+/// 预处理 + 投递一次做完（[c] 已持写锁）：只给身份在预处理之后变了的整批重做用。
+#[allow(clippy::too_many_arguments)]
+fn ingest_under_lock(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    segments: std::borrow::Cow<'_, [Vec<u8>]>,
     key: Option<[u8; 32]>,
     now: i64,
     t: &mut Touched,
     errors: &mut Vec<String>,
     fork_at: &mut Option<u64>,
 ) -> Result<usize, String> {
-    let ck = key.map(CollectionKey);
-    let mut order: Vec<(segment::SegmentHeader, &Vec<u8>)> = Vec::with_capacity(segments.len());
-    for bytes in segments {
-        match segment::peek_header(bytes) {
-            Ok(h) if h.collection == local.collection => order.push((h, bytes)),
-            Ok(_) => {}
-            Err(e) => errors.push(e.to_string()),
-        }
+    let mut p = prepare_ingest(c, profile, local, segments, key)?;
+    p.verify();
+    deliver_prepared(c, profile, local, p, now, t, errors, fork_at)
+}
+
+/// 收一批预处理好的段（不换身份，[c] 已持写锁）：远端操作投递进投影 / 缓冲，返回应用条数；本机身份的段只比链，
+/// 把分叉点（第一处不同的前一个 seq）取最小累积进 [fork_at]。结果与在锁内从头逐段处理逐字节相同：预处理之后
+/// 本机身份变了就整批按当时的身份重做；某台设备的公钥变了（含新登记 / 不再登记）就按当时的公钥重验那一段。
+///
+/// 逐段投（[Delivery]），同时在内存里的只有预处理留下的操作与等依赖的操作。
+#[allow(clippy::too_many_arguments)]
+fn deliver_prepared(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    prepared: PreparedIngest<'_>,
+    now: i64,
+    t: &mut Touched,
+    errors: &mut Vec<String>,
+    fork_at: &mut Option<u64>,
+) -> Result<usize, String> {
+    if prepared.profile != profile
+        || prepared.device != local.device
+        || prepared.local_public != local.key.public()
+        || prepared.collection != local.collection
+    {
+        return ingest_under_lock(c, profile, local, prepared.segments, prepared.key, now, t, errors, fork_at);
     }
-    order.sort_by_key(|(h, _)| (h.device, h.first));
+    let PreparedIngest { key, segments, peek_errors, items, .. } = prepared;
+    let ck = key.map(CollectionKey);
+    errors.extend(peek_errors);
     let mut delivery = Delivery::load(c, profile)?;
-    for (header, bytes) in order {
-        let public: Option<Vec<u8>> = c
-            .query_row(
-                "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
-                params![profile, header.device.0.to_vec()],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(sql)?
-            .flatten();
-        // 自己身份的段：同一把钥匙签的（数据目录被复制）才可能是本机身份的另一个安装，只拿来比链找分叉点。
-        let public: [u8; 32] = if header.device == local.device {
-            local.key.public()
+    for item in items {
+        let header = item.header;
+        let bytes = &segments[item.index];
+        let public = if header.device == local.device { Some(local.key.public()) } else { device_public(c, profile, &header.device)? };
+        let outcome = if public == item.public {
+            item.outcome
         } else {
-            match public.and_then(|p| <[u8; 32]>::try_from(p).ok()) {
-                Some(p) => p,
-                None => {
-                    errors.push(format!("segment from unknown device {}", header.device.text()));
-                    continue;
-                }
-            }
+            verify_segment(bytes, &header, public, ck.as_ref(), &mut { u64::MAX })
         };
-        let seg = match segment::open_verified(bytes, &public, ck.as_ref()) {
-            Ok(s) => s,
-            Err(e) => {
-                errors.push(format!("{}: {e}", header.device.text()));
+        let public = match outcome {
+            Outcome::Unknown => {
+                errors.push(format!("segment from unknown device {}", header.device.text()));
                 continue;
             }
-        };
-        // 整段校验（签名已过，这里重算链）后才动投影；超大旧段校验时不留操作，下面再流式解一遍。
-        let ops = match seg.verify() {
-            Ok(ops) => ops,
-            Err(e) => {
-                errors.push(format!("{}: {e}", header.device.text()));
+            Outcome::Bad(e) => {
+                errors.push(e);
                 continue;
             }
+            Outcome::Ops(_) | Outcome::Deferred => public.ok_or("verified segment without a public key")?,
         };
         let stream_err = |e: segment::SegmentError| format!("{}: {e}", header.device.text());
+        // 留下的操作，或（Deferred）重开流式解：签名、链在预处理里都已对上，这一遍与校验那一遍逐字节相同。
+        let reopened;
+        let mut ops: Box<dyn Iterator<Item = Result<(Op, Chain), String>> + '_> = match outcome {
+            Outcome::Ops(ops) => Box::new(ops.into_iter().map(Ok)),
+            _ => {
+                reopened = segment::open_verified(bytes, &public, ck.as_ref()).map_err(stream_err)?;
+                let mut chain = header.prev_chain;
+                Box::new(reopened.ops().map_err(stream_err)?.map(move |op| {
+                    let op = op.map_err(stream_err)?;
+                    chain = chain_next(&chain, &op);
+                    Ok((op, chain))
+                }))
+            }
+        };
         if header.device == local.device {
             // 同一身份、签名也对（同一把钥匙 = 数据目录被复制）：逐条比链，第一处不同之前是共同前缀。
-            let mut chain = seg.header.prev_chain;
-            for op in ops {
-                let op = op.map_err(stream_err)?;
-                chain = chain_next(&chain, &op);
+            for r in ops.by_ref() {
+                let (op, chain) = r?;
                 let ours = chain_at(c, profile, &local.device, op.id.seq)?;
                 if ours != Some(chain) {
                     let k = op.id.seq - 1;
@@ -624,14 +779,12 @@ fn ingest_segments(
             }
             continue;
         }
-        // 按块投：一块投完（投上的当场释放）再解下一块，超大旧段也只占一块的内存。块边界与段边界一样任意，
+        // 按块投：一块投完（投上的当场释放）再取下一块，超大旧段也只占一块的内存。块边界与段边界一样任意，
         // 结果等价于逐段投递（Dart 本来就按任意段边界切批）。
-        let mut chain = seg.header.prev_chain;
         let mut chunk: Vec<(Op, Chain)> = Vec::new();
         let mut chunk_raw = 0usize;
-        for op in ops {
-            let op = op.map_err(stream_err)?;
-            chain = chain_next(&chain, &op);
+        for r in ops {
+            let (op, chain) = r?;
             chunk_raw += op.payload.len() + 24;
             chunk.push((op, chain));
             if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
@@ -1084,15 +1237,17 @@ impl SrsCore {
     /// `{"marks":{..见 [super::Marks::to_json]}, "replayed":[..], "applied":n, "pending":n, "errors":[..], "fork":bool}`。
     ///
     /// 一次收完；同一轮要分几批收（字节预算）时用 [SrsCore::sync2_ingest_begin] / [SrsCore::sync2_ingest_batch] /
-    /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。
+    /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。解码与验签在写锁外
+    /// （[SrsCore::sync2_ingest_prepare]），写锁里只投递。
     pub fn sync2_ingest(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
+        let prepared = self.prepare_unlocked(profile, std::borrow::Cow::Borrowed(segments), key)?;
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut t = Touched::default();
             let mut errors = Vec::new();
             let mut fork_at: Option<u64> = None;
-            let applied_n = ingest_segments(c, profile, &local, segments, key, now, &mut t, &mut errors, &mut fork_at)?;
+            let applied_n = deliver_prepared(c, profile, &local, prepared, now, &mut t, &mut errors, &mut fork_at)?;
             if let Some(k) = fork_at {
                 rotate(c, profile, k, now, &mut t)?;
             }
@@ -1100,8 +1255,28 @@ impl SrsCore {
         })
     }
 
-    /// 开一个分批收段会话（覆盖掉上一轮没收尾的）。之后每批 [SrsCore::sync2_ingest_batch]，最后
-    /// [SrsCore::sync2_ingest_finish]。
+    /// 收段的锁外一半：读连接上取本机身份与各设备公钥（查完就放），再不持任何锁地验签、解密、解压、重算链。
+    fn prepare_unlocked<'a>(
+        &self,
+        profile: &str,
+        segments: std::borrow::Cow<'a, [Vec<u8>]>,
+        key: Option<[u8; 32]>,
+    ) -> Result<PreparedIngest<'a>, String> {
+        let mut prepared = {
+            let r = self.reader()?;
+            let local = Local::load(&r, profile)?.ok_or("sync2 not initialised for this profile")?;
+            prepare_ingest(&r, profile, &local, segments, key)?
+        };
+        #[cfg(test)]
+        if let Some(hook) = self.ingest_prepare_hook.lock().map_err(|_| "hook poisoned")?.as_ref() {
+            hook();
+        }
+        prepared.verify();
+        Ok(prepared)
+    }
+
+    /// 开一个分批收段会话（覆盖掉上一轮没收尾的）。之后每批 [SrsCore::sync2_ingest_batch]（或拆开的
+    /// [SrsCore::sync2_ingest_prepare] + [SrsCore::sync2_ingest_commit]），最后 [SrsCore::sync2_ingest_finish]。
     ///
     /// 为什么要会话：本机身份的段（数据目录被复制、另一个安装在用同一身份）只用来比链找分叉点，分叉点是**全部**
     /// 这类段里第一处不同的最小值；换身份（[rotate]）又要在**全部**远端操作都投递之后做（重签发的因果上下文按
@@ -1110,18 +1285,61 @@ impl SrsCore {
         let w = self.writer()?;
         let local = Local::load(&w, profile)?.ok_or("sync2 not initialised for this profile")?;
         *self.ingest_session.lock().map_err(|_| "ingest session poisoned")? =
-            Some(IngestSession { profile: profile.to_owned(), device: local.device, fork_at: None });
+            Some(IngestSession { profile: profile.to_owned(), device: local.device, fork_at: None, prepared: None });
         Ok(json!({}))
     }
 
-    /// 会话里收一批：远端设备的操作照常投递并提交；本机身份的段只比链、把分叉点累积进会话，不换身份
-    /// （返回的 `fork` 恒为 false，换身份见 [SrsCore::sync2_ingest_finish]）。会话期间本机身份变了（别处换过身份）
-    /// 就作废会话并报错：之后的本机段已不能按同一身份比链。
+    /// 会话里收一批（[SrsCore::sync2_ingest_prepare] + [SrsCore::sync2_ingest_commit] 连着做）。
     pub fn sync2_ingest_batch(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
+        self.sync2_ingest_prepare(profile, segments, key)?;
+        self.sync2_ingest_commit(profile, now)
+    }
+
+    /// 会话里预处理一批：不持写锁（也不长持读锁）地解压、解密、验签、重算链，结果留在会话里等
+    /// [SrsCore::sync2_ingest_commit]（覆盖上一批没投递的）。手机上一批要一两秒，这期间本机作答照常写入。
+    /// 出错作废会话（与 [SrsCore::sync2_ingest_commit] 出错相同）。
+    pub fn sync2_ingest_prepare(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>) -> Result<Value, String> {
+        let device = self.session_device(profile)?;
+        let prepared = self.prepare_unlocked(profile, std::borrow::Cow::Owned(segments.to_vec()), key);
+        let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
+        // 预处理期间会话被换过（重开 / 删 profile）：这一批不属于现在的会话。
+        if !guard.as_ref().is_some_and(|s| s.profile == profile && s.device == device) {
+            return Err("sync2 ingest: no ingest session for this profile".to_owned());
+        }
+        match prepared {
+            Ok(p) => {
+                if let Some(s) = guard.as_mut() {
+                    s.prepared = Some(p);
+                }
+                Ok(json!({}))
+            }
+            Err(e) => {
+                *guard = None;
+                Err(e)
+            }
+        }
+    }
+
+    /// 当前收段会话的本机身份（没有 [profile] 的会话报错）。
+    fn session_device(&self, profile: &str) -> Result<Id, String> {
+        match self.ingest_session.lock().map_err(|_| "ingest session poisoned")?.as_ref() {
+            Some(s) if s.profile == profile => Ok(s.device),
+            _ => Err("sync2 ingest: no ingest session for this profile".to_owned()),
+        }
+    }
+
+    /// 会话里投递预处理好的那一批：远端设备的操作照常投递并提交；本机身份的段只比链、把分叉点累积进会话，不换身份
+    /// （返回的 `fork` 恒为 false，换身份见 [SrsCore::sync2_ingest_finish]）。写锁里只剩比链、因果投递、落库、
+    /// 重放；预处理之后某台设备的公钥变了，那一段按当时的公钥在锁内重验。会话期间本机身份变了（别处换过身份）
+    /// 就作废会话并报错：之后的本机段已不能按同一身份比链。
+    pub fn sync2_ingest_commit(&self, profile: &str, now: i64) -> Result<String, String> {
         let w = self.writer()?;
         let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
-        let (device, prior) = match guard.as_ref() {
-            Some(s) if s.profile == profile => (s.device, s.fork_at),
+        let (device, prior, prepared) = match guard.as_mut() {
+            Some(s) if s.profile == profile => match s.prepared.take() {
+                Some(p) => (s.device, s.fork_at, p),
+                None => return Err("sync2 ingest: no prepared batch to commit".to_owned()),
+            },
             _ => return Err("sync2 ingest: no ingest session for this profile".to_owned()),
         };
         let out = in_savepoint(&w, |c| {
@@ -1132,7 +1350,7 @@ impl SrsCore {
             let mut t = Touched::default();
             let mut errors = Vec::new();
             let mut fork_at = prior;
-            let applied_n = ingest_segments(c, profile, &local, segments, key, now, &mut t, &mut errors, &mut fork_at)?;
+            let applied_n = deliver_prepared(c, profile, &local, prepared, now, &mut t, &mut errors, &mut fork_at)?;
             let r = ingest_result(c, profile, t, applied_n, errors, false)?;
             Ok((r, fork_at))
         });
