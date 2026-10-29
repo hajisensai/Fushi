@@ -1456,6 +1456,20 @@ List<RemoteVideoInfo> filterOutLocallyDeletedRemoteVideos({
   ];
 }
 
+/// 远端视频清单里对端真能经 host 播放的条目（[RemoteVideoInfo.peerPlayable]）。
+///
+/// 展示 / 播放层专用：远端占位卡、继续观看、合集详情成员、卡片来源跳转都只认它。
+/// 同步层（进度 / 播放偏好 sweep、合集收养）读的是未过滤的整份清单（BUG-3875）。
+List<RemoteVideoInfo> peerPlayableRemoteVideos(List<RemoteVideoInfo> remote) {
+  if (remote.every((RemoteVideoInfo video) => video.peerPlayable)) {
+    return remote;
+  }
+  return <RemoteVideoInfo>[
+    for (final RemoteVideoInfo video in remote)
+      if (video.peerPlayable) video,
+  ];
+}
+
 /// 从远端书清单 [remote] 里挑出「本端已有这本书**和它的有声书**，对端也有配套有声书」
 /// 的条目，按本端 bookKey 索引——书卡菜单「从对端更新字幕 / 重新下载有声书」的候选。
 ///
@@ -2188,10 +2202,24 @@ class RemoteVideoInfo {
     this.collection,
     this.importedAt,
     this.fileName,
+    this.peerPlayable = true,
   });
 
   final String id;
   final String title;
+
+  /// 对端能否经 host 播放 / 下载这一条（host 有没有媒体字节可给）。
+  ///
+  /// 「host 有哪些视频」是同步层的事实，「对端能不能远程播放它」是展示 / 播放层的
+  /// 属性，两者不共用一份被过滤过的清单（BUG-3875）：网络流书（Netflix / YouTube
+  /// 网页视频、直链、rtsp）与 `.strm` 流指针 host 照常列出——两端都有的同一条的
+  /// 进度 / 播放偏好 / 合集归属仍靠这份清单同步——但标 false，库页 / 首页 / 合集
+  /// 详情 / 卡片来源跳转经 [peerPlayableRemoteVideos] 不给它出远端占位卡（host
+  /// 的 `/streamurl` 对它恒 404）。
+  ///
+  /// wire：只在 false 时写 `peerPlayable: false`；缺省 = true，旧 host（不带该键）
+  /// 与改动前逐字节同行为；旧 client 不认识该键，按旧行为照常列出。
+  final bool peerPlayable;
 
   /// host 视频文件的**文件名**（只取 basename，绝不带目录——目录结构仍留在 host）。
   ///
@@ -2365,6 +2393,7 @@ class RemoteVideoInfo {
         if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
         if (_isNonEmpty(fileName)) 'fileName': fileName,
+        if (!peerPlayable) 'peerPlayable': false,
       };
 
   RemoteVideoInfo copyWith({
@@ -2424,6 +2453,7 @@ class RemoteVideoInfo {
         collection: collection ?? this.collection,
         importedAt: importedAt,
         fileName: fileName,
+        peerPlayable: peerPlayable,
       );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -2470,6 +2500,7 @@ class RemoteVideoInfo {
       // 对齐 RemoteBookInfo.fromJson。旧 host 无该字段 → fromJson 返 null（向后兼容）。
       collection: RemoteCollectionMembership.fromJson(json['collection']),
       fileName: _jsonString(json['fileName']),
+      peerPlayable: json['peerPlayable'] != false,
     );
   }
 }

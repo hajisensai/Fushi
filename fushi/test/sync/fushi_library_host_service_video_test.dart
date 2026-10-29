@@ -55,6 +55,55 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
+  // ── peerPlayable wire（BUG-3875）──────────────────────────────────────────────
+
+  group('RemoteVideoInfo.peerPlayable wire 兼容', () {
+    test('可播条目不写键：新 host 的普通条目与旧 host 逐字节同形', () {
+      const RemoteVideoInfo info = RemoteVideoInfo(id: 'video/a', title: 'A');
+      expect(info.toJson().containsKey('peerPlayable'), isFalse);
+    });
+
+    test('不可播条目写 peerPlayable:false 并原样回读', () {
+      const RemoteVideoInfo info = RemoteVideoInfo(
+        id: 'video/web',
+        title: 'Web',
+        peerPlayable: false,
+      );
+      final Map<String, Object?> json = info.toJson();
+      expect(json['peerPlayable'], isFalse);
+      expect(RemoteVideoInfo.fromJson(json).peerPlayable, isFalse);
+      expect(info.copyWith(positionMs: 5).peerPlayable, isFalse);
+    });
+
+    test('旧 host 清单（无该键）按可播处理：行为与改动前一致', () {
+      final RemoteVideoInfo info = RemoteVideoInfo.fromJson(<String, Object?>{
+        'id': 'video/old',
+        'title': 'Old',
+      });
+      expect(info.peerPlayable, isTrue);
+      expect(
+        peerPlayableRemoteVideos(<RemoteVideoInfo>[info]),
+        <RemoteVideoInfo>[info],
+      );
+    });
+
+    test('peerPlayableRemoteVideos 只剔除标 false 的条目，全可播时原对象返回', () {
+      final List<RemoteVideoInfo> all = <RemoteVideoInfo>[
+        const RemoteVideoInfo(id: 'a', title: 'a'),
+        const RemoteVideoInfo(id: 'b', title: 'b'),
+      ];
+      expect(identical(peerPlayableRemoteVideos(all), all), isTrue);
+      final List<RemoteVideoInfo> mixed = <RemoteVideoInfo>[
+        ...all,
+        const RemoteVideoInfo(id: 'c', title: 'c', peerPlayable: false),
+      ];
+      expect(
+        peerPlayableRemoteVideos(mixed).map((RemoteVideoInfo v) => v.id),
+        <String>['a', 'b'],
+      );
+    });
+  });
+
   // ── listVideos ────────────────────────────────────────────────────────────────
 
   group('listVideos', () {
@@ -859,49 +908,87 @@ void main() {
       );
     });
 
-    test('网络流书（Netflix 页 / 直链 / 频道）与 .strm 不下发给对端：host 没有媒体字节可给', () async {
-      // 反馈 _xEjClqXTQ：手机点电脑库里的 Netflix 条目 → /streamurl 404 →「无法加载该视频」。
-      final File videoFile = File(p.join(tmp.path, 'local.mp4'))
-        ..writeAsBytesSync(List<int>.filled(16, 0));
-      await db.upsertVideoBook(
-        VideoBooksCompanion.insert(
-          bookUid: 'video/local',
-          title: 'Local',
-          videoPath: videoFile.path,
-        ),
-      );
-      for (final (String uid, String path) in <(String, String)>[
-        ('video/netflix', 'https://www.netflix.com/watch/81731212'),
-        ('video/direct', 'https://example.com/a.mp4'),
-        ('video/channel', 'rtsp://10.0.0.1:554/live/1'),
-      ]) {
+    test(
+      '网络流书（Netflix 页 / 直链 / 频道）与 .strm 照常列出但标 peerPlayable=false',
+      () async {
+        // 反馈 _xEjClqXTQ：手机点电脑库里的 Netflix 条目 → /streamurl 404 →「无法加载该视频」。
+        // BUG-3875：清单同时是同步编排的「host 有哪些视频」集合，删掉这些行会让两端都有的
+        // 同一条进度 / 播放偏好静默停同步——所以照常列出，只把「对端能否播放」标出来。
+        final File videoFile = File(p.join(tmp.path, 'local.mp4'))
+          ..writeAsBytesSync(List<int>.filled(16, 0));
         await db.upsertVideoBook(
-          VideoBooksCompanion.insert(bookUid: uid, title: uid, videoPath: path),
+          VideoBooksCompanion.insert(
+            bookUid: 'video/local',
+            title: 'Local',
+            videoPath: videoFile.path,
+          ),
         );
-        expect(
-          await _makeService(db: db, tmp: tmp).resolveVideoFile(uid),
-          isNull,
-          reason: '$uid：host 下发不了，所以不该出现在清单里',
+        for (final (String uid, String path) in <(String, String)>[
+          ('video/netflix', 'https://www.netflix.com/watch/81731212'),
+          ('video/direct', 'https://example.com/a.mp4'),
+          ('video/channel', 'rtsp://10.0.0.1:554/live/1'),
+        ]) {
+          await db.upsertVideoBook(
+            VideoBooksCompanion.insert(
+              bookUid: uid,
+              title: uid,
+              videoPath: path,
+            ),
+          );
+          expect(
+            await _makeService(db: db, tmp: tmp).resolveVideoFile(uid),
+            isNull,
+            reason: '$uid：host 没有媒体字节可下发',
+          );
+        }
+        final File strm = File(p.join(tmp.path, 'pointer.strm'))
+          ..writeAsStringSync('https://example.com/live.m3u8\n');
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'video/pointer',
+            title: 'Pointer',
+            videoPath: strm.path,
+          ),
         );
-      }
-      final File strm = File(p.join(tmp.path, 'pointer.strm'))
-        ..writeAsStringSync('https://example.com/live.m3u8\n');
-      await db.upsertVideoBook(
-        VideoBooksCompanion.insert(
-          bookUid: 'video/pointer',
-          title: 'Pointer',
-          videoPath: strm.path,
-        ),
-      );
 
-      final List<RemoteVideoInfo> list = await _makeService(
-        db: db,
-        tmp: tmp,
-      ).listVideos();
-      expect(list.map((RemoteVideoInfo v) => v.id).toSet(), <String>{
-        'video/local',
-      });
-    });
+        // 同目录放一个同名字幕：.strm 不是视频本体，不能借它报「有字幕」。
+        File(
+          p.join(tmp.path, 'pointer.srt'),
+        ).writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
+
+        final List<RemoteVideoInfo> list = await _makeService(
+          db: db,
+          tmp: tmp,
+        ).listVideos();
+        final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{
+          for (final RemoteVideoInfo v in list) v.id: v,
+        };
+        expect(byId.keys.toSet(), <String>{
+          'video/local',
+          'video/netflix',
+          'video/direct',
+          'video/channel',
+          'video/pointer',
+        }, reason: '同步层要看得见 host 的全部条目');
+        expect(byId['video/local']!.peerPlayable, isTrue);
+        for (final String uid in <String>[
+          'video/netflix',
+          'video/direct',
+          'video/channel',
+          'video/pointer',
+        ]) {
+          expect(byId[uid]!.peerPlayable, isFalse, reason: uid);
+        }
+        // .strm 的 stat 只会拿到一行地址的文本大小，不能冒充视频体积 / sidecar 字幕。
+        expect(byId['video/pointer']!.sizeBytes, isNull);
+        expect(byId['video/pointer']!.hasSubtitle, isFalse);
+        // 展示层只拿得到本地文件那一条。
+        expect(
+          peerPlayableRemoteVideos(list).map((RemoteVideoInfo v) => v.id),
+          <String>['video/local'],
+        );
+      },
+    );
 
     test('rtsp 频道 / .strm 行拒收对端推来的字幕（无本地视频本体）', () async {
       final File strm = File(p.join(tmp.path, 'pushed.strm'))

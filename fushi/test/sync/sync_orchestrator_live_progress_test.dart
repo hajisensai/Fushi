@@ -719,6 +719,117 @@ void main() {
     });
   });
 
+  group('BUG-3875: 网络流书 / .strm 两端都有时进度与偏好仍同步', () {
+    test('host 照常列出（标不可播），host 较新的进度与调轴回灌本地', () async {
+      // host：一本 Netflix 网页视频书 + 一个 .strm 流指针（都没有媒体字节）。
+      final File strm = File(p.join(work.path, 'live.strm'))
+        ..writeAsStringSync('https://example.com/live.m3u8\n');
+      const String webUid = 'video/netflix-wild-robot';
+      const String strmUid = 'video/live';
+      await hostDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: webUid,
+        title: 'The Wild Robot',
+        videoPath: 'https://www.netflix.com/watch/81731212',
+      ));
+      await hostDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: strmUid,
+        title: 'Live',
+        videoPath: strm.path,
+      ));
+      for (final String uid in <String>[webUid, strmUid]) {
+        await hostDb.setPrefTyped<int>(videoRemotePositionPrefKey(uid), 900000);
+        await hostDb.setPrefTyped<int>(
+            videoRemotePositionAtPrefKey(uid), 9000);
+        await hostDb.setPrefTyped<int>(videoRemoteDelayPrefKey(uid), 700);
+        await hostDb.setPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 9000);
+      }
+
+      // client：同一条也在本机书架上（同 bookUid），进度落后。
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: webUid,
+        title: 'The Wild Robot',
+        videoPath: 'https://www.netflix.com/watch/81731212',
+        lastPositionMs: const Value(100000),
+      ));
+      await localDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: strmUid,
+        title: 'Live',
+        videoPath: '/tmp/live.strm',
+        lastPositionMs: const Value(100000),
+      ));
+      for (final String uid in <String>[webUid, strmUid]) {
+        await localDb.setPrefTyped<int>(
+            videoRemotePositionAtPrefKey(uid), 2000);
+        await localDb.setSyncBaseline(
+            uid, kInterconnectVideoPositionDimension, 100000);
+      }
+
+      final Directory tmp = Directory(p.join(work.path, 't3875'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+
+      // 经真实 wire：两条都在清单里，且都标了对端不可播。
+      final Map<String, RemoteVideoInfo> listed = <String, RemoteVideoInfo>{
+        for (final RemoteVideoInfo v in await backend.listRemoteVideos())
+          v.id: v,
+      };
+      expect(listed.keys.toSet(), <String>{webUid, strmUid});
+      expect(listed[webUid]!.peerPlayable, isFalse);
+      expect(listed[strmUid]!.peerPlayable, isFalse);
+      expect(peerPlayableRemoteVideos(listed.values.toList()), isEmpty,
+          reason: '展示层不给它们出远端占位卡');
+
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+      await orch.syncVideoProgressLiveForTest(SyncRunReport(), backend);
+
+      for (final String uid in <String>[webUid, strmUid]) {
+        final VideoBookRow? row = await localDb.getVideoBookByBookUid(uid);
+        expect(row!.lastPositionMs, 900000,
+            reason: '$uid：两端都有的条目进度必须照常同步');
+        expect(row.delayMs, 700, reason: '$uid：播放偏好必须照常同步');
+        expect(
+            await localDb.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
+            9000);
+      }
+    });
+
+    test('本地较新的播放偏好推到 host（两端都有的 .strm）', () async {
+      final File strm = File(p.join(work.path, 'push.strm'))
+        ..writeAsStringSync('https://example.com/live.m3u8\n');
+      const String uid = 'video/push-strm';
+      await hostDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: uid,
+        title: 'Push',
+        videoPath: strm.path,
+      ));
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(videoRemotePositionPrefKey(uid), 1000);
+      await localDb.setPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 1000);
+      await localDb.setPrefTyped<int>(videoRemoteDelayPrefKey(uid), -1200);
+      await localDb.setPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 5000);
+
+      final Directory tmp = Directory(p.join(work.path, 't3875p'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+      await orch.syncVideoProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await hostDb.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0),
+          -1200);
+      expect(
+          await hostDb.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
+          5000);
+    });
+  });
+
   group('video delay full sweep (BUG-1620)', () {
     test(
         'local stamped delay newer -> push to host (prefs + row write-through)',
