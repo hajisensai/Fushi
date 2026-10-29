@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 13;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -265,6 +265,71 @@ CREATE INDEX IF NOT EXISTS idx_srs_review_logs_profile_kind_time ON srs_review_l
   (profile_uid, kind, occurred_at, card_id, review_type);
 "#;
 
+/// V13：统计页与 AnkiConnect 直接由内核读缓存表（store/bulk.rs）要的两组列，只有 Rust 读写（Drift 不声明）。
+/// - `srs_notes_cache.source_kind` / `source_title`：笔记出处（`SrsSourceRef` 的 kind 与原样 title，没有 = 空串）。
+///   统计页的「制卡来源」以前为了这两个值把整库笔记连同全部修改记录物化一遍（`allNoteViews`）。老库加列留空，
+///   由 Dart 侧缓存修订号 7 的升级步让内核重算全部笔记缓存填满。
+/// - `anki_id`（笔记缓存与卡片缓存）：AnkiConnect 的 53 位数字 id（`SrsIds.ankiNumericId` = `hash53("anki-id/" +
+///   UUID)`），按 (profile, anki_id) 建索引；数字 id → UUID 直接查索引，不再在 Dart 里整表回填一份映射。
+///   写缓存行时一并算（store/caches.rs），老行在本步回填（[backfill_anki_ids]）。
+/// 编号 10–12 留给其他阶段；本步按「列在不在」判断，可重放。
+const V13_NOTES: [(&str, &str); 3] = [
+    ("source_kind", "ALTER TABLE srs_notes_cache ADD COLUMN source_kind TEXT NOT NULL DEFAULT '';"),
+    ("source_title", "ALTER TABLE srs_notes_cache ADD COLUMN source_title TEXT NOT NULL DEFAULT '';"),
+    ("anki_id", "ALTER TABLE srs_notes_cache ADD COLUMN anki_id INTEGER NOT NULL DEFAULT 0;"),
+];
+const V13_CARDS: (&str, &str) = ("anki_id", "ALTER TABLE srs_cards_cache ADD COLUMN anki_id INTEGER NOT NULL DEFAULT 0;");
+const V13_INDEXES: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_anki_id ON srs_notes_cache (profile_uid, anki_id);
+CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_anki_id ON srs_cards_cache (profile_uid, anki_id);
+"#;
+
+fn has_column(tx: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
+    tx.query_row(
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+        [column],
+        |r| r.get::<_, i64>(0),
+    )
+    .map(|n| n > 0)
+    .map_err(|e| e.to_string())
+}
+
+/// AnkiConnect 数字 id：`hash53("anki-id/" + UUID)`——SHA-256 前 7 字节大端取低 53 位，0 记作 1（与
+/// native/fushi_compute `hash53`、Dart `SrsIds.ankiNumericId` 同一个数，向量钉在 bulk.rs 测试）。
+pub fn anki_numeric_id(uuid: &str) -> i64 {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"anki-id/");
+    h.update(uuid.as_bytes());
+    let d = h.finalize();
+    let mut v = 0u64;
+    for &b in &d[..7] {
+        v = (v << 8) | u64::from(b);
+    }
+    v &= (1u64 << 53) - 1;
+    if v == 0 { 1 } else { v as i64 }
+}
+
+/// 补算 `anki_id = 0` 的缓存行（v13 升级、旧库搬迁之后）。幂等。
+pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
+    for table in ["srs_notes_cache", "srs_cards_cache"] {
+        let ids: Vec<String> = {
+            let mut stmt = c
+                .prepare(&format!("SELECT id FROM {table} WHERE anki_id = 0"))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+            rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+        };
+        let mut up = c
+            .prepare(&format!("UPDATE {table} SET anki_id = ?1 WHERE id = ?2"))
+            .map_err(|e| e.to_string())?;
+        for id in &ids {
+            up.execute(rusqlite::params![anki_numeric_id(id), id]).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
@@ -352,6 +417,18 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 9 {
         tx.execute_batch(V9).map_err(|e| e.to_string())?;
     }
+    if current < 13 {
+        for (col, ddl) in V13_NOTES {
+            if !has_column(&tx, "srs_notes_cache", col)? {
+                tx.execute_batch(ddl).map_err(|e| e.to_string())?;
+            }
+        }
+        if !has_column(&tx, "srs_cards_cache", V13_CARDS.0)? {
+            tx.execute_batch(V13_CARDS.1).map_err(|e| e.to_string())?;
+        }
+        tx.execute_batch(V13_INDEXES).map_err(|e| e.to_string())?;
+        backfill_anki_ids(&tx)?;
+    }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -388,8 +465,8 @@ mod tests {
     fn v8_store_gains_the_queue_indexes_idempotently() {
         let mut c = rusqlite::Connection::open_in_memory().unwrap();
         migrate(&mut c).unwrap();
-        assert_eq!(SCHEMA_VERSION, 9);
-        assert_eq!(version(&c), "9");
+        assert_eq!(SCHEMA_VERSION, 13);
+        assert_eq!(version(&c), "13");
         for i in V9_INDEXES {
             c.execute_batch(&format!("DROP INDEX {i}")).unwrap();
         }
@@ -399,12 +476,12 @@ mod tests {
         for i in V9_INDEXES {
             assert!(after.contains(&i.to_owned()), "{i} missing after v8 -> v9");
         }
-        assert_eq!(version(&c), "9");
+        assert_eq!(version(&c), "13");
         // 中途崩溃重放：索引已在、版本号还是 8。
         c.execute("UPDATE srs_meta SET value = '8' WHERE key = 'schema'", []).unwrap();
         migrate(&mut c).unwrap();
         assert_eq!(indexes(&c), after);
-        assert_eq!(version(&c), "9");
+        assert_eq!(version(&c), "13");
     }
 
     /// 出卡 / 计数查询在大库上的耗时：有 v9 索引 vs 删掉 v9 索引（= v8，计数的全牌组查询按 v8 写法带 `+profile_uid`）。

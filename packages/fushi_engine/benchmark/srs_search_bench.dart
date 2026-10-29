@@ -11,7 +11,6 @@ import 'dart:math';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
-import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 const double _inlineStyleRate = 0.15;
@@ -296,12 +295,6 @@ const List<String> _firstQueries = <String>[
   '食',
 ];
 
-const List<String> _statsQueries = <String>[
-  'deck:Japanese::Core prop:ivl>=21',
-  '"Glossary:*language*"',
-  'tag:n5 OR tag:n4',
-];
-
 /// AnkiConnect 查重（_dupeOrEmpty 第一次请求的路径）：全部笔记首字段一次批量算规范形
 /// （之后的请求只重算原文变了的笔记），候选单独算一次，然后整串比较。
 int _dupeScan(_Corpus c, String candidate) {
@@ -398,29 +391,6 @@ Future<void> main(List<String> args) async {
         runs.add(_ms(sw));
       }
       print('browse  ${runs.join('/')} ms  hits=$hits  $q');
-    }
-    final SrsStatsIndex index = SrsStatsIndex(
-      tree: c.tree,
-      cards: c.rows,
-      notes: c.notes,
-      noteTypes: <String, SrsNoteTypeView>{
-        for (final SrsNoteTypeView t in c.noteTypes) t.id: t,
-      },
-      day: c.day,
-      nowMs: c.now,
-    );
-    final Stopwatch build2 = Stopwatch()..start();
-    index.cardIdsMatching('is:new');
-    print('stats   subjects + corpus build + first query: ${_ms(build2)} ms');
-    for (final String q in _statsQueries) {
-      final List<int> runs = <int>[];
-      int hits = 0;
-      for (int r = 0; r < 3; r++) {
-        final Stopwatch sw = Stopwatch()..start();
-        hits = index.cardIdsMatching(q).length;
-        runs.add(_ms(sw));
-      }
-      print('stats   ${runs.join('/')} ms  hits=$hits  $q');
     }
     final List<int> runs = <int>[];
     int hits = 0;

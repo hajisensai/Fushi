@@ -223,6 +223,9 @@ struct NoteInfo {
     deck: Option<String>,
     deleted_at: Option<i64>,
     pending: bool,
+    /// 出处（`SrsSourceRef`）：kind 与原样 title；没有出处（或不是带 kind 的对象）= 两个空串。
+    source_kind: String,
+    source_title: String,
 }
 
 impl NoteInfo {
@@ -238,6 +241,12 @@ impl NoteInfo {
             deck: v["dk"].as_str().map(str::to_owned),
             deleted_at: v["da"].as_i64(),
             pending: v["pd"] == Value::Bool(true),
+            // Dart `SrsSourceRef.fromJson`：不是对象或 kind 不是字符串 = 没有出处；title 不是字符串 = 没有标题。
+            source_kind: v["s"]["kind"].as_str().map(str::to_owned).unwrap_or_default(),
+            source_title: match v["s"]["kind"].as_str() {
+                Some(_) => v["s"]["title"].as_str().map(str::to_owned).unwrap_or_default(),
+                None => String::new(),
+            },
         }
     }
 
@@ -370,6 +379,9 @@ fn flush_notes(
                 n.pending,
                 now,
                 media,
+                n.source_kind,
+                n.source_title,
+                crate::store::schema::anki_numeric_id(&n.id),
             ])
             .map_err(sql)?;
         out.notes.push(n.id.clone());
@@ -624,6 +636,7 @@ fn write_card(
         note_created,
         f["np"].as_i64(),
         freq_rank,
+        crate::store::schema::anki_numeric_id(card),
     ])
     .map_err(sql)?;
     Ok(())
@@ -638,19 +651,21 @@ fn delete_cards(c: &Connection, ids: &[String]) -> Result<(), String> {
 }
 
 const NOTE_UPSERT: &str = "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deck_id, \
-     deleted_at, term_key, reading_key, sort_field, tags_json, pending_decision, updated_at, media_refs) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) ON CONFLICT(id) DO UPDATE SET \
+     deleted_at, term_key, reading_key, sort_field, tags_json, pending_decision, updated_at, media_refs, source_kind, \
+     source_title, anki_id) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) ON CONFLICT(id) DO UPDATE SET \
      profile_uid = excluded.profile_uid, note_type_id = excluded.note_type_id, guid = excluded.guid, \
      created_at = excluded.created_at, deck_id = excluded.deck_id, deleted_at = excluded.deleted_at, \
      term_key = excluded.term_key, reading_key = excluded.reading_key, sort_field = excluded.sort_field, \
      tags_json = excluded.tags_json, pending_decision = excluded.pending_decision, \
-     updated_at = excluded.updated_at, media_refs = excluded.media_refs";
+     updated_at = excluded.updated_at, media_refs = excluded.media_refs, source_kind = excluded.source_kind, \
+     source_title = excluded.source_title, anki_id = excluded.anki_id";
 
 const CARD_UPSERT: &str = "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, cloze_ord, deck_id, \
      suspended, buried_until_day, flag, hidden, queue, due_day, due_at, scheduled_days, reps, lapses, stability, \
-     difficulty, last_reviewed_at, last_log_id, scheduler, note_created_at, new_position, freq_rank) \
+     difficulty, last_reviewed_at, last_log_id, scheduler, note_created_at, new_position, freq_rank, anki_id) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, \
-     ?24) \
+     ?24, ?25) \
      ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, note_id = excluded.note_id, \
      template_id = excluded.template_id, cloze_ord = excluded.cloze_ord, deck_id = excluded.deck_id, \
      suspended = excluded.suspended, buried_until_day = excluded.buried_until_day, flag = excluded.flag, \
@@ -658,7 +673,7 @@ const CARD_UPSERT: &str = "INSERT INTO srs_cards_cache (id, profile_uid, note_id
      scheduled_days = excluded.scheduled_days, reps = excluded.reps, lapses = excluded.lapses, \
      stability = excluded.stability, difficulty = excluded.difficulty, last_reviewed_at = excluded.last_reviewed_at, \
      last_log_id = excluded.last_log_id, scheduler = excluded.scheduler, note_created_at = excluded.note_created_at, \
-     new_position = excluded.new_position, freq_rank = excluded.freq_rank";
+     new_position = excluded.new_position, freq_rank = excluded.freq_rank, anki_id = excluded.anki_id";
 
 // ---------------------------------------------------------------- 有效复习投影
 
