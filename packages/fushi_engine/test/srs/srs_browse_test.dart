@@ -410,7 +410,7 @@ void main() {
       addTearDown(b.close);
       final List<SrsNoteTypeView> types = await s.noteTypes();
       final Map<String, SrsNoteView> views = <String, SrsNoteView>{
-        for (final SrsNoteView n in await s.allNoteViews())
+        for (final SrsNoteView n in await allNotesOf(s))
           if (n.deletedAt == null) n.id: n,
       };
       final List<SrsBrowseRow> all = await rowsOf(b);
