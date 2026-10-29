@@ -298,10 +298,10 @@ fn tags_at(conn: &Connection, profile: &str, note: &str, target: &Vv) -> Result<
 }
 
 impl SrsCore {
-    /// 预览恢复到 [to]：会改回多少字段、复活 / 删除多少实体、改多少标签、撤回多少次复习。
+    /// 预览恢复到 [to]：会改回多少字段、复活 / 删除多少实体、改多少标签、撤回多少次复习。只读（[plan] 只算补偿
+    /// 操作、不落库）：走读连接的快照（[SrsCore::read_visible]）。
     pub fn sync2_plan_restore(&self, profile: &str, to: &RestoreTarget, retract_reviews: bool, now: i64) -> Result<Value, String> {
-        let w = self.writer()?;
-        in_savepoint(&w, |c| {
+        self.read_visible(|c| {
             let target = target_vv(c, profile, to)?;
             let p = plan(c, profile, &target, retract_reviews, now)?;
             Ok(json!({"fields": p.fields, "revived": p.revived, "removed": p.removed, "tags": p.tags, "reviews": p.reviews}))
