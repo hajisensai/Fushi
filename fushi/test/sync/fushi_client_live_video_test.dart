@@ -122,7 +122,7 @@ class _FakeLibraryService
       <({String id, String title, String? fileName, List<int> bytes})>[];
 
   @override
-  Future<bool> videoExists(String id) async =>
+  Future<bool> videoExists(String id, {int episodeIndex = 0}) async =>
       id == videoId || uploaded.any((u) => u.id == id);
 
   @override

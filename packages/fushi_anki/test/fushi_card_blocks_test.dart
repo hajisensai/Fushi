@@ -44,8 +44,8 @@ void main() {
 
   test('definition fields are exactly the WebView block', () {
     expect(kFushiCardDefinitionFields, <String>[
-      'SelectionText',
-      'DefinitionPicture',
+      'LookupSelection',
+      'DefinitionMedia',
       'MainDefinition',
       'Glossary',
     ]);
@@ -69,7 +69,7 @@ void main() {
         noteFields: <String, String>{
           for (final String f in FushiCardNoteType.fields) f: '',
           'MainDefinition': '<ol><li>main</li></ol>',
-          'Expression': 'SHOULD-NOT-APPEAR',
+          'Term': 'SHOULD-NOT-APPEAR',
         },
         cardOrd: 0,
         isCloze: false,

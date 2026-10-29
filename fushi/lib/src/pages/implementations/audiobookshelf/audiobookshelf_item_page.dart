@@ -436,6 +436,7 @@ class _AudiobookshelfItemPageState
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
                                 FushiFilledButton.icon(
+                                  size: FushiButtonSize.m,
                                   onPressed: _busy
                                       ? null
                                       : () => _stream(detail),

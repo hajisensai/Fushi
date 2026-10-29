@@ -56,7 +56,9 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
 ) {
   if (link.kind != CardSourceKind.video) return null;
   for (final RemoteVideoInfo video in videos) {
-    if (video.id == link.uid) return video;
+    // host 列出但没有字节可给的条目（网络流书 / `.strm`，BUG-3875）跳过：点过去
+    // 只会撞 `/streamurl` 404，按「没有来源」提示才是真话。
+    if (video.id == link.uid && video.peerPlayable) return video;
   }
   return null;
 }

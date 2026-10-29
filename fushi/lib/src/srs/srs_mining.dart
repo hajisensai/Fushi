@@ -229,8 +229,12 @@ Map<String, String> srsMiningFieldMappingsFor({
 String _normalizeFieldName(String name) =>
     name.toLowerCase().replaceAll(RegExp(r'[\s_\-\.:/·・（）()\[\]【】「」]'), '');
 
-/// Lapis 字段按归一名索引。
+/// Lapis 字段按归一名索引；Fushi 卡片改名后的字段（`Term` / `Media` / `Source` …，
+/// [FushiCardFields]）一并收进来，导入的 Fushi 导出包（非内置）也能按名字认出。
 final Map<String, String> _lapisByNormalizedName = <String, String>{
+  for (final MapEntry<String, String> e
+      in FushiCardNoteType.defaultFieldMappings.entries)
+    _normalizeFieldName(e.key): e.value,
   for (final MapEntry<String, String> e
       in LapisNoteType.defaultFieldMappings.entries)
     _normalizeFieldName(e.key): e.value,

@@ -4,12 +4,12 @@
   外观由 Fushi 宿主经 --fushi-srs-* 变量与 fushi-srs-* 类名注入；在 Anki 里没有宿主，按默认外观显示。
 -->
 <div class="fc fc-front" lang="ja">
-  {{#FreqSort}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FreqSort}}</span></div>{{/FreqSort}}
+  {{#FrequencyRank}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
 
   {{^IsSentenceCard}}{{^IsWordAndSentenceCard}}{{^IsClickCard}}{{^IsAudioCard}}
   <div class="fc-front-term">
-    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
-    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
+    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
     <div class="fc-front-pitch">{{PitchPosition}}</div>
   </div>
   {{/IsAudioCard}}{{/IsClickCard}}{{/IsWordAndSentenceCard}}{{/IsSentenceCard}}
@@ -20,8 +20,8 @@
 
   {{#IsWordAndSentenceCard}}
   <div class="fc-front-term">
-    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
-    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
+    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
     <div class="fc-front-pitch">{{PitchPosition}}</div>
   </div>
   <div class="fc-front-context">{{kanji:Sentence}}</div>
@@ -29,7 +29,7 @@
 
   {{#IsClickCard}}
   <div class="fc-click" role="button" tabindex="0">
-    <div class="fc-term fc-term--hero fc-click-term">{{Expression}}</div>
+    <div class="fc-term fc-term--hero fc-click-term">{{Term}}</div>
     <div class="fc-front-sentence fc-click-sentence">{{kanji:Sentence}}</div>
   </div>
   {{/IsClickCard}}
@@ -39,7 +39,7 @@
     <div class="fc-front-sentence fc-front-sentence--masked">{{kanji:Sentence}}</div>
     <div class="fc-audio fc-audio--large">
       {{#SentenceAudio}}{{SentenceAudio}}{{/SentenceAudio}}
-      {{^SentenceAudio}}{{ExpressionAudio}}{{/SentenceAudio}}
+      {{^SentenceAudio}}{{TermAudio}}{{/SentenceAudio}}
     </div>
   </div>
   {{/IsAudioCard}}

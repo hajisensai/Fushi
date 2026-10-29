@@ -213,9 +213,9 @@ SrsFushiCardMedia srsFushiCardMedia(
   Map<String, String> fields, {
   required bool audioCardFront,
 }) {
-  final List<String> word = srsAudioSources(fields['ExpressionAudio'] ?? '');
+  final List<String> word = srsAudioSources(fields['TermAudio'] ?? '');
   final List<String> sentence = srsAudioSources(fields['SentenceAudio'] ?? '');
-  final String? clip = srsVideoSources(fields['Picture'] ?? '').firstOrNull;
+  final String? clip = srsVideoSources(fields['Media'] ?? '').firstOrNull;
   final List<String> front = !audioCardFront
       ? const <String>[]
       : <String>[?(sentence.isNotEmpty ? sentence.first : word.firstOrNull)];

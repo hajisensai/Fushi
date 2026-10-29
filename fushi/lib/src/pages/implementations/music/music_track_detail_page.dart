@@ -279,6 +279,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
                   children: <Widget>[
                     FushiPressScale(
                       child: FushiFilledButton.icon(
+                        size: FushiButtonSize.m,
                         key: const ValueKey<String>('music_track_play'),
                         onPressed: () => unawaited(
                           engine.playQueue(<MusicPlayItem>[
@@ -290,7 +291,8 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
                       ),
                     ),
                     FushiPressScale(
-                      child: FushiOutlinedButton.icon(
+                      child: FushiFilledButton.tonalIcon(
+                        size: FushiButtonSize.m,
                         key: const ValueKey<String>(
                           'music_track_detect_theme_song',
                         ),

@@ -236,6 +236,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                 children: <Widget>[
                   FushiPressScale(
                     child: FushiFilledButton.icon(
+                      size: FushiButtonSize.m,
                       key: const ValueKey<String>('music_album_play'),
                       onPressed: tracks.isEmpty
                           ? null
@@ -251,7 +252,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                     ),
                   ),
                   FushiPressScale(
-                    child: FushiOutlinedButton.icon(
+                    child: FushiFilledButton.tonalIcon(
+                      size: FushiButtonSize.m,
                       key: const ValueKey<String>('music_album_shuffle'),
                       onPressed: tracks.isEmpty
                           ? null
@@ -269,7 +271,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                   ),
                   if (disc != null) ...<Widget>[
                     FushiPressScale(
-                      child: FushiOutlinedButton.icon(
+                      child: FushiFilledButton.tonalIcon(
+                        size: FushiButtonSize.m,
                         key: const ValueKey<String>('music_disc_import'),
                         onPressed: _busy
                             ? null
@@ -288,7 +291,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                     if (tracks.isNotEmpty &&
                         disc.kind != MusicDiscKind.cdda.wire)
                       FushiPressScale(
-                        child: FushiOutlinedButton.icon(
+                        child: FushiFilledButton.tonalIcon(
+                          size: FushiButtonSize.m,
                           key: const ValueKey<String>('music_disc_lookup'),
                           onPressed: _busy
                               ? null
@@ -300,7 +304,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                         ),
                       ),
                     FushiPressScale(
-                      child: FushiOutlinedButton.icon(
+                      child: FushiFilledButton.tonalIcon(
+                        size: FushiButtonSize.m,
                         key: const ValueKey<String>('music_disc_remove'),
                         onPressed: _busy
                             ? null

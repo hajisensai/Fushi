@@ -102,4 +102,15 @@ void main() {
       'b': '1',
     });
   });
+
+  test('pendingBookUids：只列有待办的书，按各自最早待办的入队顺序去重', () async {
+    final int a1 = await enqueue('book-a', 1000);
+    await enqueue('book-b', 2000);
+    await enqueue('book-a', 3000);
+    final int c1 = await enqueue('book-c', 4000);
+    await store.markDone(c1, noteId: 1);
+    expect(await store.pendingBookUids(), <String>['book-a', 'book-b']);
+    await store.markFailed(a1, 'x');
+    expect(await store.pendingBookUids(), <String>['book-b', 'book-a']);
+  });
 }

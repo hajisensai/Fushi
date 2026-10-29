@@ -4,7 +4,7 @@
 //! 传输本身（列目录 / 读写文件）在 Dart（fushi_engine 的存储位置适配层），这里只吃字节、吐字节：
 //! 一轮同步个位数次 FFI（发件、写 head、看 head、收段）。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -364,9 +364,10 @@ fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<(), S
 /// 在内存里按设备排队：每一遍只看各设备的队首，整体是 O(操作数 + 遍数 × 设备数)。（逐遍重扫整张缓冲表在
 /// 新设备追赶两台互相同步过上千次的设备时是平方级的。）
 ///
-/// 一次收段调用里只开一个：缓冲表只读一次，每解开一段就 [Delivery::push] + [Delivery::drain]，投上的操作当场
-/// 释放，[Delivery::finish] 最后一次写设备进度、把没投上的写进缓冲。所以收段的内存是「一段 + 等依赖的操作」，
-/// 不随一批里有几段增长；结果与整批一起投相同（等价于每批只收一段，Dart 侧本来就按任意段边界切批）。
+/// 一次收段调用里只开一个：缓冲表只读一次，每投一段就 [Delivery::push] + [Delivery::drain]，投上的操作当场
+/// 释放，[Delivery::finish] 最后一次写设备进度、把没投上的写进缓冲。所以收段的内存是「锁外预处理留下的操作
+/// （有上限 [PREPARED_RAW_BUDGET]）+ 等依赖的操作」，不随一批的解压后体积增长；结果与整批一起投相同（等价于
+/// 每批只收一段，Dart 侧本来就按任意段边界切批）。
 struct Delivery {
     vv: Vv,
     queues: BTreeMap<Id, BTreeMap<u64, Held>>,
@@ -409,9 +410,10 @@ impl Delivery {
         }
     }
 
-    /// 投完能投的；还在等的操作超过 [DELIVERY_HELD_BYTES] 就写进缓冲表、内存里只留链值。
-    fn drain(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched) -> Result<(), String> {
-        self.deliver_ready(c, profile, now, t)?;
+    /// 投完能投的（预算用完就停在这里，[budget] 记下截停）；还在等的操作超过 [DELIVERY_HELD_BYTES] 就写进
+    /// 缓冲表、内存里只留链值。
+    fn drain(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
+        self.deliver_ready(c, profile, now, t, budget)?;
         if self.held > DELIVERY_HELD_BYTES {
             self.spill(c, profile)?;
         }
@@ -432,16 +434,19 @@ impl Delivery {
         Ok(())
     }
 
-    fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched) -> Result<(), String> {
+    fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
         let Delivery { vv, queues, chains, applied, forked, held: mem } = self;
         let mut dropped: Vec<Id> = Vec::new();
-        loop {
+        'all: loop {
             let mut progress = false;
             for (device, q) in queues.iter_mut() {
                 while let Some(mut entry) = q.first_entry() {
                     let seq = *entry.key();
                     let have = vv.get(device);
                     if seq <= have {
+                        if !budget.take() {
+                            break 'all;
+                        }
                         // 已有：同一 seq 链值不同 = 那台设备的身份分叉了（它自己会换身份重签发）。
                         let held = entry.remove();
                         *mem -= held.op.as_ref().map_or(0, held_bytes);
@@ -482,8 +487,12 @@ impl Delivery {
                     if !op.deps.le(&vv) {
                         break;
                     }
+                    if !budget.take() {
+                        break 'all;
+                    }
                     insert_op(c, profile, op, &chain, now)?;
                     project(c, profile, op, now, true, t)?;
+
                     if held.stored {
                         unstore(c, profile, device, seq)?;
                     }
@@ -529,11 +538,81 @@ fn store_pending(c: &Connection, profile: &str, device: &Id, seq: u64, op: &Op, 
     Ok(())
 }
 
-/// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份与跨批累积的分叉点。
+/// 一次 [SrsCore::sync2_ingest_commit] 在写锁里最多做多少（一片）：处理的操作条数、时间上限，以及「有别的写入在
+/// 排队就让出」（[SrsCore::sync2_ingest_yield]），先到者为准；先做满 [COMMIT_SLICE_MIN_OPS] 条才看后两者，每片
+/// 都有进展。用完就停在操作边界，剩下的留在会话里由下一次 commit 接着投，两次之间 Dart 放开写锁，排队的作答先写。
+///
+/// 一片的锁内耗时（投递、投影、重放、缓存刷新、事务提交）都与片内操作数成正比。没人等锁时片长到时间上限，
+/// 提交次数少（片越短，同一批随机键索引页被反复写进 WAL 的次数越多）；有人排队就当场收片，排队者只等这一片
+/// 已投部分的收尾。
+pub struct CommitBudget<'a> {
+    left: usize,
+    deadline: Option<std::time::Instant>,
+    /// 置位 = 有别的写入在等写锁，这一片尽快收。
+    yield_to: Option<&'a std::sync::atomic::AtomicBool>,
+    floor: usize,
+    /// 这一片被预算截停过（还有没处理完的）。
+    stopped: bool,
+}
+
+/// 一片投递的时间上限（写锁里投递 + 投影部分；同一片的缓存刷新与事务提交大约再占它的一半）。只在没人等锁时
+/// 用满；它也是让出请求最晚的响应时间的来源（收片时要刷新、提交的就是已投的这部分）。
+const COMMIT_SLICE: std::time::Duration = std::time::Duration::from_millis(150);
+/// 一片至少处理的操作数（之后才看时间与让出请求）。
+const COMMIT_SLICE_MIN_OPS: usize = 64;
+
+impl<'a> CommitBudget<'a> {
+    /// 不切片：一次做完（一次收完的 [SrsCore::sync2_ingest]、[SrsCore::sync2_ingest_batch]、导入）。
+    pub fn unlimited() -> CommitBudget<'static> {
+        CommitBudget { left: usize::MAX, deadline: None, yield_to: None, floor: 0, stopped: false }
+    }
+
+    /// 一片：最长 [COMMIT_SLICE]，[yield_to] 置位就提前收。
+    pub fn slice(yield_to: &'a std::sync::atomic::AtomicBool) -> CommitBudget<'a> {
+        CommitBudget::slice_within(yield_to, COMMIT_SLICE)
+    }
+
+    /// 一片，时间上限另给（测试用：给得很长，切点就只来自让出请求）。
+    pub fn slice_within(yield_to: &'a std::sync::atomic::AtomicBool, max: std::time::Duration) -> CommitBudget<'a> {
+        CommitBudget {
+            left: usize::MAX,
+            deadline: Some(std::time::Instant::now() + max),
+            yield_to: Some(yield_to),
+            floor: COMMIT_SLICE_MIN_OPS,
+            stopped: false,
+        }
+    }
+
+    /// 按条数切的一片（测试用：切点确定）。
+    pub fn ops(n: usize) -> CommitBudget<'static> {
+        CommitBudget { left: n.max(1), deadline: None, yield_to: None, floor: 0, stopped: false }
+    }
+
+    /// 再处理一条；预算用完返回 false 并记下截停。
+    fn take(&mut self) -> bool {
+        if self.stopped {
+            return false;
+        }
+        let over = self.floor == 0
+            && (self.deadline.is_some_and(|d| std::time::Instant::now() >= d)
+                || self.yield_to.is_some_and(|y| y.load(std::sync::atomic::Ordering::Relaxed)));
+        if self.left == 0 || over {
+            self.stopped = true;
+            return false;
+        }
+        self.left -= 1;
+        self.floor = self.floor.saturating_sub(1);
+        true
+    }
+}
+
+/// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份、跨批累积的分叉点，以及锁外预处理好、
+/// 等投递的那一批（[SrsCore::sync2_ingest_prepare] 放进来，[SrsCore::sync2_ingest_commit] 一片一片投完才取走）。
 pub(crate) struct IngestSession {
     profile: String,
     device: Id,
     fork_at: Option<u64>,
+    prepared: Option<PreparedIngest<'static>>,
 }
 
 impl IngestSession {
@@ -543,116 +622,317 @@ impl IngestSession {
     }
 }
 
-/// 收一批段（不换身份）：远端操作投递进投影 / 缓冲，返回应用条数；本机身份的段只比链，把分叉点（第一处不同的
-/// 前一个 seq）取最小累积进 [fork_at]。
-///
-/// 逐段处理：按（设备, 起始 seq）排好，解开一段就投一段（[Delivery]），同时在内存里的只有当前这段与等依赖的
-/// 操作。以前先把一批里全部段的操作解码攒齐再投，一批的字节预算按压缩后体积算，重复度高的正文解开能大两个数量级。
-#[allow(clippy::too_many_arguments)]
-fn ingest_segments(
+/// 一批段在锁外预处理时保留的已解码操作上限（解压后字节，按 [held_bytes] 同一口径估）。超出的段照样验签、
+/// 重算链，只是不留操作，投递时在锁内重开再流式解一遍。一批的字节预算按压缩后体积算，正文重复度高时解开能大
+/// 两个数量级；有了这条，预处理的内存峰值与收段原先一样不随一批的解压后体积增长。
+#[cfg(not(test))]
+const PREPARED_RAW_BUDGET: u64 = 2 * segment::SEGMENT_MAX_RAW_BYTES;
+/// 测试里压到很小：端到端用例的后几段都走「投递时重开流式解」（含切片截在段中间、下一片跳过已处理前缀），
+/// 结果必须与留在内存里一样。
+#[cfg(test)]
+const PREPARED_RAW_BUDGET: u64 = 4 * 1024;
+
+/// 一个段在锁外预处理的结论。
+enum Outcome {
+    /// 预处理时这台设备没有登记公钥。
+    Unknown,
+    /// 验签 / 解密 / 链校验没过：报错原文（带设备前缀）。
+    Bad(String),
+    /// 链已对上的、还没投递的操作与各自的链值，按 seq 升序（投递从队首取走）。
+    Ops(VecDeque<(Op, Chain)>),
+    /// 校验已过、操作没留（超大旧段或超出 [PREPARED_RAW_BUDGET]）：投递时重开流式解。
+    Deferred,
+}
+
+struct PreparedSegment {
+    header: segment::SegmentHeader,
+    /// 在 [PreparedIngest::segments] 里的下标。
+    index: usize,
+    /// 预处理时用的公钥（本机身份的段是本机公钥）；None = 没登记。投递时在锁内与当时的对照，变了就按当时的重验。
+    public: Option<[u8; 32]>,
+    outcome: Outcome,
+    /// 已经投递 / 比过链的前缀条数（被切片截在段中间时，下一片从这里接着；重验或重开流式解时跳过它们）。
+    consumed: usize,
+}
+
+/// 锁外预处理好的一批段（[prepare_ingest] → [PreparedIngest::verify] → 锁内 [deliver_prepared]）：解压、解密、
+/// 验签、重算链这些纯 CPU 的活都在这里做完，锁内只剩比链、因果投递、落库与重放。
+pub(crate) struct PreparedIngest<'a> {
+    profile: String,
+    /// 预处理时的本机身份；锁内对不上（身份换过）就按当时的身份整批重做。
+    device: Id,
+    local_public: [u8; 32],
+    collection: Id,
+    key: Option<[u8; 32]>,
+    /// 一次收完时借调用方的；会话里留到投递，是自己的一份。
+    segments: std::borrow::Cow<'a, [Vec<u8>]>,
+    /// 段头都读不出的报错（按输入顺序，排在各段的报错之前，与逐段处理时相同）。
+    peek_errors: Vec<String>,
+    /// 本集合的段，按（设备, 起始 seq）排好。
+    items: Vec<PreparedSegment>,
+    /// 下一个要投递的段（[items] 下标）；之前的都已投完。
+    next: usize,
+}
+
+/// 预处理的读库部分：读段头、排序、查各设备公钥（[c] 用读连接即可，查完就放）。
+fn prepare_ingest<'a>(
     c: &Connection,
     profile: &str,
     local: &Local,
-    segments: &[Vec<u8>],
+    segments: std::borrow::Cow<'a, [Vec<u8>]>,
     key: Option<[u8; 32]>,
+) -> Result<PreparedIngest<'a>, String> {
+    let mut peek_errors = Vec::new();
+    let mut items: Vec<PreparedSegment> = Vec::with_capacity(segments.len());
+    for (index, bytes) in segments.iter().enumerate() {
+        match segment::peek_header(bytes) {
+            Ok(h) if h.collection == local.collection => {
+                items.push(PreparedSegment { header: h, index, public: None, outcome: Outcome::Unknown, consumed: 0 })
+            }
+            Ok(_) => {}
+            Err(e) => peek_errors.push(e.to_string()),
+        }
+    }
+    // 稳定排序：同一（设备, 起始 seq）的重复段保持输入顺序，与原先逐段处理相同。
+    items.sort_by_key(|s| (s.header.device, s.header.first));
+    let local_public = local.key.public();
+    for item in &mut items {
+        item.public = if item.header.device == local.device {
+            Some(local_public)
+        } else {
+            device_public(c, profile, &item.header.device)?
+        };
+    }
+    Ok(PreparedIngest {
+        profile: profile.to_owned(),
+        device: local.device,
+        local_public,
+        collection: local.collection,
+        key,
+        segments,
+        peek_errors,
+        items,
+        next: 0,
+    })
+}
+
+/// 一台设备登记的公钥（没登记 / 格式不对 = None）。
+fn device_public(c: &Connection, profile: &str, device: &Id) -> Result<Option<[u8; 32]>, String> {
+    let public: Option<Vec<u8>> = c
+        .query_row(
+            "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
+            params![profile, device.0.to_vec()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(sql)?
+        .flatten();
+    Ok(public.and_then(|p| <[u8; 32]>::try_from(p).ok()))
+}
+
+/// 验一段：签名 → 解密 → 解压 → 解码 → 重算链。[budget] 是还能留的已解码字节，留下的从里面扣。
+fn verify_segment(bytes: &[u8], header: &segment::SegmentHeader, public: Option<[u8; 32]>, key: Option<&CollectionKey>, budget: &mut u64) -> Outcome {
+    let Some(public) = public else {
+        return Outcome::Unknown;
+    };
+    let bad = |e: segment::SegmentError| Outcome::Bad(format!("{}: {e}", header.device.text()));
+    let seg = match segment::open_verified(bytes, &public, key) {
+        Ok(s) => s,
+        Err(e) => return bad(e),
+    };
+    // 整段校验（签名已过，这里重算链）；超大旧段校验时不留操作，投递时再流式解一遍。
+    let ops = match seg.verify() {
+        Ok(segment::Verified::Whole(ops)) => ops,
+        Ok(segment::Verified::Stream(_)) => return Outcome::Deferred,
+        Err(e) => return bad(e),
+    };
+    let raw: u64 = ops.as_slice().iter().map(|op| held_bytes(op) as u64).sum();
+    if raw > *budget {
+        return Outcome::Deferred;
+    }
+    *budget -= raw;
+    let mut chain = seg.header.prev_chain;
+    Outcome::Ops(
+        ops.map(|op| {
+            chain = chain_next(&chain, &op);
+            (op, chain)
+        })
+        .collect(),
+    )
+}
+
+impl PreparedIngest<'_> {
+    /// 预处理的纯计算部分（不碰库、不持任何锁）：逐段验签、解密、解压、重算链。
+    fn verify(&mut self) {
+        let ck = self.key.map(CollectionKey);
+        let mut budget = PREPARED_RAW_BUDGET;
+        for item in &mut self.items {
+            item.outcome = verify_segment(&self.segments[item.index], &item.header, item.public, ck.as_ref(), &mut budget);
+        }
+    }
+}
+
+/// 预处理之后本机身份（公钥 / 集合）变了：还没投完的段（从 [PreparedIngest::next] 起，截在中间的那段整段重来——
+/// 已投的操作再来一遍只比链、不重复应用）按当时的身份在锁内重新预处理（[c] 已持写锁）。
+fn reprepare_under_lock(c: &Connection, profile: &str, local: &Local, p: &mut PreparedIngest<'_>) -> Result<(), String> {
+    let rest: Vec<Vec<u8>> = p.items[p.next..].iter().map(|s| p.segments[s.index].clone()).collect();
+    let mut fresh = prepare_ingest(c, profile, local, std::borrow::Cow::Owned(rest), p.key)?;
+    fresh.verify();
+    // 段头读不出的报错与段无关，还没报的照旧排在最前。
+    fresh.peek_errors.splice(0..0, std::mem::take(&mut p.peek_errors));
+    *p = fresh;
+    Ok(())
+}
+
+/// 投递预处理好的一批段（不换身份，[c] 已持写锁），最多做到 [budget] 用完：远端操作投递进投影 / 缓冲，本机身份
+/// 的段只比链，把分叉点（第一处不同的前一个 seq）取最小累积进 [fork_at]。返回（应用条数, 是否投完）；没投完时
+/// 进度留在 [prepared] 里（下一个段、段内已处理的条数），下一次接着调。
+///
+/// 结果与在锁内从头一次处理完逐字节相同：切点落在任意操作边界，等价于 Dart 在那里切批（每片的设备进度与没投上
+/// 的操作都在 [Delivery::finish] 里落库，下一片重新 [Delivery::load]）；预处理之后本机身份变了就按当时的身份重做
+/// 还没投完的段；某台设备的公钥变了（含新登记 / 不再登记）就按当时的公钥重验那一段、跳过已处理的前缀。
+///
+/// 逐段投（[Delivery]），同时在内存里的只有预处理留下的操作与等依赖的操作。
+#[allow(clippy::too_many_arguments)]
+fn deliver_prepared(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    prepared: &mut PreparedIngest<'_>,
+    budget: &mut CommitBudget<'_>,
     now: i64,
     t: &mut Touched,
     errors: &mut Vec<String>,
     fork_at: &mut Option<u64>,
-) -> Result<usize, String> {
-    let ck = key.map(CollectionKey);
-    let mut order: Vec<(segment::SegmentHeader, &Vec<u8>)> = Vec::with_capacity(segments.len());
-    for bytes in segments {
-        match segment::peek_header(bytes) {
-            Ok(h) if h.collection == local.collection => order.push((h, bytes)),
-            Ok(_) => {}
-            Err(e) => errors.push(e.to_string()),
-        }
+) -> Result<(usize, bool), String> {
+    if prepared.profile != profile
+        || prepared.device != local.device
+        || prepared.local_public != local.key.public()
+        || prepared.collection != local.collection
+    {
+        reprepare_under_lock(c, profile, local, prepared)?;
     }
-    order.sort_by_key(|(h, _)| (h.device, h.first));
+    errors.append(&mut prepared.peek_errors);
+    let ck = prepared.key.map(CollectionKey);
+    let PreparedIngest { segments, items, next, .. } = prepared;
     let mut delivery = Delivery::load(c, profile)?;
-    for (header, bytes) in order {
-        let public: Option<Vec<u8>> = c
-            .query_row(
-                "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
-                params![profile, header.device.0.to_vec()],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(sql)?
-            .flatten();
-        // 自己身份的段：同一把钥匙签的（数据目录被复制）才可能是本机身份的另一个安装，只拿来比链找分叉点。
-        let public: [u8; 32] = if header.device == local.device {
-            local.key.public()
-        } else {
-            match public.and_then(|p| <[u8; 32]>::try_from(p).ok()) {
-                Some(p) => p,
-                None => {
-                    errors.push(format!("segment from unknown device {}", header.device.text()));
-                    continue;
-                }
+    // 上一片被截停时可能还有已经接得上的操作（在缓冲表里），先投它们。
+    delivery.drain(c, profile, now, t, budget)?;
+    while *next < items.len() && !budget.stopped {
+        let item = &mut items[*next];
+        let header = item.header.clone();
+        let bytes = &segments[item.index];
+        let public = if header.device == local.device { Some(local.key.public()) } else { device_public(c, profile, &header.device)? };
+        if public != item.public {
+            // 重验得到整段，已处理的前缀在下面跳过。
+            item.outcome = verify_segment(bytes, &header, public, ck.as_ref(), &mut { u64::MAX });
+            if let Outcome::Ops(q) = &mut item.outcome {
+                q.drain(..item.consumed.min(q.len()));
             }
-        };
-        let seg = match segment::open_verified(bytes, &public, ck.as_ref()) {
-            Ok(s) => s,
-            Err(e) => {
-                errors.push(format!("{}: {e}", header.device.text()));
+            item.public = public;
+        }
+        let public = match &item.outcome {
+            Outcome::Unknown => {
+                errors.push(format!("segment from unknown device {}", header.device.text()));
+                *next += 1;
                 continue;
             }
-        };
-        // 整段校验（签名已过，这里重算链）后才动投影；超大旧段校验时不留操作，下面再流式解一遍。
-        let ops = match seg.verify() {
-            Ok(ops) => ops,
-            Err(e) => {
-                errors.push(format!("{}: {e}", header.device.text()));
+            Outcome::Bad(e) => {
+                errors.push(e.clone());
+                *next += 1;
                 continue;
             }
+            Outcome::Ops(_) | Outcome::Deferred => public.ok_or("verified segment without a public key")?,
         };
         let stream_err = |e: segment::SegmentError| format!("{}: {e}", header.device.text());
-        if header.device == local.device {
-            // 同一身份、签名也对（同一把钥匙 = 数据目录被复制）：逐条比链，第一处不同之前是共同前缀。
-            let mut chain = seg.header.prev_chain;
-            for op in ops {
-                let op = op.map_err(stream_err)?;
-                chain = chain_next(&chain, &op);
-                let ours = chain_at(c, profile, &local.device, op.id.seq)?;
-                if ours != Some(chain) {
-                    let k = op.id.seq - 1;
-                    *fork_at = Some(fork_at.map_or(k, |f| f.min(k)));
-                    break;
+        let mut consumed = item.consumed;
+        let mut exhausted = false;
+        {
+            // 留下的操作（从队首取走），或（Deferred）重开流式解、跳过已处理的前缀：签名、链在预处理里都已对上，
+            // 这一遍与校验那一遍逐字节相同。
+            let reopened;
+            let mut ops: Box<dyn Iterator<Item = Result<(Op, Chain), String>> + '_> = match &mut item.outcome {
+                Outcome::Ops(q) => Box::new(std::iter::from_fn(move || q.pop_front().map(Ok))),
+                _ => {
+                    reopened = segment::open_verified(bytes, &public, ck.as_ref()).map_err(stream_err)?;
+                    let mut chain = header.prev_chain;
+                    Box::new(
+                        reopened
+                            .ops()
+                            .map_err(stream_err)?
+                            .map(move |op| {
+                                let op = op.map_err(stream_err)?;
+                                chain = chain_next(&chain, &op);
+                                Ok((op, chain))
+                            })
+                            .skip(consumed),
+                    )
                 }
+            };
+            if header.device == local.device {
+                // 同一身份、签名也对（同一把钥匙 = 数据目录被复制）：逐条比链，第一处不同之前是共同前缀。
+                loop {
+                    if !budget.take() {
+                        break;
+                    }
+                    let Some(r) = ops.next() else {
+                        exhausted = true;
+                        break;
+                    };
+                    consumed += 1;
+                    let (op, chain) = r?;
+                    let ours = chain_at(c, profile, &local.device, op.id.seq)?;
+                    if ours != Some(chain) {
+                        let k = op.id.seq - 1;
+                        *fork_at = Some(fork_at.map_or(k, |f| f.min(k)));
+                        exhausted = true;
+                        break;
+                    }
+                }
+            } else {
+                // 按小块投：一块投完（投上的当场释放）再取下一块，超大旧段也只占一块的内存；预算用完就不再取，
+                // 已取进队列没投上的由 [Delivery::finish] 写进缓冲表。
+                let mut chunk: Vec<(Op, Chain)> = Vec::new();
+                let mut chunk_raw = 0usize;
+                while !budget.stopped {
+                    let Some(r) = ops.next() else {
+                        exhausted = true;
+                        break;
+                    };
+                    consumed += 1;
+                    let (op, chain) = r?;
+                    chunk_raw += op.payload.len() + 24;
+                    chunk.push((op, chain));
+                    if chunk.len() >= INGEST_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
+                        delivery.push(std::mem::take(&mut chunk));
+                        chunk_raw = 0;
+                        delivery.drain(c, profile, now, t, budget)?;
+                    }
+                }
+                delivery.push(chunk);
+                delivery.drain(c, profile, now, t, budget)?;
             }
-            continue;
         }
-        // 按块投：一块投完（投上的当场释放）再解下一块，超大旧段也只占一块的内存。块边界与段边界一样任意，
-        // 结果等价于逐段投递（Dart 本来就按任意段边界切批）。
-        let mut chain = seg.header.prev_chain;
-        let mut chunk: Vec<(Op, Chain)> = Vec::new();
-        let mut chunk_raw = 0usize;
-        for op in ops {
-            let op = op.map_err(stream_err)?;
-            chain = chain_next(&chain, &op);
-            chunk_raw += op.payload.len() + 24;
-            chunk.push((op, chain));
-            if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
-                delivery.push(std::mem::take(&mut chunk));
-                chunk_raw = 0;
-                delivery.drain(c, profile, now, t)?;
-            }
+        if exhausted {
+            item.outcome = Outcome::Deferred;
+            *next += 1;
+        } else {
+            item.consumed = consumed;
         }
-        delivery.push(chunk);
-        delivery.drain(c, profile, now, t)?;
     }
-    delivery.finish(c, profile)
+    let done = *next == items.len() && !budget.stopped;
+    Ok((delivery.finish(c, profile)?, done))
 }
 
-/// 收段时一次投递的块（条数 / 解压后字节，先到者为准）：新切的段本来就不超过 [segment::SEGMENT_MAX_RAW_BYTES]，
-/// 这两条只在读旧版本切出的超大段时起作用。
+/// 一次投递的块（条数 / 解压后字节，先到者为准）：新切的段本来就不超过 [segment::SEGMENT_MAX_RAW_BYTES]，
+/// 这两条只在读旧版本切出的超大段 / 导入文件时起作用。
 const DELIVERY_CHUNK_OPS: usize = 16_384;
 const DELIVERY_CHUNK_RAW: usize = 4 * 1024 * 1024;
+/// 收段按片投递时的块：块小，片被截停时已取进队列、没投上、要写进缓冲表的操作就少。
+const INGEST_CHUNK_OPS: usize = 64;
 
-/// 收段命令的返回（重放受影响的卡、数缓冲）。
-fn ingest_result(c: &Connection, profile: &str, t: Touched, applied: usize, errors: Vec<String>, fork: bool) -> Result<String, String> {
+/// 收段命令的返回（重放受影响的卡、数缓冲）。[more]：这一批被切片截停了，还要再 commit。
+fn ingest_result(c: &Connection, profile: &str, t: Touched, applied: usize, errors: Vec<String>, fork: bool, more: bool) -> Result<String, String> {
     let replayed = replay_touched(c, &t)?;
     let pending: i64 = c
         .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
@@ -664,6 +944,7 @@ fn ingest_result(c: &Connection, profile: &str, t: Touched, applied: usize, erro
         "pending": pending,
         "errors": errors,
         "fork": fork,
+        "more": more,
         "diagnostics": t.diagnostics,
         "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
         "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
@@ -1084,24 +1365,47 @@ impl SrsCore {
     /// `{"marks":{..见 [super::Marks::to_json]}, "replayed":[..], "applied":n, "pending":n, "errors":[..], "fork":bool}`。
     ///
     /// 一次收完；同一轮要分几批收（字节预算）时用 [SrsCore::sync2_ingest_begin] / [SrsCore::sync2_ingest_batch] /
-    /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。
+    /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。解码与验签在写锁外
+    /// （[SrsCore::sync2_ingest_prepare]），写锁里只投递。
     pub fn sync2_ingest(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
+        let mut prepared = self.prepare_unlocked(profile, std::borrow::Cow::Borrowed(segments), key)?;
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut t = Touched::default();
             let mut errors = Vec::new();
             let mut fork_at: Option<u64> = None;
-            let applied_n = ingest_segments(c, profile, &local, segments, key, now, &mut t, &mut errors, &mut fork_at)?;
+            let (applied_n, _) =
+                deliver_prepared(c, profile, &local, &mut prepared, &mut CommitBudget::unlimited(), now, &mut t, &mut errors, &mut fork_at)?;
             if let Some(k) = fork_at {
                 rotate(c, profile, k, now, &mut t)?;
             }
-            ingest_result(c, profile, t, applied_n, errors, fork_at.is_some())
+            ingest_result(c, profile, t, applied_n, errors, fork_at.is_some(), false)
         })
     }
 
-    /// 开一个分批收段会话（覆盖掉上一轮没收尾的）。之后每批 [SrsCore::sync2_ingest_batch]，最后
-    /// [SrsCore::sync2_ingest_finish]。
+    /// 收段的锁外一半：读连接上取本机身份与各设备公钥（查完就放），再不持任何锁地验签、解密、解压、重算链。
+    fn prepare_unlocked<'a>(
+        &self,
+        profile: &str,
+        segments: std::borrow::Cow<'a, [Vec<u8>]>,
+        key: Option<[u8; 32]>,
+    ) -> Result<PreparedIngest<'a>, String> {
+        let mut prepared = {
+            let r = self.reader()?;
+            let local = Local::load(&r, profile)?.ok_or("sync2 not initialised for this profile")?;
+            prepare_ingest(&r, profile, &local, segments, key)?
+        };
+        #[cfg(test)]
+        if let Some(hook) = self.ingest_prepare_hook.lock().map_err(|_| "hook poisoned")?.as_ref() {
+            hook();
+        }
+        prepared.verify();
+        Ok(prepared)
+    }
+
+    /// 开一个分批收段会话（覆盖掉上一轮没收尾的）。之后每批 [SrsCore::sync2_ingest_batch]（或拆开的
+    /// [SrsCore::sync2_ingest_prepare] + [SrsCore::sync2_ingest_commit]），最后 [SrsCore::sync2_ingest_finish]。
     ///
     /// 为什么要会话：本机身份的段（数据目录被复制、另一个安装在用同一身份）只用来比链找分叉点，分叉点是**全部**
     /// 这类段里第一处不同的最小值；换身份（[rotate]）又要在**全部**远端操作都投递之后做（重签发的因果上下文按
@@ -1110,18 +1414,80 @@ impl SrsCore {
         let w = self.writer()?;
         let local = Local::load(&w, profile)?.ok_or("sync2 not initialised for this profile")?;
         *self.ingest_session.lock().map_err(|_| "ingest session poisoned")? =
-            Some(IngestSession { profile: profile.to_owned(), device: local.device, fork_at: None });
+            Some(IngestSession { profile: profile.to_owned(), device: local.device, fork_at: None, prepared: None });
         Ok(json!({}))
     }
 
-    /// 会话里收一批：远端设备的操作照常投递并提交；本机身份的段只比链、把分叉点累积进会话，不换身份
-    /// （返回的 `fork` 恒为 false，换身份见 [SrsCore::sync2_ingest_finish]）。会话期间本机身份变了（别处换过身份）
-    /// 就作废会话并报错：之后的本机段已不能按同一身份比链。
+    /// 会话里收一批（[SrsCore::sync2_ingest_prepare] + 不切片的 [SrsCore::sync2_ingest_commit] 连着做）。
     pub fn sync2_ingest_batch(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
+        self.sync2_ingest_prepare(profile, segments, key)?;
+        self.sync2_ingest_commit(profile, now, CommitBudget::unlimited())
+    }
+
+    /// 会话里预处理一批：不持写锁（也不长持读锁）地解压、解密、验签、重算链，结果留在会话里等
+    /// [SrsCore::sync2_ingest_commit]（覆盖上一批没投递的）。手机上一批要一两秒，这期间本机作答照常写入。
+    /// 出错作废会话（与 [SrsCore::sync2_ingest_commit] 出错相同）。
+    pub fn sync2_ingest_prepare(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>) -> Result<Value, String> {
+        let device = self.session_device(profile)?;
+        let prepared = self.prepare_unlocked(profile, std::borrow::Cow::Owned(segments.to_vec()), key);
+        let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
+        // 预处理期间会话被换过（重开 / 删 profile）：这一批不属于现在的会话。
+        if !guard.as_ref().is_some_and(|s| s.profile == profile && s.device == device) {
+            return Err("sync2 ingest: no ingest session for this profile".to_owned());
+        }
+        match prepared {
+            Ok(p) => {
+                if let Some(s) = guard.as_mut() {
+                    s.prepared = Some(p);
+                }
+                Ok(json!({}))
+            }
+            Err(e) => {
+                *guard = None;
+                Err(e)
+            }
+        }
+    }
+
+    /// 当前收段会话的本机身份（没有 [profile] 的会话报错）。
+    fn session_device(&self, profile: &str) -> Result<Id, String> {
+        match self.ingest_session.lock().map_err(|_| "ingest session poisoned")?.as_ref() {
+            Some(s) if s.profile == profile => Ok(s.device),
+            _ => Err("sync2 ingest: no ingest session for this profile".to_owned()),
+        }
+    }
+
+    /// 会话里投递预处理好的那一批，最多做到 [budget] 用完（一片）：远端设备的操作照常投递并提交；本机身份的段
+    /// 只比链、把分叉点累积进会话，不换身份（返回的 `fork` 恒为 false，换身份见 [SrsCore::sync2_ingest_finish]）。
+    /// 写锁里只剩比链、因果投递、落库、重放；预处理之后某台设备的公钥变了，那一段按当时的公钥在锁内重验。
+    /// 返回 `more` 为真 = 这一片被截停，剩下的留在会话里，再调一次接着投（两次之间别的写入可以插进来）。
+    /// 会话期间本机身份变了（别处换过身份）就作废会话并报错：之后的本机段已不能按同一身份比链。
+    pub fn sync2_ingest_commit(&self, profile: &str, now: i64, budget: CommitBudget<'_>) -> Result<String, String> {
+        let out = self.ingest_commit_slice(profile, now, budget);
+        // 这一片收了：让出请求是冲着它来的（之后才到的最多让下一片早收）。
+        self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
+        out
+    }
+
+    /// 有别的写入在等写锁：正在投的那一片（[SrsCore::sync2_ingest_commit]）尽快收。不拿任何连接锁，从等锁的
+    /// 那一侧（Dart 的写入排队）直接调。
+    pub fn sync2_ingest_yield(&self) {
+        self.ingest_yield.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// 让出请求的标志（[CommitBudget::slice] 读它）。
+    pub(crate) fn ingest_yield_flag(&self) -> &std::sync::atomic::AtomicBool {
+        &self.ingest_yield
+    }
+
+    fn ingest_commit_slice(&self, profile: &str, now: i64, mut budget: CommitBudget<'_>) -> Result<String, String> {
         let w = self.writer()?;
         let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
-        let (device, prior) = match guard.as_ref() {
-            Some(s) if s.profile == profile => (s.device, s.fork_at),
+        let (device, prior, mut prepared) = match guard.as_mut() {
+            Some(s) if s.profile == profile => match s.prepared.take() {
+                Some(p) => (s.device, s.fork_at, p),
+                None => return Err("sync2 ingest: no prepared batch to commit".to_owned()),
+            },
             _ => return Err("sync2 ingest: no ingest session for this profile".to_owned()),
         };
         let out = in_savepoint(&w, |c| {
@@ -1132,14 +1498,18 @@ impl SrsCore {
             let mut t = Touched::default();
             let mut errors = Vec::new();
             let mut fork_at = prior;
-            let applied_n = ingest_segments(c, profile, &local, segments, key, now, &mut t, &mut errors, &mut fork_at)?;
-            let r = ingest_result(c, profile, t, applied_n, errors, false)?;
-            Ok((r, fork_at))
+            let (applied_n, done) =
+                deliver_prepared(c, profile, &local, &mut prepared, &mut budget, now, &mut t, &mut errors, &mut fork_at)?;
+            let r = ingest_result(c, profile, t, applied_n, errors, false, !done)?;
+            Ok((r, fork_at, done))
         });
         match out {
-            Ok((r, fork_at)) => {
+            Ok((r, fork_at, done)) => {
                 if let Some(s) = guard.as_mut() {
                     s.fork_at = fork_at;
+                    if !done {
+                        s.prepared = Some(prepared);
+                    }
                 }
                 Ok(r)
             }
@@ -1168,7 +1538,7 @@ impl SrsCore {
             if let Some(k) = fork_at {
                 rotate(c, profile, k, now, &mut t)?;
             }
-            ingest_result(c, profile, t, 0, Vec::new(), fork_at.is_some())
+            ingest_result(c, profile, t, 0, Vec::new(), fork_at.is_some(), false)
         })
     }
 
@@ -1192,7 +1562,7 @@ impl SrsCore {
 
     /// 算并记下状态摘要（写进 head，§4.5）。摘要是全库扫描（100 万次复习约数秒），所以：
     /// - 给了 [min_interval_ms]：版本向量没变、或离上次算不到这个间隔，就不算（返回 `{"skipped": true}`）；
-    /// - 在一条**专用的扫描连接**（[SrsCore::scan_connection]，小页缓存、算完即关）的一个读事务里算（WAL 快照：
+    /// - 在一条**专用的扫描连接**（[SrsCore::scan_session]，小页缓存、算完即关、不占读连接的锁）的一个读事务里算（WAL 快照：
     ///   摘要与版本向量出自同一时刻；不占写锁，复习照常写）。一次性顺序扫描用不上页缓存，放在读连接上会把它
     ///   的 64 MB 页缓存填满、并一直占到关库。
     pub fn sync2_digest_due(&self, profile: &str, now: i64, min_interval_ms: Option<i64>) -> Result<Value, String> {
@@ -1215,10 +1585,14 @@ impl SrsCore {
             }
         }
         let (d, vv) = {
-            let (_open, r) = self.scan_connection()?;
-            r.execute_batch("BEGIN").map_err(sql)?;
-            let out = (|| Ok::<_, String>((digest(&r, profile)?, applied_vv(&r, profile)?)))();
-            r.execute_batch("COMMIT").map_err(sql)?;
+            let scan = self.scan_session()?;
+            let out = scan.with(|r| {
+                r.execute_batch("BEGIN").map_err(sql)?;
+                let out = (|| Ok::<_, String>((digest(r, profile)?, applied_vv(r, profile)?)))();
+                r.execute_batch("COMMIT").map_err(sql)?;
+                out
+            });
+            scan.close();
             out?
         };
         let w = self.writer()?;
@@ -1558,13 +1932,13 @@ impl SrsCore {
                         if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
                             delivery.push(std::mem::take(&mut chunk));
                             chunk_raw = 0;
-                            delivery.drain(c, profile, now, &mut t)?;
+                            delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
                         }
                     }
                 }
             }
             delivery.push(chunk);
-            delivery.drain(c, profile, now, &mut t)?;
+            delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
             let applied = delivery.finish(c, profile)?;
             let replayed = replay_touched(c, &t)?;
             let pending: i64 = c

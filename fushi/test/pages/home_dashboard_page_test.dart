@@ -33,7 +33,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
-    show CoverProgressStrip, ShelfCoverFrame;
+    show CoverProgressStrip, ShelfCoverFrame, ShelfTitleOverflowTooltip;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart'
     show ShelfCardMeta, ShelfMaterialSurface;
 import 'package:fushi/src/utils/components/cover_badge.dart' show CoverBadge;
@@ -341,8 +341,29 @@ void main() {
   );
   const ValueKey<String> recentCardKey = ValueKey<String>('home-recent-card');
   Finder hero() => find.byType(HomeContinueHero);
-  Finder heroAction() =>
-      find.byKey(const ValueKey<String>('home-continue-hero-action'));
+  // 2026-10-28：主角卡不再有主按钮，整卡（FushiCard，key = home-continue-hero）
+  // 点按 = 继续，也是唯一的焦点停靠点。
+  Finder heroCard() => find.byKey(const ValueKey<String>('home-continue-hero'));
+
+  /// 主角卡信息列的标题（[ShelfTitleOverflowTooltip] 里的 Text；无图封面占位
+  /// 也会画一份标题，不能只按文字找）。
+  Finder heroTitle(String title) => find.descendant(
+    of: find.descendant(
+      of: hero(),
+      matching: find.byType(ShelfTitleOverflowTooltip),
+    ),
+    matching: find.text(title),
+  );
+
+  /// 主角卡内渲染出的眉标文字（`eyebrow ?? actionLabel`）。
+  Finder heroEyebrow(WidgetTester tester) {
+    final HomeContinueHero h = tester.widget<HomeContinueHero>(hero());
+    return find.descendant(
+      of: hero(),
+      matching: find.text(h.eyebrow ?? h.actionLabel),
+    );
+  }
+
   Finder rowCards() => find.descendant(
     of: find.byKey(const ValueKey<String>('home-continue-row')),
     matching: find.byType(HomeContinueCoverCard),
@@ -775,7 +796,7 @@ void main() {
   }
 
   for (final double width in <double>[320, 360, 420]) {
-    testWidgets('$width 宽手机：主角卡（长标题 + 按钮）与带标题的横滑行不溢出', (
+    testWidgets('$width 宽手机：主角卡（长标题 + 进度行）与带标题的横滑行不溢出', (
       WidgetTester tester,
     ) async {
       useSize(tester, Size(width, 800));
@@ -792,16 +813,36 @@ void main() {
       await pumpDashboard(tester);
 
       expect(tester.takeException(), isNull);
-      expect(heroAction(), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('home-continue-hero-progress')),
-        findsOneWidget,
+      expect(heroCard(), findsOneWidget);
+      final Finder progress = find.byKey(
+        const ValueKey<String>('home-continue-hero-progress'),
       );
+      expect(progress, findsOneWidget);
       expect(rowCards(), findsNWidgets(2));
-      final Rect heroRect = tester.getRect(hero());
+      final Rect heroRect = tester.getRect(heroCard());
       expect(heroRect.right, lessThanOrEqualTo(width + 0.5));
+      // 卡内文字与进度行都收在卡内（长标题不把信息列挤出卡外）。
       expect(
-        tester.getRect(heroAction()).right,
+        tester.getRect(progress).right,
+        lessThanOrEqualTo(heroRect.right + 0.5),
+      );
+      final Finder progressLabel = find.descendant(
+        of: hero(),
+        matching: find.text('30%'),
+      );
+      expect(progressLabel, findsOneWidget);
+      expect(
+        tester.getRect(progressLabel).right,
+        lessThanOrEqualTo(heroRect.right + 0.5),
+      );
+      final Finder title = heroTitle('很长很长很长很长很长很长很长很长很长很长的书名第一卷');
+      expect(title, findsOneWidget);
+      expect(
+        tester.getRect(title).right,
+        lessThanOrEqualTo(heroRect.right + 0.5),
+      );
+      expect(
+        tester.getRect(heroEyebrow(tester)).right,
         lessThanOrEqualTo(heroRect.right + 0.5),
       );
     });
@@ -841,14 +882,19 @@ void main() {
       '50%',
     ]);
     expect(items.first.progress, 0.3);
-    // 主角卡：标题、M3E 波浪进度条 + 进度文案、「继续阅读」主按钮。
+    // 主角卡：眉标、标题、M3E 波浪进度条 + 进度文案；卡上不放按钮，整卡点按 =
+    // 继续阅读。
+    expect(heroTitle('有封面的书'), findsOneWidget);
+    expect(heroCard(), findsOneWidget);
     expect(
-      tester
-          .widget<Text>(
-            find.byKey(const ValueKey<String>('home-continue-hero-title')),
-          )
-          .data,
-      '有封面的书',
+      find.descendant(
+        of: hero(),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is ButtonStyleButton || w is IconButton,
+        ),
+      ),
+      findsNothing,
+      reason: '主角卡上不放任何按钮（2026-10-28）',
     );
     expect(
       find.byKey(const ValueKey<String>('home-continue-hero-progress')),
@@ -859,12 +905,10 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(
-        of: heroAction(),
-        matching: find.text(t.book_continue_reading),
-      ),
-      findsOneWidget,
+      tester.widget<HomeContinueHero>(hero()).actionLabel,
+      t.book_continue_reading,
     );
+    expect(heroEyebrow(tester), findsOneWidget);
     // 横滑卡：封面下方是库页同款文字块（标题 + 副行进度文案 + 进度条），
     // 封面上不压任何角标、不贴进度条。
     final Finder rowMeta = find.descendant(
@@ -1324,8 +1368,10 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   }
 
+  /// 主角卡的封面槽：FushiContinueHero 把封面按槽比例装进 SizedBox 再套
+  /// [ShelfCoverFrame]（紧约束，框尺寸 = 槽尺寸）；取卡内第一个（最外层）框。
   Size heroCoverSize(WidgetTester tester) => tester.getSize(
-    find.byKey(const ValueKey<String>('home-continue-hero-cover')),
+    find.descendant(of: hero(), matching: find.byType(ShelfCoverFrame)).first,
   );
 
   testWidgets('主角卡：只有横版截帧 → 16:9 横封面槽（反馈 5CTpiVJ7-v）', (
@@ -1613,14 +1659,10 @@ void main() {
     expect(c.title, '进击的巨人');
     expect(c.progressLabel, t.home_continue_episode(n: 1));
     expect(c.subtitle, '${t.home_filter_watch} · S01E01');
-    expect(
-      find.descendant(
-        of: heroAction(),
-        matching: find.text(t.video_continue_watching),
-      ),
-      findsOneWidget,
-    );
-    await tester.tap(heroAction());
+    // 卡上不放按钮：「继续观看」是动作语义（眉标兜底文案），整卡点按 = 续播。
+    expect(c.actionLabel, t.video_continue_watching);
+    expect(heroEyebrow(tester), findsOneWidget);
+    await tester.tap(heroCard());
     await tester.pump();
     expect(opened, <(String, int?)>[('e1', cid)]);
     expect(homeShellTabNotifier.value, tabBefore);
@@ -1697,7 +1739,7 @@ void main() {
       expect(h.progressLabel, '40%');
       expect(h.actionLabel, t.collection_open);
 
-      await tester.tap(heroAction());
+      await tester.tap(heroCard());
       await tester.pump();
       expect(opened, <String>['abs-book']);
 
@@ -1793,7 +1835,7 @@ void main() {
         <String>['服务器电影'],
       );
       // 从服务器条目回来 = 进度确实变了：强制重取。
-      await tester.tap(heroAction());
+      await tester.tap(heroCard());
       await tester.pump();
       await pumpDashboard(tester);
       expect(opened, <String>['jf-movie']);
@@ -1997,10 +2039,10 @@ void main() {
     final HomeContinueHero c = onlyHero(tester);
     expect(c.title, '进击的巨人');
     expect(c.progressLabel, t.home_continue_episode(n: 2));
-    // 主角卡整卡可点（不只是主按钮）：点标题同样打开 Next-Up 那一集。
-    await tester.tap(
-      find.byKey(const ValueKey<String>('home-continue-hero-title')),
-    );
+    // 主角卡整卡可点：点卡内标题文字同样打开 Next-Up 那一集。
+    final Finder title = heroTitle('进击的巨人');
+    expect(title, findsOneWidget);
+    await tester.tap(title);
     await tester.pump();
     expect(opened, <(String, int?)>[('e2', cid)]);
   });
@@ -2363,9 +2405,7 @@ void main() {
     );
   });
 
-  testWidgets('焦点可遍历：Tab 能落到主角卡的主按钮与横滑行封面卡（主角卡本身不占停靠点）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('焦点可遍历：Tab 能落到主角卡（整卡是唯一停靠点）与横滑行封面卡', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
     await db.upsertVideoBook(
@@ -2393,20 +2433,23 @@ void main() {
       return hit;
     }
 
-    bool reachedAction = false;
+    bool reachedHero = false;
     bool reachedRowCard = false;
-    bool focusedHeroBody = false;
-    for (int i = 0; i < 60 && !(reachedAction && reachedRowCard); i++) {
+    // 一轮遍历里落在主角卡内的焦点节点：卡上没有按钮，整卡是唯一停靠点。
+    final Set<FocusNode> heroStops = <FocusNode>{};
+    // 不提前退出：走满一整轮，主角卡内若有第二个停靠点也会被记到。
+    for (int i = 0; i < 60; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
-      final bool inAction = focusedIn(heroAction());
-      reachedAction |= inAction;
+      if (focusedIn(heroCard())) {
+        reachedHero = true;
+        heroStops.add(FocusManager.instance.primaryFocus!);
+      }
       reachedRowCard |= focusedIn(rowCards());
-      if (!inAction && focusedIn(hero())) focusedHeroBody = true;
     }
-    expect(reachedAction, isTrue, reason: '主角卡主按钮必须是 Tab 可达的焦点停靠点');
+    expect(reachedHero, isTrue, reason: '主角卡整卡必须是 Tab 可达的焦点停靠点');
     expect(reachedRowCard, isTrue, reason: '横滑行封面卡必须是 Tab 可达的焦点停靠点');
-    expect(focusedHeroBody, isFalse, reason: '主角卡整卡与主按钮是同一动作，不能占两个 Tab 停靠点');
+    expect(heroStops, hasLength(1), reason: '主角卡只占一个 Tab 停靠点（整卡 = 继续）');
   });
 
   // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────

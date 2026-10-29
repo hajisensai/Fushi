@@ -217,6 +217,9 @@ extension _VideoWebSource on _VideoFushiPageState {
       _videoReadyToShow = true;
     });
     _syncVolumeDisplay(controller.volume);
+    // 手机遥控：与本地片源同一个绑定（[_registerVideoRemote]），字幕轨 / 在线字幕 / 制卡
+    // 按网页档分流。
+    _registerVideoRemote(controller);
     // 章节来自站点（Netflix 片头片尾标记，[setWebChapters]）：按钮随有无章节出现 / 消失。
     _attachControllerChapterListener(controller);
     _adoptHandedOverFullscreenForWeb();
@@ -1114,7 +1117,7 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   /// 网页档（登录 / 选人 / 详情 / 选集）上方的浏览器工具条：后退（一级一级往外退，与
   /// 返回键同一条 [_handleBackOrExit]）/ 前进 / 刷新（加载中是停止）/ 地址栏（网址或搜索词）
-  /// / 页面里有视频时的档位切换（[_buildWebModeToggle]）/ 关闭本页（浏览器交接过来的没有）。
+  /// / 档位切换（[_buildWebModeToggle]，常驻）/ 关闭本页（浏览器交接过来的没有）。
   Widget _buildWebPageBar() {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
@@ -1172,10 +1175,11 @@ extension _VideoWebSource on _VideoFushiPageState {
                 WebVideoLoginImportButton(controller: import),
                 const SizedBox(width: 4),
               ],
-              if (_webPageHasVideo) ...<Widget>[
-                _buildWebModeToggle(),
-                const SizedBox(width: 4),
-              ],
+              // 档位切换常驻（「播放器」段在页面没视频时不可选）：用户从站点格进来时
+              // 落在选剧 / 详情页，切换钮要是藏着，他根本不知道这是 Fushi 播放器页的
+              // 网页档（2026-10-29 用户：「没有上端的切换播放器 / 普通网页的东西」）。
+              _buildWebModeToggle(),
+              const SizedBox(width: 4),
               // 浏览器交接过来的不给「关闭」：本页网页档只是播放页的一档，返回就回浏览器
               // （[VideoFushiPage.webBackToBrowser]），再给个关闭钮像是另开了一个页面。
               if (!widget.webBackToBrowser)

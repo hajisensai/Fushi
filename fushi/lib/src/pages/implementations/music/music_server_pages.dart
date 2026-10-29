@@ -778,6 +778,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                             children: <Widget>[
                               FushiPressScale(
                                 child: FushiFilledButton.icon(
+                                  size: FushiButtonSize.m,
                                   key: const ValueKey<String>(
                                     'music_server_album_play',
                                   ),
@@ -789,7 +790,8 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                                 ),
                               ),
                               FushiPressScale(
-                                child: FushiOutlinedButton.icon(
+                                child: FushiFilledButton.tonalIcon(
+                                  size: FushiButtonSize.m,
                                   onPressed: tracks.isEmpty
                                       ? null
                                       : () => _play(tracks, shuffle: true),

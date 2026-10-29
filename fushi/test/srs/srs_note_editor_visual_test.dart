@@ -217,15 +217,15 @@ void main() {
         SrsFieldKind.structured,
       );
       expect(srsFieldKindOf('Sentence', _kSentence), SrsFieldKind.rich);
-      expect(srsFieldKindOf('Expression', ''), SrsFieldKind.rich);
+      expect(srsFieldKindOf('Term', ''), SrsFieldKind.rich);
       expect(
         srsFieldKindOf('SentenceFurigana', _kFurigana),
         SrsFieldKind.furigana,
       );
       expect(srsFieldKindOf('SentenceFurigana', ''), SrsFieldKind.furigana);
       expect(srsFieldKindOf('Back', '毎日[まいにち]'), SrsFieldKind.furigana);
-      expect(srsFieldKindOf('Picture', _kPicture), SrsFieldKind.image);
-      expect(srsFieldKindOf('Picture', ''), SrsFieldKind.image);
+      expect(srsFieldKindOf('Media', _kPicture), SrsFieldKind.image);
+      expect(srsFieldKindOf('Media', ''), SrsFieldKind.image);
       expect(
         srsFieldKindOf('Front', '<img src="a.png"><br>'),
         SrsFieldKind.image,
@@ -361,13 +361,13 @@ void main() {
     ) async {
       final _Env env = await _open(tester);
       final Map<String, String> original = <String, String>{
-        'Expression': '通う',
+        'Term': '通う',
         'MainDefinition': _kGlossary,
         'Glossary': _kGlossary,
         'Sentence': _kSentence,
-        'ExpressionFurigana': _kFurigana,
-        'Picture': _kPicture,
-        'ExpressionAudio': '[sound:a.mp3]',
+        'TermFurigana': _kFurigana,
+        'Media': _kPicture,
+        'TermAudio': '[sound:a.mp3]',
         'IsSentenceCard': 'x',
       };
       final String note = await _fushiNote(tester, env.store, original);
@@ -377,9 +377,9 @@ void main() {
       expect(_key('srs-field-preview-MainDefinition'), findsOneWidget);
       expect(_key('srs-field-input-MainDefinition'), findsNothing);
       expect(_key('srs-field-input-Sentence'), findsOneWidget);
-      expect(_key('srs-furigana-ExpressionFurigana-0'), findsOneWidget);
-      expect(_key('srs-image-Picture-0'), findsOneWidget);
-      expect(_key('srs-sound-ExpressionAudio-0'), findsOneWidget);
+      expect(_key('srs-furigana-TermFurigana-0'), findsOneWidget);
+      expect(_key('srs-image-Media-0'), findsOneWidget);
+      expect(_key('srs-sound-TermAudio-0'), findsOneWidget);
       // Fushi 卡片按卡面区块分组。
       expect(
         _key('srs-note-group-${t.srs_note_block_sentence}'),
@@ -402,7 +402,7 @@ void main() {
 
       await tester.enterText(
         find.descendant(
-          of: _key('srs-field-input-Expression'),
+          of: _key('srs-field-input-Term'),
           matching: find.byType(EditableText),
         ),
         '通う！',
@@ -414,9 +414,9 @@ void main() {
         tester,
         () => env.store.note(note),
       ))!;
-      expect(saved.field(_fid('Expression')), '通う！');
+      expect(saved.field(_fid('Term')), '通う！');
       for (final MapEntry<String, String> e in original.entries) {
-        if (e.key == 'Expression') continue;
+        if (e.key == 'Term') continue;
         expect(saved.field(_fid(e.key)), e.value, reason: e.key);
       }
       await _unmount(tester);
@@ -428,7 +428,7 @@ void main() {
     (WidgetTester tester) async {
       final _Env env = await _open(tester);
       final String note = await _fushiNote(tester, env.store, <String, String>{
-        'Expression': '通う',
+        'Term': '通う',
         'Sentence': '毎日図書館に通っています',
       });
       // 单栏宽度：只测字段本身（两栏分区的滚动条装配不在本测试范围）。
@@ -481,8 +481,8 @@ void main() {
   ) async {
     final _Env env = await _open(tester);
     final String note = await _fushiNote(tester, env.store, <String, String>{
-      'Expression': '通う',
-      'Picture': _kPicture,
+      'Term': '通う',
+      'Media': _kPicture,
     });
     final Uint8List bytes = Uint8List.fromList(_kPng);
     await _pumpEditor(
@@ -500,18 +500,18 @@ void main() {
     // 替换旧的 base64 图。
     await tester.tap(
       find.descendant(
-        of: _key('srs-image-Picture-0'),
+        of: _key('srs-image-Media-0'),
         matching: find.byTooltip(t.srs_note_image_replace),
       ),
     );
-    await _settleMediaAdd(tester, 'srs-image-paste-Picture');
+    await _settleMediaAdd(tester, 'srs-image-paste-Media');
     // 再粘贴一张（同内容去重，同一个文件名）。
-    await tester.tap(_key('srs-image-paste-Picture'));
-    await _settleMediaAdd(tester, 'srs-image-paste-Picture');
-    expect(_key('srs-image-Picture-1'), findsOneWidget);
+    await tester.tap(_key('srs-image-paste-Media'));
+    await _settleMediaAdd(tester, 'srs-image-paste-Media');
+    expect(_key('srs-image-Media-1'), findsOneWidget);
     await _save(tester);
 
-    final String value = await _field(tester, env.store, note, 'Picture');
+    final String value = await _field(tester, env.store, note, 'Media');
     expect(value, '<img src="$stored"><img src="$stored">');
     expect(value, isNot(contains('base64')));
     expect(stored, endsWith('.png'));
@@ -531,8 +531,8 @@ void main() {
       () => File('${env.media.path}/b.mp3').writeAsBytes(<int>[1, 2, 3]),
     );
     final String note = await _fushiNote(tester, env.store, <String, String>{
-      'Expression': '通う',
-      'ExpressionAudio': _kAudio,
+      'Term': '通う',
+      'TermAudio': _kAudio,
     });
     final Uint8List voice = Uint8List.fromList(<int>[9, 9, 9]);
     await _pumpEditor(
@@ -548,25 +548,25 @@ void main() {
     expect(find.text('a.mp3'), findsOneWidget);
     expect(find.text('b.mp3'), findsOneWidget);
 
-    await tester.tap(_key('srs-sound-play-ExpressionAudio-1'));
+    await tester.tap(_key('srs-sound-play-TermAudio-1'));
     // 播放前要先查文件在不在（真 IO），等播放器真被调用再断言。
     await _settleUntil(tester, () => env.played.isNotEmpty, '播放 b.mp3');
     expect(env.played.single, endsWith('b.mp3'));
 
     await tester.tap(
       find.descendant(
-        of: _key('srs-sound-ExpressionAudio-0'),
+        of: _key('srs-sound-TermAudio-0'),
         matching: find.byTooltip(t.srs_note_audio_remove),
       ),
     );
     await _settle(tester, rounds: 4);
     expect(find.text('a.mp3'), findsNothing);
-    await tester.tap(_key('srs-sound-pick-ExpressionAudio'));
-    await _settleMediaAdd(tester, 'srs-sound-pick-ExpressionAudio');
+    await tester.tap(_key('srs-sound-pick-TermAudio'));
+    await _settleMediaAdd(tester, 'srs-sound-pick-TermAudio');
     await _save(tester);
     final String voiceName = SrsMediaStore.contentName('voice.MP3', voice);
     expect(
-      await _field(tester, env.store, note, 'ExpressionAudio'),
+      await _field(tester, env.store, note, 'TermAudio'),
       '[sound:b.mp3][sound:$voiceName]',
     );
     await _unmount(tester);
@@ -577,7 +577,7 @@ void main() {
   ) async {
     final _Env env = await _open(tester);
     final String note = await _fushiNote(tester, env.store, <String, String>{
-      'Expression': '通う',
+      'Term': '通う',
       'Sentence': _kSentence,
     });
     await _pumpEditor(tester, env, note);
@@ -620,13 +620,13 @@ void main() {
   testWidgets('注音：点词弹出读音框，改完写回 Anki 写法', (WidgetTester tester) async {
     final _Env env = await _open(tester);
     final String note = await _fushiNote(tester, env.store, <String, String>{
-      'Expression': '通う',
-      'ExpressionFurigana': _kFurigana,
+      'Term': '通う',
+      'TermFurigana': _kFurigana,
     });
     await _pumpEditor(tester, env, note);
     expect(find.text('としょかん'), findsOneWidget, reason: '读音画在基字上方');
 
-    await tester.tap(_key('srs-furigana-ExpressionFurigana-1'));
+    await tester.tap(_key('srs-furigana-TermFurigana-1'));
     await _settle(tester, rounds: 6);
     await tester.enterText(find.byType(EditableText).last, 'としょ');
     await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -634,7 +634,7 @@ void main() {
     expect(find.text('としょ'), findsOneWidget);
     await _save(tester);
     expect(
-      await _field(tester, env.store, note, 'ExpressionFurigana'),
+      await _field(tester, env.store, note, 'TermFurigana'),
       '毎日[まいにち] 図書館[としょ]に<b>通[かよ]って</b>います',
     );
     await _unmount(tester);
@@ -643,7 +643,7 @@ void main() {
   testWidgets('卡型开关字段：开关切换写 x / 清空', (WidgetTester tester) async {
     final _Env env = await _open(tester);
     final String note = await _fushiNote(tester, env.store, <String, String>{
-      'Expression': '通う',
+      'Term': '通う',
     });
     await _pumpEditor(tester, env, note);
     await tester.tap(_key('srs-note-more-fields'));

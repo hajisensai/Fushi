@@ -36,6 +36,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
+import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
+import 'package:fushi/src/media/panorama/panorama_library.dart'
+    show PanoramaWork, PanoramaWorkKind;
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
@@ -1430,7 +1433,8 @@ class _HomeDashboardPageState
               keyOf: sanitizeTtuFilename,
             ),
             remoteVideos: filterOutLocallyDeletedRemoteVideos(
-              remote: remoteVideos,
+              // 继续观看只给对端真能经 host 播放的条目（BUG-3875）。
+              remote: peerPlayableRemoteVideos(remoteVideos),
               deletedKeys: deletedVideoKeys,
             ),
           );
@@ -2292,7 +2296,63 @@ class _HomeDashboardPageState
       ref.watch(homeAiAgentPanelVisibleProvider)
           ? const HomeAiAgentPanel(key: ValueKey<String>('home-ai-agent-card'))
           : null,
+    HomeDashboardPanel.panorama =>
+      ref.watch(homePanoramaPanelVisibleProvider)
+          ? HomePanoramaPanel(
+              key: const ValueKey<String>('home-panorama-card'),
+              onOpen: _openPanoramaWork,
+            )
+          : null,
   };
+
+  /// 全景里选中的作品：书 / 漫画走与「继续」同一条 openMedia（等阅读器关闭才返回，分享
+  /// 动画页据此在读完后再收起），视频直接续播（播放列表从合集续播），游戏 / 音乐切到对应
+  /// 库页（游戏启动要走库页的确认流程，见 BUG-1111）。
+  Future<void> _openPanoramaWork(PanoramaWork work) async {
+    final AppModel appModel = ref.read(appProvider);
+    switch (work.kind) {
+      case PanoramaWorkKind.book:
+      case PanoramaWorkKind.manga:
+        final List<MediaItem> books =
+            ref
+                .read(fushiBooksProvider(JapaneseLanguage.instance))
+                .valueOrNull ??
+            const <MediaItem>[];
+        MediaItem? item;
+        for (final MediaItem b in books) {
+          final String key =
+              ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
+              b.mediaIdentifier;
+          if (key == work.key) {
+            item = b;
+            break;
+          }
+        }
+        if (item == null) {
+          _goToTab(
+            work.kind == PanoramaWorkKind.manga ? HomeTab.manga : HomeTab.books,
+          );
+          return;
+        }
+        final MediaSource source = item.getMediaSource(appModel: appModel);
+        await appModel.openMedia(ref: ref, mediaSource: source, item: item);
+      case PanoramaWorkKind.video:
+        if (work.playlistCollectionId != null) {
+          await openLocalVideoBook(
+            context: context,
+            repo: widget.videoRepo,
+            bookUid: work.key,
+            playlistCollectionId: work.playlistCollectionId,
+          );
+        } else {
+          await _openLocalVideo(work.key);
+        }
+      case PanoramaWorkKind.game:
+        _goToTab(HomeTab.games);
+      case PanoramaWorkKind.music:
+        _goToTab(HomeTab.music);
+    }
+  }
 
   /// 复习条「开始复习」：直接进该牌组的复习页；回来后递增刷新信号重读计数。
   void _startSrsReview(SrsDeckSummary deck) {

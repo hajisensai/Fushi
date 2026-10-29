@@ -15,6 +15,49 @@ const String kProfile = '01928c3e-0000-7000-8000-000000000001';
 /// 内置「Fushi 卡片」：确定性播种、与 Lapis 互不相同的 ID、读音键、内置字段不可删，
 /// 以及 Lapis → Fushi 卡片 一键迁移（按字段键直映、复习历史随迁、改过名的字段照样对上）。
 void main() {
+  test('renamed fields keep the field ids derived from their legacy names', () {
+    final String nt = srsFushiCardNoteTypeId(kProfile);
+    final SrsBuiltinNoteType fushi = srsBuiltinFushiCard(kProfile);
+    for (final MapEntry<String, String> e
+        in FushiCardFields.legacyNames.entries) {
+      // 旧实现：fieldId = field(noteTypeId, builtinFieldAnkiNum('fushi_card', 旧名))。
+      final String legacyId = SrsIds.field(
+        nt,
+        SrsIds.builtinFieldAnkiNum(kSrsBuiltinFushiCardKey, e.value),
+      );
+      final SrsFieldDef def = fushi.fields.firstWhere(
+        (SrsFieldDef f) => f.name == e.key,
+      );
+      expect(def.id, legacyId, reason: '${e.value} -> ${e.key}');
+      expect(
+        def.ankiNum,
+        SrsIds.builtinFieldAnkiNum(kSrsBuiltinFushiCardKey, e.value),
+      );
+      // 新旧名都能算出同一个 fieldId。
+      expect(srsFushiCardFieldId(kProfile, e.key), legacyId);
+      expect(srsFushiCardFieldId(kProfile, e.value), legacyId);
+    }
+    expect(
+      fushi.fields.map((SrsFieldDef f) => f.name),
+      FushiCardNoteType.fields,
+    );
+    // 词条 / 词频序字段仍是原来那两个 ID。
+    expect(fushi.termFieldId, srsFushiCardFieldId(kProfile, 'Expression'));
+    expect(fushi.freqFieldId, srsFushiCardFieldId(kProfile, 'FreqSort'));
+  });
+
+  test('Lapis built-in field ids are untouched by the Fushi renames', () {
+    final SrsBuiltinNoteType lapis = srsBuiltinLapis(kProfile);
+    expect(lapis.fields.map((SrsFieldDef f) => f.name), LapisNoteType.fields);
+    expect(
+      lapis.fields.first.id,
+      SrsIds.field(
+        srsLapisNoteTypeId(kProfile),
+        SrsIds.builtinFieldAnkiNum(kSrsBuiltinLapisKey, 'Expression'),
+      ),
+    );
+  });
+
   int t = DateTime.utc(2026, 10, 16, 12).millisecondsSinceEpoch;
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
@@ -62,6 +105,42 @@ void main() {
       );
       expect(a.isBuiltinField(fushi, fushi.fields.first.id), isTrue);
       expect(a.canDeleteNoteType(fushi), isFalse);
+    },
+  );
+
+  test(
+    'field-definition snapshots still carrying a legacy default name show the new name',
+    () async {
+      final SrsDbStore a = await device('a');
+      final String nt = a.fushiCardNoteTypeId;
+      final String term = srsFushiCardFieldId(kProfile, FushiCardFields.term);
+      final String media = srsFushiCardFieldId(kProfile, FushiCardFields.media);
+      final String source = srsFushiCardFieldId(
+        kProfile,
+        FushiCardFields.source,
+      );
+      // 旧版本写下的整份快照：名字是旧默认名（调序 / 改说明前的写法）。
+      await a.renameField(nt, term, 'Expression');
+      await a.renameField(nt, media, 'Picture');
+      // 用户真改过的名字。
+      await a.renameField(nt, source, '出典');
+      final SrsNoteTypeView before = (await a.noteType(nt))!;
+      await a.reorderFields(nt, <String>[
+        media,
+        for (final SrsFieldDef f in before.fields)
+          if (f.id != media) f.id,
+      ]);
+      final SrsNoteTypeView v = (await a.noteType(nt))!;
+      expect(v.fields.first.id, media, reason: '调过的顺序保留');
+      expect(v.fields.first.name, FushiCardFields.media);
+      expect(v.fieldById(term)!.name, FushiCardFields.term);
+      expect(v.fieldById(source)!.name, '出典');
+      // 只在读时认：再物化一次结果不变。
+      final SrsNoteTypeView again = (await a.noteType(nt))!;
+      expect(
+        again.fields.map((SrsFieldDef f) => f.name),
+        v.fields.map((SrsFieldDef f) => f.name),
+      );
     },
   );
 
@@ -198,7 +277,7 @@ void main() {
         a.fushiCardNoteTypeId,
         (String n) => srsFushiCardFieldId(kProfile, n),
       );
-      expect(fushi.fields['Expression'], '通う');
+      expect(fushi.fields['Term'], '通う');
       expect(fushi.fushiCardDefinitions, contains('fc-defs-only'));
       expect(fushi.fushiCardDefinitions, contains('to commute'));
       expect(fushi.fushiCardDefinitions, isNot(contains('通う')));

@@ -3693,11 +3693,14 @@ class PreferencesRepository extends ChangeNotifier
 
   // galgame 场景卡封面模式，与视频**分开存**：视频的动图能拍出口型和动作，galgame
   // 画面在一句台词内基本静止，动图多半只是把同一帧存二十遍。两者的取舍不同，共用一
-  // 个开关会逼用户为一边将就另一边。默认同视频项（videoClip）；galgame 没有「字幕
-  // 区间」，故只在 gif / currentFrame / videoClip 三档间取值，其余值按
-  // [VideoMiningImageMode.isStill] 归入静态截图。
-  VideoMiningImageMode get galMiningImageMode =>
-      _miningImageMode('gal_mining_image_mode');
+  // 个开关会逼用户为一边将就另一边。2026-10-29 用户拍板按来源给默认：视频 = videoClip，
+  // galgame = gif（动图）；没显式设过的 galgame 取 gif。galgame 没有「字幕区间」，故只在
+  // gif / currentFrame / videoClip 三档间取值，其余值按 [VideoMiningImageMode.isStill]
+  // 归入静态截图。
+  VideoMiningImageMode get galMiningImageMode => _miningImageMode(
+    'gal_mining_image_mode',
+    fallback: VideoMiningImageMode.gif,
+  );
 
   /// 封面模式迁移标记（wireName）。键名是历史名（冻结），现在只当「迁到片段默认」的
   /// 一次性标记用。
@@ -3715,9 +3718,13 @@ class PreferencesRepository extends ChangeNotifier
     ('gal_mining_image_mode', 'gal_mining_clip_format'),
   ];
 
-  VideoMiningImageMode _miningImageMode(String key) =>
-      VideoMiningImageMode.fromWireName(
-          getPref(key, defaultValue: null) as String?);
+  VideoMiningImageMode _miningImageMode(
+    String key, {
+    VideoMiningImageMode fallback = VideoMiningImageMode.videoClip,
+  }) => VideoMiningImageMode.fromWireName(
+    getPref(key, defaultValue: null) as String?,
+    fallback: fallback,
+  );
 
   /// 启动时（`AppModel.initialise()`）跑一次封面模式迁移；标记已是 videoClip 直接返回。
   ///
@@ -3725,7 +3732,7 @@ class PreferencesRepository extends ChangeNotifier
   /// 格式从没设过就把**改模式前**推导出的平台默认一起钉死——否则显式 video_clip 会被
   /// [_miningClipFormat] 当成 MP4 时代的老用户推成 MP4。其它显式值（当前帧 / 字幕开头帧 /
   /// 片段）一律不碰。标记缺失（全新安装，或从 09-28 之前的版本直接升上来）只写标记：没设过
-  /// 的模式键本就按 videoClip 取。与标记同一次 [setPrefs] 落盘，此后用户再选 gif 不会被改回。
+  /// 的模式键按各自来源的默认取（视频 videoClip，galgame gif，见 [galMiningImageMode]）。与标记同一次 [setPrefs] 落盘，此后用户再选 gif 不会被改回。
   Future<void> settleMiningImageModeInstallDefault() {
     final Object? marker =
         getPref(miningImageModeInstallDefaultKey, defaultValue: null);

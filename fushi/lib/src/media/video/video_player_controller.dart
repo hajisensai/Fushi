@@ -268,6 +268,18 @@ int chapterIndexForPositionIn(List<VideoChapter> chapters, int posMs) {
 ///   暴露给单测——单测只调 [setCues] + [debugUpdateCueForPosition]，不触发 Player。
 class VideoPlayerController extends ChangeNotifier
     implements VideoPlaybackSource {
+  VideoPlayerController() {
+    _live.add(this);
+  }
+
+  /// 本进程里还没 [dispose] 的控制器（本地 libmpv 页与网页播放器页都算）。
+  static final Set<VideoPlayerController> _live = <VideoPlayerController>{};
+
+  /// 此刻有没有任何一个视频在播。后台空闲自动制卡据此不打断用户（人在看视频时
+  /// 键鼠长时间不动是常态，系统空闲判据挡不住）。
+  static bool get anyPlaying =>
+      _live.any((VideoPlayerController c) => c.isPlaying);
+
   Player? _player;
   VideoController? _videoController;
 
@@ -6494,6 +6506,7 @@ class VideoPlayerController extends ChangeNotifier
 
   @override
   void dispose() {
+    _live.remove(this);
     _loadToken++;
     _endPlayRange(RangePlaybackEnd.interrupted);
     _loopCurrentCue.dispose();

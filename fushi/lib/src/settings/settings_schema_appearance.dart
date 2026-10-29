@@ -560,6 +560,12 @@ SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
       FushiIcons.aiAssistant,
       ModuleId.ai,
     ),
+    HomeDashboardPanel.panorama => (
+      t.home_panel_panorama_title,
+      t.home_panel_panorama_hint,
+      FushiIcons.blur,
+      ModuleId.home,
+    ),
   };
   return SettingsSegmentedItem<HomeDashboardPanelMode>(
     id: 'appearance.home_panel.${panel.id}',

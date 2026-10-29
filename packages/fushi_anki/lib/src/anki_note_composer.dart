@@ -7,6 +7,7 @@ import 'package:meta/meta.dart';
 import 'anki_compact_glossaries.dart';
 import 'anki_glossary_css.dart';
 import 'anki_models.dart';
+import 'fushi_card_fields.dart';
 import 'lapis_note_type.dart';
 import 'note_type_preset.dart';
 
@@ -349,9 +350,14 @@ mixin AnkiNoteComposer {
     }
     // 现有映射一个字段都不属于选中的笔记类型（空表，或留着上一个笔记类型的字段名）：
     // 原样沿用 = 每张卡都是空卡。按字段名补默认映射。
+    // Fushi 卡片 9 个字段改过名：映射偏好里还是旧名（或 Anki 里的笔记类型还是旧名）时，
+    // 先把键对到笔记类型实际的字段名上，用户配置不丢。
     return NoteTypePresets.applyDefaults(
       selectedNoteType,
-      current.fieldMappings,
+      FushiCardFields.alignToFields(
+        current.fieldMappings,
+        selectedNoteType.fields,
+      ),
     );
   }
 
@@ -697,8 +703,13 @@ mixin AnkiNoteComposer {
   ) {
     if (noteType.fields.isEmpty) return rendered;
     final Set<String> known = noteType.fields.toSet();
+    // 渲染键用新名而 Anki 里的笔记类型还是旧名（或反过来）时，按别名对上再过滤。
+    final Map<String, String> aligned = FushiCardFields.alignToFields(
+      rendered,
+      noteType.fields,
+    );
     return <String, String>{
-      for (final MapEntry<String, String> e in rendered.entries)
+      for (final MapEntry<String, String> e in aligned.entries)
         if (known.contains(e.key)) e.key: e.value,
     };
   }

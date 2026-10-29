@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 3.0.1+1362
+version: 3.0.1+1363
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.47.0"
@@ -254,10 +254,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  shaders:
-    # 歌词页 Pixi 流体背景（music_lyrics_backdrop.dart）。
-    - shaders/music_backdrop_pixi.frag
-
   assets:
     # TMDB 官方 logo（合约署名素材）。逐文件登记而非整目录，是为了只打包实际渲染
     # 的 PNG，把同目录的矢量原图 blue_square_1.svg（provenance 真相源）与 README.md
@@ -288,6 +284,13 @@ flutter:
     - assets/popup/
     - assets/transforms/
     - assets/transforms/i18n/
+
+  # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
+  # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。
+  # music_backdrop_pixi：歌词页 Pixi 流体背景（music_lyrics_backdrop.dart）。
+  shaders:
+    - shaders/panorama_backdrop.frag
+    - shaders/music_backdrop_pixi.frag
 
   # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
   # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在

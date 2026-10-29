@@ -24,7 +24,7 @@ import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
-import 'dart:convert' show jsonDecode, jsonEncode, utf8;
+import 'dart:convert' show jsonEncode, utf8;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -165,6 +165,7 @@ import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
@@ -371,8 +372,6 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
     show writeDictionaryMediaCache;
-import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
-    show safeDictionaryMediaPath;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
@@ -597,8 +596,8 @@ int resolveMiningCueIndexForPosition({
 /// 音频/封面整体偏移 `delayMs`（裁的是字幕原始窗而非用户实际听到/看到的播放窗）。
 ///
 /// 与 [VideoPlayerController.cueSeekTargetMs]（句子 seek 的逆变换）同一方向、同一真相源，
-/// 只是这里作用于制卡裁剪区间。下界 clamp 到 0（播放时间不为负）。
-@visibleForTesting
+/// 只是这里作用于制卡裁剪区间。下界 clamp 到 0（播放时间不为负）。手机遥控的网页播放器页
+/// 也按它换算。
 int miningClipTimeMs(int subtitleTimeMs, int delayMs) =>
     (subtitleTimeMs + delayMs).clamp(0, 1 << 30);
 
@@ -3105,7 +3104,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
   VideoRemotePlaybackBinding? _videoRemoteBinding;
-  final _VideoRemoteCueCache _videoRemoteCueCache = _VideoRemoteCueCache();
+  final VideoRemoteCueCache _videoRemoteCueCache = VideoRemoteCueCache();
 
   /// 手机遥控「在线搜索字幕」的执行体（候选按 id 记在里面，随本页释放）。
   late final RemoteOnlineSubtitleSearch _remoteOnlineSubtitles =

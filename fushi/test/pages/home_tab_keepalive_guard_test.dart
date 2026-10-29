@@ -139,9 +139,17 @@ void main() {
             .hasMatch(videoSrc),
         isTrue,
         reason: 'BUG-995：_buildOverviewSection 必须接收 remoteVideos 计入总数/继续观看');
-    // 远端续播卡必须存在（TODO-2486 起 hero 变体换形为「继续观看」行的远端卡，
-    // 远端续播仍走 _openRemote——只看远端视频时也有续播入口）。
-    expect(videoSrc.contains('_buildContinueRemoteCard'), isTrue,
-        reason: 'BUG-995：只看远端视频时「继续观看」行必须有远端续播卡');
+    // 远端续播卡必须存在（2026-10-28 起继续观看全在首屏 VideoContinueSpotlight，
+    // 远端条目经 _continueRemoteHero 进首屏、点卡走 _openRemote——只看远端视频时
+    // 也有续播入口）。
+    final int remoteHero = videoSrc.indexOf('_HomeHeroData _continueRemoteHero(');
+    expect(remoteHero, greaterThan(0),
+        reason: 'BUG-995：只看远端视频时首屏继续观看必须有远端续播卡');
+    expect(
+        videoSrc
+            .substring(remoteHero, videoSrc.indexOf('\n  }\n', remoteHero))
+            .contains('_openRemote('),
+        isTrue,
+        reason: 'BUG-995：远端续播卡点按走 _openRemote（流播）');
   });
 }

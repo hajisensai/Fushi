@@ -34,10 +34,11 @@
 //   GET    /img/<key>                                    R2 出图
 //   /v1/feedback/**、/v1/dev/feedback/**                反馈与开发者处理（feedback.js 文件头）
 //   /v1/ci/feedback/**                    [Bearer FEEDBACK_CI_TOKEN]  CI 回填修复 commit / 发布版本（同上）
+//   POST /v1/ci/usage                     [Bearer USAGE_UPLOAD_TOKEN] 上传 AI 额度消耗日汇总（ai_usage.js；没配 token 则 404）
 //
 // 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
 //
-// 只读网页（HTML，匿名 + 边缘缓存；pages.js）：GET /u/:id、/w/:id、/rank?metric&window
+// 只读网页（HTML，匿名 + 边缘缓存；pages.js）：GET /u/:id、/w/:id、/rank?metric&window、/usage
 //
 // 成本控制（防 Cloudflare 超额计费）：读接口读快照 + 边缘缓存 + READ_LIMITER 按 IP 限流；
 // 写接口增量、按账户限流、扣全局日预算（budget.js）；定时任务每 30 分钟刷新快照。
@@ -68,6 +69,7 @@ import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFee
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
 import { purgeInstallStats, recordPing } from './installs.js';
 import { refreshProjectStats } from './project_stats.js';
+import { USAGE_LIMITS, recordAiUsage } from './ai_usage.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
@@ -188,6 +190,13 @@ async function route(request, env, now, ctx) {
     const bytes = await readBodyBytes(request, PING_BODY_MAX);
     await recordPing(env, request, bytes, parseJsonBytes(bytes), now);
     return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+  }
+
+  // ---- AI 额度消耗上传（ai_usage.js）：Bearer USAGE_UPLOAD_TOKEN；没配 token 时 404 ----
+  if (method === 'POST' && path === '/v1/ci/usage') {
+    await bindingLimit(env.AUTH_LIMITER, request);
+    const bytes = await readBodyBytes(request, USAGE_LIMITS.maxBodyBytes);
+    return json(await recordAiUsage(env, request, parseJsonBytes(bytes), now));
   }
 
   // ---- 反馈、开发者处理与 CI 回填：凭据各不相同（ticket / 签名 / Bearer），一律不进边缘缓存 ----

@@ -1453,6 +1453,7 @@ mod tests {
         layout.extend_from_slice(&[0, 1, 6, 14, 15, 16]); // str_off
         layout.extend_from_slice(&[0, 2]); // schema_off
         layout.extend_from_slice(&[1, 2]); // schema_names
+        layout.extend_from_slice(&[search::NO_ALIAS, search::NO_ALIAS]); // schema_alias
         layout.extend(std::iter::repeat(0).take(n)); // note_type
         layout.extend(std::iter::repeat(0).take(n)); // note_schema
         layout.extend(std::iter::repeat(0).take(n + 1)); // note_tag_off

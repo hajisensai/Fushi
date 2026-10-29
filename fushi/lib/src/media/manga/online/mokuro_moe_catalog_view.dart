@@ -505,6 +505,22 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     if (!widget.embedded) return body;
     // 页面语境：正文撑满可用空间，series 阶段在底部画动作行。
     final bool hasActions = _stage == _CatalogStage.series;
+    // 系列阶段只是本视图的内部状态、不是路由：不拦的话页头返回箭头 / 系统返回
+    // 会直接 pop 整个目录页（回到发现页），而不是先回到系列列表。
+    return PopScope(
+      canPop: !hasActions,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) backToBrowse();
+      },
+      child: _buildEmbeddedBody(tokens, body, hasActions),
+    );
+  }
+
+  Widget _buildEmbeddedBody(
+    FushiDesignTokens tokens,
+    Widget body,
+    bool hasActions,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[

@@ -632,9 +632,17 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
     let has_builtin = !builtin.is_null();
     let mut fields = Ordered::<FieldDef> { items: Vec::new() };
     let mut templates = Ordered::<TemplateDef> { items: Vec::new() };
+    // 内置字段 id → (改名前的默认名, 现在的默认名)。字段定义修改记录是整份快照（调序 / 改名都写全份），
+    // 旧版本写下的快照里名字还是旧默认名——等于旧默认名就当「没改过名」，显示现在的默认名。
+    // 只在物化时认、不写任何修改记录：多设备各自升级不产生同步操作，也就不会有冲突或重复改名。
+    let mut legacy_names: Vec<(String, String, String)> = Vec::new();
     if let Value::Array(bf) = get(builtin, "fields") {
         for f in bf {
             let id = as_str(get(f, "id"), "builtin field id")?.unwrap_or("");
+            if let Some(legacy) = as_str(get(f, "legacyName"), "builtin legacyName")? {
+                let current = as_str(get(f, "name"), "builtin field name")?.unwrap_or("");
+                legacy_names.push((id.to_owned(), legacy.to_owned(), current.to_owned()));
+            }
             let mut d = field_def(id, f)?;
             d.description = as_str(get(f, "description"), "builtin description")?
                 .unwrap_or("")
@@ -653,7 +661,10 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
     let mut edited_templates: Vec<TemplateDef> = Vec::new();
     for r in &ent.regs {
         if let Some(id) = r.key.strip_prefix("fieldDef/") {
-            let d = field_def(id, ent.value(&r.key))?;
+            let mut d = field_def(id, ent.value(&r.key))?;
+            if let Some((_, _, current)) = legacy_names.iter().find(|(lid, legacy, _)| lid == id && *legacy == d.name) {
+                d.name = current.clone();
+            }
             edited_fields.push(d.clone());
             fields.put(id, d, |x| &x.id);
         } else if let Some(id) = r.key.strip_prefix("tmplDef/") {
@@ -727,7 +738,7 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         None => as_str(get(builtin, "freqFieldId"), "freqFieldId")?.map(str::to_owned),
     };
     // 实际生效的词频序字段（缓存行 `freq_rank` 的来源、编辑页「词频序字段」标签都读它，规则只在这里写一次）：
-    // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
+    // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` / `FrequencyRank` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
     // 从 Anki 导入的同类笔记都用这个名字）；都没有 = None。
     let freq_effective = effective_frequency_field(freq.as_deref(), &live_fields);
     Ok(json!({
@@ -754,7 +765,11 @@ fn effective_frequency_field(explicit: Option<&str>, fields: &[FieldDef]) -> Opt
             return Some(id.to_owned());
         }
     }
-    fields.iter().find(|f| f.name.trim().to_lowercase() == "freqsort").map(|f| f.id.clone())
+    // `FrequencyRank` 是 Fushi 卡片 2026-10-29 起的字段名（旧名 `FreqSort`），回导 Fushi 导出的包时认它。
+    fields
+        .iter()
+        .find(|f| matches!(f.name.trim().to_lowercase().as_str(), "freqsort" | "frequencyrank"))
+        .map(|f| f.id.clone())
 }
 
 // ---------------------------------------------------------------- 物化：牌组
@@ -1185,6 +1200,57 @@ mod tests {
         let id = uuid_v5(&ns, "edit/A/1");
         assert_eq!(id.len(), 36);
         assert_eq!(&id[14..15], "5");
+    }
+
+    /// 内置字段改了默认名（Fushi 卡片 2026-10-29）：旧版本写下的字段定义快照（调序）里名字还是旧默认名时，
+    /// 物化显示新默认名、保留快照的顺序；用户真改过的名字照旧；不带 `legacyName` 的内置类型不受影响。
+    #[test]
+    fn builtin_field_snapshot_with_legacy_default_name_shows_current_name() {
+        let edit = |seq: i64, key: &str, v: Value| {
+            json!({
+                "p": "p", "k": "notetype", "e": "NT", "f": key, "w": "dev", "s": seq,
+                "v": v, "hlc": format!("{}:0:dev", 1_700_000_000_000i64 + seq),
+            })
+            .to_string()
+        };
+        let edits = [
+            // 旧版本调序：整份快照，名字是旧默认名。
+            edit(1, "fieldDef/a", json!({"name": "Expression", "ord": 1, "ankiNum": 11})),
+            edit(2, "fieldDef/b", json!({"name": "Picture", "ord": 0, "ankiNum": 12})),
+            // 用户真改过名。
+            edit(3, "fieldDef/c", json!({"name": "我的来源", "ord": 2, "ankiNum": 13})),
+        ];
+        let stored: Vec<StoredEdit<'_>> = edits.iter().map(|j| (j.as_str(), None)).collect();
+        let builtin = json!({
+            "name": "Fushi Card", "css": "",
+            "fields": [
+                {"id": "a", "name": "Term", "ord": 0, "ankiNum": 11, "legacyName": "Expression"},
+                {"id": "b", "name": "Media", "ord": 1, "ankiNum": 12, "legacyName": "Picture"},
+                {"id": "c", "name": "Source", "ord": 2, "ankiNum": 13, "legacyName": "MiscInfo"},
+            ],
+            "templates": [],
+        });
+        let payload = json!({"ankiNum": 1, "ntKind": "standard", "builtin": "fushi_card"});
+        let v = note_type_view_of(&payload, &stored, &builtin).unwrap();
+        let names = |key: &str| -> Vec<String> {
+            v[key].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap().to_owned()).collect()
+        };
+        // 顺序跟快照（Media 调到最前），名字是新默认名；真改过的保留。
+        assert_eq!(names("fs"), vec!["Media", "Term", "我的来源"]);
+        assert!(names("df").contains(&"Term".to_owned()));
+        assert!(!names("df").contains(&"Expression".to_owned()));
+        // 幂等：同一份输入再物化一次结果相同（只在读时认，不产生任何修改记录）。
+        assert_eq!(note_type_view_of(&payload, &stored, &builtin).unwrap(), v);
+
+        // 内置默认值不带 legacyName（如 Lapis）：快照名字原样。
+        let lapis = json!({
+            "name": "Lapis", "css": "",
+            "fields": [{"id": "a", "name": "Expression", "ord": 0, "ankiNum": 11}],
+            "templates": [],
+        });
+        let only_a: Vec<StoredEdit<'_>> = vec![(edits[0].as_str(), None)];
+        let v = note_type_view_of(&payload, &only_a, &lapis).unwrap();
+        assert_eq!(v["fs"][0]["name"], "Expression");
     }
 
     #[test]

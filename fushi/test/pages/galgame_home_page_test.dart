@@ -29,8 +29,7 @@ void main() {
 
   /// 构造一个接好 in-memory DB + 偏好的 [AppModel]。
   Future<AppModel> buildAppModel(WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
@@ -42,7 +41,9 @@ void main() {
     });
     return AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
       ..wireDatabaseForTesting(db);
   }
 
@@ -66,8 +67,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('empty library shows the empty state',
-      (WidgetTester tester) async {
+  testWidgets('empty library shows the empty state', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final AppModel appModel = await buildAppModel(tester);
@@ -78,8 +80,9 @@ void main() {
     expect(find.text(t.game_empty), findsOneWidget);
   });
 
-  testWidgets('KPI strip renders total games and labels',
-      (WidgetTester tester) async {
+  testWidgets('KPI strip renders total games and labels', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final AppModel appModel = await buildAppModel(tester);
@@ -112,8 +115,9 @@ void main() {
     expect(find.text('2'), findsWidgets);
   });
 
-  testWidgets('Focus card renders for the most recently played game',
-      (WidgetTester tester) async {
+  testWidgets('Focus card renders for the most recently played game', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final AppModel appModel = await buildAppModel(tester);
@@ -143,9 +147,9 @@ void main() {
     expect(tester.takeException(), isNull);
     // Focus 卡标题（游戏名，出现在卡片 + 时间线）。
     expect(find.text('Recent Game'), findsWidgets);
-    // 已游玩过 → 状态胶囊「继续游戏」，启动按钮「启动」。
+    // 已游玩过 → 眉标「继续游戏」；卡上不放按钮（整卡点按 = 启动，长按 = 详情）。
     expect(find.text(t.game_focus_continue), findsOneWidget);
-    expect(find.text(t.game_launch), findsWidgets);
+    expect(find.text(t.game_view_detail), findsNothing);
     // 时间线区块标题。
     expect(find.text(t.home_activity), findsOneWidget);
   });

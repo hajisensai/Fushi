@@ -17,6 +17,7 @@ import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -453,6 +454,11 @@ class SrsDbStore implements SrsSync2Host {
     final Completer<void> mine = Completer<void>();
     _writeTail = mine.future;
     try {
+      if (prev != null && _ingestSliceHolding && !_ingestYieldSent) {
+        // 锁正被收段的一片占着：请内核当场收片（只置一个标志，同步调用不等锁），不让这笔写入等完整片。
+        _ingestYieldSent = true;
+        core.sync2(const <String, Object?>{'op': 'ingest_yield'});
+      }
       if (prev != null) await prev;
       // 排队期间前面那位把副本作废了（写失败重读也失败 / [retire]）：排着的也不再写。
       final StateError? retired = _unusable;
@@ -479,14 +485,18 @@ class SrsDbStore implements SrsSync2Host {
     }
   });
 
-  /// 大批量写入（Anki 迁移 / .apkg 导入）期间暂停这条连接的 WAL 自动 checkpoint，结束后
-  /// 恢复原值并 checkpoint 一次。
+  /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间暂停这条连接的 WAL 自动 checkpoint，结束后
+  /// checkpoint 一次再恢复原值。
   ///
   /// 自动 checkpoint 在 WAL 超过阈值（缺省 1000 页）后的每次提交时跑；导入的每个批次
   /// 事务都远超阈值，于是每次提交都把同一批热页（索引、缓存表）拷回主库一遍——实测迁移
   /// 1.5 万笔记时 COMMIT 合计 37 秒，暂停后 6 秒。WAL 在导入期间会长大，结束时一次并回；
   /// 中途崩溃也无妨：下次打开时 SQLite 照常回放 WAL。可嵌套；按数据库连接计数（几个
   /// profile 的副本共用一条连接），只有最外层恢复。
+  ///
+  /// 收尾的 checkpoint 在内核另开的连接上做（`wal_checkpoint`，native/fushi_fsrs/src/store/mod.rs），不在写
+  /// 连接上：并回一份几十 MB 的 WAL 要几百毫秒，在写连接上做那期间本机作答全排在它后面。并完才恢复自动
+  /// checkpoint，免得恢复后的第一笔写入在写连接上抢先把整份 WAL 并一遍。
   Future<T> bulkWrites<T>(Future<T> Function() body) async {
     final _BulkWriteState state = _bulkWrites[db] ??= _BulkWriteState();
     if (state.depth++ == 0) {
@@ -502,10 +512,15 @@ class SrsDbStore implements SrsSync2Host {
       return await body();
     } finally {
       if (--state.depth == 0) {
-        await db.customStatement(
-          'PRAGMA wal_autocheckpoint = ${state.restore}',
-        );
-        await db.customSelect('PRAGMA wal_checkpoint(PASSIVE)').get();
+        // 并回失败（库正被关 / 开不了 checkpoint 连接）也必须恢复自动 checkpoint：否则这条连接之后一直不并回，
+        // WAL 无上限地涨到下次开库。
+        try {
+          await _walCheckpoint();
+        } finally {
+          await db.customStatement(
+            'PRAGMA wal_autocheckpoint = ${state.restore}',
+          );
+        }
       }
     }
   }
@@ -960,41 +975,163 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 同步 v2 的命令（看 head / 发件 / 写 head / 身份 / 摘要……）与写事务互斥：内核与本机写入共用一条连接，
   /// 不排队的话 `outbox` / `head` / `plan` 会读到另一笔还没提交的 `apply` 事务里的操作——那笔回滚后同一个 seq
-  /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。只有不碰库的纯计算（派生密钥、
-  /// 封装 / 解封媒体）不排队：Argon2 派生要上百毫秒，不该挡住复习写入。
+  /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。不排队的只有 [kSrsSync2LockFreeOps]：
+  /// 不碰库的纯计算，以及只读已提交快照的命令——排队等于让复习作答等它们跑完（状态摘要是全库扫描，手机上
+  /// 一两秒，每轮同步都可能轮到）。
   @override
   Future<SrsSync2Result> sync2Command(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
-  }) => _kSync2PureOps.contains(request['op'])
+  }) => kSrsSync2LockFreeOps.contains(request['op'])
       ? _sync2Raw(request, blobs: blobs)
       : runExclusive(() => _sync2Raw(request, blobs: blobs));
 
-  /// 不读写库的 v2 命令（见 [sync2Command]）。
-  static const Set<String> _kSync2PureOps = <String>{
+  /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
+  /// 中途改本机状态。
+  /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。
+  /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`。
+  /// - `digest`：扫描在内核自己的扫描会话里（已提交快照），只在末尾往写连接记一行摘要缓存（`srs_meta`）；
+  ///   恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
+  @visibleForTesting
+  static const Set<String> kSrsSync2LockFreeOps = <String>{
     'derive_key',
     'seal',
     'open',
+    'status',
+    'media_known',
+    'conflicts',
+    'checkpoints',
+    'history',
+    'digest',
   };
 
   @override
   Future<void> sync2IngestBegin() =>
       runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_begin'}));
 
+  /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
+  /// 写入；内核也只在读连接上短暂取公钥），`ingest_commit` 在写锁里投递预处理好的那批。预处理只读已提交的数据，
+  /// 之后公钥 / 身份变了内核在投递时按当时的重验，结果与在写锁里一步收完相同。
+  ///
+  /// 投递按片（native/fushi_fsrs/src/store/sync2/transport.rs `CommitBudget`）：内核每次 commit 只投一片，返回
+  /// `more` 就再进一次写锁接着投。每片是独立的独占区 + 事务；没人等锁时一片投到时间上限，有写入来排队
+  /// （[runExclusive]）就请内核当场收片（`ingest_yield`），排队的作答只等这一片已投部分的收尾，而不是整批。
+  ///
+  /// 收这一批期间暂停写连接的自动 checkpoint（[bulkWrites]），每片之后在写锁外、内核另开的连接上把 WAL 并回
+  /// （[_walCheckpoint]）：在写连接上并，提交那一刻就把同一批热页拷回主库，作答排在后面；整批都不并，WAL 随
+  /// 片数涨到几百 MB。测试用：[sliceOps] 改按条数切（切点确定），[sliceMs] 改一片的时间上限。返回里 `slices`
+  /// 是这一批投了几片。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
-  }) => _sync2IngestStep(<String, Object?>{
-    'op': 'ingest_batch',
-    'key': keyHex,
-  }, segments);
+    int? sliceOps,
+    int? sliceMs,
+  }) async {
+    await _sync2(<String, Object?>{
+      'op': 'ingest_prepare',
+      'key': keyHex,
+    }, blobs: segments);
+    final List<Map<String, Object?>> slices = <Map<String, Object?>>[];
+    await bulkWrites(() async {
+      do {
+        slices.add(await _sync2IngestSlice(sliceOps, sliceMs));
+        if (slices.last['more'] == true) await _walCheckpoint();
+      } while (slices.last['more'] == true);
+    });
+    return _mergeIngestSlices(slices);
+  }
+
+  /// 投一片：持锁期间登记成「正在投片」，好让来排队的写入请内核收片（[runExclusive]）。
+  Future<Map<String, Object?>> _sync2IngestSlice(int? sliceOps, int? sliceMs) =>
+      runExclusive(() async {
+        _ingestSliceHolding = true;
+        _ingestYieldSent = false;
+        try {
+          debugOnIngestSlice?.call();
+          return await _sync2IngestStep(<String, Object?>{
+            'op': 'ingest_commit',
+            if (sliceOps != null) 'sliceOps': sliceOps,
+            if (sliceMs != null) 'sliceMs': sliceMs,
+          });
+        } finally {
+          _ingestSliceHolding = false;
+        }
+      });
+
+  /// 写锁正被收段的一片占着（[_sync2IngestSlice]）。
+  bool _ingestSliceHolding = false;
+
+  /// 测试钩子：收段的一片拿到写锁、调内核之前调用。
+  @visibleForTesting
+  void Function()? debugOnIngestSlice;
+
+  /// 这一片已经请过收片。
+  bool _ingestYieldSent = false;
+
+  /// 在内核另开的连接上把 WAL 并回主库（PASSIVE，不占写连接，期间作答照常写入）。
+  Future<void> _walCheckpoint() => _coreSync2(
+    core.address,
+    core.libraryPath,
+    const <String, Object?>{'op': 'wal_checkpoint'},
+    const <Uint8List>[],
+  );
+
+  /// 一批各片的结果拼成一次的形状（[srsSync2Round] 读的那些）：条数、`marks` 的计数相加、清单接起来，报错、
+  /// 重放 / 变更 / 清除的清单按片顺序接起来，缓冲条数与其它字段取最后一片，`slices` 记片数。各片的投影变化已在
+  /// 各自的 [_sync2IngestStep] 里接进缓存，这里只给调用方汇报。
+  static Map<String, Object?> _mergeIngestSlices(
+    List<Map<String, Object?>> slices,
+  ) {
+    if (slices.length == 1) {
+      return <String, Object?>{...slices.single, 'slices': 1};
+    }
+    final Map<String, Object?> out = <String, Object?>{
+      ...slices.last,
+      'slices': slices.length,
+    };
+    final Map<String, Object?> marks = <String, Object?>{};
+    int applied = 0;
+    bool fork = false;
+    final Map<String, List<Object?>> lists = <String, List<Object?>>{
+      for (final String k in const <String>[
+        'errors',
+        'replayed',
+        'changed',
+        'purged',
+      ])
+        k: <Object?>[],
+    };
+    for (final Map<String, Object?> r in slices) {
+      applied += (r['applied'] as int?) ?? 0;
+      fork = fork || r['fork'] == true;
+      for (final MapEntry<String, List<Object?>> l in lists.entries) {
+        l.value.addAll((r[l.key] as List?) ?? const <Object?>[]);
+      }
+      for (final MapEntry<Object?, Object?> m
+          in ((r['marks'] as Map?) ?? const <Object?, Object?>{}).entries) {
+        final String k = m.key! as String;
+        final Object? v = m.value;
+        final Object? had = marks[k];
+        marks[k] = switch (v) {
+          final int n => ((had as int?) ?? 0) + n,
+          final List<Object?> l => <Object?>[...?had as List<Object?>?, ...l],
+          _ => v,
+        };
+      }
+    }
+    return out
+      ..['applied'] = applied
+      ..['fork'] = fork
+      ..['marks'] = marks
+      ..addAll(lists);
+  }
 
   @override
   Future<Map<String, Object?>> sync2IngestFinish() =>
       _sync2IngestStep(const <String, Object?>{'op': 'ingest_finish'});
 
-  /// 收段会话的一步（收一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
+  /// 收段会话的一步（投递一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
   Future<Map<String, Object?>> _sync2IngestStep(
     Map<String, Object?> request, [
     List<Uint8List> segments = const <Uint8List>[],
@@ -1149,6 +1286,7 @@ class SrsDbStore implements SrsSync2Host {
     'apply',
     'ingest',
     'ingest_batch',
+    'ingest_commit',
     'ingest_finish',
     'import',
     'resolve',

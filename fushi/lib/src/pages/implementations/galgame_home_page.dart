@@ -34,6 +34,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromePinnedOffset;
@@ -784,120 +785,31 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   // ── 区域 B：继续游戏 hero ────────────────────────────────────────────────
 
-  /// 「继续游戏」大卡（M3E 饱和 primaryContainer 色块；Apple 落到强调色淡染）：
-  /// 左侧大封面（无封面 = 饱和色块 + 首字占位），右侧状态胶囊 → 标题 → 元信息
-  /// → M3E 主按钮（启动 = filled、详情 = tonal，宽卡用 M 档 56 高）。
+  /// 「继续游戏」大卡：与书架 / 漫画书架同一张满宽 [FushiContinueHero]
+  /// （2026-10-28 统一）。游戏盒封面自带框；眉标「游玩中 / 继续游戏」，元信息
+  /// 最后游玩 + 累计时长；整卡点按 = 启动，长按 / 右键 = 详情（与随机推荐卡同一
+  /// 约定；卡上不放按钮，2026-10-28 与书 / 视频 / 音乐统一）。
   Widget _buildHero(BuildContext context, GalgameEntry game) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiTypography type = context.fushiType;
-    final bool eink = isEinkTheme(context);
-    final bool apple = isGlassDesign(context) && !eink;
-    final FushiCardColors? toneColors = fushiCardToneColors(
-      context,
-      FushiCardTone.primary,
-    );
-    final Color onTone = toneColors?.onContainer ?? cs.onSurface;
     final bool hasPlayed = game.lastPlayedMs > 0;
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
         ? t.game_status_playing
         : (hasPlayed ? t.game_focus_continue : t.game_launch);
-    final List<String> metaLines = <String>[
-      if (hasPlayed)
-        '${t.game_stat_last_played}  ${_formatDay(game.lastPlayedMs)}',
-      '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
-    ];
-    final TextStyle heroTitleStyle = type.headlineSmallEmphasized.copyWith(
-      color: onTone,
-    );
-    final TextStyle metaStyle = type.bodyMedium.tabular.copyWith(
-      color: onTone.withValues(alpha: 0.78),
-    );
-    // 整卡可点 = 启动、长按 / 右键 = 详情，外包悬停抬升——与书架 / 漫画「继续
-    // 阅读」卡、视频「继续观看」主卡同一套交互；之前只有两枚按钮有反馈，封面
-    // 与空白处点了没反应。
-    final Widget card = FushiCard(
-      key: ValueKey<String>('games_home_hero_${game.id}'),
+    return FushiContinueHero(
+      cardKey: ValueKey<String>('games_home_hero_${game.id}'),
       focusId: FushiFocusId('game-dashboard-hero-${game.id}'),
-      tone: FushiCardTone.primary,
-      borderRadius: apple ? null : FushiM3eShape.containerLargeRadius,
-      padding: const EdgeInsets.all(20),
-      onTap: () => unawaited(_launchGame(game)),
+      cover: _gameCaseFrame(_GameCoverArt(game: game)),
+      frameCover: false,
+      coverAspectRatio: kShelfGameCaseAspectRatio,
+      eyebrow: statusLabel,
+      title: game.displayName,
+      metaLines: <String>[
+        if (hasPlayed)
+          '${t.game_stat_last_played}  ${_formatDay(game.lastPlayedMs)}',
+        '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
+      ],
+      onOpen: () => unawaited(_launchGame(game)),
       onLongPress: () => unawaited(_openDetail(game)),
-      onSecondaryTap: () => unawaited(_openDetail(game)),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool roomy = constraints.maxWidth >= 560;
-          final double coverWidth = roomy ? 168 : 112;
-          return Row(
-            children: <Widget>[
-              SizedBox(
-                width: coverWidth,
-                child: AspectRatio(
-                  aspectRatio: kShelfGameCaseAspectRatio,
-                  child: _gameCaseFrame(_GameCoverArt(game: game)),
-                ),
-              ),
-              SizedBox(width: roomy ? 24 : 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    _StatusPill(label: statusLabel),
-                    const SizedBox(height: 12),
-                    // TODO-2497：两行仍放不下时，桌面悬停显示完整游戏名。
-                    ShelfTitleOverflowTooltip(
-                      title: game.displayName,
-                      style: heroTitleStyle,
-                      maxLines: 2,
-                      child: Text(
-                        game.displayName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: heroTitleStyle,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    for (final String line in metaLines)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: Text(
-                          line,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: metaStyle,
-                        ),
-                      ),
-                    SizedBox(height: roomy ? 20 : 14),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        FushiFilledButton.icon(
-                          onPressed: () => unawaited(_launchGame(game)),
-                          size: roomy ? FushiButtonSize.m : null,
-                          icon: const FushiIcon(FushiIcons.play),
-                          label: Text(t.game_launch),
-                        ),
-                        FushiFilledButton.tonalIcon(
-                          onPressed: () => unawaited(_openDetail(game)),
-                          size: roomy ? FushiButtonSize.m : null,
-                          icon: const FushiIcon(FushiIcons.info),
-                          label: Text(t.game_view_detail),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    return FushiHoverLift(
-      scale: 1.01,
-      builder: (BuildContext _, bool __) => card,
+      entranceIndex: null,
     );
   }
 
@@ -1433,48 +1345,6 @@ class _GameCoverPlaceholder extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-/// hero 左上角的状态胶囊：M3E 在 primaryContainer 上压一枚 primary 实心胶囊；
-/// Apple 强调色胶囊 + 白字；墨水屏描边无底。
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool eink = isEinkTheme(context);
-    final bool apple = isGlassDesign(context) && !eink;
-    final Color background = eink
-        ? Colors.transparent
-        : apple
-        ? appleColorsOf(context).accent
-        : cs.primary;
-    final Color foreground = eink
-        ? cs.onSurface
-        : apple
-        ? Colors.white
-        : cs.onPrimary;
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: background,
-        shape: StadiumBorder(
-          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        child: Text(
-          label,
-          style: context.fushiType.labelLargeEmphasized.copyWith(
-            color: foreground,
-          ),
-        ),
       ),
     );
   }

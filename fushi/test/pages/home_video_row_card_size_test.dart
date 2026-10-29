@@ -33,8 +33,8 @@ import '../helpers/test_platform_services.dart';
 /// 探测横 / 竖卡、也不再沿用库墙目标卡宽。这里量**真渲染出来的卡宽**而不是复述
 /// 公式：退回库墙卡宽（桌面 ~200+）时立刻红。
 ///
-/// 继续观看的第一项会被提成首屏主卡（整宽大卡，不是行卡），所以先种一部更近
-/// 播放的合集占主卡位，被测散卡才落进横滚行。
+/// 2026-10-28 起继续观看全在首屏 VideoContinueSpotlight（16:9 剧照卡，不是行卡），
+/// 横滚行只剩「已更新未看」「最近添加」；这里用「最近添加」行验行卡宽。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -107,7 +107,7 @@ void main() {
     ),
   );
 
-  testWidgets('「继续观看」行卡是 videoHomePosterCardWidth 宽的竖卡，不再与库墙目标卡宽同宽', (
+  testWidgets('「最近添加」行卡是 videoHomePosterCardWidth 宽的竖卡，不再与库墙目标卡宽同宽', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 1400);
@@ -115,27 +115,13 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // 主卡占位：最近刚播放的在看合集。
-    final int heroCid = await db.createMediaCollection(
-      'HeroDecoy',
-      collectionType: 'playlist',
-    );
+    // 刚导入、没播过的单片：进「最近添加」行。
     await db.upsertVideoBook(
       VideoBooksCompanion(
-        bookUid: const Value('video/hero-decoy'),
-        title: const Value('HeroDecoy Ep1'),
-        videoPath: const Value('/abs/hero-decoy.mp4'),
-        lastPositionMs: const Value(60000),
-        lastPlayedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ),
-    );
-    await db.addToCollection(heroCid, MediaKind.video, 'video/hero-decoy');
-    await db.upsertVideoBook(
-      const VideoBooksCompanion(
-        bookUid: Value('video/loose-1'),
-        title: Value('Loose One'),
-        videoPath: Value('/abs/loose-1.mp4'),
-        lastPositionMs: Value(60000),
+        bookUid: const Value('video/loose-1'),
+        title: const Value('Loose One'),
+        videoPath: const Value('/abs/loose-1.mp4'),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
 
@@ -143,9 +129,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final Finder card = find.byKey(
-      const ValueKey<String>('home_video_continue_video/loose-1'),
+      const ValueKey<String>('home_video_recent_video/loose-1'),
     );
-    expect(card, findsOneWidget, reason: '有进度的散卡必须出现在「继续观看」行');
+    expect(card, findsOneWidget, reason: '刚导入的散片必须出现在「最近添加」行');
 
     // 页面自己看到的可用宽 = LayoutBuilder 给 CustomScrollView 的宽度，直接量，
     // 不在测试里复刻外层 padding。
