@@ -633,24 +633,27 @@ class _LevelBarsPainter extends CustomPainter {
 const double kMusicFloatingBarReserve = 88;
 
 /// 悬浮播放条宿主（用户 2026-10-29：「需要所有界面都是浮起来的」）：正文铺满，
-/// 播放条叠在底部、不占一行；有音乐在播时把 [kMusicFloatingBarReserve] 加进正文
-/// 的底部 MediaQuery padding（`withBottomSafeInset` 等按它留白）。条贴在原底部
-/// 安全区之上（玻璃移动布局的悬浮标签栏让位也走这个 padding）。结构恒定：
-/// 有无音乐都是同一个 Stack，正文不重挂。
-class MusicFloatingBarHost extends ConsumerStatefulWidget {
-  const MusicFloatingBarHost({super.key, required this.child});
+/// 播放条叠在底部、不占一行。条贴在原底部安全区之上（玻璃移动布局的悬浮标签栏
+/// 让位也走这个 padding）。结构恒定：有无音乐都是同一个 Stack，正文不重挂。
+///
+/// [reserveSpace]：有音乐在播时给正文底部让出 [kMusicFloatingBarReserve]（见
+/// [MusicBarReserve]）。首页传 false——它的各个 tab（设置、书架 …）有用 SafeArea
+/// 截视口的，整页加高会把列表截短、底下空一截；音乐页自己再包 [MusicBarReserve]。
+class MusicFloatingBarHost extends StatefulWidget {
+  const MusicFloatingBarHost({
+    super.key,
+    required this.child,
+    this.reserveSpace = true,
+  });
 
   final Widget child;
+  final bool reserveSpace;
 
   @override
-  ConsumerState<MusicFloatingBarHost> createState() =>
-      _MusicFloatingBarHostState();
+  State<MusicFloatingBarHost> createState() => _MusicFloatingBarHostState();
 }
 
-class _MusicFloatingBarHostState extends ConsumerState<MusicFloatingBarHost> {
-  MusicSession? _session;
-  bool _active = false;
-
+class _MusicFloatingBarHostState extends State<MusicFloatingBarHost> {
   /// 正文往下滚 → 收起，往上滚 → 展开（用户 2026-10-29：所有页面、窄宽屏都要）。
   bool _collapsed = false;
 
@@ -666,6 +669,57 @@ class _MusicFloatingBarHostState extends ConsumerState<MusicFloatingBarHost> {
     }
     return false;
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget content = widget.reserveSpace
+        ? MusicBarReserve(child: widget.child)
+        : widget.child;
+    // 嵌在别的宿主下面（首页 tab 里推入的页面）：外层已经在画条，不再叠一条，
+    // 但正文仍要给条让位。
+    if (context.dependOnInheritedWidgetOfExactType<_MusicFloatingBarScope>() !=
+        null) {
+      return content;
+    }
+    final double bottom = MediaQuery.paddingOf(context).bottom;
+    return _MusicFloatingBarScope(
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: NotificationListener<UserScrollNotification>(
+              onNotification: _onScroll,
+              child: content,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: bottom,
+            child: MusicBarCollapse(
+              collapsed: _collapsed,
+              child: const MusicNowPlayingBar(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 有音乐在播时把 [kMusicFloatingBarReserve] 加进子树的底部 MediaQuery padding
+/// （`withBottomSafeInset` 等按它留白），列表最后一行能滚到悬浮条上方。
+class MusicBarReserve extends ConsumerStatefulWidget {
+  const MusicBarReserve({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<MusicBarReserve> createState() => _MusicBarReserveState();
+}
+
+class _MusicBarReserveState extends ConsumerState<MusicBarReserve> {
+  MusicSession? _session;
+  bool _active = false;
 
   @override
   void didChangeDependencies() {
@@ -684,7 +738,7 @@ class _MusicFloatingBarHostState extends ConsumerState<MusicFloatingBarHost> {
     super.dispose();
   }
 
-  /// 会话频繁通知（位置等），只在「有没有在播」翻转时才重建正文的 MediaQuery。
+  /// 会话频繁通知（位置等），只在「有没有在播」翻转时才重建。
   void _onSession() {
     final bool active = _session?.isActive ?? false;
     if (active != _active && mounted) setState(() => _active = active);
@@ -692,41 +746,16 @@ class _MusicFloatingBarHostState extends ConsumerState<MusicFloatingBarHost> {
 
   @override
   Widget build(BuildContext context) {
-    // 嵌在别的宿主下面（首页 tab 里推入的页面）：外层已经在画条，不再叠一条。
-    if (context.dependOnInheritedWidgetOfExactType<_MusicFloatingBarScope>() !=
-        null) {
-      return widget.child;
-    }
     final MediaQueryData media = MediaQuery.of(context);
-    return _MusicFloatingBarScope(
-      child: Stack(
-        children: <Widget>[
-          Positioned.fill(
-            child: MediaQuery(
-              data: _active
-                  ? media.copyWith(
-                      padding: media.padding.copyWith(
-                        bottom: media.padding.bottom + kMusicFloatingBarReserve,
-                      ),
-                    )
-                  : media,
-              child: NotificationListener<UserScrollNotification>(
-                onNotification: _onScroll,
-                child: widget.child,
+    return MediaQuery(
+      data: _active
+          ? media.copyWith(
+              padding: media.padding.copyWith(
+                bottom: media.padding.bottom + kMusicFloatingBarReserve,
               ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: media.padding.bottom,
-            child: MusicBarCollapse(
-              collapsed: _collapsed,
-              child: const MusicNowPlayingBar(),
-            ),
-          ),
-        ],
-      ),
+            )
+          : media,
+      child: widget.child,
     );
   }
 }

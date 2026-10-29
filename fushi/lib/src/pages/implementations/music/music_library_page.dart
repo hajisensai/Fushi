@@ -32,7 +32,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicFloatingBarHost;
+    show MusicBarReserve, MusicFloatingBarHost;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
@@ -446,122 +446,130 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MusicLibrarySnapshot? snap = _snapshot;
-    return Focus(
-      canRequestFocus: false,
-      onKeyEvent: _handleKey,
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap,
-                tokens.spacing.page,
-                tokens.spacing.gap,
-              ),
-              child: FushiFloatingTopBar(
-                title: t.nav_music,
-                actions: <List<FushiToolbarItem>>[
-                  // 搜索排最前：放不下时最后才收进「⋯」。
-                  <FushiToolbarItem>[
-                    FushiToolbarItem(
-                      key: const ValueKey<String>('music_open_search'),
-                      icon: FushiIcons.search,
-                      label: t.music_library_search_hint,
-                      onPressed: () => unawaited(_openSearchPage()),
-                    ),
-                  ],
-                  <FushiToolbarItem>[
-                    FushiToolbarItem(
-                      key: const ValueKey<String>('music_add_folder'),
-                      icon: FushiIcons.libraryAdd,
-                      label: t.music_folder_add,
-                      onPressed: _scanning
-                          ? null
-                          : () => unawaited(_addFolder()),
-                    ),
-                    FushiToolbarItem(
-                      key: const ValueKey<String>('music_add_disc'),
-                      icon: FushiIcons.storage,
-                      label: t.music_disc_add,
-                      onPressed: _scanning ? null : () => unawaited(_addDisc()),
-                    ),
-                    if (musicAudioCdSupported())
+    // 首页的悬浮条宿主不给各 tab 加底部留白（会截短别的 tab 的列表），音乐页自己让位。
+    return MusicBarReserve(
+      child: Focus(
+        canRequestFocus: false,
+        onKeyEvent: _handleKey,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                ),
+                child: FushiFloatingTopBar(
+                  title: t.nav_music,
+                  actions: <List<FushiToolbarItem>>[
+                    // 搜索排最前：放不下时最后才收进「⋯」。
+                    <FushiToolbarItem>[
                       FushiToolbarItem(
-                        key: const ValueKey<String>('music_read_cd'),
-                        icon: FushiIcons.audio,
-                        label: t.music_cd_read,
+                        key: const ValueKey<String>('music_open_search'),
+                        icon: FushiIcons.search,
+                        label: t.music_library_search_hint,
+                        onPressed: () => unawaited(_openSearchPage()),
+                      ),
+                    ],
+                    <FushiToolbarItem>[
+                      FushiToolbarItem(
+                        key: const ValueKey<String>('music_add_folder'),
+                        icon: FushiIcons.libraryAdd,
+                        label: t.music_folder_add,
                         onPressed: _scanning
                             ? null
-                            : () => unawaited(_readCd()),
+                            : () => unawaited(_addFolder()),
                       ),
-                    FushiToolbarItem(
-                      key: const ValueKey<String>('music_servers'),
-                      icon: FushiIcons.cloud,
-                      label: t.music_servers_title,
-                      onPressed: () => unawaited(_openServers()),
-                    ),
-                    FushiToolbarItem(
-                      key: const ValueKey<String>('music_rescan'),
-                      icon: FushiIcons.refresh,
-                      label: t.music_library_rescan,
-                      onPressed: _scanning ? null : () => unawaited(_rescan()),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              // 桌面端默认 dragDevices 不含鼠标：分段放不下时鼠标也得拖得动。
-              child: HorizontalDragScrollable(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: adaptiveSegmentedButton<MusicLibrarySection>(
-                    context: context,
-                    segments: <ButtonSegment<MusicLibrarySection>>[
-                      for (final MusicLibrarySection s
-                          in MusicLibrarySection.values)
-                        if (s != MusicLibrarySection.recommend || _hasRecommend)
-                          ButtonSegment<MusicLibrarySection>(
-                            value: s,
-                            label: Text(musicLibrarySectionLabel(s)),
-                          ),
+                      FushiToolbarItem(
+                        key: const ValueKey<String>('music_add_disc'),
+                        icon: FushiIcons.storage,
+                        label: t.music_disc_add,
+                        onPressed: _scanning
+                            ? null
+                            : () => unawaited(_addDisc()),
+                      ),
+                      if (musicAudioCdSupported())
+                        FushiToolbarItem(
+                          key: const ValueKey<String>('music_read_cd'),
+                          icon: FushiIcons.audio,
+                          label: t.music_cd_read,
+                          onPressed: _scanning
+                              ? null
+                              : () => unawaited(_readCd()),
+                        ),
+                      FushiToolbarItem(
+                        key: const ValueKey<String>('music_servers'),
+                        icon: FushiIcons.cloud,
+                        label: t.music_servers_title,
+                        onPressed: () => unawaited(_openServers()),
+                      ),
+                      FushiToolbarItem(
+                        key: const ValueKey<String>('music_rescan'),
+                        icon: FushiIcons.refresh,
+                        label: t.music_library_rescan,
+                        onPressed: _scanning
+                            ? null
+                            : () => unawaited(_rescan()),
+                      ),
                     ],
-                    selected: <MusicLibrarySection>{_section},
-                    onSelectionChanged: (Set<MusicLibrarySection> v) =>
-                        setState(() {
-                          _sectionTouched = true;
-                          _section = v.first;
-                        }),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                // 桌面端默认 dragDevices 不含鼠标：分段放不下时鼠标也得拖得动。
+                child: HorizontalDragScrollable(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: adaptiveSegmentedButton<MusicLibrarySection>(
+                      context: context,
+                      segments: <ButtonSegment<MusicLibrarySection>>[
+                        for (final MusicLibrarySection s
+                            in MusicLibrarySection.values)
+                          if (s != MusicLibrarySection.recommend ||
+                              _hasRecommend)
+                            ButtonSegment<MusicLibrarySection>(
+                              value: s,
+                              label: Text(musicLibrarySectionLabel(s)),
+                            ),
+                      ],
+                      selected: <MusicLibrarySection>{_section},
+                      onSelectionChanged: (Set<MusicLibrarySection> v) =>
+                          setState(() {
+                            _sectionTouched = true;
+                            _section = v.first;
+                          }),
+                    ),
                   ),
                 ),
               ),
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
-            SyncProgressBanner(
-              key: const ValueKey<String>('music-sync-progress'),
-              margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-            ),
-            if (_scanning) const FushiLinearProgressIndicator(),
-            Expanded(
-              child: snap == null
-                  ? const FushiLoadingView()
-                  : AnimatedSwitcher(
-                      duration: fushiMotionDuration(
-                        context,
-                        FushiMotion.medium,
+              SizedBox(height: tokens.spacing.gap),
+              // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
+              SyncProgressBanner(
+                key: const ValueKey<String>('music-sync-progress'),
+                margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+              ),
+              if (_scanning) const FushiLinearProgressIndicator(),
+              Expanded(
+                child: snap == null
+                    ? const FushiLoadingView()
+                    : AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.medium,
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey<MusicLibrarySection>(_section),
+                          child: _buildSection(context, snap),
+                        ),
                       ),
-                      child: KeyedSubtree(
-                        key: ValueKey<MusicLibrarySection>(_section),
-                        child: _buildSection(context, snap),
-                      ),
-                    ),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

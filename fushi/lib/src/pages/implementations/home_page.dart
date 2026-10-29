@@ -2076,6 +2076,8 @@ class _HomePageState extends BasePageState<HomePage>
           // 音乐播放条真悬浮在正文之上（用户 2026-10-29：「做成真悬浮不要占住
           // 底部」）：不再占 Column 的一行，胶囊两侧透出、点得到下面的内容。
           child: MusicFloatingBarHost(
+            // 各 tab 自管底部留白；音乐页自己包 MusicBarReserve。
+            reserveSpace: false,
             child: HomeModuleSwipeDetector(
               enabled: _moduleSwipeEnabled(),
               tracker: _moduleRoot,
