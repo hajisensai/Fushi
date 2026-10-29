@@ -13,6 +13,7 @@ Cloudflare Worker + D1 + R2。设计与分期见
   而 NFKC / punycode 会改写成另一个地址的老账户不回退旧哈希（码会发去另一个收件箱），只能联系管理员。
 - 书架**增量上报**（每批 ≤ 500）；跨用户作品靠匹配键（bgm / isbn / vndb / anidb / mal / tmdb / src / 标题+作者）汇合，见 `src/shelf.js` 文件头。
 - 与日志服务（`services/log-backend/`）完全隔离，不共用任何凭据。
+- **AI 额度消耗**：`POST /v1/ci/usage`（Bearer `USAGE_UPLOAD_TOKEN`，没配则 404）收维护者机器按「UTC 日 × 模型」汇总的 Claude Code 用量，`GET /usage` 公开展示近 30 天（只存计数，不含项目名 / 提示词）。上传端 `tool/claude_usage_upload.mjs`，计划任务安装 `tool/install_claude_usage_upload.ps1`；部署前先 `d1 migrations apply` 到 `0019_ai_usage.sql`，再 `wrangler secret put USAGE_UPLOAD_TOKEN`。
 
 ## 成本（防 Cloudflare / 发信超额计费）
 

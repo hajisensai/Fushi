@@ -11,6 +11,7 @@
 
 import { HttpError } from './util.js';
 import { acceptCoverUrl } from './shelf.js';
+import { loadAiUsage, weightedCost } from './ai_usage.js';
 import { METRICS, WINDOWS, leaderboard, userCard, userShelf, workPage } from './views.js';
 
 const PAGE_ID = '([A-Za-z0-9_-]{1,32})';
@@ -118,6 +119,7 @@ ${body}
 }
 
 const STYLE = `
+.usage{width:100%;border-collapse:collapse;font-size:14px}.usage th,.usage td{padding:4px 8px;text-align:right;border-bottom:1px solid var(--line)}.usage th:first-child,.usage td:first-child{text-align:left}.usage.days td:nth-child(2){width:35%;text-align:left}.bar{display:block;height:10px;background:var(--accent);border-radius:5px}
 :root{--bg:#f7f6f3;--fg:#1d1c1a;--muted:#6b6862;--card:#fff;--line:#e4e1db;--accent:#b4532a}
 @media (prefers-color-scheme:dark){:root{--bg:#161514;--fg:#ecebe8;--muted:#a19d96;--card:#201f1d;--line:#34322f;--accent:#e58a5f}}
 *{box-sizing:border-box}
@@ -280,12 +282,60 @@ ${rows ? `<ul class="list">${rows}</ul>` : '<p class="muted">这个时段还没�
 }
 
 /**
+ * 把 token 数缩成 1.2K / 3.4M / 5.6B。
+ * @param {number} n
+ * @returns {string}
+ */
+function compact(n) {
+  const v = Number(n) || 0;
+  for (const [div, unit] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
+    if (v >= div) return `${(v / div).toFixed(v / div >= 100 ? 0 : 1)}${unit}`;
+  }
+  return String(Math.trunc(v));
+}
+
+/**
+ * AI 额度消耗页：近 30 天按日 / 按模型汇总（ai_usage.js）；横条长度是估算额度权重，不是真实额度。
+ * @param {any} env
+ * @param {number} now
+ * @returns {Promise<string>}
+ */
+async function usagePage(env, now) {
+  const { days, updatedAt } = await loadAiUsage(env, now);
+  const sum = () => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  const add = (a, b) => { for (const k of Object.keys(a)) a[k] += b[k]; };
+  const perDay = days.map((d) => {
+    const t = sum();
+    for (const u of Object.values(d.models)) add(t, u);
+    return { day: d.day, ...t, cost: weightedCost(t) };
+  });
+  const perModel = new Map();
+  for (const d of days) for (const [m, u] of Object.entries(d.models)) add(perModel.get(m) ?? perModel.set(m, sum()).get(m), u);
+  const max = Math.max(1, ...perDay.map((d) => d.cost));
+  const total = sum();
+  for (const d of perDay) add(total, d);
+  const rows = [...perDay].reverse().map((d) => `<tr><td>${esc(d.day.slice(5))}</td>
+<td><span class="bar" style="width:${Math.max(1, Math.round((d.cost / max) * 100))}%"></span></td>
+<td>${num(d.requests)}</td><td>${compact(d.output)}</td><td>${compact(d.cacheRead)}</td><td>${compact(d.cacheWrite)}</td></tr>`).join('');
+  const models = [...perModel].sort((a, b) => weightedCost(b[1]) - weightedCost(a[1])).map(([m, u]) => `<tr><td>${esc(m)}</td>
+<td>${num(u.requests)}</td><td>${compact(u.output)}</td><td>${compact(u.cacheRead)}</td><td>${compact(u.cacheWrite)}</td></tr>`).join('');
+  const body = `<h1 style="margin-top:16px">AI 额度消耗</h1>
+<p class="muted">近 ${days.length} 天，来自维护者机器上的 Claude Code 本地日志汇总（只含计数）。横条为估算额度权重（输出 5× / 缓存写 1.25× / 缓存读 0.1×），不是官方额度。${updatedAt ? `更新于 ${esc(new Date(updatedAt).toISOString().slice(0, 16).replace('T', ' '))} UTC。` : ''}</p>
+${days.length ? `<div class="card" style="display:block"><b>${num(total.requests)}</b> 次请求 · 输出 <b>${compact(total.output)}</b> · 缓存读 <b>${compact(total.cacheRead)}</b> · 缓存写 <b>${compact(total.cacheWrite)}</b></div>
+<h2>按日</h2>
+<table class="usage days"><thead><tr><th>日期</th><th>权重</th><th>请求</th><th>输出</th><th>缓存读</th><th>缓存写</th></tr></thead><tbody>${rows}</tbody></table>
+<h2>按模型</h2>
+<table class="usage"><thead><tr><th>模型</th><th>请求</th><th>输出</th><th>缓存读</th><th>缓存写</th></tr></thead><tbody>${models}</tbody></table>` : '<p class="muted">还没有上传数据</p>'}`;
+  return layout({ title: 'AI 额度消耗', body });
+}
+
+/**
  * 是否只读网页路径（worker.js 据此在鉴权前分流：网页一律匿名 + 走边缘缓存）。
  * @param {string} path
  * @returns {boolean}
  */
 export function isPagePath(path) {
-  return path === '/rank' || USER_RE.test(path) || WORK_RE.test(path);
+  return path === '/rank' || path === '/usage' || USER_RE.test(path) || WORK_RE.test(path);
 }
 
 /**
@@ -300,6 +350,7 @@ export async function renderPage(env, url, now) {
   let m;
   try {
     if (path === '/rank') return htmlResponse(await rankPage(env, url, now));
+    if (path === '/usage') return htmlResponse(await usagePage(env, now));
     if ((m = USER_RE.exec(path))) return htmlResponse(await userPage(env, m[1], now));
     if ((m = WORK_RE.exec(path))) return htmlResponse(await workPageHtml(env, m[1]));
     return errorPage(404);
