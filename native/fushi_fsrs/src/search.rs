@@ -1454,9 +1454,10 @@ mod tests {
         assert_eq!(sessions.len(), 159);
         assert_eq!(matches + errors, 5575);
         // 那几份 Dart 测试里的求值错误都在求值前的需求分析（`needs`）就报了，没走到 match：录下的全是命中位图。
-        // search_engine_differences_test 的「Rust regex 不支持的 → 语法错误」在这里直接测编译。
+        // search_engine_differences_test 的「Rust regex 不支持的 → 语法错误」与 anki_search_test 的不合法 `re:`
+        // 在这里直接测编译。
         assert_eq!(errors, 0);
-        for v in ["a(?=b)", "a(?!b)", "(?<=a)b", r"(a)\1", r"(?<n>a)\k<n>", "[^]"] {
+        for v in ["a(?=b)", "a(?!b)", "(?<=a)b", r"(a)\1", r"(?<n>a)\k<n>", "[^]", "(abc"] {
             let q = serde_json::json!({"t": "re", "v": v, "at": format!("re:{v}")}).to_string();
             let e = Corpus::columns_used(&q).err().unwrap_or_else(|| panic!("{v} must not compile"));
             assert_eq!(e.kind, "syntax", "{v}");

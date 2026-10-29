@@ -8,7 +8,7 @@ const String kFushiFsrsLibEnv = 'FUSHI_FSRS_LIB';
 
 /// Dart 绑定期望的 C ABI 版本，与 native/fushi_fsrs/src/lib.rs 的 `ABI_VERSION` 一致。
 /// 不一致视为库不可用（不崩、不猜着调）。
-const int kFushiFsrsAbiVersion = 3;
+const int kFushiFsrsAbiVersion = 4;
 
 /// 已加载的 fushi_fsrs 原生库（fsrs-rs 的 C ABI）。
 ///
