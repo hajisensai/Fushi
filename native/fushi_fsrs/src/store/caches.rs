@@ -289,6 +289,82 @@ fn expected_cards(n: &NoteInfo, t: &TypeInfo) -> Result<Vec<(String, String, i64
     Ok(out)
 }
 
+/// 一组笔记物化好的视图（不存在的跳过）：身份记录与修改记录分块一次读、整块一次寄存器内核。
+fn note_infos(c: &Connection, chunk: &[String]) -> Result<Vec<NoteInfo>, String> {
+    let rows = entity_rows(c, chunk)?;
+    let edits = edits_of(c, "note", chunk)?;
+    let mut views: Vec<NoteInfo> = Vec::new();
+    for id in chunk {
+        let Some(payload) = rows.get(id) else { continue };
+        let es: Vec<StoredEdit<'_>> = edits.get(id).map(|v| v.iter().map(|e| (e.1.as_str(), e.2)).collect()).unwrap_or_default();
+        views.push(NoteInfo::of(id, &registers::note_view_of(payload, &es)?));
+    }
+    Ok(views)
+}
+
+/// 把 [ids] 里还没物化过的笔记类型物化进 [types]（不存在的记 None）。一次刷新内同一笔记类型只物化一次。
+fn load_types<'a>(
+    c: &Connection,
+    cfg: &CacheConfig,
+    ids: impl Iterator<Item = &'a String>,
+    types: &mut HashMap<String, Option<TypeInfo>>,
+) -> Result<(), String> {
+    let missing: Vec<String> =
+        ids.filter(|t| !types.contains_key(*t)).cloned().collect::<BTreeSet<_>>().into_iter().collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let trows = entity_rows(c, &missing)?;
+    let tedits = edits_of(c, "notetype", &missing)?;
+    for id in &missing {
+        let info = match trows.get(id) {
+            None => None,
+            Some(payload) => {
+                let es: Vec<StoredEdit<'_>> =
+                    tedits.get(id).map(|v| v.iter().map(|e| (e.1.as_str(), e.2)).collect()).unwrap_or_default();
+                let builtin =
+                    payload["builtin"].as_str().and_then(|k| cfg.builtins.get(k)).map_or(Value::Null, |b| b.0.clone());
+                Some(TypeInfo::of(&registers::note_type_view_of(payload, &es, &builtin)?, cfg))
+            }
+        };
+        types.insert(id.clone(), info);
+    }
+    Ok(())
+}
+
+/// 笔记缓存行的 `dupe_norm`（srs.db v15）：首字段（笔记类型字段顺序第一个）的 AnkiConnect 查重规范形
+/// （`search::dupe_norm`，与 canAddNotes 给候选首字段算的同一个函数）。笔记类型不在 / 没有字段 = 空串
+/// （查重只拿非空规范形去比，空串永远不命中）。
+fn dupe_norm_of(n: &NoteInfo, t: Option<&TypeInfo>) -> String {
+    match t.and_then(|t| t.fields.first()) {
+        Some((f, _)) => crate::search::dupe_norm(n.field(f)),
+        None => String::new(),
+    }
+}
+
+/// 补算 `dupe_norm IS NULL` 的笔记缓存行（v15 加列后的老行；Dart 缓存修订号 8 的升级步调用）：只物化这些笔记与
+/// 它们的笔记类型、只改这一列，不重算整行与卡片（整行重算要读每张卡的血统与日志，十万卡库慢一个量级）。与
+/// [flush_notes] 写的值同一个函数（[dupe_norm_of]）。身份记录已不在的行（缓存孤行）写空串。幂等。返回补了几行。
+pub(crate) fn backfill_dupe_norms(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<usize, String> {
+    let ids = strings(c, "SELECT id FROM srs_notes_cache WHERE profile_uid = ?1 AND dupe_norm IS NULL", &[profile])?;
+    let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
+    let mut up = c.prepare_cached("UPDATE srs_notes_cache SET dupe_norm = ?1 WHERE id = ?2").map_err(sql)?;
+    for chunk in ids.chunks(CHUNK) {
+        let views = note_infos(c, chunk)?;
+        load_types(c, cfg, views.iter().map(|v| &v.note_type), &mut types)?;
+        let mut done: HashSet<&str> = HashSet::with_capacity(chunk.len());
+        for n in &views {
+            let norm = dupe_norm_of(n, types.get(&n.note_type).and_then(Option::as_ref));
+            up.execute(rusqlite::params![norm, n.id]).map_err(sql)?;
+            done.insert(n.id.as_str());
+        }
+        for id in chunk.iter().filter(|id| !done.contains(id.as_str())) {
+            up.execute(rusqlite::params!["", id]).map_err(sql)?;
+        }
+    }
+    Ok(ids.len())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn flush_notes(
     c: &Connection,
@@ -300,41 +376,9 @@ fn flush_notes(
     now: i64,
     out: &mut Written,
 ) -> Result<(), String> {
-    let rows = entity_rows(c, chunk)?;
-    let edits = edits_of(c, "note", chunk)?;
+    let views = note_infos(c, chunk)?;
     let existing = cards_of_notes(c, chunk)?;
-    let mut views: Vec<NoteInfo> = Vec::new();
-    for id in chunk {
-        let Some(payload) = rows.get(id) else { continue };
-        let es: Vec<StoredEdit<'_>> = edits.get(id).map(|v| v.iter().map(|e| (e.1.as_str(), e.2)).collect()).unwrap_or_default();
-        views.push(NoteInfo::of(id, &registers::note_view_of(payload, &es)?));
-    }
-    let missing: Vec<String> = views
-        .iter()
-        .map(|v| v.note_type.clone())
-        .filter(|t| !types.contains_key(t))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    if !missing.is_empty() {
-        let trows = entity_rows(c, &missing)?;
-        let tedits = edits_of(c, "notetype", &missing)?;
-        for id in &missing {
-            let info = match trows.get(id) {
-                None => None,
-                Some(payload) => {
-                    let es: Vec<StoredEdit<'_>> =
-                        tedits.get(id).map(|v| v.iter().map(|e| (e.1.as_str(), e.2)).collect()).unwrap_or_default();
-                    let builtin = payload["builtin"]
-                        .as_str()
-                        .and_then(|k| cfg.builtins.get(k))
-                        .map_or(Value::Null, |b| b.0.clone());
-                    Some(TypeInfo::of(&registers::note_type_view_of(payload, &es, &builtin)?, cfg))
-                }
-            };
-            types.insert(id.clone(), info);
-        }
-    }
+    load_types(c, cfg, views.iter().map(|v| &v.note_type), types)?;
     // 笔记缓存行与应有的卡。
     // (笔记下标, 应有的卡, 笔记已不在, 词频名次)。
     let mut plans: Vec<(usize, Vec<(String, String, i64, bool)>, bool, Option<i64>)> = Vec::with_capacity(views.len());
@@ -354,6 +398,7 @@ fn flush_notes(
             Some((f, _)) => card_cache::sort_field(n.field(f)),
             None => String::new(),
         };
+        let dupe = dupe_norm_of(n, t);
         // 名次是笔记上的值：写进这条笔记的每张卡。
         let freq = t.and_then(|t| t.freq_field.as_deref()).and_then(|f| card_cache::freq_rank(n.field(f)));
         let expected = match t {
@@ -382,6 +427,7 @@ fn flush_notes(
                 n.source_kind,
                 n.source_title,
                 crate::store::schema::anki_numeric_id(&n.id),
+                dupe,
             ])
             .map_err(sql)?;
         out.notes.push(n.id.clone());
@@ -652,14 +698,14 @@ fn delete_cards(c: &Connection, ids: &[String]) -> Result<(), String> {
 
 const NOTE_UPSERT: &str = "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deck_id, \
      deleted_at, term_key, reading_key, sort_field, tags_json, pending_decision, updated_at, media_refs, source_kind, \
-     source_title, anki_id) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) ON CONFLICT(id) DO UPDATE SET \
+     source_title, anki_id, dupe_norm) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18) ON CONFLICT(id) DO UPDATE SET \
      profile_uid = excluded.profile_uid, note_type_id = excluded.note_type_id, guid = excluded.guid, \
      created_at = excluded.created_at, deck_id = excluded.deck_id, deleted_at = excluded.deleted_at, \
      term_key = excluded.term_key, reading_key = excluded.reading_key, sort_field = excluded.sort_field, \
      tags_json = excluded.tags_json, pending_decision = excluded.pending_decision, \
      updated_at = excluded.updated_at, media_refs = excluded.media_refs, source_kind = excluded.source_kind, \
-     source_title = excluded.source_title, anki_id = excluded.anki_id";
+     source_title = excluded.source_title, anki_id = excluded.anki_id, dupe_norm = excluded.dupe_norm";
 
 const CARD_UPSERT: &str = "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, cloze_ord, deck_id, \
      suspended, buried_until_day, flag, hidden, queue, due_day, due_at, scheduled_days, reps, lapses, stability, \

@@ -394,7 +394,12 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 7（srs.db schema v13）：srs_notes_cache.source_kind / source_title（笔记出处，统计页的「制卡来源」由内核直接读，
   /// 见 store/bulk.rs `stats_bundle`）。老库这两列是空的，升级时全部笔记缓存重算一遍（`anki_id` 由 v13 迁移回填）。
-  static const int _kCacheRevision = 7;
+  ///
+  /// 8（srs.db schema v15）：srs_notes_cache.dupe_norm（首字段的 AnkiConnect 查重规范形，canAddNotes 的库内查重
+  /// 直接按它的索引查，见 store/browse.rs `anki_dupes`）。老行这一列是 NULL，升级时内核只补这一列
+  /// （caches.rs `backfill_dupe_norms`：物化笔记与笔记类型算首字段，不重算整行与卡片——那要读每张卡的血统与
+  /// 日志）。只改这一列、不算缓存写入，不进变更日志。
+  static const int _kCacheRevision = 8;
   int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
@@ -1424,6 +1429,7 @@ class SrsDbStore implements SrsSync2Host {
     'restore',
     'refresh_caches',
     'rebuild_caches',
+    'backfill_dupe_norms',
   };
 
   /// 缓存刷新的配置：本 profile 的默认牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。
@@ -2047,6 +2053,10 @@ class SrsDbStore implements SrsSync2Host {
         );
       }
       if (_cacheRevision < 7) await _refreshCaches(allNotes: true);
+      // 整行重算（上一步）已顺带写好 dupe_norm；这一步补的只是剩下的 NULL 行（没有就是一条 SELECT）。
+      if (_cacheRevision < 8) {
+        await _sync2(const <String, Object?>{'op': 'backfill_dupe_norms'});
+      }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
