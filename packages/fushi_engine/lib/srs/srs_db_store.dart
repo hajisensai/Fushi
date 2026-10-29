@@ -1381,12 +1381,28 @@ class SrsDbStore implements SrsSync2Host {
     List<Uint8List> blobs = const <Uint8List>[],
   }) {
     debugCoreCommands++;
-    return _coreSync2(core.address, core.libraryPath, <String, Object?>{
-      ...request,
-      'profile': profileUid,
-      if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
-    }, blobs);
+    return _coreSync2(
+      core.address,
+      core.libraryPath,
+      <String, Object?>{
+        ...request,
+        'profile': profileUid,
+        if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
+      },
+      blobs,
+      lane: srsCoreLaneOf(request['op']),
+    );
   }
+
+  /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
+  /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
+  /// `kSrsSync2Concurrency` 并发，以前一来就占满整个池）；其余走默认道。
+  @visibleForTesting
+  static SrsCoreLane srsCoreLaneOf(Object? op) => switch (op) {
+    'apply' || 'study' || 'preview' => SrsCoreLane.interactive,
+    'seal_file' || 'open_file' || 'media_hash' => SrsCoreLane.file,
+    _ => SrsCoreLane.bulk,
+  };
 
   /// 发出过的内核命令数（`ffsrs_store_sync2` 一次算一条）：复习路径的 FFI 次数守卫 / 基准用。
   @visibleForTesting
@@ -4853,10 +4869,13 @@ Future<SrsSync2Result> _coreSync2(
   int address,
   String? libraryPath,
   Map<String, Object?> request,
-  List<Uint8List> blobs,
-) => SrsCoreWorkers.of(
-  libraryPath,
-).run<SrsSync2Result>(address, (SrsCore c) => c.sync2(request, blobs: blobs));
+  List<Uint8List> blobs, {
+  SrsCoreLane lane = SrsCoreLane.bulk,
+}) => SrsCoreWorkers.of(libraryPath).run<SrsSync2Result>(
+  address,
+  (SrsCore c) => c.sync2(request, blobs: blobs),
+  lane: lane,
+);
 
 /// [SrsDbStore._noteTypeCache] 的一份：[key] 下物化过的笔记类型（含已删除的；不存在的 ID 记 null）与
 /// [SrsDbStore.noteTypes] 的整份列表（没算过 = null）。
