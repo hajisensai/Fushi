@@ -4,7 +4,8 @@
 // 不随库大小增长；计数、下一张、预取的猜测都出自这一次排队（复习页不再另调 deckSummary / nextCard）。
 //
 // 基准（手动；默认跳过）：FUSHI_SRS_ANSWER_BENCH=<笔记数>（每条两张卡）dart test test/srs/srs_answer_study_roundtrips_test.dart
-// 库开在临时文件上、走后台 isolate 连接（与 app 相同）。
+// 库开在临时文件上、走后台 isolate 连接（与 app 相同）。大库导入很慢：再设 FUSHI_SRS_ANSWER_BENCH_DB=<文件>，
+// 文件不存在时只导入并存到那里（不计时作答），存在时拷一份来量（前后两版量同一份库）。
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -20,9 +21,14 @@ import 'support/srs_test_storage.dart';
 
 const String _uid = '01928c3e-0000-7000-8000-0000000a5e01';
 
-Future<(SrsDbStore, CountingInterceptor)> _open({bool inline = true}) async {
+Future<(SrsDbStore, CountingInterceptor)> _open({
+  bool inline = true,
+  String? path,
+  String? copyFrom,
+}) async {
   final CountingInterceptor counter = CountingInterceptor();
   final Directory tmp = Directory.systemTemp.createTempSync('srs_ans_');
+  if (copyFrom != null) File(copyFrom).copySync('${tmp.path}/srs.db');
   addTearDown(() {
     try {
       tmp.deleteSync(recursive: true);
@@ -31,7 +37,7 @@ Future<(SrsDbStore, CountingInterceptor)> _open({bool inline = true}) async {
     }
   });
   final TestSrs srs = await openTestSrsAt(
-    '${tmp.path}/srs.db',
+    path ?? '${tmp.path}/srs.db',
     interceptor: counter,
     inline: inline,
   );
@@ -128,11 +134,19 @@ void main() {
   test(
     '基准：评分 → 下一张',
     () async {
+      final String? cached = Platform.environment['FUSHI_SRS_ANSWER_BENCH_DB'];
+      final bool build = cached != null && !File(cached).existsSync();
       final (SrsDbStore store, CountingInterceptor counter) = await _open(
         inline: false,
+        path: build ? cached : null,
+        copyFrom: build ? null : cached,
       );
       final Stopwatch imp = Stopwatch()..start();
-      await _import(store, int.parse(bench!));
+      if (cached == null || build) await _import(store, int.parse(bench!));
+      if (build) {
+        stdout.writeln('BENCH built $cached in ${imp.elapsedMilliseconds}ms');
+        return;
+      }
       final String deck = await _biggestRoot(store);
       final SrsStudyState first = (await store.studyState(deck))!;
       stdout.writeln(
