@@ -11,7 +11,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rquickjs::{Context, Ctx, Exception, Function, Runtime, Value};
 use serde::Deserialize;
@@ -265,11 +264,11 @@ pub struct Instance {
     fatal: Option<String>,
 }
 
+/// 单调毫秒时钟（预算计时用）：系统时间被往回拨时 `SystemTime` 会让 deadline 长时间不触发。
+/// 从进程内首次调用起算、+1 保证非 0（0 是「未布防」哨兵）。
 fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64 + 1
 }
 
 fn exception_text(ctx: &Ctx<'_>, e: rquickjs::Error) -> String {
@@ -423,6 +422,11 @@ impl Instance {
     }
 
     /// 核对一个由插件交给宿主的地址（音频流 / 封面 / 重定向的下一跳）。
+    /// 只读的授权核对面（清单 + 策略），可与 [Instance::step] 并发使用（见 `mod.rs` 的句柄）。
+    pub(crate) fn gate(&self) -> Arc<Gate> {
+        self.gate.clone()
+    }
+
     pub fn check_url(&self, url: &str, purpose: Purpose) -> Result<String, String> {
         self.gate.policy.check_url(url, purpose)
     }

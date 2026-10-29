@@ -25,12 +25,21 @@ pub mod vault;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
 use crate::{guard, hand_over_bytes, slice_arg, status};
 use policy::Purpose;
-use runtime::Instance;
+use runtime::{Gate, Instance};
+
+/// FFI 句柄：JS 实例在互斥锁里（同一句柄的 step 串行），授权核对面单独持有、只读，
+/// 所以 `check_urls`（UI isolate 上的重定向核对）可以与后台线程上正在跑的 step 并发，
+/// 不会对 `Instance` 产生 `&mut` 别名。
+pub struct PluginHandle {
+    gate: Arc<Gate>,
+    inst: Mutex<Instance>,
+}
 
 unsafe fn str_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a str> {
     slice_arg(ptr, len).and_then(|b| std::str::from_utf8(b).ok())
@@ -137,7 +146,7 @@ pub unsafe extern "C" fn ffm_plugin_open(
     dir_ptr: *const u8,
     dir_len: usize,
     budget_ms: u32,
-    out_handle: *mut *mut Instance,
+    out_handle: *mut *mut PluginHandle,
     out_ptr: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
@@ -154,7 +163,11 @@ pub unsafe extern "C" fn ffm_plugin_open(
             Instance::open(pkg, budget_ms as u64).map(|i| (i, summary))
         }) {
             Ok((inst, summary)) => {
-                *out_handle = Box::into_raw(Box::new(inst));
+                let gate = inst.gate();
+                *out_handle = Box::into_raw(Box::new(PluginHandle {
+                    gate,
+                    inst: Mutex::new(inst),
+                }));
                 summary
             }
             Err(e) => error_json(e),
@@ -164,10 +177,10 @@ pub unsafe extern "C" fn ffm_plugin_open(
 }
 
 /// # Safety
-/// `handle` 来自 [ffm_plugin_open] 且未关闭；同一句柄不得并发调用。
+/// `handle` 来自 [ffm_plugin_open] 且未关闭。同一句柄的 step 由句柄内的锁串行化。
 #[no_mangle]
 pub unsafe extern "C" fn ffm_plugin_step(
-    handle: *mut Instance,
+    handle: *mut PluginHandle,
     ops_ptr: *const u8,
     ops_len: usize,
     out_ptr: *mut *mut u8,
@@ -180,7 +193,12 @@ pub unsafe extern "C" fn ffm_plugin_step(
         let Some(ops) = slice_arg(ops_ptr, ops_len) else {
             return status::NULL_ARGUMENT;
         };
-        let v = (*handle).step(ops);
+        // 锁中毒（上一次 step panic）时实例状态不可信：按 fatal 交回，宿主作废并重建。
+        let handle: &PluginHandle = &*handle;
+        let v = match handle.inst.lock() {
+            Ok(mut inst) => inst.step(ops),
+            Err(_) => json!({ "fatal": "插件运行时内部错误（上次执行崩溃）" }),
+        };
         out_json(v, out_ptr, out_len)
     })
 }
@@ -189,10 +207,10 @@ pub unsafe extern "C" fn ffm_plugin_step(
 /// `purpose`：0 = 插件请求（含重定向下一跳），1 = 交给宿主播放 / 显示的媒体地址。
 ///
 /// # Safety
-/// 同 [ffm_plugin_step]。
+/// `handle` 来自 [ffm_plugin_open] 且未关闭；可与同句柄的 step 并发（只读授权核对面）。
 #[no_mangle]
 pub unsafe extern "C" fn ffm_plugin_check_urls(
-    handle: *mut Instance,
+    handle: *mut PluginHandle,
     urls_ptr: *const u8,
     urls_len: usize,
     purpose: i32,
@@ -214,9 +232,10 @@ pub unsafe extern "C" fn ffm_plugin_check_urls(
         } else {
             Purpose::Request
         };
+        let handle: &PluginHandle = &*handle;
         let out: Vec<serde_json::Value> = urls
             .iter()
-            .map(|u| match (*handle).check_url(u, purpose) {
+            .map(|u| match handle.gate.policy.check_url(u, purpose) {
                 Ok(v) => json!(v),
                 Err(_) => serde_json::Value::Null,
             })
@@ -263,7 +282,7 @@ pub unsafe extern "C" fn ffm_plugin_vault(
 /// # Safety
 /// `handle` 来自 [ffm_plugin_open]，关闭后不得再用。
 #[no_mangle]
-pub unsafe extern "C" fn ffm_plugin_close(handle: *mut Instance) {
+pub unsafe extern "C" fn ffm_plugin_close(handle: *mut PluginHandle) {
     if !handle.is_null() {
         let _ = catch_unwind(AssertUnwindSafe(|| drop(Box::from_raw(handle))));
     }

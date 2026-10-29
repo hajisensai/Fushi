@@ -180,16 +180,18 @@ fn check_known(label: &str, values: &[String], known: &[&str]) -> Result<(), Str
     Ok(())
 }
 
+/// 插件 id：2..=64 字节，`[a-z0-9._-]`，首尾必须是字母或数字、不得有连续的点。id 直接作目录名：
+/// Windows 会把结尾的点规范化掉（`foo.` ≡ `foo`），连续点在部分文件系统上也有特殊含义。
 pub fn valid_id(id: &str) -> bool {
     let n = id.len();
+    let alnum = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
     (2..=64).contains(&n)
+        && id.bytes().next().is_some_and(alnum)
+        && id.bytes().last().is_some_and(alnum)
+        && !id.contains("..")
         && id
             .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        && id.bytes().all(|b| {
-            b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'_' || b == b'-'
-        })
+            .all(|b| alnum(b) || b == b'.' || b == b'_' || b == b'-')
 }
 
 fn valid_version(v: &str) -> bool {
@@ -216,6 +218,17 @@ mod tests {
     fn accepts_valid() {
         let m = Manifest::parse(base().to_string().as_bytes()).unwrap();
         assert_eq!(m.id, "moe.example");
+    }
+
+    #[test]
+    fn id_shape() {
+        for ok in ["moe.test", "a1", "x-y_z.q9"] {
+            assert!(valid_id(ok), "{ok}");
+        }
+        // 结尾的点（Windows 规范化成另一个 id 的目录）、连续点、首尾非字母数字一律拒。
+        for bad in ["foo.", "foo..bar", ".foo", "-foo", "foo-", "foo_", "a", "Foo"] {
+            assert!(!valid_id(bad), "{bad}");
+        }
     }
 
     #[test]

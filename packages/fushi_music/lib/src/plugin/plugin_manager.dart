@@ -58,7 +58,10 @@ class MusicPluginManager {
   /// 本平台是否带插件运行时。
   static bool get isSupported => MusicPluginNative.isSupported;
 
-  static final RegExp _idPattern = RegExp(r'^[a-z0-9][a-z0-9._-]{1,63}$');
+  /// 与 Rust `manifest::valid_id` 同一判据：首尾字母或数字、不得有连续的点。
+  static final RegExp _idPattern = RegExp(
+    r'^(?!.*\.\.)[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$',
+  );
 
   File get _stateFile => File('${rootDir.path}/.state.json');
 

@@ -283,3 +283,60 @@ fn forged_settle_and_unknown_complete_are_dropped() {
     let out = step(&mut inst, json!([{ "op": "complete", "call": 999, "ok": true, "value": null }]));
     assert!(out["fatal"].is_null(), "{out}");
 }
+
+/// check_urls 只读授权核对面：同一句柄上 step 正在后台线程跑（持有实例锁）时，核对照样立即返回，
+/// 不等锁、也不对实例取 `&mut`。
+#[test]
+fn check_urls_runs_concurrently_with_step() {
+    use super::{ffm_plugin_check_urls, ffm_plugin_close, ffm_plugin_open, ffm_plugin_step, PluginHandle};
+    let m = manifest_with(&["lyrics"], &["network"], &["api.example.com"]);
+    let js = r#"
+        module.exports = { async lyrics() {
+          const end = Date.now() + 600; while (Date.now() < end) {}
+          return 1;
+        } };
+    "#;
+    let mut all: Vec<(&str, &[u8])> = vec![("manifest.json", m.as_bytes())];
+    all.push(("main.js", js.as_bytes()));
+    let zip = build_zip(&all, Sign::None, None);
+    let digest = inspect_zip(&zip).unwrap().digest;
+    let root = temp_root("concurrent");
+    install_zip(&zip, &root, &digest).unwrap();
+    let dir = root.join("moe.test").to_string_lossy().into_owned();
+
+    let mut handle: *mut PluginHandle = std::ptr::null_mut();
+    let mut out: *mut u8 = std::ptr::null_mut();
+    let mut len = 0usize;
+    unsafe {
+        assert_eq!(ffm_plugin_open(dir.as_ptr(), dir.len(), 2000, &mut handle, &mut out, &mut len), 0);
+        crate::ffm_free_bytes(out, len);
+    }
+    assert!(!handle.is_null());
+    let addr = handle as usize;
+    let stepper = std::thread::spawn(move || {
+        let ops = br#"[{"op":"invoke","inv":1,"method":"lyrics","args":{}}]"#;
+        let mut out: *mut u8 = std::ptr::null_mut();
+        let mut len = 0usize;
+        unsafe {
+            ffm_plugin_step(addr as *mut PluginHandle, ops.as_ptr(), ops.len(), &mut out, &mut len);
+            let v: Value = serde_json::from_slice(std::slice::from_raw_parts(out, len)).unwrap();
+            crate::ffm_free_bytes(out, len);
+            v
+        }
+    });
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    let urls = br#"["https://api.example.com/a","https://evil.com/"]"#;
+    let t = std::time::Instant::now();
+    let checked: Value = unsafe {
+        assert_eq!(ffm_plugin_check_urls(handle, urls.as_ptr(), urls.len(), 0, &mut out, &mut len), 0);
+        let v = serde_json::from_slice(std::slice::from_raw_parts(out, len)).unwrap();
+        crate::ffm_free_bytes(out, len);
+        v
+    };
+    assert!(t.elapsed() < std::time::Duration::from_millis(200), "check_urls 等了 step 的锁");
+    assert_eq!(checked["urls"][0], "https://api.example.com/a");
+    assert!(checked["urls"][1].is_null());
+    let stepped = stepper.join().unwrap();
+    assert_eq!(stepped["settled"][0]["value"], 1, "{stepped}");
+    unsafe { ffm_plugin_close(handle) };
+}

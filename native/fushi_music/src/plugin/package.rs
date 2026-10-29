@@ -205,9 +205,10 @@ pub fn install_zip(
     }
     let id = &pkg.manifest.id;
     fs::create_dir_all(root).map_err(|e| format!("建插件目录失败：{e}"))?;
-    let staging = root.join(format!("{id}.staging"));
+    // 临时 / 备份目录以点开头：合法 id 首字符必须是字母或数字，不会与任何已装插件撞名。
+    let staging = root.join(format!(".staging-{id}"));
     let target = root.join(id);
-    let backup = root.join(format!("{id}.old"));
+    let backup = root.join(format!(".old-{id}"));
     let _ = fs::remove_dir_all(&staging);
     let _ = fs::remove_dir_all(&backup);
     let write = || -> std::io::Result<()> {
