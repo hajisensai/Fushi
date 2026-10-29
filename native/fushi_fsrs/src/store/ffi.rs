@@ -726,10 +726,17 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
     use serde_json::{json, Value};
     let s = |k: &str| req.get(k).and_then(Value::as_str).ok_or_else(|| format!("sync2: missing {k}"));
     let i = |k: &str| req.get(k).and_then(Value::as_i64).ok_or_else(|| format!("sync2: missing {k}"));
-    // 不针对单个 profile 的命令（store/profile_data.rs：找无主数据用）。
+    // 不针对单个 profile 的命令（store/profile_data.rs 找无主数据；WAL 并回）。
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
         "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
+        // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
+        "wal_checkpoint" => return c.wal_checkpoint(),
+        // 有写入在等写锁：正在投的收段那一片尽快收（只置一个标志，等锁的一侧直接同步调）。
+        "ingest_yield" => {
+            c.sync2_ingest_yield();
+            return Ok(json!({}));
+        }
         _ => {}
     }
     let profile = s("profile")?;
@@ -838,7 +845,17 @@ fn sync2_command(
         "ingest_batch" => parse(c.sync2_ingest_batch(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
         // 拆开的一批：prepare 在写锁外解码验签（Dart 侧也不进写锁），commit 在写锁里投递。
         "ingest_prepare" => c.sync2_ingest_prepare(profile, blobs, key32(&req["key"])?)?,
-        "ingest_commit" => parse(c.sync2_ingest_commit(profile, i("now")?)?)?,
+        // 一次投一片（默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果
+        // `more` 为真 Dart 放开写锁再调。
+        "ingest_commit" => {
+            use crate::store::sync2::transport::CommitBudget;
+            let budget = match (req.get("sliceOps").and_then(Value::as_u64), req.get("sliceMs").and_then(Value::as_u64)) {
+                (Some(n), _) => CommitBudget::ops(n as usize),
+                (None, Some(ms)) => CommitBudget::slice_within(c.ingest_yield_flag(), std::time::Duration::from_millis(ms)),
+                (None, None) => CommitBudget::slice(c.ingest_yield_flag()),
+            };
+            parse(c.sync2_ingest_commit(profile, i("now")?, budget)?)?
+        }
         "ingest_finish" => parse(c.sync2_ingest_finish(profile, i("now")?)?)?,
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
         "export" => {

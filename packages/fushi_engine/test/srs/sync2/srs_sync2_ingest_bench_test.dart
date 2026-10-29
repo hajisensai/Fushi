@@ -29,6 +29,12 @@ void main() {
       int.tryParse(Platform.environment['FUSHI_SRS_INGEST_BENCH'] ?? '') ?? 0;
   final String dirPath =
       Platform.environment['FUSHI_SRS_INGEST_BENCH_DIR'] ?? '';
+  // 两次作答之间隔多久（毫秒，默认 20 = 持续抢锁的压力；0 = 收段期间不作答，量没人等锁时的墙钟）。
+  final int answerGapMs =
+      int.tryParse(
+        Platform.environment['FUSHI_SRS_INGEST_BENCH_ANSWER_MS'] ?? '',
+      ) ??
+      20;
 
   test(
     'ingest bench',
@@ -80,11 +86,11 @@ void main() {
         bool ingesting = true;
         final List<int> waits = <int>[];
         final Future<void> answering = () async {
-          while (ingesting) {
+          while (ingesting && answerGapMs > 0) {
             final Stopwatch one = Stopwatch()..start();
             await b.answer(card, 3);
             waits.add(one.elapsedMilliseconds);
-            await Future<void>.delayed(const Duration(milliseconds: 20));
+            await Future<void>.delayed(Duration(milliseconds: answerGapMs));
           }
         }();
         final SrsSync2Report r = await round(b, loc);
@@ -105,6 +111,7 @@ void main() {
           'peakPrivateDeltaMiB=${priv0 < 0 ? 'n/a' : (priv1 - priv0) >> 20} '
           'answers=${waits.length} '
           'answerP50Ms=${waits.isEmpty ? 0 : waits[waits.length ~/ 2]} '
+          'answerP90Ms=${waits.isEmpty ? 0 : waits[waits.length * 9 ~/ 10]} '
           'answerMaxMs=${waits.isEmpty ? 0 : waits.last}',
         );
         return;
