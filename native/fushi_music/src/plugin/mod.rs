@@ -13,7 +13,10 @@
 //! - `ffm_plugin_check_urls(handle, urls, purpose)`：按插件网络授权批量核对地址；
 //! - `ffm_plugin_close(handle)`；
 //! - `ffm_plugin_vault(root, op)`：凭据保险库（[vault]），`op` 为
-//!   `{"op":"get"|"set"|"remove"|"clear","plugin":id,"key"?,"value"?}`，返回 `{"value"?}` / `{"error"}`。
+//!   `{"op":"get"|"set"|"remove"|"clear","plugin":id,"key"?,"value"?,"dataKey"?}`，返回
+//!   `{"value"?}` / `{"error"}`。`dataKey`（base64 的 32 字节）是宿主从系统安全存储取出的数据密钥；
+//!   缺省时只有 Windows 可用（DPAPI 封装的密钥文件）。迁移用：`legacyKey` → `{"value": base64|null}`、
+//!   `dropLegacyKey`（带 `dataKey`）、`resetAll`。
 //!
 //! 校验 / 加载失败不是 FFI 错误：返回 0，JSON 里带 `"error"`。负返回码只给空指针 / 非 UTF-8 /
 //! panic（与本 crate 其它域一致）。
@@ -294,13 +297,33 @@ pub unsafe extern "C" fn ffm_plugin_vault(
         };
         let s = |k: &str| op.get(k).and_then(serde_json::Value::as_str).unwrap_or("");
         let root = Path::new(root);
-        let r = match s("op") {
-            "get" => vault::get(root, s("plugin"), s("key")).map(|v| json!({ "value": v })),
-            "set" => vault::set(root, s("plugin"), s("key"), s("value")).map(|_| json!({})),
-            "remove" => vault::remove(root, s("plugin"), s("key")).map(|_| json!({})),
-            "clear" => vault::clear(root, s("plugin")).map(|_| json!({})),
-            other => Err(format!("未知保险库操作 {other}")),
+        let provided: Result<Option<[u8; 32]>, String> = match op.get("dataKey") {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(v) => v
+                .as_str()
+                .and_then(|b| data_encoding::BASE64.decode(b.as_bytes()).ok())
+                .and_then(|k| <[u8; 32]>::try_from(k).ok())
+                .map(Some)
+                .ok_or_else(|| "dataKey 不是 32 字节".to_string()),
         };
+        let r = provided.and_then(|k| {
+            let src = k.map_or(vault::KeySource::Os, vault::KeySource::Provided);
+            match s("op") {
+                "get" => vault::get(root, src, s("plugin"), s("key")).map(|v| json!({ "value": v })),
+                "set" => vault::set(root, src, s("plugin"), s("key"), s("value")).map(|_| json!({})),
+                "remove" => vault::remove(root, s("plugin"), s("key")).map(|_| json!({})),
+                "clear" => vault::clear(root, s("plugin")).map(|_| json!({})),
+                "legacyKey" => Ok(json!({
+                    "value": vault::legacy_key(root).map(|k| data_encoding::BASE64.encode(&k)),
+                })),
+                "dropLegacyKey" => match k {
+                    Some(k) => vault::drop_legacy_key(root, &k).map(|_| json!({})),
+                    None => Err("dropLegacyKey 需要 dataKey".into()),
+                },
+                "resetAll" => vault::reset_all(root).map(|_| json!({})),
+                other => Err(format!("未知保险库操作 {other}")),
+            }
+        });
         out_json(r.unwrap_or_else(error_json), out_ptr, out_len)
     })
 }

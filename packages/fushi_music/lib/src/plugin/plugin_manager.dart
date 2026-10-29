@@ -38,11 +38,13 @@ class MusicPluginManager {
     required MusicPluginHttpClientFactory httpClientFactory,
     required MusicPluginLogSink log,
     this.budgetMs = 2000,
+    MusicPluginVaultKeyProvider? vaultKey,
     MusicPluginHttpPerformer? httpPerformer,
     MusicPluginResolver? resolver,
     MusicPluginAddressBlocker? addressBlocker,
     MusicPluginMediaProbe? mediaProbe,
-  }) : _httpClientFactory = httpClientFactory,
+  }) : _vaultKey = vaultKey,
+       _httpClientFactory = httpClientFactory,
        _httpPerformer = httpPerformer,
        _resolver = resolver,
        _addressBlocker = addressBlocker,
@@ -53,6 +55,9 @@ class MusicPluginManager {
   final MusicPluginHttpClientFactory _httpClientFactory;
   final MusicPluginLogSink _log;
   final MusicPluginHttpPerformer? _httpPerformer;
+
+  /// 凭据保险库数据密钥来源（见 [MusicPluginVaultKeyProvider]）。
+  final MusicPluginVaultKeyProvider? _vaultKey;
 
   /// 出站解析 / 私网判据 / 媒体探测的注入点（测试用；缺省走系统 DNS 与真实探测）。
   final MusicPluginResolver? _resolver;
@@ -273,6 +278,7 @@ class MusicPluginManager {
       httpClientFactory: _httpClientFactory,
       log: _log,
       vaultRoot: rootDir.path,
+      vaultKey: _vaultKey,
       budgetMs: budgetMs,
       httpPerformer: _httpPerformer,
       resolver: _resolver,

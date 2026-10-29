@@ -326,6 +326,7 @@ import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
@@ -1876,8 +1877,16 @@ class AppModel with ChangeNotifier {
   }
 
   MusicPluginManager _createMusicPluginManager() {
+    final Directory pluginRoot = Directory(
+      path.join(databaseDirectory.path, 'music_plugins'),
+    );
     final MusicPluginManager manager = MusicPluginManager(
-      rootDir: Directory(path.join(databaseDirectory.path, 'music_plugins')),
+      rootDir: pluginRoot,
+      // 非 Windows：保险库数据密钥在系统安全存储里（含旧版明文密钥文件的一次性迁移）。
+      vaultKey: MusicPluginVaultKey(
+        vaultRoot: pluginRoot.path,
+        store: const FlutterMusicPluginSecretStore(),
+      ).call,
       httpClientFactory: createAppHttpClient,
       // 插件日志是不可信文本：只进诊断日志，不进界面。
       log: (String id, String level, String message) =>

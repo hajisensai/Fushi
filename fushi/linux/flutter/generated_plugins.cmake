@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
   flutter_inappwebview_linux
   flutter_onnxruntime
+  flutter_secure_storage_linux
   flutter_webrtc
   gamepads_linux
   hotkey_manager_linux

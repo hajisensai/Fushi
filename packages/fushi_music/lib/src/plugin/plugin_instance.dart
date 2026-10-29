@@ -17,6 +17,11 @@ typedef MusicPluginHttpClientFactory = HttpClient Function();
 
 /// 替换整个 HTTP 执行（测试用：本地假服务在回环地址上，正常路径会按私网拒绝）。参数与返回值同
 /// [performMusicPluginHttp]。
+/// 凭据保险库数据密钥（32 字节）的来源：宿主从系统安全存储取出（非 Windows 平台）。返回 null
+/// = 由原生库自己保管（只有 Windows：DPAPI 封装的密钥文件）。取不到时抛错（该次凭据操作失败，
+/// 不静默换钥）。
+typedef MusicPluginVaultKeyProvider = Future<Uint8List?> Function();
+
 typedef MusicPluginHttpPerformer =
     Future<Map<String, Object?>> Function(Map<String, Object?> args);
 
@@ -35,11 +40,13 @@ class MusicPluginInstance {
     required File storageFile,
     required MusicPluginLogSink log,
     required String vaultRoot,
+    MusicPluginVaultKeyProvider? vaultKey,
     MusicPluginHttpPerformer? httpPerformer,
     MusicPluginResolver? resolver,
     MusicPluginAddressBlocker? addressBlocker,
     MusicPluginMediaProbe? mediaProbe,
   }) : _handle = handle,
+       _vaultKey = vaultKey,
        _worker = worker,
        _resolver = resolver,
        _addressBlocker = addressBlocker,
@@ -57,6 +64,7 @@ class MusicPluginInstance {
     required MusicPluginHttpClientFactory httpClientFactory,
     required MusicPluginLogSink log,
     required String vaultRoot,
+    MusicPluginVaultKeyProvider? vaultKey,
     int budgetMs = 2000,
     MusicPluginHttpPerformer? httpPerformer,
     MusicPluginResolver? resolver,
@@ -84,6 +92,7 @@ class MusicPluginInstance {
       storageFile: storageFile,
       log: log,
       vaultRoot: vaultRoot,
+      vaultKey: vaultKey,
       httpPerformer: httpPerformer,
       resolver: resolver,
       addressBlocker: addressBlocker,
@@ -108,6 +117,9 @@ class MusicPluginInstance {
 
   /// 凭据保险库根目录（插件根目录；文件在其下 `.credentials/`）。
   final String _vaultRoot;
+
+  /// 保险库数据密钥来源（null = 原生库自管，只有 Windows）。
+  final MusicPluginVaultKeyProvider? _vaultKey;
 
   int _nextInv = 0;
   final Map<int, Completer<Object?>> _invocations = <int, Completer<Object?>>{};
@@ -401,6 +413,7 @@ class MusicPluginInstance {
       );
 
   Future<Object?> _vault(String op, Map<String, Object?> args) async {
+    final Uint8List? dataKey = await _vaultKey?.call();
     final Map<String, Object?> r = await MusicPluginNativeAsync.vault(
       _vaultRoot,
       // 显式取字段，绝不展开插件给的参数：`op` / `plugin` 必须是宿主自己的值，否则插件在参数里
@@ -411,6 +424,7 @@ class MusicPluginInstance {
         'plugin': id,
         'key': args['key'],
         if (op == 'set') 'value': args['value'],
+        if (dataKey != null) 'dataKey': base64.encode(dataKey),
       },
     );
     if (r['error'] case final String e) throw StateError(e);

@@ -86,7 +86,9 @@ fushi.http.request({ url, method?, headers?, body?: string, bodyBytes?: Uint8Arr
 fushi.storage.get(key) / set(key, value: string) / remove(key)   // 需 storage 权限；按插件隔离
 fushi.credentials.get(key) / set(key, value: string) / remove(key)
   // 需 credentials 权限：AES-256-GCM 加密落盘、按插件 + 键名做附加认证数据（拷到别的插件 / 键名下解不开）；
-  // 数据密钥 Windows 用 DPAPI（当前用户）保护，其它平台退为仅当前用户可读的密钥文件。
+  // 数据密钥 Windows 用 DPAPI（当前用户）保护；其它平台存系统安全存储（iOS / macOS Keychain、
+  // Android Keystore、Linux libsecret，经 flutter_secure_storage），宿主取出后随调用交给 Rust，不落盘
+  // （2026-10-29 所有者拍板；旧版明文密钥文件首次启动迁入安全存储后删除）。
   // 防的是凭据文件被单独拷走，不防本机同用户的恶意程序。
 fushi.crypto.md5|sha1|sha256(data) → Uint8Array
 fushi.crypto.hmac('sha256'|'sha1'|'md5', key, data) → Uint8Array
@@ -225,5 +227,4 @@ Challenge {
 ## 6. 待决
 
 - 信任公钥 / 官方插件仓库是否要有、由谁签。
-- macOS Keychain / Android Keystore / Linux Secret Service 保护数据密钥（v1 只有 Windows DPAPI）。
 - 无头服务端是否也带插件宿主（`fushi_music` 目前不随服务端发布）。

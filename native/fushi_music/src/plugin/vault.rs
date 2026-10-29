@@ -4,12 +4,17 @@
 //!   "<base64(nonce 12B || AES-256-GCM 密文)>"}`。键名不落盘明文。
 //! - 附加认证数据 = `fushi-music-plugin-credential-v1\0<插件 id>\0<键名>`：把密文拷到别的插件或
 //!   别的键名下解不开（命名空间由密码学保证，而不只是由文件名保证）。
-//! - 数据密钥 32 字节随机，存 `<root>/.credentials/key`：Windows 用 DPAPI（当前用户）封装；其它平台
-//!   退为明文密钥文件（Unix 上 0600）。**威胁模型**：防凭据文件 / 备份被单独拷走后直接恢复登录，
-//!   不防本机同用户的恶意程序（DPAPI 本身就是用户 / 会话级边界）。
+//! - 数据密钥 32 字节随机，来源见 [KeySource]：
+//!   - Windows（[KeySource::Os]）：存 `<root>/.credentials/key`，DPAPI（当前用户）封装；
+//!   - 其它平台（[KeySource::Provided]）：宿主从系统安全存储（Keychain / Keystore / libsecret）取出后
+//!     随每次调用传进来，**Rust 不在磁盘上存密钥**。旧版落在 `key` 文件里的明文密钥（`file:` 方案）由
+//!     宿主经 [legacy_key] 读出、写进安全存储并核对后，再经 [drop_legacy_key] 删除（一次性迁移）。
 //!
-//! 密钥文件丢失或无法解封（换了 Windows 账户）时，所有插件凭据作废：读返回空、写生成新密钥，
-//! 插件表现为「未登录」，用户重新登录即可——不会因此报错卡住。
+//! **威胁模型**：防凭据文件 / 备份被单独拷走后直接恢复登录，不防本机同用户的恶意程序（DPAPI 与
+//! 系统钥匙串本身都是用户 / 会话级边界）。
+//!
+//! 密钥丢失或无法解封（换了 Windows 账户、安全存储被清）时，所有插件凭据作废：读返回空，插件表现
+//! 为「未登录」，用户重新登录即可——不会因此报错卡住。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -149,20 +154,76 @@ mod protect {
     pub const SCHEME: &str = "dpapi";
 }
 
-#[cfg(not(windows))]
-mod protect {
-    pub fn seal(key: &[u8]) -> Option<Vec<u8>> {
-        Some(key.to_vec())
-    }
+/// 旧版非 Windows 平台的明文密钥文件方案（只读，迁移用）。
+const LEGACY_SCHEME: &str = "file";
 
-    pub fn unseal(blob: &[u8]) -> Option<Vec<u8>> {
-        Some(blob.to_vec())
-    }
-
-    pub const SCHEME: &str = "file";
+/// 数据密钥从哪来。
+#[derive(Clone, Copy)]
+pub enum KeySource {
+    /// 宿主从系统安全存储取出、随调用传入（非 Windows 平台；Windows 也可用，测试走这条）。
+    Provided([u8; 32]),
+    /// 由本模块在磁盘上用操作系统机制封装保管：只有 Windows（DPAPI）。
+    Os,
 }
 
-/// 读数据密钥；没有 / 解不开时 [create] = true 就生成新的（旧凭据随之作废），否则返回 None。
+/// 解析出本次调用用的数据密钥：Provided 原样返回；Os 在 Windows 上读 / 建 DPAPI 封装的密钥文件，
+/// 其它平台报错（密钥只能来自系统安全存储，不再落盘）。
+fn resolve_key(root: &Path, src: KeySource, create: bool) -> Result<Option<[u8; 32]>, String> {
+    match src {
+        KeySource::Provided(k) => Ok(Some(k)),
+        #[cfg(windows)]
+        KeySource::Os => data_key(root, create),
+        #[cfg(not(windows))]
+        KeySource::Os => {
+            let _ = (root, create);
+            Err("凭据密钥须由宿主从系统安全存储提供".into())
+        }
+    }
+}
+
+/// 旧版（非 Windows）落在磁盘上的明文数据密钥；没有 / 不是旧方案 / 长度不对返回 None。
+pub fn legacy_key(root: &Path) -> Option<[u8; 32]> {
+    let _guard = lock();
+    let raw = fs::read(dir(root).join(KEY_FILE)).ok()?;
+    let rest = raw.strip_prefix(format!("{LEGACY_SCHEME}:").as_bytes())?;
+    <[u8; 32]>::try_from(rest).ok()
+}
+
+/// 迁移收尾：旧明文密钥已写进系统安全存储且核对一致后删除磁盘上的 `key` 文件。只删与 [expected]
+/// 相同的旧方案密钥（不同就留着、报错，宁可多留一份也不丢能解开现有密文的那把）。幂等：文件
+/// 已不在时成功返回。
+pub fn drop_legacy_key(root: &Path, expected: &[u8; 32]) -> Result<(), String> {
+    let _guard = lock();
+    let path = dir(root).join(KEY_FILE);
+    let raw = match fs::read(&path) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("读旧凭据密钥失败：{e}")),
+    };
+    match raw.strip_prefix(format!("{LEGACY_SCHEME}:").as_bytes()) {
+        Some(rest) if rest == expected.as_slice() => {
+            fs::remove_file(&path).map_err(|e| format!("删除旧凭据密钥失败：{e}"))
+        }
+        Some(_) => Err("旧凭据密钥与安全存储里的不一致，未删除".into()),
+        None => Err("凭据密钥文件不是旧明文方案，未删除".into()),
+    }
+}
+
+/// 宿主刚生成全新数据密钥（安全存储里没有、也没有旧密钥可迁）时调：清掉在任何密钥下都解不开的
+/// 残留密文。
+pub fn reset_all(root: &Path) -> Result<(), String> {
+    let _guard = lock();
+    let Ok(entries) = fs::read_dir(dir(root)) else { return Ok(()) };
+    for e in entries.flatten() {
+        if e.path().extension().is_some_and(|x| x == "json") {
+            fs::remove_file(e.path()).map_err(|err| format!("清理凭据失败：{err}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// 读 DPAPI 封装的数据密钥；没有 / 解不开时 [create] = true 就生成新的（旧凭据随之作废），否则 None。
+#[cfg(windows)]
 fn data_key(root: &Path, create: bool) -> Result<Option<[u8; 32]>, String> {
     let path = dir(root).join(KEY_FILE);
     if let Ok(raw) = fs::read(&path) {
@@ -210,10 +271,10 @@ fn check_args(plugin: &str, key: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn get(root: &Path, plugin: &str, key: &str) -> Result<Option<String>, String> {
+pub fn get(root: &Path, src: KeySource, plugin: &str, key: &str) -> Result<Option<String>, String> {
     check_args(plugin, key)?;
     let _guard = lock();
-    let Some(dk) = data_key(root, false)? else {
+    let Some(dk) = resolve_key(root, src, false)? else {
         return Ok(None);
     };
     let Some(blob) = read_entries(root, plugin).remove(&key_id(key)) else {
@@ -240,13 +301,14 @@ pub fn get(root: &Path, plugin: &str, key: &str) -> Result<Option<String>, Strin
         .and_then(|p| String::from_utf8(p).ok()))
 }
 
-pub fn set(root: &Path, plugin: &str, key: &str, value: &str) -> Result<(), String> {
+pub fn set(root: &Path, src: KeySource, plugin: &str, key: &str, value: &str) -> Result<(), String> {
     check_args(plugin, key)?;
     let _guard = lock();
     if value.len() > MAX_VALUE_BYTES {
         return Err("凭据超过 64 KiB".into());
     }
-    let dk = data_key(root, true)?.expect("create = true");
+    let dk = resolve_key(root, src, true)?.expect("create = true");
+    fs::create_dir_all(dir(root)).map_err(|e| format!("建凭据目录失败：{e}"))?;
     let mut entries = read_entries(root, plugin);
     let id = key_id(key);
     if !entries.contains_key(&id) && entries.len() >= MAX_ENTRIES {
@@ -304,42 +366,43 @@ pub fn clear(root: &Path, plugin: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    const K: KeySource = KeySource::Provided([7u8; 32]);
+
     #[test]
     fn roundtrip_namespacing_and_tamper() {
         let root = std::env::temp_dir().join(format!("fmp-vault-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        assert_eq!(get(&root, "moe.a", "cookie").unwrap(), None);
-        set(&root, "moe.a", "cookie", "MUSIC_U=secret").unwrap();
-        set(&root, "moe.b", "cookie", "other").unwrap();
+        assert_eq!(get(&root, K, "moe.a", "cookie").unwrap(), None);
+        set(&root, K, "moe.a", "cookie", "MUSIC_U=secret").unwrap();
+        set(&root, K, "moe.b", "cookie", "other").unwrap();
         assert_eq!(
-            get(&root, "moe.a", "cookie").unwrap().as_deref(),
+            get(&root, K, "moe.a", "cookie").unwrap().as_deref(),
             Some("MUSIC_U=secret")
         );
         assert_eq!(
-            get(&root, "moe.b", "cookie").unwrap().as_deref(),
+            get(&root, K, "moe.b", "cookie").unwrap().as_deref(),
             Some("other")
         );
         // 落盘不含明文与键名。
         let raw = fs::read_to_string(plugin_file(&root, "moe.a")).unwrap();
         assert!(!raw.contains("secret") && !raw.contains("cookie"));
-        let key_raw = fs::read(dir(&root).join(KEY_FILE)).unwrap();
-        assert!(key_raw.starts_with(format!("{}:", protect::SCHEME).as_bytes()));
+        // 宿主提供密钥时磁盘上没有密钥文件。
+        assert!(!dir(&root).join(KEY_FILE).exists());
         // 把 a 的密文拷到 b 名下：认证失败 → 当没有。
         fs::copy(plugin_file(&root, "moe.a"), plugin_file(&root, "moe.b")).unwrap();
-        assert_eq!(get(&root, "moe.b", "cookie").unwrap(), None);
+        assert_eq!(get(&root, K, "moe.b", "cookie").unwrap(), None);
         remove(&root, "moe.a", "cookie").unwrap();
-        assert_eq!(get(&root, "moe.a", "cookie").unwrap(), None);
-        set(&root, "moe.a", "k", "v").unwrap();
+        assert_eq!(get(&root, K, "moe.a", "cookie").unwrap(), None);
+        set(&root, K, "moe.a", "k", "v").unwrap();
         clear(&root, "moe.a").unwrap();
-        assert_eq!(get(&root, "moe.a", "k").unwrap(), None);
-        // 密钥坏了：读当没有，写生成新密钥并清掉旧密文。
-        set(&root, "moe.a", "k", "v").unwrap();
-        fs::write(dir(&root).join(KEY_FILE), b"garbage").unwrap();
-        assert_eq!(get(&root, "moe.a", "k").unwrap(), None);
-        set(&root, "moe.c", "k", "v2").unwrap();
-        assert_eq!(get(&root, "moe.c", "k").unwrap().as_deref(), Some("v2"));
+        assert_eq!(get(&root, K, "moe.a", "k").unwrap(), None);
+        // 换了一把密钥（安全存储被清后宿主新建）：旧密文读当没有。
+        set(&root, K, "moe.a", "k", "v").unwrap();
+        let other = KeySource::Provided([9u8; 32]);
+        assert_eq!(get(&root, other, "moe.a", "k").unwrap(), None);
+        reset_all(&root).unwrap();
         assert!(!plugin_file(&root, "moe.a").exists());
-        assert!(get(&root, "Bad Id", "k").is_err());
+        assert!(get(&root, K, "Bad Id", "k").is_err());
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -354,7 +417,7 @@ mod tests {
                 let root = root.clone();
                 std::thread::spawn(move || {
                     let plugin = if i % 2 == 0 { "moe.a" } else { "moe.b" };
-                    set(&root, plugin, &format!("k{i}"), &format!("v{i}")).unwrap();
+                    set(&root, K, plugin, &format!("k{i}"), &format!("v{i}")).unwrap();
                 })
             })
             .collect();
@@ -364,7 +427,7 @@ mod tests {
         for i in 0..16 {
             let plugin = if i % 2 == 0 { "moe.a" } else { "moe.b" };
             assert_eq!(
-                get(&root, plugin, &format!("k{i}")).unwrap().as_deref(),
+                get(&root, K, plugin, &format!("k{i}")).unwrap().as_deref(),
                 Some(format!("v{i}").as_str()),
                 "k{i}"
             );
@@ -376,5 +439,38 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 旧版明文密钥迁移：读得出、只删与期望一致的那把、幂等；迁移后用同一把密钥照常解开旧密文。
+    #[test]
+    fn legacy_key_migration_is_idempotent_and_lossless() {
+        let root = std::env::temp_dir().join(format!("fmp-vault-legacy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let legacy = [3u8; 32];
+        set(&root, KeySource::Provided(legacy), "moe.a", "cookie", "MUSIC_U=1").unwrap();
+        let mut raw = format!("{LEGACY_SCHEME}:").into_bytes();
+        raw.extend_from_slice(&legacy);
+        fs::write(dir(&root).join(KEY_FILE), &raw).unwrap();
+
+        assert_eq!(legacy_key(&root), Some(legacy));
+        assert!(drop_legacy_key(&root, &[4u8; 32]).is_err(), "不一致不删");
+        assert!(dir(&root).join(KEY_FILE).exists());
+        drop_legacy_key(&root, &legacy).unwrap();
+        assert!(!dir(&root).join(KEY_FILE).exists());
+        drop_legacy_key(&root, &legacy).unwrap();
+        assert_eq!(legacy_key(&root), None);
+        assert_eq!(
+            get(&root, KeySource::Provided(legacy), "moe.a", "cookie").unwrap().as_deref(),
+            Some("MUSIC_U=1")
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn os_key_source_is_refused_off_windows() {
+        let root = std::env::temp_dir().join(format!("fmp-vault-os-{}", std::process::id()));
+        assert!(set(&root, KeySource::Os, "moe.a", "k", "v").is_err());
+        assert!(get(&root, KeySource::Os, "moe.a", "k").is_err());
     }
 }
