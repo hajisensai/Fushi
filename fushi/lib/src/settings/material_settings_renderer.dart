@@ -146,8 +146,8 @@ class MaterialSettingsRenderer implements SettingsRenderer {
                       in group.destinations)
                     FushiListItem(
                       key: ValueKey<SettingsDestinationId>(destination.id),
-                      // M3E：分类图标坐在按分组着色的形状色块里（饱和
-                      // container 分区），首页一眼能分出「内容 / 学习 / 连接」。
+                      // 分类图标不垫色块，字形按分组强调色着色，首页一眼
+                      // 能分出「内容 / 学习 / 连接」。
                       leading: SettingsShapeIcon(
                         icon: destination.icon,
                         tone: settingsIconToneFor(destination.id),
