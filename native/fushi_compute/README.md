@@ -571,3 +571,21 @@ dart test                               # packages/fushi_compute 下（真 FFI�
 GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声明。
 `regex`（MIT OR Apache-2.0）同理。`src/parse/html5lib/` 移植自 `package:html`（MIT，原许可全文保留在
 `mod.rs` 头部），发版许可页同样要带上。
+
+## 全景域（`ffc_pano_*`）
+
+首页「媒体库全景」与分享用 16 秒开场动画的胖核心（`src/pano.rs`，Dart 绑定
+`packages/fushi_compute/lib/src/pano/`，消费端 `fushi/lib/src/media/panorama/`）。状态全在 Rust：
+三套布局（大爆炸 → 3 旋臂星系 → 半径 12 球幕 + 词外壳 / 绕封面的随机倾斜轨道）、交互镜头（拖拽惯性、
+缩放可推到球外）、锁定飞入（其余暗到 10%、目标沿半径飞到正前方占视口 62% 高）、每帧投影与远近样式
+（远：细小淡；近：粗大 + 白字心彩色描边，smoothstep 连续过渡）。
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_pano_new(cells…, works…, words…, glyphs…, em_px, seed, out**) -> i32` | 一次交完图集格子 / 作品 / 词 / 字形表 |
+| `ffc_pano_buffers(p, xform**, rect**, color**, batch**, info**, cap*, bcap*)` | 取输出缓冲（建图后不变，Dart 一次性取视图） |
+| `ffc_pano_frame(p, t, dt, w, h, sprites*, batches*)` | 每帧一次：写出按远到近排序、按图集页切批的 `drawRawAtlas` 数据 + 帧信息 |
+| `ffc_pano_set_mode / _input / _select / _pick / _free` | 模式切换、拖拽 / 缩放 / 松手、选中飞入、拾取、释放 |
+
+每帧耗时（`cargo test --release pano::tests::big_library -- --nocapture`，400 部作品 + 1.38 万词、
+整条时间轴取样，i5-12600KF）：约 0.9 ms。

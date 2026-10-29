@@ -285,6 +285,11 @@ flutter:
     - assets/transforms/
     - assets/transforms/i18n/
 
+  # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
+  # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。
+  shaders:
+    - shaders/panorama_backdrop.frag
+
   # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
   # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在
   # 只能传 IconData 的 API 里也能表达。release 构建的图标树摇只留用到的码位。

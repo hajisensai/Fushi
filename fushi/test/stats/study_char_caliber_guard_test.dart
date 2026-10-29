@@ -152,6 +152,9 @@ void main() {
         // 与源文本逐字对齐），是对齐校验不是记账。
         'lib/src/ocr/gal_lookup_calibration_ocr.dart': 1,
         'lib/src/ocr/gal_lookup_ocr_ink_geometry.dart': 1,
+        // 媒体库全景：「像一个日语单词」的长度上限（≤12 码点）与展示词截断（16 码点），
+        // 是展示判据不是学习计数。
+        'lib/src/media/panorama/panorama_library.dart': 2,
         // 超时兜底日志里报文本长度，不进统计。
         'lib/src/media/audiobook/audiobook_clip_text_render.dart': 1,
         // 有声书片段排版：决定字号/换行的文本长度，不进统计。
