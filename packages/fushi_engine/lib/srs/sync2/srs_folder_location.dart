@@ -138,8 +138,12 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
             }
           : null,
     );
-    // 加密位置口令不对 / 没有：媒体也不碰（明文媒体不能写进加密位置）。
-    if (ops.error != null) return SrsFolderSyncReport(ops: ops);
+    // 加密位置口令不对 / 没有：媒体也不碰（明文媒体不能写进加密位置）。位置来自更新版本（`minReader` 比本机新）
+    // 同样整个位置都不碰：以前这里只看 error，needsUpgrade 时照样按明文跑媒体对账（往 `media/` 写、按过期清），
+    // 旧版本就不能靠提高最低读者版本把自己挡在新格式的位置之外。
+    if (ops.error != null || ops.needsUpgrade) {
+      return SrsFolderSyncReport(ops: ops);
+    }
   }
   String? mediaKey = (ops?.encrypted ?? false) ? key!.keyHex : null;
   SrsSync2Report? handshake;
