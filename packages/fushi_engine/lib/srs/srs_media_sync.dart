@@ -45,8 +45,12 @@ class SrsMediaSyncReport {
   /// 引用了但位置与本机都没有的文件（等持有它的设备上线）。
   final Set<String> missing = <String>{};
 
-  /// 下载到的内容与绑定的 sha256 对不上（截断 / 被改 / 解不开）而没有落地的名字。
+  /// 下载到的内容与绑定的 sha256 对不上（截断 / 被改 / 解不开）而没有落地的名字。位置上那份不删，只在日志里记
+  /// 可疑，由持有原文的设备覆盖重传（[repaired]）。
   final Set<String> rejected = <String>{};
+
+  /// 本机持有原文、把位置上被记为可疑的内容对象覆盖重传的份数。
+  int repaired = 0;
 
   /// 这一轮列了位置上的整个媒体目录（没有日志投影可用：本地文件夹位置，或这个位置第一次对账）。
   bool listedRemote = false;
@@ -161,6 +165,14 @@ String srsMediaContentPath(String folder, String sha) =>
 
 /// 位置上内容寻址目录的「有什么」记进日志用的位置身份（名字是 sha256）。与按名字存的旧目录分开记：同一个
 /// 字符串在两边指的不是同一个东西。
+/// 不记日志的位置（本地文件夹，[_Presence.key] 为 null）上「内容 [sha] 可疑」的标记文件：与内容对象同目录、
+/// 名字加后缀，每轮列目录时一起看到。读者只写它（从不删内容对象），持有原文的设备覆盖重传后删掉它。
+String srsMediaSuspectMarkerPath(String folder, String sha) =>
+    '${srsMediaContentPath(folder, sha)}$kSrsMediaSuspectSuffix';
+
+/// [srsMediaSuspectMarkerPath] 的后缀。
+const String kSrsMediaSuspectSuffix = '.suspect';
+
 String srsMediaContentPresenceKey(String locationId, String folder) =>
     '${srsMediaPresenceKey(locationId, folder)}#sha256';
 
@@ -199,8 +211,9 @@ class _DigestCapture implements Sink<Digest> {
   void close() {}
 }
 
-/// 远端某个名字的已知状态。
-enum _Remote { present, absent, unknown }
+/// 远端某个名字的已知状态。[suspect] = 在，但有设备下载到的内容与名字（内容哈希）对不上（内核
+/// `MEDIA_AT_SUSPECT`）：读者照样可以再试（上次可能只是传输被截断），持有原文的设备覆盖重传修复。
+enum _Remote { present, suspect, absent, unknown }
 
 /// 一个位置目录里「有什么」：日志投影（[locationKey] 给出时）+ 本轮确认的事实，最后写回日志。
 class _Presence {
@@ -210,26 +223,42 @@ class _Presence {
   final String? key;
   final Set<String> present = <String>{};
   final Set<String> knownAbsent = <String>{};
+  final Set<String> suspect = <String>{};
   bool listed = false;
   final Set<String> confirmedPresent = <String>{};
   final Set<String> confirmedAbsent = <String>{};
+  final Set<String> confirmedSuspect = <String>{};
 
   _Remote stateOf(String name) {
     if (present.contains(name)) return _Remote.present;
+    if (suspect.contains(name)) return _Remote.suspect;
     if (listed || knownAbsent.contains(name)) return _Remote.absent;
     return _Remote.unknown;
   }
 
   void markPresent(String name) {
     present.add(name);
+    suspect.remove(name);
     confirmedPresent.add(name);
     confirmedAbsent.remove(name);
+    confirmedSuspect.remove(name);
   }
 
   void markAbsent(String name) {
     present.remove(name);
+    suspect.remove(name);
     confirmedPresent.remove(name);
     confirmedAbsent.add(name);
+    confirmedSuspect.remove(name);
+  }
+
+  /// 位置上 [name] 这份对象在、但内容对不上：记可疑（不删、不当成在）。
+  void markSuspect(String name) {
+    present.remove(name);
+    suspect.add(name);
+    confirmedPresent.remove(name);
+    confirmedAbsent.remove(name);
+    confirmedSuspect.add(name);
   }
 
   /// 读日志投影。[seed] = 日志里没人完整列举过时由本轮列（内容目录）；旧的按名字目录只读兜底，从不列。
@@ -241,13 +270,17 @@ class _Presence {
     )).map;
     present.addAll((known['present']! as List<Object?>).cast<String>());
     knownAbsent.addAll((known['absent']! as List<Object?>).cast<String>());
+    suspect.addAll((known['suspect']! as List<Object?>).cast<String>());
     return listed = seed && known['seeded'] != true;
   }
 
   Future<void> record(SrsDbStore store, {required bool seeded}) async {
     final String? k = key;
     if (k == null) return;
-    if (confirmedPresent.isEmpty && confirmedAbsent.isEmpty && !seeded) {
+    if (confirmedPresent.isEmpty &&
+        confirmedAbsent.isEmpty &&
+        confirmedSuspect.isEmpty &&
+        !seeded) {
       return;
     }
     await store.sync2Command(<String, Object?>{
@@ -255,6 +288,7 @@ class _Presence {
       'location': k,
       'present': confirmedPresent.toList(),
       'absent': confirmedAbsent.toList(),
+      'suspect': confirmedSuspect.toList(),
       'seeded': seeded,
       'now': store.now().$1,
     });
@@ -287,8 +321,9 @@ class _MediaItem {
 /// 位置上的媒体内容寻址（审查 S-3）：`<媒体目录>/<sha256 前 2 位>/<sha256>`，不可变、只增、只写一次
 /// （[SrsLocationStore.putNew]，从不覆盖）；本机文件名经日志里的绑定（内核 `Body::Media`）映射到内容：
 /// - 本机有文件 → 内核算出（或从缓存取）它的 sha256，没绑定 / 本机改过就绑上（`media_scan`），位置上没有那份内容就传；
-/// - 本机没有，或绑定指向别的内容（别的设备后来改了它）→ 下载绑定的内容，**校验 sha256**，对不上一律不落地
-///   （顺手删掉位置上那份坏的，持有原文件的设备下一轮补传）；
+/// - 本机没有，或绑定指向别的内容（别的设备后来改了它）→ 下载绑定的内容，**校验 sha256**，对不上一律不落地，
+///   也**不删**位置上那份（读者看到的「坏」可能只是传输被截断，而那份也许是位置上唯一的一份）：只在日志里记
+///   「可疑」；本机哈希对得上的持有者看到「可疑」就用核对过的原文覆盖重传修复（集成审查【中】）；
 /// - 位置上没有那份内容 → 只读兜底：旧的按名字存的 `<媒体目录>/<名字>` 与更老的写入者目录（[legacy]），有绑定时
 ///   同样要哈希对得上。兜底拿到的补传进内容目录。旧位置的文件不覆盖、不改名。
 ///
@@ -365,6 +400,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   final _Presence byName = _Presence(
     locationId == null ? null : srsMediaPresenceKey(locationId, folder),
   );
+  final List<String> markers = <String>[];
   if (await content.load(store, seed: true)) {
     report.listedRemote = true;
     for (final SrsLocationEntry d in await location.list(folder)) {
@@ -375,8 +411,17 @@ Future<SrsMediaSyncReport> srsSyncMedia({
         if (!f.isFolder && f.name.length == 64) {
           content.present.add(f.name);
           if (content.key != null) content.confirmedPresent.add(f.name);
+        } else if (!f.isFolder &&
+            content.key == null &&
+            f.name.length == 64 + kSrsMediaSuspectSuffix.length &&
+            f.name.endsWith(kSrsMediaSuspectSuffix)) {
+          markers.add(f.name.substring(0, 64));
         }
       }
+    }
+    // 不记日志的位置：可疑标记旁边那份对象若还在，就是「在但可疑」（对象已不在的标记是孤儿，当不在处理）。
+    for (final String sha in markers) {
+      if (content.present.contains(sha)) content.markSuspect(sha);
     }
   }
   await byName.load(store, seed: false);
@@ -385,6 +430,8 @@ Future<SrsMediaSyncReport> srsSyncMedia({
 
   /// 把 [src] 作为内容 [sha] 传进内容目录；[src] 此刻的内容不是 [sha]（对账中途被改了）就不传、返回 false，留给
   /// 下一轮。传的是核对过的那份：加密时内核封装的同一遍读顺带算出明文哈希；不加密时先流式拷一份快照再传快照。
+  /// 位置上那份被记为可疑（[_Remote.suspect]）时覆盖写：这是唯一会覆盖内容寻址对象的地方，且只由本机哈希对得上
+  /// 的持有者发起；其余一律 [SrsLocationStore.putNew]（已在就不写）。
   Future<bool> putContent(File src, String sha) async {
     final File staged = scratch('up');
     try {
@@ -392,11 +439,16 @@ Future<SrsMediaSyncReport> srsSyncMedia({
           ? await _copyHashing(src, staged)
           : await cipher.sealFile(sha, src, staged);
       if (got != sha) return false;
-      await srsLocationPutNewFile(
-        location,
-        srsMediaContentPath(folder, sha),
-        staged,
-      );
+      final String path = srsMediaContentPath(folder, sha);
+      if (content.stateOf(sha) == _Remote.suspect) {
+        await location.put(path, await staged.readAsBytes());
+        if (content.key == null) {
+          await location.delete(srsMediaSuspectMarkerPath(folder, sha));
+        }
+        report.repaired++;
+      } else {
+        await srsLocationPutNewFile(location, path, staged);
+      }
       content.markPresent(sha);
       report.uploaded++;
       return true;
@@ -438,12 +490,19 @@ Future<SrsMediaSyncReport> srsSyncMedia({
             content.markPresent(sha);
             return sha;
           }
-          // 位置上这份内容是坏的（截断 / 被改 / 解不开）：名字就是哈希，坏的就是垃圾——删掉、记不在，持有原文件的
-          // 设备下一轮补传；不当成本机文件落地。
+          // 下载到的内容对不上（截断的响应 / 网盘占位或同步中的半截文件 / 被改 / 解不开）：不落地，也不删——读者
+          // 分不清是位置上那份真坏了还是这次传输坏了，删了可能就删掉了唯一的一份。只记可疑，持有原文件（本机哈希
+          // 对得上）的设备看到后覆盖重传（[putContent]）；下一轮读者仍会再试。
           await drop(dst);
           report.rejected.add(name);
-          await location.delete(path);
-          content.markAbsent(sha);
+          if (content.key == null && content.stateOf(sha) != _Remote.suspect) {
+            // 不记日志的位置：可疑写成位置上的标记文件，持有者下一轮列目录时看到。
+            await location.put(
+              srsMediaSuspectMarkerPath(folder, sha),
+              Uint8List(0),
+            );
+          }
+          content.markSuspect(sha);
         }
       } finally {
         if (cipher != null) await drop(stored);
@@ -597,9 +656,13 @@ Future<void> _reconcile({
                   'live': live,
                 })).map['sha']!
                 as List<Object?>)
-          if (content.present.contains(s)) s! as String,
+          if (content.present.contains(s) || content.suspect.contains(s))
+            s! as String,
       ];
       await srsRunPooled(doomed, kSrsSync2Concurrency, (String sha) async {
+        if (content.key == null && content.suspect.contains(sha)) {
+          await location.delete(srsMediaSuspectMarkerPath(folder, sha));
+        }
         await location.delete(srsMediaContentPath(folder, sha));
         content.markAbsent(sha);
         report.deleted++;

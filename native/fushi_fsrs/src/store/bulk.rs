@@ -501,6 +501,6 @@ mod tests {
         c.execute("UPDATE srs_meta SET value = '12' WHERE key = 'schema'", []).unwrap();
         crate::store::schema::migrate(&mut c).unwrap();
         let v: String = c.query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get(0)).unwrap();
-        assert_eq!(v, "13");
+        assert_eq!(v, crate::store::schema::SCHEMA_VERSION.to_string());
     }
 }

@@ -228,8 +228,13 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
         t.dominated.push(o.clone());
     }
     conn.prepare_cached(
-        "INSERT OR REPLACE INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-         VALUES (?1, ?2, 'note', ?3, 'tags', ?4, 1, ?5)",
+        // 不能写 `INSERT OR REPLACE`：REPLACE 删旧行时（没开 recursive_triggers）不触发 DELETE 触发器，摘要桶
+        // （digest.rs）只加不减，同一笔记第二次改标签起桶哈希与行数就永久错了。UPSERT 走 UPDATE 触发器（先减后加）。
+        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+         VALUES (?1, ?2, 'note', ?3, 'tags', ?4, 1, ?5) \
+         ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, entity_kind = excluded.entity_kind, \
+         entity_id = excluded.entity_id, field_key = excluded.field_key, writer_id = excluded.writer_id, \
+         seq = excluded.seq, json = excluded.json",
     )
     .map_err(sql)?
     .execute(params![id, profile, note, writer, text])

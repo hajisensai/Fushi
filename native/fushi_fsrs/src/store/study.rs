@@ -1004,6 +1004,52 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 集成审查【中低】：写锁守卫释放（settle）晚于 COMMIT 可见。COMMIT 之后、守卫还持着时在读连接上排队：快照看得见
+    /// 新行，触发器记下的 id 还在「未提交」里——以前读路径只重读已提交的，这一次排队按旧会话出卡（漏读一次）。
+    #[test]
+    fn a_snapshot_read_between_commit_and_settle_rereads_the_touched_rows() {
+        let now = 1_760_000_000_000i64;
+        let dir = std::env::temp_dir().join(format!("ffsrs_settle_window_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', ?, 'deck', '{}')", vec![Sql::Text(P.into())]);
+        for (id, stab) in [("weak", 0.5), ("strong", 90.0)] {
+            exec(
+                &core,
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (?, ?, 'n', 't', 'O', 'review', 0, ?, ?)",
+                vec![Sql::Text(id.into()), Sql::Text(P.into()), Sql::Real(stab), Sql::Integer(now - 10 * 86_400_000)],
+            );
+        }
+        let day = Day { utc_offset_min: 0, rollover_hour: 0 };
+        let lowest = |core: &SrsCore| -> Option<String> {
+            // 直接在读连接的快照上排（不经 read_visible：写锁此刻被测试持着也照样走读连接）。
+            let r = core.reader().unwrap();
+            r.execute_batch("BEGIN").unwrap();
+            let got = core.study_hub.with_session(&r, P, day, day.index(now), false, |s| Ok(s.lowest_due(&["O"], now, &HashSet::new()).map(|c| c.0))).unwrap();
+            r.execute_batch("ROLLBACK").unwrap();
+            got
+        };
+        assert_eq!(lowest(&core).as_deref(), Some("weak"));
+        {
+            // 写连接上自动提交一条删除：COMMIT 已对读连接可见，守卫还没释放（没 settle）。
+            let w = core.writer().unwrap();
+            w.execute("DELETE FROM srs_cards_cache WHERE id = 'weak'", []).unwrap();
+            assert!(w.is_autocommit());
+            assert_eq!(lowest(&core).as_deref(), Some("strong"), "the committed delete is visible and must be reread");
+            // 未提交的改动：读快照重读到的是旧值（与快照一致），也不清掉——提交后再按终态重读。
+            w.execute_batch("BEGIN; UPDATE srs_cards_cache SET stability = 0.1 WHERE id = 'strong';").unwrap();
+            assert_eq!(lowest(&core).as_deref(), Some("strong"));
+            w.execute_batch("INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) \
+                             VALUES ('weaker', 'p', 'n', 't', 'O', 'review', 0, 0.01, 0); COMMIT;").unwrap();
+            assert_eq!(lowest(&core).as_deref(), Some("weaker"), "rows committed after an earlier reread are reread again");
+        }
+        assert_eq!(lowest(&core).as_deref(), Some("weaker"));
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 到期候选的块下界剪枝与逐张比相同：几千张卡里大量 R 相等（同稳定度 / 同上次作答）、上次作答在此刻之后（t < 0）、
     /// 分母为零（NULL 排最前）；逐张删掉当前最低再取，序列与按 SQL 式子全排序一致。
     #[test]

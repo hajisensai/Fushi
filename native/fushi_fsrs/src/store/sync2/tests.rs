@@ -17,6 +17,23 @@ pub(crate) struct Device {
     pub _dir: tempdir::Dir,
 }
 
+thread_local! {
+    /// 测试开关：为真时同步助手里的「删位置上的文件」一律失败（模拟 `location.delete` 抛错 / head 上传失败后
+    /// 没走到删除）——不删也不发 `obsolete_ack`，与生产 Dart 只确认删成功的那些同一语义。
+    pub(crate) static FAIL_DELETES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// 按生产（srs_sync2_round.dart）的两段式删除：删成功的才 `obsolete_ack`。[FAIL_DELETES] 打开时一个都不删。
+fn delete_and_ack(core: &SrsCore, bucket: &mut Bucket, location: &str, paths: &[String]) {
+    if FAIL_DELETES.with(|f| f.get()) {
+        return;
+    }
+    for p in paths {
+        bucket.0.remove(p);
+    }
+    core.sync2_obsolete_ack(P, location, paths).unwrap();
+}
+
 pub(crate) mod tempdir {
     pub struct Dir(pub std::path::PathBuf);
     impl Drop for Dir {
@@ -92,9 +109,7 @@ impl Device {
         let (path, bytes, gen, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
         let dir = path.rsplit_once('/').unwrap().0.to_owned();
         bucket.0.insert(path, bytes);
-        for name in obsolete {
-            bucket.0.remove(&name);
-        }
+        delete_and_ack(&self.core, bucket, location, &obsolete);
         // 与生产（srs_sync2_round.dart 第 4 步）同样：删本机两代以前的 head。
         bucket.0.retain(|k, _| {
             !(k.starts_with(&format!("{dir}/"))
@@ -120,9 +135,8 @@ impl Device {
                 bucket.0.insert(path, bytes);
             }
             let ack = self.core.sync2_relay_ack(P, location, &paths).unwrap();
-            for p in ack["delete"].as_array().unwrap() {
-                bucket.0.remove(p.as_str().unwrap());
-            }
+            let gone: Vec<String> = ack["delete"].as_array().unwrap().iter().map(|p| p.as_str().unwrap().to_owned()).collect();
+            delete_and_ack(&self.core, bucket, location, &gone);
             if !batch.more {
                 return n;
             }
@@ -2052,7 +2066,7 @@ fn unchanged_head_is_not_rewritten_until_content_changes_or_heartbeat() {
     }
     // 内容没变 → 不写，指回上次的 head。
     let last = match write_head(&a, &mut bucket, T0 + 1000) {
-        HeadWrite::Unchanged { path } => path,
+        HeadWrite::Unchanged { path, .. } => path,
         HeadWrite::Written { .. } => panic!("an unchanged head must not be rewritten"),
     };
     assert!(bucket.0.contains_key(&last), "points at the head already on the location: {last}");
@@ -2313,7 +2327,44 @@ fn media_known_reports_absent_names_separately() {
     let a = Device::new("mk");
     a.core.sync2_media_record(P, "l/media", &strs(&["x.mp3"]), &strs(&["gone.png"]), true, T0).unwrap();
     let v = a.core.sync2_media_known(P, "l/media").unwrap();
-    assert_eq!(v, json!({"seeded": true, "present": ["x.mp3"], "absent": ["gone.png"]}));
+    assert_eq!(v, json!({"seeded": true, "present": ["x.mp3"], "absent": ["gone.png"], "suspect": []}));
+}
+
+/// 集成审查【中】：读者下载到与名字（内容哈希）对不上的对象时不删它（那可能是位置上唯一的一份，删了持有者也许
+/// 再也补不回），只记「可疑」；可疑随日志传到别的设备（持有原文的那台据此覆盖重传），重传后记回「在」，各端收敛。
+#[test]
+fn suspect_media_travels_in_the_log_and_a_repair_clears_it() {
+    let a = Device::new("sa");
+    let b = Device::new("sb");
+    let mut bucket = Bucket::default();
+    const L: &str = "drive:acct/media";
+    a.core.sync2_media_record(P, L, &strs(&["x.mp3", "y.png"]), &[], true, T0).unwrap();
+    a.sync(&mut bucket, "loc", T0 + 1);
+    b.sync(&mut bucket, "loc", T0 + 1);
+
+    // B 读到坏的 x.mp3 → 记可疑。
+    let r = b.core.sync2_media_record_with_suspect(P, L, &[], &[], &strs(&["x.mp3"]), false, T0 + 10).unwrap();
+    assert_eq!(r["appended"], json!(1));
+    // 同一事实不重复记。
+    let again = b.core.sync2_media_record_with_suspect(P, L, &[], &[], &strs(&["x.mp3"]), false, T0 + 11).unwrap();
+    assert_eq!(again["appended"], json!(0));
+    let expect = json!({"seeded": true, "present": ["y.png"], "absent": [], "suspect": ["x.mp3"]});
+    assert_eq!(b.core.sync2_media_known(P, L).unwrap(), expect);
+
+    b.sync(&mut bucket, "loc", T0 + 12);
+    a.sync(&mut bucket, "loc", T0 + 12);
+    assert_eq!(a.core.sync2_media_known(P, L).unwrap(), expect, "the holder learns the object is suspect");
+
+    // A 持有原文，覆盖重传后记回「在」。
+    a.core.sync2_media_record(P, L, &strs(&["x.mp3"]), &[], false, T0 + 20).unwrap();
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 21);
+        b.sync(&mut bucket, "loc", T0 + 21);
+    }
+    let repaired = json!({"seeded": true, "present": ["x.mp3", "y.png"], "absent": [], "suspect": []});
+    assert_eq!(a.core.sync2_media_known(P, L).unwrap(), repaired);
+    assert_eq!(b.core.sync2_media_known(P, L).unwrap(), repaired);
+    assert_eq!(a.digest(), b.digest());
 }
 
 /// 投影改动只以粗粒度摘要交回 Dart（`marks`）：受影响的笔记 / 卡 / 笔记类型 + 修订号增量，不带事件全文。
@@ -2442,4 +2493,103 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
     assert_eq!(r["applied"], json!(2), "{r}");
     assert!(b.core.sync2_ingest_commit(P, T0 + 30, super::transport::CommitBudget::unlimited()).is_err(), "the prepared batch is consumed");
     b.core.sync2_ingest_finish(P, T0 + 31).unwrap();
+}
+
+/// 集成审查【中高】：收段的一片不套 Drift 事务，由内核在一笔事务里提交，Dart 的本机状态行同一笔写下。
+/// - 片投递完、提交之前（写锁仍被占着），并发的只读命令走读连接：不被阻塞、看不到这一片没提交的行；
+/// - 提交后本机状态行的修订号 = 调用时的值 + 落库的事件 + 变化的实体（`localRevision` 同值）；
+/// - 本机状态行写不下（坏 JSON）时整片回滚：库与本机状态行都停在这一片之前，会话作废；重开会话同样的段照样收齐。
+#[test]
+fn ingest_slice_commits_on_its_own_with_the_local_state_row() {
+    let a = Device::new("lt-a");
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![review("r1", "C1", T0, 3, "learn"), review("r2", "C2", T0 + 1, 3, "learn"), review("r3", "C3", T0 + 2, 3, "learn")]);
+    a.sync(&mut bucket, "loc", T0 + 10);
+    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
+    let segs: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
+    let b = Device::new("lt-b");
+    b.core.sync2_identity(P, T0 + 20).unwrap();
+    b.core.sync2_plan(P, &heads).unwrap();
+    let logs = |d: &Device| d.rows("SELECT COUNT(*) FROM srs_review_logs")[1][0].parse::<i64>().unwrap();
+    let local_json = |d: &Device| d.rows(&format!("SELECT json FROM srs_local_state WHERE profile_uid = '{P}'")).get(1).map(|r| r[0].clone());
+
+    // 本机状态行写不下：整片回滚，会话作废。
+    b.core.sync2_ingest_begin(P).unwrap();
+    b.core.sync2_ingest_prepare(P, segs.clone(), None).unwrap();
+    let bad = b.core.sync2_ingest_commit_persisting(P, T0 + 30, super::transport::CommitBudget::unlimited(), Some("not json"));
+    assert!(bad.is_err());
+    assert_eq!(logs(&b), 0, "the failed slice rolled back as a whole");
+    assert_eq!(local_json(&b), None);
+    assert!(b.core.sync2_ingest_commit(P, T0 + 31, super::transport::CommitBudget::unlimited()).is_err(), "session invalidated, not half-advanced");
+
+    // 重开会话：片中途的并发读不被阻塞、只见已提交的行。
+    let seen: std::sync::Arc<std::sync::Mutex<Option<(i64, bool)>>> = Default::default();
+    let probe = std::sync::Arc::clone(&seen);
+    *b.core.ingest_commit_hook.lock().unwrap() = Some(Box::new(move |core: &SrsCore| {
+        let n = core.read_visible_tx(|c, uncommitted| {
+            Ok((c.query_row("SELECT COUNT(*) FROM srs_review_logs", [], |r| r.get::<_, i64>(0)).unwrap(), uncommitted))
+        });
+        *probe.lock().unwrap() = Some(n.unwrap());
+    }));
+    b.core.sync2_ingest_begin(P).unwrap();
+    b.core.sync2_ingest_prepare(P, segs, None).unwrap();
+    let before = json!({"writerId": "w", "revision": 40, "epoch": "e1"}).to_string();
+    let r: Value = serde_json::from_str(
+        &b.core.sync2_ingest_commit_persisting(P, T0 + 40, super::transport::CommitBudget::unlimited(), Some(&before)).unwrap(),
+    )
+    .unwrap();
+    *b.core.ingest_commit_hook.lock().unwrap() = None;
+    assert_eq!(*seen.lock().unwrap(), Some((0, false)), "mid-slice read ran on the reader snapshot, saw nothing uncommitted");
+    assert_eq!(logs(&b), 3);
+    let landed = r["marks"]["landed"].as_i64().unwrap();
+    let changed = r["changed"].as_array().unwrap().len() as i64;
+    assert!(landed >= 3, "{r}");
+    let stored: Value = serde_json::from_str(&local_json(&b).unwrap()).unwrap();
+    assert_eq!(stored["revision"], json!(40 + landed + changed));
+    assert_eq!(r["localRevision"], stored["revision"]);
+    assert_eq!(stored["writerId"], json!("w"), "the rest of the row is written as given");
+    // 收尾同样在一笔事务里写本机状态行。
+    let fin: Value = serde_json::from_str(
+        &b.core.sync2_ingest_finish_persisting(P, T0 + 41, super::transport::CommitBudget::unlimited(), Some(&stored.to_string())).unwrap(),
+    )
+    .unwrap();
+    assert!(fin["localRevision"].as_i64().unwrap() >= stored["revision"].as_i64().unwrap());
+}
+
+/// 集成审查【中】：旧小段删除两段式。过了宽限期该删的旧小段这一轮删除失败（head 上传 / `location.delete` 抛错），
+/// 记录留在 `sync2_obsolete`；下一轮（写 head 时，以及 head 没变、不写的那一轮）照样再给，删成功并 ack 后才移除。
+/// 以前 `take_obsolete` 取出即删记录，失败的这批旧段永远留在位置上。
+#[test]
+fn failed_obsolete_deletes_are_retried_next_round() {
+    let a = Device::new("oa");
+    let mut bucket = Bucket::default();
+    for i in 0..40 {
+        a.apply(T0 + i, vec![review(&format!("r{i}"), "C", T0 + 1000 * i, 3, "review")]);
+        a.sync(&mut bucket, "loc", T0 + 1000 * i);
+    }
+    let before = segment_files(&bucket, &a);
+    let rows_pending = |a: &Device| a.rows("SELECT COUNT(*) FROM sync2_obsolete")[1][0].parse::<usize>().unwrap();
+    assert!(rows_pending(&a) > 0);
+    // 过了宽限期、代号也够了的几轮，删除全部失败。
+    FAIL_DELETES.with(|f| f.set(true));
+    for k in 0..3 {
+        a.sync(&mut bucket, "loc", T0 + DAY + 60_000 + k);
+    }
+    FAIL_DELETES.with(|f| f.set(false));
+    assert_eq!(segment_files(&bucket, &a), before, "nothing was deleted");
+    let pending = rows_pending(&a);
+    assert!(pending > 0, "the failed deletes are still on record");
+    // head 没变、不写的一轮也把待删清单交出来。
+    let w = a.core.sync2_head_if_changed(P, "loc", u64::MAX, T0 + DAY + 70_000, Some(DAY)).unwrap();
+    match w {
+        super::transport::HeadWrite::Unchanged { obsolete, .. } => assert_eq!(obsolete.len(), pending),
+        super::transport::HeadWrite::Written { .. } => panic!("head content did not change"),
+    }
+    // 下一轮正常：删光并确认。
+    a.sync(&mut bucket, "loc", T0 + DAY + 80_000);
+    assert_eq!(rows_pending(&a), 0);
+    let rows = a.rows("SELECT COUNT(*) FROM sync2_segments")[1][0].parse::<usize>().unwrap();
+    assert_eq!(segment_files(&bucket, &a), rows, "the stale segments were deleted on the retry");
+    // ack 幂等：确认不在记录里的文件不报错、不误删别的记录。
+    assert_eq!(a.core.sync2_obsolete_ack(P, "loc", &["devices/x/seg-nope".to_owned()]).unwrap(), 0);
 }
