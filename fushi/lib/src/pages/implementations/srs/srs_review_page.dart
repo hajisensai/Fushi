@@ -352,8 +352,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   int _shownGeneration = 0;
 
   /// 后台预取「当前这张之外的下一张」并渲染好（数据层）。排程不变：真正的下一张
-  /// 仍由评分后的 [SrsDbStore.nextCard] 决定，预取只是它的猜测，不一致就丢。
-  void _startPrefetch(String currentCardId) {
+  /// 仍由评分后的排队（[SrsDbStore.answerAndStudy]）决定，预取只是它的猜测，不一致就丢。
+  ///
+  /// [afterKnown]：排出当前这张的那次排队已经顺带排好了它之后的一张（[SrsStudyState.after]，可能为 null =
+  /// 没有了），直接用，不再发一次排队。
+  void _startPrefetch(
+    String currentCardId, {
+    bool afterKnown = false,
+    String? after,
+  }) {
     final SrsDbStore? store = _store;
     if (store == null) {
       _prefetch = null;
@@ -362,10 +369,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _prefetch = () async {
       try {
         SrsReviewPage.debugPhase?.call('prefetch:begin');
-        final String? id = await store.nextCard(
-          widget.deckId,
-          exclude: <String>{currentCardId},
-        );
+        final String? id = afterKnown
+            ? after
+            : await store.nextCard(
+                widget.deckId,
+                exclude: <String>{currentCardId},
+              );
         SrsReviewPage.debugPhase?.call('prefetch:nextCard');
         if (id == null) return null;
         final SrsCardDetail? detail = await store.cardDetail(id);
@@ -416,16 +425,32 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 取下一张（或 [cardId] 指定的那张，撤销后回到被撤的卡）并显示问题面。
   ///
   /// [usePrefetch]：评分后的常规前进。排程选出的下一张正是预取的那张时直接显示
-  /// 预取好的内容，计数 / 间隔预览随后在后台补齐（预览只在翻面后才看得到）。
-  Future<void> _loadNext({String? cardId, bool usePrefetch = false}) async {
+  /// 预取好的内容，间隔预览随后在后台补齐（预览只在翻面后才看得到）。
+  ///
+  /// [planned]：评分时已在同一次命令里排好的队（下一张 + 计数 + 再下一张）；没给且没指定 [cardId] 时
+  /// 这里排一次（[SrsDbStore.studyState]，一次命令）。计数、下一张、预取的猜测都出自这一次排队。
+  Future<void> _loadNext({
+    String? cardId,
+    bool usePrefetch = false,
+    SrsStudyState? planned,
+  }) async {
     final SrsDbStore? store = _store;
     if (store == null) return;
     final Future<_PrefetchedCard?>? pending = usePrefetch ? _prefetch : null;
     _prefetch = null;
     try {
-      final String? id = cardId ?? await store.nextCard(widget.deckId);
+      final SrsStudyState? plan =
+          planned ??
+          (cardId == null ? await store.studyState(widget.deckId) : null);
+      final String? id = cardId ?? plan?.next;
+      // 排队给的「再下一张」只对它排出的那张有效（指定了 [cardId] 时不是）。
+      final bool afterKnown = cardId == null && plan != null;
       if (id == null) {
-        await _refreshCounts();
+        if (plan != null) {
+          _applyCounts(plan.summary);
+        } else {
+          await _refreshCounts();
+        }
         if (!mounted) return;
         setState(() {
           _loading = false;
@@ -440,18 +465,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       final _PrefetchedCard? hit = await _takePrefetch(pending, id);
       if (hit != null) {
         if (!mounted) return;
+        if (plan != null) _applyCounts(plan.summary);
         _show(
           hit.detail,
           hit.rendered,
           preview: null,
           day: _day,
           audioOwner: hit.audioOwner,
+          afterKnown: afterKnown,
+          after: plan?.after,
         );
-        unawaited(_completeShown(id, _shownGeneration));
+        unawaited(_completeShown(id, _shownGeneration, counted: plan != null));
         return;
       }
       SrsReviewPage.debugPhase?.call('nextCard');
-      await _refreshCounts();
+      if (plan != null) {
+        _applyCounts(plan.summary);
+      } else {
+        await _refreshCounts();
+      }
       SrsReviewPage.debugPhase?.call('counts');
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = detail == null
@@ -467,8 +499,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       if (!mounted) return;
       // 问题面只要卡片内容：间隔预览（只在翻面后的评分键上）与日界在卡面上屏后补齐，
       // 与预取命中同一条路径（[_completeShown]），不挡首张卡。
-      _show(detail, rendered, preview: null, day: _day, audioOwner: audioOwner);
-      unawaited(_completeShown(id, _shownGeneration));
+      _show(
+        detail,
+        rendered,
+        preview: null,
+        day: _day,
+        audioOwner: audioOwner,
+        afterKnown: afterKnown,
+        after: plan?.after,
+      );
+      unawaited(_completeShown(id, _shownGeneration, counted: true));
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.loadNext', e, stack);
       if (mounted) {
@@ -487,6 +527,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     required SrsAnswerPreview? preview,
     required SrsDayContext? day,
     required SrsDeckView? audioOwner,
+    bool afterKnown = false,
+    String? after,
   }) {
     _shownGeneration++;
     SrsReviewPage.debugPhase?.call('show');
@@ -510,15 +552,21 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       ..start();
     _autoplayAudio();
     _reclaimAfterFrame(FocusReclaimCause.contentReady);
-    if (detail != null) _startPrefetch(detail.card.id);
+    if (detail != null) {
+      _startPrefetch(detail.card.id, afterKnown: afterKnown, after: after);
+    }
   }
 
-  /// 预取命中后补齐计数与间隔预览（只落到仍在显示的那张卡上）。
-  Future<void> _completeShown(String cardId, int generation) async {
+  /// 上屏后补齐间隔预览与日界（只落到仍在显示的那张卡上）；[counted] = 计数已随排队拿到，不再数一遍。
+  Future<void> _completeShown(
+    String cardId,
+    int generation, {
+    bool counted = false,
+  }) async {
     final SrsDbStore? store = _store;
     if (store == null) return;
     try {
-      final SrsDeckSummary? sum = await _deckSummary();
+      final SrsDeckSummary? sum = counted ? null : await _deckSummary();
       SrsReviewPage.debugPhase?.call('deckSummary');
       final SrsDayContext day = await store.dayContext();
       final SrsAnswerPreview? preview = store.canSchedule
@@ -527,7 +575,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       SrsReviewPage.debugPhase?.call('preview');
       if (!mounted || generation != _shownGeneration) return;
       setState(() {
-        _applyCounts(sum);
+        if (!counted) _applyCounts(sum);
         _day = day;
         _preview = preview;
       });
@@ -692,18 +740,20 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         SrsReviewPage.debugPhase?.call('answer:begin');
         // 不把显示问题面时算的预览传进去：预览的时刻是出题那一刻，日志的发生时刻
         // 必须是现在（学习步长按分钟算，差几十秒就差一档）。
-        final SrsReviewLog log = await store.answer(
+        // 评分与排出下一张是一次调用（落库 + 计数 + 下一张 + 再下一张，SrsDbStore.answerAndStudy）。
+        final SrsAnswerOutcome out = await store.answerAndStudy(
           detail.card.id,
           rating,
           durationMs: math.min(
             _answerClock.elapsedMilliseconds,
             kSrsMaxAnswerDurationMs,
           ),
+          studyDeckId: widget.deckId,
         );
         SrsReviewPage.debugPhase?.call('answer:done');
-        _undo.add(_UndoStep(cardId: detail.card.id, logId: log.id));
+        _undo.add(_UndoStep(cardId: detail.card.id, logId: out.log.id));
         _reviewedThisSession++;
-        await _loadNext(usePrefetch: true);
+        await _loadNext(usePrefetch: true, planned: out.study);
       }),
     );
   }
