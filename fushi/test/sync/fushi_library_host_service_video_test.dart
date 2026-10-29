@@ -1295,6 +1295,8 @@ void main() {
 
       expect(await svc.videoExists('video/film'), isTrue);
       expect(await svc.videoExists('video/absent'), isFalse);
+      // 集下标只认 DB 播放列表：单视频行没有第 1 集。
+      expect(await svc.videoExists('video/film', episodeIndex: 1), isFalse);
     });
 
     test('重复上传同一 bookUid 幂等覆盖同一行（不产生重复条目）', () async {

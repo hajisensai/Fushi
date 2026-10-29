@@ -864,9 +864,12 @@ mixin _LocalLibraryHostVideos
 
   /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（一次 DB 查询）。
   @override
-  Future<bool> videoExists(String id) async {
+  Future<bool> videoExists(String id, {int episodeIndex = 0}) async {
     _assertSafeVideoId(id);
-    return (await _db.getVideoBookByBookUid(id)) != null;
+    if (episodeIndex == 0) return (await _db.getVideoBookByBookUid(id)) != null;
+    // 按集：与 [resolveVideoFile] 同一 DB-only 反查（越界 / 负下标 → null），但不
+    // 判本机有没有媒体文件。
+    return (await _resolveEpisodeVideoPath(id, episodeIndex)) != null;
   }
 
   /// 从 host 视频库删除 bookUid 为 [id] 的视频（[VideoDeletionHost]）。

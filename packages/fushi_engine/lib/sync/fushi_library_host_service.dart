@@ -2795,10 +2795,15 @@ abstract class FushiLibraryHostService {
   /// 见 [SyncOrchestrator]._syncVideosLive）。
   Future<List<RemoteVideoInfo>> listVideos();
 
-  /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（仅一次 DB 查询）。
-  /// 供 client 侧 push 幂等判据（远端已有同 uid+同尺寸则跳过重传）与上传端点用。
+  /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（仅 DB 查询，不碰文件系统）。
+  /// 供 client 侧 push 幂等判据（远端已有同 uid+同尺寸则跳过重传）、上传端点，以及
+  /// 进度 / 播放偏好端点的存在性闸门用（防任意 id 写脏 prefs）。
+  ///
+  /// [episodeIndex] > 0 时还要求该下标落在这一行的播放列表内（越界 = 不存在）；
+  /// 0 = 当前集 / 单视频，行在即存在。只认 DB 行，**不**要求 host 有媒体字节：
+  /// 网络流书与 `.strm` 行的进度照样要能经互联同步（BUG-3875）。
   /// [id] 含路径穿越字符（`..` / `\`）时抛 [ArgumentError]。
-  Future<bool> videoExists(String id);
+  Future<bool> videoExists(String id, {int episodeIndex = 0});
 
   /// 接收 client 上传的单文件视频并注册进 host 视频库（client→host，
   /// syncVideoFiles 开关驱动的 live push）。

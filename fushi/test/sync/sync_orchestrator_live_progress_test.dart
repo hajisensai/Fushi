@@ -5,6 +5,7 @@
 /// live host-apply + bidirectional + full-sweep fix with a real server/host/client/local.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -795,6 +796,101 @@ void main() {
             await localDb.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
             9000);
       }
+    });
+
+    test('本地较新的进度推回 host（网络流书 / .strm，report 无错误）', () async {
+      final File strm = File(p.join(work.path, 'pos.strm'))
+        ..writeAsStringSync('https://example.com/live.m3u8\n');
+      const String webUid = 'video/netflix-push';
+      const String strmUid = 'video/strm-push';
+      await hostDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: webUid,
+        title: 'Web',
+        videoPath: 'https://www.netflix.com/watch/81731212',
+      ));
+      await hostDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: strmUid,
+        title: 'Strm',
+        videoPath: strm.path,
+      ));
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      for (final String uid in <String>[webUid, strmUid]) {
+        await localDb.setPrefTyped<int>(videoRemotePositionPrefKey(uid), 654000);
+        await localDb.setPrefTyped<int>(
+            videoRemotePositionAtPrefKey(uid), 7000);
+      }
+
+      final Directory tmp = Directory(p.join(work.path, 't3875pos'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncVideoProgressLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty,
+          reason: '旧闸门用 resolveVideoFile，这两条推进度恒 404');
+      for (final String uid in <String>[webUid, strmUid]) {
+        expect(
+            await hostDb.getPrefTyped<int>(videoRemotePositionPrefKey(uid), 0),
+            654000,
+            reason: '$uid：client 较新的进度必须落到 host');
+        expect(
+            await hostDb.getPrefTyped<int>(
+                videoRemotePositionAtPrefKey(uid), 0),
+            7000);
+      }
+    });
+
+    test('/position 闸门：未知 id 与越界集下标仍 404，界内集下标可写', () async {
+      final File ep0 = File(p.join(work.path, 'ep0.mp4'))
+        ..writeAsBytesSync(<int>[0]);
+      await hostDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/series',
+        title: 'Series',
+        videoPath: ep0.path,
+        // 第 2 集在 host 本机也只是个地址：闸门只认 DB 行，不认媒体字节。
+        playlistJson: Value<String?>(jsonEncode(<Map<String, Object?>>[
+          <String, Object?>{'title': 'E1', 'path': ep0.path},
+          <String, Object?>{
+            'title': 'E2',
+            'path': 'https://example.com/e2.m3u8',
+          },
+        ])),
+      ));
+      final String auth =
+          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+      Future<int> put(String encodedId, {int? episode}) async {
+        final HttpClient c = HttpClient();
+        try {
+          final HttpClientRequest req = await c.putUrl(Uri.parse(
+              '$base/api/library/videos/$encodedId/position'
+              '${episode == null ? '' : '?episode=$episode'}'));
+          req.headers.set('authorization', auth);
+          req.headers.set('content-type', 'application/json');
+          req.write(jsonEncode(<String, Object?>{
+            'positionMs': 1000,
+            'positionUpdatedAtMs': 1000,
+          }));
+          final HttpClientResponse res = await req.close();
+          await res.drain<void>();
+          return res.statusCode;
+        } finally {
+          c.close();
+        }
+      }
+
+      expect(await put('video%2Fno-such'), 404);
+      expect(await put('video%2Fseries', episode: 5), 404);
+      expect(await hostDb.getPrefTyped<int>(
+          videoRemotePositionEpisodePrefKey('video/series', 5), 0), 0,
+          reason: '越界集不得写脏 prefs');
+      expect(await put('video%2Fseries'), 200);
+      expect(await put('video%2Fseries', episode: 1), 200);
+      expect(await hostDb.getPrefTyped<int>(
+          videoRemotePositionEpisodePrefKey('video/series', 1), 0), 1000);
     });
 
     test('本地较新的播放偏好推到 host（两端都有的 .strm）', () async {

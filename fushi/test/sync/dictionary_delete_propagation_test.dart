@@ -152,7 +152,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[];
 
   @override
-  Future<bool> videoExists(String id) async => false;
+  Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
   Future<void> importVideoSubtitle(File subtitleFile,
