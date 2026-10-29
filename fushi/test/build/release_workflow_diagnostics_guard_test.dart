@@ -122,6 +122,30 @@ void main() {
     expect(splitReleaseBuild, isNot(contains('--target-platform')),
         reason: 'beta/formal 必须保留全 ABI，不得限制到单一 ABI');
 
+    // BUG-3874：--target-platform 只过滤 libflutter/libapp，Flutter 插件不分包时又把
+    // abiFilters 固定写回三个 ABI，调试包 459 MB 里 ~228 MB 是起不来的 v7a/x86_64。
+    // 关掉 Flutter 那份、build.gradle 按 target-platform 收，出包后 CI 钉死只有 arm64。
+    final String gradle = readAndroidBuildGradle();
+    expect(gradle, contains('abiFilters.addAll(targetPlatform.split'),
+        reason: 'BUG-3874：不分包时必须按 target-platform 收 ndk.abiFilters');
+    expect(gradle, contains("findProperty('split-per-abi')"),
+        reason: 'BUG-3874：--split-per-abi 时不得再设 abiFilters（AGP 不许与 splits.abi 并存）');
+    final String gradleProperties =
+        File('android/gradle.properties').readAsStringSync();
+    expect(gradleProperties, contains('disable-abi-filtering=true'),
+        reason: 'BUG-3874：不关掉 Flutter 插件那份，它会把 abiFilters 覆盖回三个 ABI');
+    final String debugAbiGate = workflowStep(
+      workflow,
+      'Verify debug-channel APK is arm64-only',
+    );
+    expect(debugAbiGate,
+        contains("if: steps.channel.outputs.build_debug_channel_apk == 'true'"));
+    expect(debugAbiGate, contains('"\$abis" != "arm64-v8a"'));
+    expect(
+      workflow.indexOf('Prepare release-signed debug-channel APK asset'),
+      lessThan(workflow.indexOf('Verify debug-channel APK is arm64-only')),
+    );
+
     expect(preBuildDiagnostics, contains('flutter --version'));
     expect(preBuildDiagnostics, contains('dart --version'));
     expect(preBuildDiagnostics, contains('java -version'));

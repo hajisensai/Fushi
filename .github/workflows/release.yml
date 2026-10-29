@@ -1010,6 +1010,23 @@ jobs:
         rm -f "$OUT_DIR"/fushi-*.apk
         cp "$DEBUG_CHANNEL_APK" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
 
+    # BUG-3874：--target-platform 只管 libflutter/libapp，插件与本仓 jniLibs 不随之过滤，
+    # 调试包曾带着 armeabi-v7a / x86_64 两套起不来的原生库（459 MB，近一半死重）。过滤由
+    # build.gradle 的 ndk.abiFilters 按 target-platform 收；这里在出包后钉死结果。
+    - name: Verify debug-channel APK is arm64-only
+      if: steps.channel.outputs.build_debug_channel_apk == 'true'
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        apk=$(find build/release-artifacts -maxdepth 1 -type f -name 'fushi-*-debug.apk' | head -n 1)
+        abis="$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)"
+        echo "lib ABIs in $apk: $(echo $abis)"
+        if [ "$abis" != "arm64-v8a" ]; then
+          echo "::error title=Debug APK carries extra ABIs::$apk lib/ has: $(echo $abis) (expected arm64-v8a only)"
+          exit 1
+        fi
+
     - name: Build release APK (split per ABI)
       if: steps.channel.outputs.build_split_release_apk == 'true'
       working-directory: fushi
