@@ -242,10 +242,27 @@ class FushiDesktopTitleBar extends StatefulWidget {
     );
   }
 
-  /// 自绘顶栏此刻占的高度（未装自绘顶栏 / 内容全屏收起时为 0）。页面要把背景
-  /// 延伸到顶栏底下时，用它算画布；随 [visibleHeightListenable] 变化。
+  /// 上报了配色的沉浸页此刻是否占满整窗（顶栏悬停才浮出、不让位）。macOS 的
+  /// 系统红绿灯收不起，沉浸页仍从顶栏下沿开始排。
+  static bool get immersivePagesFillWindow => !_hostIsMacOS;
+
+  /// 沉浸页顶部 padding 里属于自绘顶栏的那一段（悬停浮出的窗口按钮让位，不是
+  /// 系统安全区）：页面的悬浮胶囊按 padding 排在它下面，正文 / 画面要多吃这一条
+  /// 显示面积时从自己的顶部预留里扣掉它（用户 2026-10-30「目的只是为了更多显示
+  /// 面积」）。macOS / 未装自绘顶栏 / 内容全屏时为 0。
+  static double get immersiveCaptionInset =>
+      _isEnabled && !_contentFullscreen.value && immersivePagesFillWindow
+      ? height
+      : 0;
+
+  /// 上报了配色的沉浸页（[FushiTitleBarColorScope]）头顶上自绘顶栏让出的高度
+  /// （未装自绘顶栏 / 内容全屏收起时为 0）。页面要把背景延伸到顶栏底下时，用它
+  /// 算画布；随 [visibleHeightListenable] 变化。只有 macOS 让位（系统红绿灯收
+  /// 不起）；其余宿主沉浸页占满整窗、顶栏悬停才浮出，不让位，恒为 0。
   static double get visibleHeight =>
-      _isEnabled && !_contentFullscreen.value ? height : 0;
+      _isEnabled && !_contentFullscreen.value && !immersivePagesFillWindow
+      ? height
+      : 0;
 
   /// [visibleHeight] 的变化信号（顶栏只在内容全屏时收起）。
   static ValueListenable<bool> get visibleHeightListenable =>
@@ -460,10 +477,14 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           // 背景与可滚动内容照常铺到标题行底下，标题行本身透明。
           //
           // 上报了页面配色的沉浸页（阅读器纸色、视频 / 串流黑底、漫画底色、
-          // 歌词背景，见 [FushiTitleBarColorScope]）仍按「标题行实色 + 页面从
-          // 标题行下沿开始」排：它们的 WebView 分页 / 画面几何按可见视口算，
-          // 不能被标题行压住一截。两种排法只差页面的 top 偏移与 padding，
-          // 子树结构恒定，不会重挂 Navigator。
+          // 歌词背景，见 [FushiTitleBarColorScope]）占满整个窗口、**不让位**
+          // （用户 2026-10-30「顶栏条默认视频、小说、漫画、音乐都要占满」）：
+          // 页面 MediaQuery 就是整窗（顶部 padding 仍让出标题行高度，页面的
+          // 悬浮胶囊排在它下面）；标题行
+          // 平时隐去，指针移到窗口顶边才浮出（[_ImmersiveCaptionReveal]），
+          // 浮出时盖在页面顶端、不改页面版面。macOS 的红绿灯是系统画的、收不起，
+          // 仍按「标题行实色 + 页面从标题行下沿开始」排。几种排法只差页面的
+          // top 偏移与 padding，子树结构恒定，不会重挂 Navigator。
           child: ValueListenableBuilder<FushiTitleBarColors?>(
             valueListenable: FushiDesktopTitleBar._pageColors,
             builder: (BuildContext context, FushiTitleBarColors? page, Widget? _) {
@@ -471,8 +492,13 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                   ? 0
                   : FushiDesktopTitleBar.height;
               final bool overlay = page == null;
-              final double offset = overlay ? 0 : caption;
-              final double inset = overlay ? caption : 0;
+              final bool immersive =
+                  !overlay && FushiDesktopTitleBar.immersivePagesFillWindow;
+              final double offset = overlay || immersive ? 0 : caption;
+              // 沉浸页同样把标题行高度交成顶部 padding：画面 / 背景从窗口顶端
+              // 铺起，但页面自己的悬浮胶囊（返回 / 动作组）照旧排在标题行下面，
+              // 悬停浮出的窗口按钮不会压住它们（用户 2026-10-30）。
+              final double inset = overlay || immersive ? caption : 0;
               return LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
                   // The caption no longer consumes layout height in overlay
@@ -512,19 +538,22 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                           left: 0,
                           right: 0,
                           height: FushiDesktopTitleBar.height,
-                          child: ValueListenableBuilder<bool>(
-                            valueListenable:
-                                FushiDesktopTitleBar._captionPassthrough,
-                            builder:
-                                (
-                                  BuildContext context,
-                                  bool passthrough,
-                                  Widget? _,
-                                ) => _buildCaptionRow(
-                                  context,
-                                  page,
-                                  passthrough: passthrough,
-                                ),
+                          child: _ImmersiveCaptionReveal(
+                            enabled: immersive,
+                            child: ValueListenableBuilder<bool>(
+                              valueListenable:
+                                  FushiDesktopTitleBar._captionPassthrough,
+                              builder:
+                                  (
+                                    BuildContext context,
+                                    bool passthrough,
+                                    Widget? _,
+                                  ) => _buildCaptionRow(
+                                    context,
+                                    page,
+                                    passthrough: passthrough,
+                                  ),
+                            ),
                           ),
                         ),
                     ],
@@ -572,8 +601,16 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     // 自觉。
     // 没有页面上报色 = 标题行浮在页面上、完全透明：页面背景（含详情页
     // fanart）从窗口顶端铺起，与下面的主界面是同一张，没有接缝。
-    final Color captionFill = page == null
+    // 沉浸页（非 macOS）的标题行悬停才浮出、盖在页面顶端：同样透明，只留按钮
+    // 组与柔光，不在画面 / 正文上压一条实色带。
+    final bool immersive =
+        page != null && FushiDesktopTitleBar.immersivePagesFillWindow;
+    final Color captionFill = page == null || immersive
         ? Colors.transparent
+        : Color.alphaBlend(page.background, colors.surface);
+    // 柔光垫在页面底色上（沉浸页）或根主题表面色上（普通页）。
+    final Color haloBase = page == null
+        ? colors.surface
         : Color.alphaBlend(page.background, colors.surface);
     // 窗口按钮按平台而不是按设计系统（用户 2026-10-04）：macOS 一律用系统原生
     // 红绿灯（左上角，顶栏只给它们留位），Windows / Linux 一律是 MD3 那组按钮。
@@ -597,7 +634,9 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           // 背景过渡柔和、不出硬边：峰值比旧版低、渐隐半径更大，胶囊整枚落在
           // 最浓的那一段里。墨水屏不画（降级为胶囊描边，无填色）。
           // Apple 设计系统没有胶囊，柔光直接托住扁平字形的可读性。
-          if (page == null && !trafficLights && !isEinkTheme(context))
+          if ((page == null || immersive) &&
+              !trafficLights &&
+              !isEinkTheme(context))
             Positioned(
               top: 0,
               right: 0,
@@ -613,10 +652,10 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                         center: Alignment.topRight,
                         radius: 1,
                         colors: <Color>[
-                          colors.surface.withValues(alpha: 0.5),
-                          colors.surface.withValues(alpha: 0.36),
-                          colors.surface.withValues(alpha: 0.12),
-                          colors.surface.withValues(alpha: 0),
+                          haloBase.withValues(alpha: 0.5),
+                          haloBase.withValues(alpha: 0.36),
+                          haloBase.withValues(alpha: 0.12),
+                          haloBase.withValues(alpha: 0),
                         ],
                         stops: const <double>[0, 0.42, 0.74, 1],
                       ),
@@ -740,6 +779,111 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
       ResizeEdge.top,
       ResizeEdge.topRight,
     ];
+  }
+}
+
+/// 沉浸页（[FushiTitleBarColorScope] 上报了配色的阅读 / 播放页）的标题行：平时
+/// 透明且不吃指针，页面内容照常铺到窗口顶端、顶端那一截照常可点；指针进入顶边
+/// 这条标题行高度的带子时淡入，离开淡出。键盘焦点走进窗口按钮（Tab 遍历）时也
+/// 保持显示，看不见的按钮不能被聚焦后还看不见。
+///
+/// [enabled] 为 false 时原样常显（普通页 / macOS）；结构恒定，开关切换不重挂
+/// 标题行子树。时长走 [fushiMotionDuration]（墨水屏 / 减弱动效归零）。
+class _ImmersiveCaptionReveal extends StatefulWidget {
+  const _ImmersiveCaptionReveal({required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_ImmersiveCaptionReveal> createState() =>
+      _ImmersiveCaptionRevealState();
+}
+
+class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  void _setHovered(bool value) {
+    if (_hovered != value) setState(() => _hovered = value);
+  }
+
+  void _onNativeMaxButton() => setState(() {});
+
+  @override
+  void initState() {
+    super.initState();
+    // Windows 的最大化按钮命中区交给 runner（HTMAXBUTTON，贴靠布局）：指针停在
+    // 它上面时 Flutter 只收到「离开」，悬停真值改由原生回传——不并进来，指针
+    // 一移到最大化键整条就隐去（用户 2026-10-30 截图）。
+    WindowCaptionChannel.captionMaxButtonHovered.addListener(
+      _onNativeMaxButton,
+    );
+    WindowCaptionChannel.captionMaxButtonPressed.addListener(
+      _onNativeMaxButton,
+    );
+  }
+
+  @override
+  void dispose() {
+    WindowCaptionChannel.captionMaxButtonHovered.removeListener(
+      _onNativeMaxButton,
+    );
+    WindowCaptionChannel.captionMaxButtonPressed.removeListener(
+      _onNativeMaxButton,
+    );
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ImmersiveCaptionReveal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 换页（离开沉浸页再回来）从隐藏态开始，不沿用上一页残留的悬停。
+    if (!widget.enabled && oldWidget.enabled) _hovered = false;
+  }
+
+  bool get _shown =>
+      !widget.enabled ||
+      _hovered ||
+      _focused ||
+      WindowCaptionChannel.captionMaxButtonHovered.value ||
+      WindowCaptionChannel.captionMaxButtonPressed.value;
+
+  /// 淡出完成后撤销最大化键的原生命中区：透明度 0 时子树不再绘制、不会重报
+  /// 矩形，留着旧矩形就是一块看不见、一点就最大化的区域。等淡出结束才撤，
+  /// 指针从 Flutter 区移进原生命中区那一瞬（Flutter 先报离开、原生悬停稍后
+  /// 才到）不会把命中区撤掉又挂回来地闪。重新显示时绘制会再报一次矩形。
+  void _onFadeEnd() {
+    if (!_shown) unawaited(WindowCaptionChannel.setCaptionMaxButtonRect(null));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool shown = _shown;
+    // translucent：带子自己记悬停，同时不挡下面页面的命中（隐藏时页面顶端
+    // 照常可点；显示时标题行自己的命中层在上面接管）。
+    return MouseRegion(
+      hitTestBehavior: HitTestBehavior.translucent,
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (bool value) {
+          if (_focused != value) setState(() => _focused = value);
+        },
+        child: IgnorePointer(
+          ignoring: !shown,
+          child: AnimatedOpacity(
+            opacity: shown ? 1 : 0,
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            onEnd: _onFadeEnd,
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
   }
 }
 

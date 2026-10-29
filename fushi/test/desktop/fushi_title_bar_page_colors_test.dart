@@ -1,7 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 /// 桌面自绘顶栏挂在 Navigator 外，`Theme.of` 只读得到根主题；阅读器的纸色是
@@ -15,6 +18,9 @@ void main() {
   const FushiTitleBarColors readerColors = (background: paper, foreground: ink);
 
   setUp(() {
+    // 下面这组钉的是「沉浸页从顶栏下沿开始排、标题行画上报底色」的宿主——
+    // macOS（系统红绿灯收不起）。Windows / Linux 沉浸页铺满整窗，见文件末尾。
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.macOS;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), (
           MethodCall call,
@@ -31,6 +37,8 @@ void main() {
   });
 
   tearDown(() {
+    FushiDesktopTitleBar.debugHostPlatform = () => defaultTargetPlatform;
+    WindowCaptionChannel.captionMaxButtonHovered.value = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
@@ -174,5 +182,72 @@ void main() {
     await tester.pumpAndSettle();
     expect(captionColor(tester), const Color(0xFF1E1E1E));
     expect(tester.takeException(), isNull);
+  });
+
+  // Windows / Linux：沉浸页铺满整窗，顶栏悬停才浮出（用户 2026-10-30「顶栏条
+  // 只有在应用外才显示……都要占满」「目的只是为了更多显示面积」）。
+  group('Windows 沉浸页', () {
+    setUp(
+      () =>
+          FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.windows,
+    );
+
+    double captionOpacity(WidgetTester tester) => tester
+        .widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byType(DragToMoveArea),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
+        )
+        .opacity;
+
+    testWidgets('页面从窗口顶端铺起，padding 仍为顶栏让位；标题行透明', (WidgetTester tester) async {
+      await pumpShell(tester, reader());
+
+      final Finder page = find.byType(Scaffold).last;
+      expect(tester.getTopLeft(page).dy, 0, reason: '沉浸页不再被顶栏下推');
+      expect(
+        MediaQuery.paddingOf(tester.element(page)).top,
+        greaterThanOrEqualTo(FushiDesktopTitleBar.height),
+        reason: '页面的悬浮胶囊要按 padding 排在窗口按钮下面',
+      );
+      expect(FushiDesktopTitleBar.visibleHeight, 0);
+      expect(FushiDesktopTitleBar.pageColors.value, readerColors);
+      expect(captionColor(tester), Colors.transparent);
+    });
+
+    testWidgets('指针进入顶栏才显示，离开淡出；原生最大化键悬停也算', (WidgetTester tester) async {
+      await pumpShell(tester, reader());
+      expect(captionOpacity(tester), 0);
+
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: const Offset(200, 300));
+      await mouse.moveTo(const Offset(200, 8));
+      await tester.pumpAndSettle();
+      expect(captionOpacity(tester), 1);
+
+      await mouse.moveTo(const Offset(200, 300));
+      await tester.pumpAndSettle();
+      expect(captionOpacity(tester), 0);
+
+      // 最大化键是 runner 的 HTMAXBUTTON 原生命中区：Flutter 只收到离开，
+      // 悬停真值由原生回传，不并进来指针一停到最大化键整条就隐去。
+      WindowCaptionChannel.captionMaxButtonHovered.value = true;
+      await tester.pumpAndSettle();
+      expect(captionOpacity(tester), 1);
+      WindowCaptionChannel.captionMaxButtonHovered.value = false;
+      await tester.pumpAndSettle();
+      expect(captionOpacity(tester), 0);
+    });
+
+    testWidgets('普通页（未上报配色）顶栏常显', (WidgetTester tester) async {
+      await pumpShell(tester, const Scaffold());
+      expect(captionOpacity(tester), 1);
+    });
   });
 }
