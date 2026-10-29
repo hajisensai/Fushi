@@ -72,6 +72,10 @@ pub struct SrsCore {
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
     pub(crate) ingest_prepare_hook: Mutex<Option<Box<dyn Fn() + Send>>>,
+    /// 测试钩子：收段的一片投递完、提交之前（还持着写锁、事务没结束）调用，参数是这个库本身。
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) ingest_commit_hook: Mutex<Option<Box<dyn Fn(&SrsCore) + Send>>>,
 }
 
 /// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
@@ -260,6 +264,8 @@ impl SrsCore {
             browse: Mutex::new(std::collections::HashMap::new()),
             #[cfg(test)]
             ingest_prepare_hook: Mutex::new(None),
+            #[cfg(test)]
+            ingest_commit_hook: Mutex::new(None),
         })
     }
 

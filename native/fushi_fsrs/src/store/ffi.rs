@@ -921,10 +921,11 @@ fn sync2_command(
         "ingest_prepare" => c.sync2_ingest_prepare(profile, std::mem::take(blobs), key32(&req["key"])?)?,
         // 一次投一片（默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果
         // `more` 为真 Dart 放开写锁再调。
-        "ingest_commit" => parse(c.sync2_ingest_commit(profile, i("now")?, slice_budget(c, req))?)?,
+        // `localState`：Dart 的本机状态行，与这一片同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
+        "ingest_commit" => parse(c.sync2_ingest_commit_persisting(profile, i("now")?, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
         // 收尾：换身份 + 重放各片记下的待重放卡（按片，`more` 为真 Dart 放开写锁后用 replay_pending 接着放，审查 S-4）。
-        "ingest_finish" => parse(c.sync2_ingest_finish_within(profile, i("now")?, slice_budget(c, req))?)?,
-        "replay_pending" => parse(c.sync2_replay_pending(profile, slice_budget(c, req))?)?,
+        "ingest_finish" => parse(c.sync2_ingest_finish_persisting(profile, i("now")?, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
+        "replay_pending" => parse(c.sync2_replay_pending_persisting(profile, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
         "export" => {
             files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));

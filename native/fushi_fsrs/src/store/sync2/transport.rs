@@ -1197,6 +1197,32 @@ fn ingest_result(
     .to_string())
 }
 
+/// 收段的一步在同一笔事务里写下 Dart 的本机状态行（`srs_local_state`，集成审查【中高】）。[local_state] 是 Dart 调用
+/// 那一刻内存里的本机状态（`_saveLocal` 写的同一份 JSON）；这一步只会改变其中的修订号 `revision`（Dart
+/// `_absorbProjection`：每条落库的事件、每个变化的实体各 +1），这里按 [result] 的 `marks.landed` 与 `changed` 条数
+/// 同样推进后写下，并把写下的值放进结果的 `localRevision`（Dart 以它为准，内存与库里的一致）。[local_state] 为 None
+/// （测试、旧调用方）就不写，结果原样返回。
+fn persist_local_state(c: &Connection, profile: &str, local_state: Option<&str>, result: String) -> Result<String, String> {
+    let Some(local) = local_state else { return Ok(result) };
+    let mut r: Value = serde_json::from_str(&result).map_err(|e| e.to_string())?;
+    let mut state: Value = serde_json::from_str(local).map_err(|e| format!("sync2 ingest: bad localState: {e}"))?;
+    let landed = r["marks"]["landed"].as_i64().unwrap_or(0);
+    let changed = r["changed"].as_array().map_or(0, |a| a.len() as i64);
+    let revision = state.get("revision").and_then(Value::as_i64).unwrap_or(0) + landed + changed;
+    state
+        .as_object_mut()
+        .ok_or("sync2 ingest: localState must be a JSON object")?
+        .insert("revision".to_owned(), json!(revision));
+    c.prepare_cached(
+        "INSERT INTO srs_local_state (profile_uid, json) VALUES (?1, ?2) ON CONFLICT(profile_uid) DO UPDATE SET json = excluded.json",
+    )
+    .map_err(sql)?
+    .execute(params![profile, state.to_string()])
+    .map_err(sql)?;
+    r["localRevision"] = json!(revision);
+    Ok(r.to_string())
+}
+
 /// 把这一片受影响的卡记进待重放集合（审查 S-4）：与投递同一事务，崩溃 / 中途收手后还在。
 ///
 /// 以前每一片（[COMMIT_SLICE]）收尾都当场重放受影响的卡，而重放是整条血统从初始状态重算：新设备追赶时同一张卡
@@ -1800,7 +1826,21 @@ impl SrsCore {
     /// 返回 `more` 为真 = 这一片被截停，剩下的留在会话里，再调一次接着投（两次之间别的写入可以插进来）。
     /// 会话期间本机身份变了（别处换过身份）就作废会话并报错：之后的本机段已不能按同一身份比链。
     pub fn sync2_ingest_commit(&self, profile: &str, now: i64, budget: CommitBudget<'_>) -> Result<String, String> {
-        let out = self.ingest_commit_slice(profile, now, budget);
+        self.sync2_ingest_commit_persisting(profile, now, budget, None)
+    }
+
+    /// 同 [Self::sync2_ingest_commit]；给了 [local_state]（Dart 本机状态行 `srs_local_state.json` 的此刻内容）就在投递
+    /// 的**同一笔事务**里把它写下（修订号按这一片落库的变化推进，见 [persist_local_state]）。收段不再套 Drift 事务
+    /// （集成审查【中高】）：这一片由内核自己提交，提交成功才推进会话内存（`prepared` / `delivery`），所以不会有
+    /// 「内层 SAVEPOINT 释放、会话已推进，外层事务却回滚」的不一致；本机状态行也随同一次提交落盘或一起不落。
+    pub fn sync2_ingest_commit_persisting(
+        &self,
+        profile: &str,
+        now: i64,
+        budget: CommitBudget<'_>,
+        local_state: Option<&str>,
+    ) -> Result<String, String> {
+        let out = self.ingest_commit_slice(profile, now, budget, local_state);
         // 这一片收了：让出请求是冲着它来的（之后才到的最多让下一片早收）。
         self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
         out
@@ -1817,7 +1857,7 @@ impl SrsCore {
         &self.ingest_yield
     }
 
-    fn ingest_commit_slice(&self, profile: &str, now: i64, mut budget: CommitBudget<'_>) -> Result<String, String> {
+    fn ingest_commit_slice(&self, profile: &str, now: i64, mut budget: CommitBudget<'_>, local_state: Option<&str>) -> Result<String, String> {
         let w = self.writer()?;
         let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
         let (device, prior, mut prepared, mut cached) = match guard.as_mut() {
@@ -1851,7 +1891,12 @@ impl SrsCore {
             if let Some(k) = fork_at.filter(|k| prior != Some(*k)) {
                 record_fork(c, profile, &local.device, k)?;
             }
+            #[cfg(test)]
+            if let Some(hook) = self.ingest_commit_hook.lock().map_err(|_| "hook poisoned")?.as_ref() {
+                hook(self);
+            }
             let r = ingest_result(c, profile, t, BTreeSet::new(), applied_n, errors, false, !done, Some(pending))?;
+            let r = persist_local_state(c, profile, local_state, r)?;
             Ok((r, fork_at, done))
         });
         match out {
@@ -1881,7 +1926,18 @@ impl SrsCore {
 
     /// 同 [Self::sync2_ingest_finish]，重放按 [budget] 切片：返回 `more` 为真 = 待重放集合还没放完，调用方放开
     /// 写锁后用 [Self::sync2_replay_pending] 接着放（会话已在这一次收掉）。
-    pub fn sync2_ingest_finish_within(&self, profile: &str, now: i64, mut budget: CommitBudget<'_>) -> Result<String, String> {
+    pub fn sync2_ingest_finish_within(&self, profile: &str, now: i64, budget: CommitBudget<'_>) -> Result<String, String> {
+        self.sync2_ingest_finish_persisting(profile, now, budget, None)
+    }
+
+    /// 同 [Self::sync2_ingest_finish_within]，[local_state] 同 [Self::sync2_ingest_commit_persisting]。
+    pub fn sync2_ingest_finish_persisting(
+        &self,
+        profile: &str,
+        now: i64,
+        mut budget: CommitBudget<'_>,
+        local_state: Option<&str>,
+    ) -> Result<String, String> {
         let w = self.writer()?;
         let session = {
             let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
@@ -1900,7 +1956,8 @@ impl SrsCore {
             clear_fork(c, profile)?;
             defer_replay(c, profile, &t.cards)?;
             let (replayed, more) = replay_pending(c, profile, &mut budget)?;
-            ingest_result(c, profile, t, replayed, 0, Vec::new(), fork_at.is_some(), more, None)
+            let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), fork_at.is_some(), more, None)?;
+            persist_local_state(c, profile, local_state, r)
         });
         self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
         out
@@ -1908,11 +1965,17 @@ impl SrsCore {
 
     /// 接着重放待重放集合（[Self::sync2_ingest_finish_within] 返回 `more`，或上一次会话没收尾就被打断）：做到
     /// [budget] 用完。返回与收段同形，`more` 为真就再调。
-    pub fn sync2_replay_pending(&self, profile: &str, mut budget: CommitBudget<'_>) -> Result<String, String> {
+    pub fn sync2_replay_pending(&self, profile: &str, budget: CommitBudget<'_>) -> Result<String, String> {
+        self.sync2_replay_pending_persisting(profile, budget, None)
+    }
+
+    /// 同 [Self::sync2_replay_pending]，[local_state] 同 [Self::sync2_ingest_commit_persisting]。
+    pub fn sync2_replay_pending_persisting(&self, profile: &str, mut budget: CommitBudget<'_>, local_state: Option<&str>) -> Result<String, String> {
         let w = self.writer()?;
         let out = in_savepoint(&w, |c| {
             let (replayed, more) = replay_pending(c, profile, &mut budget)?;
-            ingest_result(c, profile, Touched::default(), replayed, 0, Vec::new(), false, more, None)
+            let r = ingest_result(c, profile, Touched::default(), replayed, 0, Vec::new(), false, more, None)?;
+            persist_local_state(c, profile, local_state, r)
         });
         self.ingest_yield.store(false, std::sync::atomic::Ordering::Relaxed);
         out
