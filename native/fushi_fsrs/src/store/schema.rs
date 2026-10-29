@@ -408,8 +408,8 @@ mod tests {
     }
 
     /// 出卡 / 计数查询在大库上的耗时：有 v9 索引 vs 删掉 v9 索引（= v8，计数的全牌组查询按 v8 写法带 `+profile_uid`）。
-    /// SQL 逐字取自 `SrsDbStore.nextCard` / `_deckTallies` / `_countContext` 实际发出的语句
-    /// （packages/fushi_engine/test/srs/srs_queue_index_plan_test.dart 抓下来的）。手动跑：
+    /// SQL 是排队搬进 Rust（store/study.rs）之前 Dart `SrsDbStore.nextCard` / `_deckTallies` / `_countContext` 发出的
+    /// 语句，study.rs 沿用同样的条件与排序（计划钉在 study.rs `queue_queries_use_the_v9_indexes`）。手动跑：
     /// `cargo test --release --lib queue_query_bench -- --ignored --nocapture`。
     #[test]
     #[ignore]

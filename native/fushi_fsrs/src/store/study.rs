@@ -155,14 +155,7 @@ fn context(c: &Connection, profile: &str, now: i64, day: Day) -> Result<Ctx, Str
     };
     let from = ctx.day_start(today - 29);
     let today_start = ctx.day_start(today);
-    let mut stmt = c
-        .prepare_cached(
-            "SELECT card_id, occurred_at, review_type, \
-             CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END \
-             FROM srs_review_logs WHERE profile_uid = ?1 AND kind = 'review' AND occurred_at >= ?2 \
-             ORDER BY occurred_at",
-        )
-        .map_err(sql)?;
+    let mut stmt = c.prepare_cached(LOGS_SQL).map_err(sql)?;
     let mut q = stmt.query(rusqlite::params![profile, from, today_start]).map_err(sql)?;
     while let Some(r) = q.next().map_err(sql)? {
         let at: i64 = r.get(1).map_err(sql)?;
@@ -190,20 +183,54 @@ fn context(c: &Connection, profile: &str, now: i64, day: Day) -> Result<Ctx, Str
     Ok(ctx)
 }
 
+/// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
+const LOGS_SQL: &str = "SELECT card_id, occurred_at, review_type, \
+     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END \
+     FROM srs_review_logs WHERE profile_uid = ?1 AND kind = 'review' AND occurred_at >= ?2 \
+     ORDER BY occurred_at";
+
+/// 按牌组聚合的计数原料；[decks] = `deck_id IN` 的个数（None = 不限牌组）。
+fn tallies_sql(decks: Option<usize>) -> String {
+    let deck_sql = decks.map_or(String::new(), |n| format!(" AND deck_id IN ({})", marks(n)));
+    format!(
+        "SELECT deck_id, COUNT(*), \
+         SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
+         SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
+         SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
+         FROM srs_cards_cache WHERE profile_uid = ? AND hidden = 0{deck_sql} GROUP BY deck_id"
+    )
+}
+
+/// 学习卡 / 新卡的「按索引序取第一张」。
+fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> String {
+    let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
+    format!(
+        "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
+        marks(decks)
+    )
+}
+
+/// 到期复习候选（不排序：Rust 边扫边留最小）。
+fn due_sql(decks: usize) -> String {
+    format!(
+        "SELECT id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} \
+         AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?",
+        marks(decks)
+    )
+}
+
+const LEARNING_WHERE: &str = "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?";
+const LEARNING_ORDER: &str = "COALESCE(due_at, 0), id";
+const NEW_BY_POSITION: &str = "new_position IS NULL, new_position, note_created_at, id";
+const NEW_BY_FREQUENCY: &str = "freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id";
+
 fn marks(n: usize) -> String {
     vec!["?"; n].join(", ")
 }
 
 /// 每个牌组**自己**（不含子牌组）的计数原料，在 SQL 里按牌组聚合（覆盖索引，不回表）。[decks] 为 None 时不限牌组。
 fn tallies(c: &Connection, profile: &str, ctx: &Ctx, decks: Option<&[String]>) -> Result<HashMap<String, Tally>, String> {
-    let deck_sql = decks.map_or(String::new(), |d| format!(" AND deck_id IN ({})", marks(d.len())));
-    let sql_text = format!(
-        "SELECT deck_id, COUNT(*), \
-         SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
-         SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
-         SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
-         FROM srs_cards_cache WHERE profile_uid = ? AND hidden = 0{deck_sql} GROUP BY deck_id"
-    );
+    let sql_text = tallies_sql(decks.map(<[String]>::len));
     let mut args: Vec<Sql> = vec![
         Sql::Integer(ctx.today),
         Sql::Integer(ctx.today),
@@ -428,11 +455,7 @@ impl Picker<'_> {
         if decks.is_empty() {
             return Ok(None);
         }
-        let not_in = if exclude.is_empty() { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude.len())) };
-        let sql_text = format!(
-            "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
-            marks(decks.len())
-        );
+        let sql_text = first_sql(decks.len(), condition, order, exclude.len());
         let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.ctx.today)];
         args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
         args.extend(vars);
@@ -451,11 +474,7 @@ impl Picker<'_> {
         if decks.is_empty() {
             return Ok(None);
         }
-        let sql_text = format!(
-            "SELECT id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} \
-             AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?",
-            marks(decks.len())
-        );
+        let sql_text = due_sql(decks.len());
         let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.ctx.today)];
         args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
         args.push(Sql::Integer(self.ctx.today));
@@ -493,9 +512,9 @@ impl Picker<'_> {
         let sub: Vec<&str> = self.sub.iter().map(String::as_str).collect();
         let learning = self.first(
             &sub,
-            "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?",
+            LEARNING_WHERE,
             vec![Sql::Integer(self.ctx.now + LEARN_AHEAD_MS)],
-            "COALESCE(due_at, 0), id",
+            LEARNING_ORDER,
             exclude,
         )?;
         if let Some((id, due)) = &learning {
@@ -528,8 +547,8 @@ impl Picker<'_> {
             let decks: Vec<&str> = sub.iter().copied().filter(|d| self.path_has_room(d, |c| c.new_remaining)).collect();
             let owner = self.ctx.tree.params_owner(self.root).map(|d| &d.view);
             let order = match owner.and_then(|v| v["no"].as_str()) {
-                Some("position") => "new_position IS NULL, new_position, note_created_at, id",
-                _ => "freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id",
+                Some("position") => NEW_BY_POSITION,
+                _ => NEW_BY_FREQUENCY,
             };
             if let Some((id, _)) = self.first(&decks, "queue = 'new'", Vec::new(), order, exclude)? {
                 return Ok(Some(id));
@@ -683,6 +702,44 @@ mod tests {
         assert_eq!(new_card_budget(20, 0, &[333; 30]).review_budget, 500);
         // 上限 0：预算 0 → 不缩减分支。
         assert_eq!(new_card_budget(0, 10, &[0; 30]), Budget { limit: 0, allowed: 0, review_budget: 0, reason: None });
+    }
+
+    /// 排队的每条查询走上 v9 的索引（schema.rs `V9`）：学习卡 / 新卡按索引序取第一张、计数按牌组聚合、日志区间
+    /// 扫描都不回表另排序（无 TEMP B-TREE）；复习候选顺着到期索引覆盖扫描（不排序，Rust 留最小）。
+    /// 单牌组与多牌组（`deck_id IN` 一个值 / 多个值）、带排除都看。
+    #[test]
+    fn queue_queries_use_the_v9_indexes() {
+        let mut c = rusqlite::Connection::open_in_memory().unwrap();
+        crate::store::schema::migrate(&mut c).unwrap();
+        let plan = |q: &str| -> String {
+            let mut stmt = c.prepare(&format!("EXPLAIN QUERY PLAN {q}")).unwrap();
+            let n = stmt.parameter_count();
+            let rows: Vec<String> =
+                stmt.query_map(params_from_iter(std::iter::repeat_n(Sql::Integer(0), n)), |r| r.get::<_, String>(3)).unwrap().map(Result::unwrap).collect();
+            rows.join("\n")
+        };
+        let mut wrong = Vec::new();
+        let mut uses = |label: &str, q: &str, index: &str, sorted: bool| {
+            let p = plan(q);
+            if !p.contains(index) {
+                wrong.push(format!("{label}: want {index}\n{p}"));
+            }
+            if sorted && p.contains("TEMP B-TREE") {
+                wrong.push(format!("{label}: want no TEMP B-TREE\n{p}"));
+            }
+        };
+        for decks in [1, 3] {
+            for ex in [0, 2] {
+                uses("learning", &first_sql(decks, LEARNING_WHERE, LEARNING_ORDER, ex), "COVERING INDEX idx_srs_cards_cache_learning", true);
+                uses("new(freq)", &first_sql(decks, "queue = 'new'", NEW_BY_FREQUENCY, ex), "idx_srs_cards_cache_new_freq", true);
+                uses("new(position)", &first_sql(decks, "queue = 'new'", NEW_BY_POSITION, ex), "idx_srs_cards_cache_new_position", true);
+            }
+            uses("review", &due_sql(decks), "COVERING INDEX idx_srs_cards_cache_review_due", true);
+            uses("tally", &tallies_sql(Some(decks)), "COVERING INDEX idx_srs_cards_cache_tally", true);
+        }
+        uses("tally(all)", &tallies_sql(None), "COVERING INDEX idx_srs_cards_cache_tally", true);
+        uses("logs", LOGS_SQL, "idx_srs_review_logs_profile_kind_time", true);
+        assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
     }
 
     #[test]
