@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 
 import 'anki_models.dart';
+import 'fushi_card_preset.dart';
 import 'lapis_preset.dart';
 import 'note_type_default_mappings.dart';
 import 'senren_preset.dart';
@@ -47,8 +48,20 @@ abstract final class NoteTypePresets {
     defaultMappings: SenrenPreset.defaultMappings,
   );
 
+  /// Fushi 卡片导出到 Anki 的笔记类型（新字段名；旧名副本先被 [lapis] 认领，映射值相同）。
+  static const NoteTypePreset fushiCard = NoteTypePreset(
+    id: 'fushi_card',
+    nameKeyword: 'fushi card',
+    matches: FushiCardPreset.matches,
+    defaultMappings: FushiCardPreset.defaultMappings,
+  );
+
   /// Lapis / Kiku 在前：保持「同时装了多套预设时默认选 Lapis」的既有行为。
-  static const List<NoteTypePreset> all = <NoteTypePreset>[lapis, senren];
+  static const List<NoteTypePreset> all = <NoteTypePreset>[
+    lapis,
+    senren,
+    fushiCard,
+  ];
 
   /// [noteType] 对应的预设（按优先级第一个认领的）；没有则 `null`。
   static NoteTypePreset? of(AnkiNoteType noteType) =>

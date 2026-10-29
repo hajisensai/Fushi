@@ -78,7 +78,7 @@ class FushiCardFields {
     }
     for (final MapEntry<String, T> e in byName.entries) {
       if (fields.contains(e.key)) continue;
-      final String? alias = _counterpart(e.key);
+      final String? alias = aliasOf(e.key);
       if (alias != null && fields.contains(alias) && !out.containsKey(alias)) {
         out[alias] = e.value;
       } else {
@@ -89,7 +89,7 @@ class FushiCardFields {
   }
 
   /// 改名前后互为别名的另一个名字；没改过名的字段返回 null。
-  static String? _counterpart(String name) {
+  static String? aliasOf(String name) {
     final String? legacy = legacyNames[name];
     if (legacy != null) return legacy;
     return _aliases[name];

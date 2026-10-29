@@ -23,6 +23,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_media.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 
@@ -970,6 +971,24 @@ class SrsAnkiConnectHandler {
   }
 
   static SrsFieldDef? _fieldByName(SrsNoteTypeView t, String name) {
+    final SrsFieldDef? exact = _fieldByExactName(t, name);
+    if (exact != null) return exact;
+    // 内置 Fushi 卡片 2026-10-29 给 9 个字段改了名（[FushiCardFields]）：Yomitan 等客户端
+    // 的字段配置还是旧名（`Expression` / `Picture` / `MiscInfo` …）时按别名认，否则这些字段
+    // 会被静默丢掉（首字段丢了还会整张拒收）。只对内置类型生效：用户自建类型的字段名就是它自己。
+    if (t.builtinKey != kSrsBuiltinFushiCardKey) return null;
+    final String lower = name.toLowerCase();
+    for (final MapEntry<String, String> e
+        in FushiCardFields.legacyNames.entries) {
+      final String? alias = e.key.toLowerCase() == lower
+          ? e.value
+          : (e.value.toLowerCase() == lower ? e.key : null);
+      if (alias != null) return _fieldByExactName(t, alias);
+    }
+    return null;
+  }
+
+  static SrsFieldDef? _fieldByExactName(SrsNoteTypeView t, String name) {
     for (final SrsFieldDef f in t.fields) {
       if (f.name == name) return f;
     }
