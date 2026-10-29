@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176307 (10371 per locale)
+/// Strings: 176324 (10372 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6513,6 +6513,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get library_view_import => 'Import';
   String get library_view_media => 'Library';
   String get library_view_media_servers => 'Media servers';
+  String get library_view_mine => 'Library';
   String get library_view_online => 'Online';
   String get library_view_shelf => 'Shelf';
   String get library_view_sources => 'Sources';
@@ -25593,6 +25594,8 @@ class _StringsAr extends _StringsEn {
   String get library_view_media => 'المكتبة';
   @override
   String get library_view_media_servers => 'Media servers';
+  @override
+  String get library_view_mine => 'Library';
   @override
   String get library_view_online => 'Online';
   @override
@@ -50918,6 +50921,8 @@ class _StringsDe extends _StringsEn {
   String get library_view_media => 'Bibliothek';
   @override
   String get library_view_media_servers => 'Media servers';
+  @override
+  String get library_view_mine => 'Library';
   @override
   String get library_view_online => 'Online';
   @override
@@ -76461,6 +76466,8 @@ class _StringsEs extends _StringsEn {
   String get library_view_media => 'Biblioteca';
   @override
   String get library_view_media_servers => 'Media servers';
+  @override
+  String get library_view_mine => 'Library';
   @override
   String get library_view_online => 'Online';
   @override
@@ -102078,6 +102085,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'Library';
+  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Étagère';
@@ -127576,6 +127585,8 @@ class _StringsId extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'Library';
+  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Rak';
@@ -152961,6 +152972,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'Library';
+  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Scaffale';
@@ -177964,6 +177977,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'ライブラリ';
+  @override
   String get library_view_online => 'オンライン';
   @override
   String get library_view_shelf => '本棚';
@@ -202413,6 +202428,8 @@ class _StringsKo extends _StringsEn {
   String get library_view_media => '라이브러리';
   @override
   String get library_view_media_servers => 'Media servers';
+  @override
+  String get library_view_mine => '보관함';
   @override
   String get library_view_online => '온라인';
   @override
@@ -227368,6 +227385,8 @@ class _StringsNl extends _StringsEn {
   String get library_view_media => 'Bibliotheek';
   @override
   String get library_view_media_servers => 'Media servers';
+  @override
+  String get library_view_mine => 'Library';
   @override
   String get library_view_online => 'Online';
   @override
@@ -252835,6 +252854,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'Library';
+  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Estante';
@@ -278290,6 +278311,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'Library';
+  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Полка';
@@ -303580,6 +303603,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'Library';
+  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'ชั้นหนังสือ';
@@ -328810,6 +328835,8 @@ class _StringsTr extends _StringsEn {
   String get library_view_media => 'Kütüphane';
   @override
   String get library_view_media_servers => 'Media servers';
+  @override
+  String get library_view_mine => 'Library';
   @override
   String get library_view_online => 'Online';
   @override
@@ -354100,6 +354127,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => 'Library';
+  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Kệ';
@@ -378420,6 +378449,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get library_view_media_servers => '媒体服务器';
   @override
+  String get library_view_mine => '我的';
+  @override
   String get library_view_online => '在线';
   @override
   String get library_view_shelf => '书架';
@@ -401759,6 +401790,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
+  String get library_view_mine => '我的';
+  @override
   String get library_view_online => '線上';
   @override
   String get library_view_shelf => '書架';
@@ -424593,6 +424626,8 @@ extension on _StringsEn {
         return 'Library';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -446138,6 +446173,8 @@ extension on _StringsAr {
         return 'المكتبة';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -467724,6 +467761,8 @@ extension on _StringsDe {
         return 'Bibliothek';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -489331,6 +489370,8 @@ extension on _StringsEs {
         return 'Biblioteca';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -510948,6 +510989,8 @@ extension on _StringsFr {
         return 'Bibliothèque';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -532540,6 +532583,8 @@ extension on _StringsId {
         return 'Perpustakaan';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -554116,6 +554161,8 @@ extension on _StringsIt {
         return 'Libreria';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -575657,6 +575704,8 @@ extension on _StringsJa {
         return 'ライブラリ';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'ライブラリ';
       case 'library_view_online':
         return 'オンライン';
       case 'library_view_shelf':
@@ -597126,6 +597175,8 @@ extension on _StringsKo {
         return '라이브러리';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return '보관함';
       case 'library_view_online':
         return '온라인';
       case 'library_view_shelf':
@@ -618661,6 +618712,8 @@ extension on _StringsNl {
         return 'Bibliotheek';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -640253,6 +640306,8 @@ extension on _StringsPtBr {
         return 'Biblioteca';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -661847,6 +661902,8 @@ extension on _StringsRu {
         return 'Библиотека';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -683414,6 +683471,8 @@ extension on _StringsTh {
         return 'คลัง';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -704981,6 +705040,8 @@ extension on _StringsTr {
         return 'Kütüphane';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -726550,6 +726611,8 @@ extension on _StringsVi {
         return 'Thư viện';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -747991,6 +748054,8 @@ extension on _StringsZhCn {
         return '媒体库';
       case 'library_view_media_servers':
         return '媒体服务器';
+      case 'library_view_mine':
+        return '我的';
       case 'library_view_online':
         return '在线';
       case 'library_view_shelf':
@@ -769319,6 +769384,8 @@ extension on _StringsZhHk {
         return '媒體庫';
       case 'library_view_media_servers':
         return 'Media servers';
+      case 'library_view_mine':
+        return '我的';
       case 'library_view_online':
         return '線上';
       case 'library_view_shelf':

@@ -77,20 +77,27 @@ LibrarySectionGroup? librarySectionGroupOf(MediaLibraryViewKind kind) =>
 
 /// 库页工具栏右端的「导入」圆钮：切换型按钮，停在导入页时呈选中态，再点一次
 /// 回到之前的视图（四个库页壳共用，见 [LibrarySectionGroup]）。
+///
+/// 没有导入页、导入是几个零散动作的库页（音乐：加文件夹 / 管理文件夹 / 加光盘 /
+/// 读 CD）把 [selected] 恒给 false，[onTap] 里在 [anchorKey] 所在位置弹菜单。
 Widget libraryImportChromeButton({
   required bool selected,
   required VoidCallback onTap,
   required String focusIdPrefix,
-}) => fushiFloatingLeading(
-  FushiIconButton(
-    key: ValueKey<String>('$focusIdPrefix-import'),
-    icon: FushiIcons.libraryAdd,
-    tooltip: t.library_view_import,
-    selected: selected,
-    alwaysVisible: true,
-    onTap: onTap,
-  ),
-)!;
+  GlobalKey? anchorKey,
+}) => KeyedSubtree(
+  key: anchorKey,
+  child: fushiFloatingLeading(
+    FushiIconButton(
+      key: ValueKey<String>('$focusIdPrefix-import'),
+      icon: FushiIcons.libraryAdd,
+      tooltip: t.library_view_import,
+      selected: selected,
+      alwaysVisible: true,
+      onTap: onTap,
+    ),
+  )!,
+);
 
 /// 一个视图的声明：显示名 + 内容构建器。
 ///
