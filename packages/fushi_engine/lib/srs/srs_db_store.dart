@@ -17,6 +17,7 @@ import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -1000,12 +1001,14 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 收这一批期间暂停写连接的自动 checkpoint（[bulkWrites]），每片之后在写锁外、内核另开的连接上把 WAL 并回
   /// （[_walCheckpoint]）：在写连接上并，提交那一刻就把同一批热页拷回主库，作答排在后面；整批都不并，WAL 随
-  /// 片数涨到几百 MB。[sliceOps] 改按条数切（测试用，切点确定）。
+  /// 片数涨到几百 MB。测试用：[sliceOps] 改按条数切（切点确定），[sliceMs] 改一片的时间上限。返回里 `slices`
+  /// 是这一批投了几片。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
     int? sliceOps,
+    int? sliceMs,
   }) async {
     await _sync2(<String, Object?>{
       'op': 'ingest_prepare',
@@ -1014,7 +1017,7 @@ class SrsDbStore implements SrsSync2Host {
     final List<Map<String, Object?>> slices = <Map<String, Object?>>[];
     await bulkWrites(() async {
       do {
-        slices.add(await _sync2IngestSlice(sliceOps));
+        slices.add(await _sync2IngestSlice(sliceOps, sliceMs));
         if (slices.last['more'] == true) await _walCheckpoint();
       } while (slices.last['more'] == true);
     });
@@ -1022,14 +1025,16 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 投一片：持锁期间登记成「正在投片」，好让来排队的写入请内核收片（[runExclusive]）。
-  Future<Map<String, Object?>> _sync2IngestSlice(int? sliceOps) =>
+  Future<Map<String, Object?>> _sync2IngestSlice(int? sliceOps, int? sliceMs) =>
       runExclusive(() async {
         _ingestSliceHolding = true;
         _ingestYieldSent = false;
         try {
+          debugOnIngestSlice?.call();
           return await _sync2IngestStep(<String, Object?>{
             'op': 'ingest_commit',
             if (sliceOps != null) 'sliceOps': sliceOps,
+            if (sliceMs != null) 'sliceMs': sliceMs,
           });
         } finally {
           _ingestSliceHolding = false;
@@ -1038,6 +1043,10 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 写锁正被收段的一片占着（[_sync2IngestSlice]）。
   bool _ingestSliceHolding = false;
+
+  /// 测试钩子：收段的一片拿到写锁、调内核之前调用。
+  @visibleForTesting
+  void Function()? debugOnIngestSlice;
 
   /// 这一片已经请过收片。
   bool _ingestYieldSent = false;
@@ -1051,13 +1060,18 @@ class SrsDbStore implements SrsSync2Host {
   );
 
   /// 一批各片的结果拼成一次的形状（[srsSync2Round] 读的那些）：条数、`marks` 的计数相加、清单接起来，报错、
-  /// 重放 / 变更 / 清除的清单按片顺序接起来，缓冲条数与其它字段取最后一片。各片的投影变化已在各自的
-  /// [_sync2IngestStep] 里接进缓存，这里只给调用方汇报。
+  /// 重放 / 变更 / 清除的清单按片顺序接起来，缓冲条数与其它字段取最后一片，`slices` 记片数。各片的投影变化已在
+  /// 各自的 [_sync2IngestStep] 里接进缓存，这里只给调用方汇报。
   static Map<String, Object?> _mergeIngestSlices(
     List<Map<String, Object?>> slices,
   ) {
-    if (slices.length == 1) return slices.single;
-    final Map<String, Object?> out = <String, Object?>{...slices.last};
+    if (slices.length == 1) {
+      return <String, Object?>{...slices.single, 'slices': 1};
+    }
+    final Map<String, Object?> out = <String, Object?>{
+      ...slices.last,
+      'slices': slices.length,
+    };
     final Map<String, Object?> marks = <String, Object?>{};
     int applied = 0;
     bool fork = false;

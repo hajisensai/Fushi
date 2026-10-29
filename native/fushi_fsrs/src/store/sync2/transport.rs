@@ -569,9 +569,14 @@ impl<'a> CommitBudget<'a> {
 
     /// 一片：最长 [COMMIT_SLICE]，[yield_to] 置位就提前收。
     pub fn slice(yield_to: &'a std::sync::atomic::AtomicBool) -> CommitBudget<'a> {
+        CommitBudget::slice_within(yield_to, COMMIT_SLICE)
+    }
+
+    /// 一片，时间上限另给（测试用：给得很长，切点就只来自让出请求）。
+    pub fn slice_within(yield_to: &'a std::sync::atomic::AtomicBool, max: std::time::Duration) -> CommitBudget<'a> {
         CommitBudget {
             left: usize::MAX,
-            deadline: Some(std::time::Instant::now() + COMMIT_SLICE),
+            deadline: Some(std::time::Instant::now() + max),
             yield_to: Some(yield_to),
             floor: COMMIT_SLICE_MIN_OPS,
             stopped: false,

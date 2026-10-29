@@ -845,13 +845,14 @@ fn sync2_command(
         "ingest_batch" => parse(c.sync2_ingest_batch(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
         // 拆开的一批：prepare 在写锁外解码验签（Dart 侧也不进写锁），commit 在写锁里投递。
         "ingest_prepare" => c.sync2_ingest_prepare(profile, blobs, key32(&req["key"])?)?,
-        // 一次投一片（默认按时间切、有写入排队就让出，`sliceOps` 按条数切给测试用）；结果 `more` 为真 Dart 放开
-        // 写锁再调。
+        // 一次投一片（默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果
+        // `more` 为真 Dart 放开写锁再调。
         "ingest_commit" => {
             use crate::store::sync2::transport::CommitBudget;
-            let budget = match req.get("sliceOps").and_then(Value::as_u64) {
-                Some(n) => CommitBudget::ops(n as usize),
-                None => CommitBudget::slice(c.ingest_yield_flag()),
+            let budget = match (req.get("sliceOps").and_then(Value::as_u64), req.get("sliceMs").and_then(Value::as_u64)) {
+                (Some(n), _) => CommitBudget::ops(n as usize),
+                (None, Some(ms)) => CommitBudget::slice_within(c.ingest_yield_flag(), std::time::Duration::from_millis(ms)),
+                (None, None) => CommitBudget::slice(c.ingest_yield_flag()),
             };
             parse(c.sync2_ingest_commit(profile, i("now")?, budget)?)?
         }
