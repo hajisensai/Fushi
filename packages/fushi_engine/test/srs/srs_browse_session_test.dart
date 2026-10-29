@@ -172,7 +172,10 @@ void main() {
     final SrsBrowseResult c = await session.query(query: 'eat', reuse: true);
     expect(identical(b, c), isFalse);
     expect((await c.all()).first.flag, 3);
-    // 旧结果已被换掉：取行报 SrsBrowseResultGone（页面据此重新查询）。
+    // 会话只留最近几份结果：再查几次后旧结果被挤掉，取行报 SrsBrowseResultGone（页面据此重新查询）。
+    for (int i = 0; i < 4; i++) {
+      await session.query(query: 'eat $i');
+    }
     b.invalidateRows();
     await expectLater(b.all(), throwsA(isA<SrsBrowseResultGone>()));
     await session.close();
