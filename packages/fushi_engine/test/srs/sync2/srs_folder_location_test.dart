@@ -10,6 +10,7 @@ import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -239,5 +240,68 @@ void main() {
     expect(back.media, isFalse);
     expect(back.archive, isTrue);
     expect(back.locationId, 'folder:x');
+  });
+
+  /// 位置下全部文件 → 字节（比对「一个字节都没动」）。
+  Map<String, List<int>> snapshot(Directory d) => <String, List<int>>{
+    for (final File f in d.listSync(recursive: true).whereType<File>())
+      p.relative(f.path, from: d.path): f.readAsBytesSync(),
+  };
+
+  test('最低读者版本门控：位置来自更新版本时，同步 / 归档 / 只做媒体三种用途都整体停下，一个文件都不写不删', () async {
+    for (final (String tag, bool sync, bool media, bool archive)
+        in <(String, bool, bool, bool)>[
+          ('sync+media', true, true, false),
+          ('archive', false, false, true),
+          ('media-only', false, true, false),
+        ]) {
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'new-$tag',
+        path: dir('new-$tag').path,
+        sync: sync,
+        media: media,
+        archive: archive,
+      );
+      final SrsDbStore a = await device('a-$tag');
+      final Directory mediaA = dir('media-$tag');
+      File(p.join(mediaA.path, 'cat.png')).writeAsBytesSync(<int>[1, 2]);
+      await addNote(a, '猫', picture: '<img src="cat.png">');
+      final Directory root = srsFolderCollectionRoot(loc, kProfile)
+        ..createSync(recursive: true);
+      File(p.join(root.path, 'meta.json')).writeAsStringSync(
+        '{"v":${kSrsSync2Protocol + 1},"minReader":${kSrsSync2Protocol + 1}}',
+      );
+      // 更新版本写的、本机读不懂的文件：媒体按名字目录里一个会被旧逻辑「过期清掉 / 覆盖」的名字。
+      File(p.join(root.path, kSrsMediaFolder, 'cat.png'))
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(<int>[9, 9, 9]);
+      final Map<String, List<int>> before = snapshot(root);
+      final SrsFolderSyncReport r = await run(loc, a, media: mediaA);
+      expect(r.crypto?.needsUpgrade, isTrue, reason: tag);
+      expect(r.media, isNull, reason: '$tag: media must not run');
+      expect(
+        snapshot(root),
+        before,
+        reason: '$tag: nothing written or deleted',
+      );
+    }
+  });
+
+  test('最低读者版本门控：旧版本写的 meta（minReader 不高于本机 / 缺省）照常读写', () async {
+    for (final String meta in <String>['{"v":1,"minReader":1}', '{"v":1}']) {
+      final SrsFolderLocation loc = SrsFolderLocation(
+        id: 'old-${meta.length}',
+        path: dir('old-${meta.length}').path,
+      );
+      final SrsDbStore a = await device('o-${meta.length}');
+      await addNote(a, '犬');
+      final Directory root = srsFolderCollectionRoot(loc, kProfile)
+        ..createSync(recursive: true);
+      File(p.join(root.path, 'meta.json')).writeAsStringSync(meta);
+      final SrsFolderSyncReport r = await run(loc, a);
+      expect(r.crypto?.needsUpgrade, isFalse, reason: meta);
+      expect(r.crypto?.error, isNull, reason: meta);
+      expect(await headsOf(loc, a), 1, reason: meta);
+    }
   });
 }
