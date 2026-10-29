@@ -4892,6 +4892,25 @@ class VideoPlayerController extends ChangeNotifier
   /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
+  /// 硬字幕（烧进画面、没有任何字幕轨）上暂停 OCR 点字查词的锚点 cue：窗口是「当前位置
+  /// 往前 [kFrameOcrFallbackWindowMs]」（[buildFrameOcrFallbackCue]），制卡由此得到句子
+  /// 音频区间，高级制卡的起止偏移再微调。登记为 [_graphicAnchorCue]，[delayMsForCue] /
+  /// [cueStreamOwning] 按它的口径（[_delayMs]、自成单句流）处理。
+  ///
+  /// 有字幕轨在渲染（图形字幕模式）/ 未 [load] / 位置读不到 / 位置在片头 → null。
+  AudioCue? frameOcrFallbackCue({required String text}) {
+    if (_graphicSubtitleActive) return null;
+    final int? position = positionMs;
+    if (_player == null || position == null) return null;
+    final AudioCue? cue = buildFrameOcrFallbackCue(
+      text: text,
+      positionMs: position,
+      delayMs: _delayMs,
+    );
+    if (cue != null) _graphicAnchorCue = cue;
+    return cue;
+  }
+
   /// BUG-3319：图形字幕（libmpv 自绘）此刻在屏那句的查词 / 制卡锚点 cue。
   ///
   /// 图形轨没有 Dart 侧 cue（选轨时 [setCues] 清空），暂停 OCR 层查词以前不带锚点 →

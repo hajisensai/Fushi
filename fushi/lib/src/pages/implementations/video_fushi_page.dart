@@ -7330,11 +7330,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     Rect globalRect,
   ) async {
     if (!_immersiveAllowsLookup) return;
-    final AudioCue? anchor = await controller.currentGraphicSubtitleCue(
+    final AudioCue? graphicAnchor = await controller.currentGraphicSubtitleCue(
       text: sentence,
     );
     // 读 mpv 属性期间页面关闭 / 换集（controller 被替换）：不再查词。
     if (!mounted || !identical(_controller, controller)) return;
+    // 硬字幕（烧进画面、没有字幕轨）：没有 sub-start 可锚，改用「暂停位置往前几秒」的
+    // 默认窗口，否则制卡区间是 `0..0`、没有句子音频。图形字幕轨开着但此刻画面上没字幕
+    // 的情形不动（frameOcrFallbackCue 在图形模式返回 null，仍走当前帧静图）。
+    final AudioCue? anchor =
+        graphicAnchor ?? controller.frameOcrFallbackCue(text: sentence);
     _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, anchor);
   }
 
