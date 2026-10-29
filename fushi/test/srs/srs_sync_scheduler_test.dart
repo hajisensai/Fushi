@@ -300,6 +300,55 @@ void main() {
     expect(mediaRuns, 4, reason: '用户主动同步：全量对账');
   });
 
+  // 审查 S-11：进复习页的节流同步以前直接调 syncNow，清空对账时刻 → 每次进页都把全部媒体整套对一遍。
+  test('进复习页的节流同步：媒体对账走内容指纹门控，只有手动立即同步做全量', () async {
+    DateTime now = DateTime(2026, 10, 29, 12);
+    int mediaRuns = 0;
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      readMediaRoot: () async => media,
+      clock: () => now,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            mediaRuns++;
+            return SrsMediaSyncReport();
+          },
+    );
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 1, reason: '这个位置第一次：对账');
+    now = now.add(kSrsSyncMinInterval + const Duration(seconds: 1));
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 1, reason: '内容指纹没变：节流同步不重做对账');
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '霞',
+      },
+    );
+    now = now.add(kSrsSyncMinInterval + const Duration(seconds: 1));
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 2, reason: '新笔记可能引用新媒体：指纹变了就对账');
+    await s.syncNow();
+    expect(mediaRuns, 3, reason: '手动立即同步：全量对账');
+  });
+
   // 审查 PR #2593：关联判定缓存只按位置记，调度器跨 profile 切换常驻 → 切过去的 profile 永远跳过关联
   // （不自动采用、不检出冲突、不续做中断的并入）。
   test('关联判定缓存按（位置, profile）记：切到另一个 profile 照样判定，同一 profile 才复用', () async {

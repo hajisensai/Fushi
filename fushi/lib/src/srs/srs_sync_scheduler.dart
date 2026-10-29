@@ -136,6 +136,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   SrsLocationKey? locationKey,
   void Function(int done, int total)? onFetchProgress,
   void Function()? onUploadStart,
+  Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
 }) async {
   final SrsSync2Report r = await srsSync2Round(
@@ -150,6 +151,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     key: locationKey,
     onFetchProgress: onFetchProgress,
     onUploadStart: onUploadStart,
+    beforeUpload: beforeUpload,
     shouldStop: shouldStop,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
@@ -176,16 +178,19 @@ typedef SrsMediaSyncRunner =
       required String locationId,
     });
 
-/// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。
+/// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体
+/// （[srsSyncMedia]）。
 Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
   Directory mediaRoot, {
   SrsMediaCipher? cipher,
   required String locationId,
+  bool uploadOnly = false,
 }) => srsSyncMedia(
   cipher: cipher,
   locationId: locationId,
+  uploadOnly: uploadOnly,
   location: SrsAssetLocationStore(
     store: backend,
     profileUid: store.profileUid,
@@ -380,8 +385,47 @@ class SrsSyncScheduler {
         onUploadStart: () => srsSyncProgress.value = const SrsSyncProgress(
           stage: SrsSyncStage.uploading,
         ),
+        beforeUpload: (String? keyHex) =>
+            _mediaBeforeUpload(backend, store, directoryKey, keyHex),
         shouldStop: () => _halted,
       );
+
+  /// 发段之前先把本机的媒体传上去（设计 §6.1 写入纪律 3，审查 S-10）：本机新加 / 改过的媒体的绑定随这一轮的段
+  /// 发出，读到这些段的设备马上就能拿到内容。只在本机内容可能变了（内容指纹与本位置上次对账时不同）或本位置还没
+  /// 对账过时跑；失败只记日志，不影响复习数据本身的同步。
+  Future<void> _mediaBeforeUpload(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String key,
+    String? keyHex,
+  ) async {
+    final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
+    if (readMediaRoot == null || _halted) return;
+    if (_mediaReconciledAt[key] != null &&
+        _mediaReconciledContent[key] == store.contentFingerprint) {
+      return;
+    }
+    try {
+      final Directory? root = await readMediaRoot();
+      if (root == null) return;
+      srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
+      await srsDefaultMediaSyncRunner(
+        backend,
+        store,
+        root,
+        cipher: keyHex == null ? null : SrsMediaCipher(store, keyHex),
+        locationId: key,
+        uploadOnly: true,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'SrsSyncScheduler.mediaBeforeUpload',
+        e,
+        stack,
+      );
+    }
+  }
+
   final Future<Directory?> Function()? _readMediaRoot;
   final SrsMediaSyncRunner _mediaRunner;
   final DateTime Function() _clock;
@@ -776,7 +820,8 @@ class SrsSyncScheduler {
         _mediaReconciledContent[key] != content ||
         _clock().difference(reconciled) >= kSrsMediaReconcileInterval;
     if (report.error == null && readMediaRoot != null && mediaDue && !_halted) {
-      // 媒体跟在事件之后：先拿到引用它们的笔记，再按内容哈希补齐两边缺的文件。
+      // 完整对账跟在事件之后：先拿到引用它们的笔记与绑定，再按内容哈希补齐两边缺的文件（本机的媒体已在发段之前
+      // 传过一遍，见 [_mediaBeforeUpload]）。
       // 媒体失败只记日志，不影响复习数据本身的同步结果。
       try {
         final Directory? root = await readMediaRoot();
@@ -845,10 +890,15 @@ class SrsSyncScheduler {
   /// 对所有已认证通道、以及本机直接读写的目录（本机作为互联 host 时）各跑一轮（不节流）。
   /// 通道抛错与报告里带回错误的目录都记进 [SrsSyncNowResult.errors]，不算同步成功。
   ///
-  /// 用户主动的一轮（「立即同步」、进复习 tab、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
-  Future<SrsSyncNowResult> syncNow() async {
+  /// 用户明确要求的一轮（「立即同步」、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
+  Future<SrsSyncNowResult> syncNow() => _syncAll(fullMediaReconcile: true);
+
+  /// 跑一轮全部通道。[fullMediaReconcile] = 不复用上次媒体对账的结论（只有用户手动「立即同步」）；否则媒体对账照
+  /// 内容指纹门控（[_mediaReconciledContent] / [kSrsMediaReconcileInterval]），没变就不重做（审查 S-11：以前进复习
+  /// 页的节流同步也清空对账时刻，每次进页都把几万个媒体整套对一遍）。
+  Future<SrsSyncNowResult> _syncAll({required bool fullMediaReconcile}) async {
     if (_halted) return const SrsSyncNowResult(ran: 0);
-    _mediaReconciledAt.clear();
+    if (fullMediaReconcile) _mediaReconciledAt.clear();
     _linkDecided.removeWhere(
       (String _, ({DateTime at, SrsProfileConflict? conflict}) d) =>
           d.conflict != null,
@@ -955,7 +1005,8 @@ class SrsSyncScheduler {
     return SrsSyncNowResult(ran: ran, errors: errors);
   }
 
-  /// 节流版（进入复习 tab）：距上一次节流触发不足 [kSrsSyncMinInterval] 时跳过，返回 false。
+  /// 节流版（进入复习 tab）：距上一次节流触发不足 [kSrsSyncMinInterval] 时跳过，返回 false。媒体对账走内容指纹
+  /// 门控，不做全量（只有手动「立即同步」做，见 [syncNow]）。
   Future<bool> syncThrottled() async {
     final DateTime now = _clock();
     final DateTime? last = _lastThrottledAt;
@@ -963,7 +1014,7 @@ class SrsSyncScheduler {
       return false;
     }
     _lastThrottledAt = now;
-    await syncNow();
+    await _syncAll(fullMediaReconcile: false);
     return true;
   }
 

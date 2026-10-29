@@ -1,0 +1,334 @@
+//! 加密位置上媒体的封装格式（审查 S-9）：分块流式 AEAD，内存只占一两个块，大文件不整份读进内存。
+//!
+//! 新格式（`FSM2`）：
+//! ```text
+//! 头 27 字节 = "FSM2" | u32 块大小（小端） | 19 字节随机 nonce 前缀
+//! 之后每块 = XChaCha20-Poly1305(明文块)（密文 + 16 字节 tag）
+//!   块 i 的 nonce = 前缀(19) | u32 i（大端） | 末块标记（末块 1，否则 0）
+//!   AAD = 头 | 调用方的 AAD（内容哈希 / 文件名）
+//! ```
+//! 每块明文正好 [MEDIA_CHUNK] 字节，末块**严格更短**（明文长度是块大小整数倍时末块为空）：读者读到不满一整块的
+//! 就是末块。截断在块边界上 → 读到的「末块」带的是非末块的 tag，解密失败；块被挪位 / 换序 → nonce 计数对不上，
+//! 失败；换头（改块大小 / 前缀）→ AAD 不同，失败。即 STREAM 构造（Hoang–Reyhanitabar–Rogaway–Vizár 2015）。
+//!
+//! 旧格式（S-9 之前 [CollectionKey::seal]）：`24 字节 nonce | 整份密文 + tag`，没有魔数。读者按魔数分流；魔数对上
+//! 却解不开时再按旧格式试一次（旧格式的随机 nonce 恰好以 `FSM2` 开头的概率 2^-32），所以旧设备封的媒体照样能读。
+//! 旧格式只能整份读入解密——那是旧文件本身的限制；新写的一律是新格式。
+
+use std::fs::File;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::Path;
+
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+use sha2::{Digest, Sha256};
+
+use super::keys::{CollectionKey, NONCE_LEN, TAG_LEN};
+
+pub const MEDIA_MAGIC: &[u8; 4] = b"FSM2";
+/// 明文块大小：64 KiB。tag 开销 16 / 65536 ≈ 0.02%。
+pub const MEDIA_CHUNK: usize = 64 * 1024;
+const PREFIX_LEN: usize = 19;
+const HEADER_LEN: usize = 4 + 4 + PREFIX_LEN;
+/// 读者接受的块大小上限（防恶意头让读者一次分配巨块）。
+const MAX_CHUNK: usize = 16 * 1024 * 1024;
+
+/// 封 / 解的结果：明文字节数与明文 sha256（内容寻址：调用方据此核对内容，不必再把文件读一遍）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sealed {
+    pub plain_len: u64,
+    pub sha256: [u8; 32],
+}
+
+fn nonce(prefix: &[u8; PREFIX_LEN], i: u32, last: bool) -> XNonce {
+    let mut n = [0u8; NONCE_LEN];
+    n[..PREFIX_LEN].copy_from_slice(prefix);
+    n[PREFIX_LEN..PREFIX_LEN + 4].copy_from_slice(&i.to_be_bytes());
+    n[NONCE_LEN - 1] = u8::from(last);
+    XNonce::from(n)
+}
+
+/// 读满 [buf]（或读到流尾）；返回读到的字节数。
+fn read_full(r: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
+    let mut at = 0;
+    while at < buf.len() {
+        match r.read(&mut buf[at..]) {
+            Ok(0) => break,
+            Ok(n) => at += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(at)
+}
+
+/// 把 [r] 的明文流式封成新格式写进 [w]。
+pub fn seal_stream(key: &CollectionKey, r: &mut impl Read, w: &mut impl Write, aad: &[u8]) -> Result<Sealed, String> {
+    let mut prefix = [0u8; PREFIX_LEN];
+    getrandom::fill(&mut prefix).map_err(|e| e.to_string())?;
+    let mut ad = Vec::with_capacity(HEADER_LEN + aad.len());
+    ad.extend_from_slice(MEDIA_MAGIC);
+    ad.extend_from_slice(&(MEDIA_CHUNK as u32).to_le_bytes());
+    ad.extend_from_slice(&prefix);
+    w.write_all(&ad).map_err(|e| e.to_string())?;
+    ad.extend_from_slice(aad);
+    let cipher = XChaCha20Poly1305::new((&key.0).into());
+    let mut sha = Sha256::new();
+    let mut total = 0u64;
+    let mut buf = vec![0u8; MEDIA_CHUNK];
+    let mut i = 0u32;
+    loop {
+        let n = read_full(r, &mut buf).map_err(|e| e.to_string())?;
+        let last = n < MEDIA_CHUNK;
+        sha.update(&buf[..n]);
+        total += n as u64;
+        let ct = cipher
+            .encrypt(&nonce(&prefix, i, last), Payload { msg: &buf[..n], aad: &ad })
+            .map_err(|_| "media seal failed".to_owned())?;
+        w.write_all(&ct).map_err(|e| e.to_string())?;
+        if last {
+            break;
+        }
+        i = i.checked_add(1).ok_or("media too large")?;
+    }
+    w.flush().map_err(|e| e.to_string())?;
+    Ok(Sealed { plain_len: total, sha256: sha.finalize().into() })
+}
+
+/// 新格式流式解封：[head] 是已经读出的头，其余从 [r] 读。失败时 [w] 里可能已有部分明文，调用方丢弃。
+fn open_chunked(
+    key: &CollectionKey,
+    head: &[u8; HEADER_LEN],
+    r: &mut impl Read,
+    w: &mut impl Write,
+    aad: &[u8],
+) -> Result<Sealed, String> {
+    let chunk = u32::from_le_bytes(head[4..8].try_into().expect("4 bytes")) as usize;
+    if chunk == 0 || chunk > MAX_CHUNK {
+        return Err("media envelope: bad chunk size".into());
+    }
+    let prefix: [u8; PREFIX_LEN] = head[8..].try_into().expect("19 bytes");
+    let mut ad = head.to_vec();
+    ad.extend_from_slice(aad);
+    let cipher = XChaCha20Poly1305::new((&key.0).into());
+    let mut sha = Sha256::new();
+    let mut total = 0u64;
+    let mut buf = vec![0u8; chunk + TAG_LEN];
+    let mut i = 0u32;
+    loop {
+        let n = read_full(r, &mut buf).map_err(|e| e.to_string())?;
+        let last = n < buf.len();
+        let pt = cipher
+            .decrypt(&nonce(&prefix, i, last), Payload { msg: &buf[..n], aad: &ad })
+            .map_err(|_| "media decrypt failed".to_owned())?;
+        sha.update(&pt);
+        total += pt.len() as u64;
+        w.write_all(&pt).map_err(|e| e.to_string())?;
+        if last {
+            break;
+        }
+        i = i.checked_add(1).ok_or("media too large")?;
+    }
+    w.flush().map_err(|e| e.to_string())?;
+    Ok(Sealed { plain_len: total, sha256: sha.finalize().into() })
+}
+
+/// [open_stream] 的结果。
+#[derive(Debug)]
+pub enum Opened {
+    /// 新格式：明文已经流式写进了调用方的 writer。
+    Chunked(Sealed),
+    /// 旧格式（整份解出的明文）。writer 里**没有**有效内容——魔数碰撞时可能有新格式解了一半的垃圾，调用方截断后
+    /// 改写这一份。
+    Legacy(Vec<u8>),
+}
+
+/// 解封任一格式：新格式边读边解边写 [w]；旧格式（或魔数碰撞的旧文件）整份解出返回。解不开 → Err。
+pub fn open_stream(key: &CollectionKey, r: &mut (impl Read + Seek), w: &mut impl Write, aad: &[u8]) -> Result<Opened, String> {
+    let mut head = [0u8; HEADER_LEN];
+    let n = read_full(r, &mut head).map_err(|e| e.to_string())?;
+    let chunked_err = if n == HEADER_LEN && &head[..4] == MEDIA_MAGIC {
+        match open_chunked(key, &head, r, w, aad) {
+            Ok(s) => return Ok(Opened::Chunked(s)),
+            Err(e) => Some(e),
+        }
+    } else {
+        None
+    };
+    r.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    let mut whole = Vec::new();
+    r.read_to_end(&mut whole).map_err(|e| e.to_string())?;
+    match key.open(&whole, aad) {
+        Some(pt) => Ok(Opened::Legacy(pt)),
+        None => Err(chunked_err.unwrap_or_else(|| "media decrypt failed".to_owned())),
+    }
+}
+
+/// 内存里封（小内容：兜底拿到的明文补传）。输出与 [seal_stream] 同格式。
+pub fn seal_bytes(key: &CollectionKey, plain: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(HEADER_LEN + plain.len() + (plain.len() / MEDIA_CHUNK + 1) * TAG_LEN);
+    seal_stream(key, &mut io::Cursor::new(plain), &mut out, aad)?;
+    Ok(out)
+}
+
+/// 内存里解（两种格式）。
+pub fn open_bytes(key: &CollectionKey, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    match open_stream(key, &mut io::Cursor::new(sealed), &mut out, aad)? {
+        Opened::Chunked(_) => Ok(out),
+        Opened::Legacy(pt) => Ok(pt),
+    }
+}
+
+/// 文件到文件地封：[src] 明文 → [dst] 新格式（先写同目录临时文件再改名，读者看不到半截）。
+pub fn seal_file(key: &CollectionKey, src: &Path, dst: &Path, aad: &[u8]) -> Result<Sealed, String> {
+    let file = File::open(src).map_err(|e| format!("open {}: {e}", src.display()))?;
+    let mut r = io::BufReader::with_capacity(MEDIA_CHUNK, file);
+    write_atomically(dst, |w| seal_stream(key, &mut r, w, aad))
+}
+
+/// 文件到文件地解（两种格式）：解不开不留下 [dst]，也不留临时文件。
+pub fn open_file(key: &CollectionKey, src: &Path, dst: &Path, aad: &[u8]) -> Result<Sealed, String> {
+    let file = File::open(src).map_err(|e| format!("open {}: {e}", src.display()))?;
+    let mut r = io::BufReader::with_capacity(MEDIA_CHUNK, file);
+    write_atomically(dst, |w| match open_stream(key, &mut r, w, aad)? {
+        Opened::Chunked(s) => Ok(s),
+        Opened::Legacy(pt) => {
+            w.truncate()?;
+            w.write_all(&pt).map_err(|e| e.to_string())?;
+            Ok(Sealed { plain_len: pt.len() as u64, sha256: Sha256::digest(&pt).into() })
+        }
+    })
+}
+
+/// 写 [dst] 同目录的临时文件 → 成功才改名到 [dst]；失败删掉临时文件。
+fn write_atomically(dst: &Path, body: impl FnOnce(&mut TempOut) -> Result<Sealed, String>) -> Result<Sealed, String> {
+    let mut rnd = [0u8; 6];
+    getrandom::fill(&mut rnd).map_err(|e| e.to_string())?;
+    let mut name = dst.file_name().ok_or("bad destination")?.to_os_string();
+    name.push(format!(".part-{}", rnd.iter().map(|b| format!("{b:02x}")).collect::<String>()));
+    let tmp = dst.with_file_name(name);
+    let file = File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
+    let mut out = TempOut(io::BufWriter::with_capacity(MEDIA_CHUNK, file));
+    let done = body(&mut out).and_then(|s| {
+        out.0.flush().map_err(|e| e.to_string())?;
+        out.0.get_ref().sync_all().map_err(|e| e.to_string())?;
+        Ok(s)
+    });
+    drop(out);
+    let renamed = done.and_then(|s| std::fs::rename(&tmp, dst).map(|_| s).map_err(|e| format!("rename to {}: {e}", dst.display())));
+    if renamed.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    renamed
+}
+
+/// 临时输出文件：能截断重写（旧格式碰撞回退用）。
+pub struct TempOut(io::BufWriter<File>);
+
+impl TempOut {
+    fn truncate(&mut self) -> Result<(), String> {
+        self.0.flush().map_err(|e| e.to_string())?;
+        let f = self.0.get_mut();
+        f.set_len(0).map_err(|e| e.to_string())?;
+        f.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+impl Write for TempOut {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key() -> CollectionKey {
+        CollectionKey([7u8; 32])
+    }
+
+    #[test]
+    fn round_trips_every_length_around_chunk_boundaries() {
+        for len in [0, 1, MEDIA_CHUNK - 1, MEDIA_CHUNK, MEDIA_CHUNK + 1, 3 * MEDIA_CHUNK, 3 * MEDIA_CHUNK + 17] {
+            let plain: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
+            let sealed = seal_bytes(&key(), &plain, b"aad").unwrap();
+            assert_eq!(&sealed[..4], MEDIA_MAGIC);
+            assert_eq!(sealed.len(), HEADER_LEN + len + (len / MEDIA_CHUNK + 1) * TAG_LEN, "len {len}");
+            assert_eq!(open_bytes(&key(), &sealed, b"aad").unwrap(), plain, "len {len}");
+        }
+    }
+
+    #[test]
+    fn rejects_truncation_reordering_header_edits_wrong_aad_and_wrong_key() {
+        let plain: Vec<u8> = (0..3 * MEDIA_CHUNK + 5).map(|i| i as u8).collect();
+        let sealed = seal_bytes(&key(), &plain, b"aad").unwrap();
+        let ct = MEDIA_CHUNK + TAG_LEN;
+        let cut_boundary = sealed[..HEADER_LEN + 3 * ct].to_vec();
+        let cut_middle = sealed[..sealed.len() - 3].to_vec();
+        let mut dropped = sealed[..HEADER_LEN + ct].to_vec();
+        dropped.extend_from_slice(&sealed[HEADER_LEN + 2 * ct..]);
+        let mut swapped = sealed[..HEADER_LEN].to_vec();
+        swapped.extend_from_slice(&sealed[HEADER_LEN + ct..HEADER_LEN + 2 * ct]);
+        swapped.extend_from_slice(&sealed[HEADER_LEN..HEADER_LEN + ct]);
+        swapped.extend_from_slice(&sealed[HEADER_LEN + 2 * ct..]);
+        let mut edited = sealed.clone();
+        edited[10] ^= 1;
+        for (what, bytes) in [
+            ("boundary truncation", &cut_boundary),
+            ("mid truncation", &cut_middle),
+            ("dropped chunk", &dropped),
+            ("swapped chunks", &swapped),
+            ("edited header", &edited),
+        ] {
+            assert!(open_bytes(&key(), bytes, b"aad").is_err(), "{what} must not open");
+        }
+        assert!(open_bytes(&key(), &sealed, b"other").is_err());
+        assert!(open_bytes(&CollectionKey([8u8; 32]), &sealed, b"aad").is_err());
+    }
+
+    /// 旧格式（S-9 之前 [CollectionKey::seal] 的 `nonce | 整份密文`）照样解得开，包括 nonce 恰好以魔数开头的。
+    #[test]
+    fn legacy_envelopes_still_open() {
+        let plain = b"old media".repeat(1000);
+        let legacy = key().seal(&plain, b"aad");
+        assert_eq!(open_bytes(&key(), &legacy, b"aad").unwrap(), plain);
+        let cipher = XChaCha20Poly1305::new((&key().0).into());
+        let mut n = [0u8; NONCE_LEN];
+        n[..4].copy_from_slice(MEDIA_MAGIC);
+        let ct = cipher.encrypt(&XNonce::from(n), Payload { msg: &plain[..], aad: b"aad" }).unwrap();
+        let mut colliding = n.to_vec();
+        colliding.extend_from_slice(&ct);
+        assert_eq!(open_bytes(&key(), &colliding, b"aad").unwrap(), plain);
+    }
+
+    #[test]
+    fn files_seal_and_open_with_the_plaintext_hash_and_leave_nothing_on_failure() {
+        let dir = std::env::temp_dir().join(format!("fushi_media_seal_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plain: Vec<u8> = (0..5 * MEDIA_CHUNK / 2).map(|i| (i % 253) as u8).collect();
+        let (src, sealed, back) = (dir.join("a.bin"), dir.join("a.sealed"), dir.join("a.out"));
+        std::fs::write(&src, &plain).unwrap();
+        let s = seal_file(&key(), &src, &sealed, b"aad").unwrap();
+        let want: [u8; 32] = Sha256::digest(&plain).into();
+        assert_eq!(s, Sealed { plain_len: plain.len() as u64, sha256: want });
+        assert_eq!(open_file(&key(), &sealed, &back, b"aad").unwrap(), s);
+        assert_eq!(std::fs::read(&back).unwrap(), plain);
+        // 旧格式文件：同样解到文件。
+        std::fs::write(&sealed, key().seal(&plain, b"aad")).unwrap();
+        std::fs::remove_file(&back).unwrap();
+        assert_eq!(open_file(&key(), &sealed, &back, b"aad").unwrap(), s);
+        assert_eq!(std::fs::read(&back).unwrap(), plain);
+        // 解不开：不留目标、不留临时文件。
+        std::fs::remove_file(&back).unwrap();
+        assert!(open_file(&key(), &sealed, &back, b"wrong").is_err());
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(left.len(), 2, "{left:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

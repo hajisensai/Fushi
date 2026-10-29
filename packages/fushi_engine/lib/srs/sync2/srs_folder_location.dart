@@ -108,6 +108,8 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     srsFolderCollectionRoot(location, store.profileUid),
   );
   SrsSync2Report? ops;
+  // 发段之前那一步传上去的媒体数（并进下面完整对账的结果）。
+  int uploadedEarly = 0;
   if (location.sync || location.archive) {
     ops = await srsSync2Round(
       host: store,
@@ -117,9 +119,31 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       key: key,
       // 勾了归档就一个旧 head 也不删（归档位置永不删除，§10.3）。
       archive: location.archive,
+      // 媒体先于引用它的段（设计 §6.1 写入纪律 3，审查 S-10）：发段之前先把本机的媒体传上去。这一步出错不拦操作
+      // 同步——同一个错误在下面的完整媒体对账里照样抛给调用方。
+      beforeUpload: mediaRoot != null && (location.media || location.archive)
+          ? (String? keyHex) async {
+              try {
+                uploadedEarly += (await srsSyncMedia(
+                  location: root,
+                  store: store,
+                  mediaRoot: mediaRoot,
+                  archive: location.archive,
+                  cipher: keyHex == null ? null : SrsMediaCipher(store, keyHex),
+                  uploadOnly: true,
+                )).uploaded;
+              } on FileSystemException {
+                // 见上：完整对账会再报。
+              }
+            }
+          : null,
     );
-    // 加密位置口令不对 / 没有：媒体也不碰（明文媒体不能写进加密位置）。
-    if (ops.error != null) return SrsFolderSyncReport(ops: ops);
+    // 加密位置口令不对 / 没有：媒体也不碰（明文媒体不能写进加密位置）。位置来自更新版本（`minReader` 比本机新）
+    // 同样整个位置都不碰：以前这里只看 error，needsUpgrade 时照样按明文跑媒体对账（往 `media/` 写、按过期清），
+    // 旧版本就不能靠提高最低读者版本把自己挡在新格式的位置之外。
+    if (ops.error != null || ops.needsUpgrade) {
+      return SrsFolderSyncReport(ops: ops);
+    }
   }
   String? mediaKey = (ops?.encrypted ?? false) ? key!.keyHex : null;
   SrsSync2Report? handshake;
@@ -159,5 +183,6 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       cipher: mediaKey == null ? null : SrsMediaCipher(store, mediaKey),
     );
   }
+  media?.uploaded += uploadedEarly;
   return SrsFolderSyncReport(ops: ops, media: media, handshake: handshake);
 }

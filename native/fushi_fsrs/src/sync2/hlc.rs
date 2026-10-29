@@ -99,6 +99,19 @@ impl Clock {
         self.last = Hlc { wall, logical, device: self.device };
         Observed { ahead: false }
     }
+
+    /// 收到远端操作（落库用的形式）：本机时钟取 `max(local, remote)`，下一次 [Self::tick] 自然比它大（等价于
+    /// [Self::observe] 的「+1」推迟到发出时）。与 [Self::observe] 不同，它幂等、可结合：同一批远端操作不论分几批、
+    /// 按什么顺序吸收，结果都相同——收段按任意段边界切批时，本机之后发出的操作逐字节不变。
+    pub fn absorb(&mut self, remote: Hlc, now_ms: i64) -> Observed {
+        if remote.wall.saturating_sub(now_ms) > MAX_AHEAD_MS {
+            return Observed { ahead: true };
+        }
+        if (remote.wall, remote.logical) > (self.last.wall, self.last.logical) {
+            self.last = Hlc { wall: remote.wall, logical: remote.logical, device: self.device };
+        }
+        Observed { ahead: false }
+    }
 }
 
 #[cfg(test)]
@@ -126,5 +139,21 @@ mod tests {
         let future = Hlc { wall: 1000 + MAX_AHEAD_MS + 1, logical: 0, device: Id([2; 16]) };
         assert_eq!(c.observe(future, 1000), Observed { ahead: true });
         assert!(c.tick(1000) < future);
+    }
+
+    #[test]
+    fn absorb_is_idempotent_and_the_next_tick_follows_the_remote() {
+        let remote = Hlc { wall: 5000, logical: 7, device: Id([2; 16]) };
+        let mut once = Clock::new(Id([1; 16]));
+        once.absorb(remote, 1000);
+        let mut twice = Clock::new(Id([1; 16]));
+        twice.absorb(Hlc { wall: 4000, ..remote }, 1000);
+        twice.absorb(remote, 1000);
+        twice.absorb(remote, 1000);
+        assert_eq!(once.last, twice.last);
+        assert!(once.tick(1000) > remote);
+        let future = Hlc { wall: 1000 + MAX_AHEAD_MS + 1, logical: 0, device: Id([2; 16]) };
+        assert_eq!(twice.absorb(future, 1000), Observed { ahead: true });
+        assert!(twice.tick(1000) < future);
     }
 }
