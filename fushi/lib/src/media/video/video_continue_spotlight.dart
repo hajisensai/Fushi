@@ -3,11 +3,13 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
@@ -87,11 +89,12 @@ class VideoContinueSpotlight extends StatelessWidget {
     return Size(width, math.min(width * 9 / 16, _narrowMainMaxHeight));
   }
 
-  /// 横滑区与首页其它横滚行同一套：鼠标 / 触控板可拖（[HorizontalDragScrollable]），
-  /// 滑到边缘继续拖交给分区级联（[SectionSwipeCascade]）。不接裸滚轮横滚：首页
-  /// 外层是纵向滚动，滚轮要留给它。
-  static Widget _horizontalScroller(Widget scrollable) =>
-      SectionSwipeCascade(child: HorizontalDragScrollable(child: scrollable));
+  /// 横滑区与首页其它横滚行同一套：鼠标 / 触控板可拖（调用点各自包
+  /// [HorizontalDragScrollable]，守卫按文件逐处计数），滑到边缘继续拖交给分区
+  /// 级联（[SectionSwipeCascade]）。不接裸滚轮横滚：首页外层是纵向滚动，滚轮要
+  /// 留给它。
+  static Widget _horizontalScroller(HorizontalDragScrollable scrollable) =>
+      SectionSwipeCascade(child: scrollable);
 
   @override
   Widget build(BuildContext context) {
@@ -121,25 +124,28 @@ class VideoContinueSpotlight extends StatelessWidget {
                   child: SizedBox(
                     height: g.mainHeight,
                     child: _horizontalScroller(
-                      GridView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.all(_liftRoom),
-                        physics: desktopAwareScrollPhysics(),
-                        itemCount: rest.length,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: gap,
-                          crossAxisSpacing: gap,
-                          mainAxisExtent: g.sideWidth,
-                        ),
-                        itemBuilder: (BuildContext _, int i) =>
-                            FushiStaggeredEntrance(
-                              index: i + 1,
-                              child: _SideCard(
-                                entry: rest[i],
-                                imageHeight: g.sideImageHeight,
+                      HorizontalDragScrollable(
+                        child: GridView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.all(_liftRoom),
+                          physics: desktopAwareScrollPhysics(),
+                          itemCount: rest.length,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                mainAxisSpacing: gap,
+                                crossAxisSpacing: gap,
+                                mainAxisExtent: g.sideWidth,
                               ),
-                            ),
+                          itemBuilder: (BuildContext _, int i) =>
+                              FushiStaggeredEntrance(
+                                index: i + 1,
+                                child: _SideCard(
+                                  entry: rest[i],
+                                  imageHeight: g.sideImageHeight,
+                                ),
+                              ),
+                        ),
                       ),
                     ),
                   ),
@@ -171,20 +177,22 @@ class VideoContinueSpotlight extends StatelessWidget {
                     _sideTitleHeight +
                     _liftRoom * 2,
                 child: _horizontalScroller(
-                  ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.all(_liftRoom),
-                    physics: desktopAwareScrollPhysics(),
-                    itemCount: rest.length,
-                    separatorBuilder: (BuildContext _, int __) =>
-                        SizedBox(width: gap),
-                    itemBuilder: (BuildContext _, int i) => SizedBox(
-                      width: _narrowSideWidth,
-                      child: FushiStaggeredEntrance(
-                        index: i + 1,
-                        child: _SideCard(
-                          entry: rest[i],
-                          imageHeight: _narrowSideWidth * 9 / 16,
+                  HorizontalDragScrollable(
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.all(_liftRoom),
+                      physics: desktopAwareScrollPhysics(),
+                      itemCount: rest.length,
+                      separatorBuilder: (BuildContext _, int __) =>
+                          SizedBox(width: gap),
+                      itemBuilder: (BuildContext _, int i) => SizedBox(
+                        width: _narrowSideWidth,
+                        child: FushiStaggeredEntrance(
+                          index: i + 1,
+                          child: _SideCard(
+                            entry: rest[i],
+                            imageHeight: _narrowSideWidth * 9 / 16,
+                          ),
                         ),
                       ),
                     ),
@@ -257,16 +265,22 @@ class _MainCard extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
-    // 文字压在底部暗渐变上，深浅主题一律用浅色字；眉标取固定色调的浅主色。
-    final Color accent = cs.primaryFixedDim;
+    // 文字压在底部暗渐变上，深浅主题一律用浅色字；眉标取固定色调的浅主色
+    // （Apple 取系统强调色，墨水屏纯白），与 [FushiContinueHero] 同一套分派。
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    final Color accent = eink
+        ? Colors.white
+        : (apple ? appleColorsOf(context).accent : cs.primaryFixedDim);
     final double? v = entry.progress?.clamp(0.0, 1.0);
     return FushiHoverLift(
+      enabled: entry.onOpen != null,
       scale: 1.01,
       builder: (BuildContext _, bool __) => FushiCard(
         key: entry.cardKey,
         focusId: entry.focusId,
         padding: EdgeInsets.zero,
-        borderRadius: FushiM3eShape.containerLargeRadius,
+        borderRadius: eink || apple ? null : FushiM3eShape.containerLargeRadius,
         onTap: entry.onOpen,
         onLongPress: entry.onLongPress,
         onSecondaryTap: entry.onLongPress,
@@ -358,6 +372,7 @@ class _SideCard extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String episode = entry.shortSubtitle ?? entry.subtitle;
     return FushiHoverLift(
+      enabled: entry.onOpen != null,
       builder: (BuildContext _, bool __) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
