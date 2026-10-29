@@ -151,6 +151,22 @@ void main() {
     expect(p.pick(-50, -50), -1);
   });
 
+  test('stage / idle-drift input kinds reach the native side', () {
+    final FfcPanorama p = FfcPanorama.create(_scene(30, 0, 0));
+    addTearDown(p.dispose);
+    p.frame(t: 0, dt: 0, width: 800, height: 600);
+    expect(
+      p.frame(t: 0, dt: 0, width: 800, height: 600).info[FfcPanoInfo.morph],
+      0,
+    );
+    p
+      ..input(FfcPanoInput.idleDrift, 0.4)
+      ..input(FfcPanoInput.stage, 1, 1);
+    final FfcPanoFrame f = p.frame(t: 0, dt: 0, width: 800, height: 600);
+    expect(f.info[FfcPanoInfo.morph], 1, reason: 'immediate stage switch');
+    expect(f.moving, isTrue, reason: 'idle drift keeps the scene alive');
+  });
+
   test('dispose is idempotent and blocks further use', () {
     final FfcPanorama p = FfcPanorama.create(_scene(2, 0, 0));
     p

@@ -45,6 +45,13 @@ const AMBIENT_DECAY: f32 = 0.5;
 const AMBIENT_EPS: f32 = 0.01;
 /// 惯性角速度（弧度/秒）低于此值即归零。
 const VEL_EPS: f32 = 1e-3;
+/// 滚轮 / 键盘缩放与切换阶段的平滑：镜头距离按此速率（1/秒）指数逼近目标距离，
+/// 一格滚轮的跳变摊成连续推进（无极缩放），连续滚动时目标不断前移、镜头一路跟着走。
+const ZOOM_EASE: f32 = 10.0;
+/// 切换阶段时俯仰角逼近目标的速率（1/秒）。
+const PITCH_EASE: f32 = 6.0;
+/// 距离 / 俯仰离目标小于此值即视为到位（吸附，场景才能静止）。
+const GOAL_EPS: f32 = 1e-3;
 const MORPH_SECONDS: f32 = T_SPHERE_END - T_GALAXY_END;
 
 const SPHERE_RADIUS: f32 = 12.0;
@@ -112,10 +119,17 @@ pub mod input {
     pub const DRAG: i32 = 0;
     /// 松手：a / b = 像素每秒的速度。
     pub const RELEASE: i32 = 1;
-    /// 缩放：a = 比例（>1 拉近）。
+    /// 缩放：a = 比例（>1 拉近）；b ≥ 0.5 立即生效（双指捏合 / 不放动效时），
+    /// 否则只移动目标距离、镜头平滑跟上（滚轮 / 键盘）。
     pub const ZOOM: i32 = 2;
     /// 按下：停住惯性。
     pub const HOLD: i32 = 3;
+    /// 切换阶段：a ≥ 0.5 推到球心（球幕），否则退回俯视远景（星系）；b ≥ 0.5 立即到位
+    /// （不放动效时），否则平滑过渡。
+    pub const STAGE: i32 = 4;
+    /// 空闲漂移（配置项，锁定中也生效）：a = 空闲时环境动效保留的最低走速（0..1）。
+    /// 0（默认）= 收敛到停、场景静止；> 0 = 公转 / 环绕的词一直慢慢转。
+    pub const IDLE_DRIFT: i32 = 5;
 }
 
 pub const MODE_INTERACTIVE: i32 = 0;
@@ -495,6 +509,12 @@ pub struct Pano {
     /// 交互模式的环境动效强度（[clock] 的走速倍率）：有输入 / 按住 / 切模式时回到 1，
     /// 空闲时按 [AMBIENT_DECAY] 指数收敛，低于 [AMBIENT_EPS] 归零——星系转慢直到停稳。
     ambient: f32,
+    /// 空闲时 [ambient] 的下限（`input::IDLE_DRIFT`）；0 = 收敛到停。
+    idle_drift: f32,
+    /// 镜头距离的目标（滚轮 / 键盘 / 切换阶段只改它，镜头每帧平滑逼近）。
+    dist_goal: f32,
+    /// 切换阶段时俯仰角的目标；拖拽接管后清掉。
+    pitch_goal: Option<f32>,
     /// 最近一帧之后场景是否仍在变化（写进 `info::MOVING`）。
     moving: bool,
 
@@ -726,6 +746,9 @@ impl Pano {
             lock: None,
             clock: 0.0,
             ambient: 1.0,
+            idle_drift: 0.0,
+            dist_goal: INTERACTIVE_HOME.dist,
+            pitch_goal: None,
             moving: true,
             items: Vec::with_capacity(n_works + n_words),
             out_pos: vec![0.0; vcap.max(1) * 2],
@@ -744,6 +767,13 @@ impl Pano {
         if mode != MODE_INTERACTIVE && mode != MODE_CINEMATIC {
             return status::INVALID_ARGUMENT;
         }
+        // 交互模式里从锁定回来（打开作品后返回 / Esc 取消）：镜头回到选中前的位置，
+        // 不是回到开场星系。其余进入交互模式（建图后首次、从分享动画切回）才回开场镜头。
+        let back = if self.mode == MODE_INTERACTIVE {
+            self.lock.map(|l| l.from)
+        } else {
+            None
+        };
         self.mode = mode;
         self.lock = None;
         self.vel_yaw = 0.0;
@@ -757,8 +787,10 @@ impl Pano {
             None
         };
         if mode == MODE_INTERACTIVE {
-            self.camera = INTERACTIVE_HOME;
+            self.camera = back.unwrap_or(INTERACTIVE_HOME);
         }
+        self.dist_goal = self.camera.dist;
+        self.pitch_goal = None;
         status::OK
     }
 
@@ -769,6 +801,12 @@ impl Pano {
         if !a.is_finite() || !b.is_finite() {
             return status::INVALID_ARGUMENT;
         }
+        if kind == input::IDLE_DRIFT {
+            self.idle_drift = a.clamp(0.0, 1.0);
+            self.ambient = self.ambient.max(self.idle_drift);
+            self.moving = true;
+            return status::OK;
+        }
         if self.mode != MODE_INTERACTIVE || self.lock.is_some() {
             return status::OK;
         }
@@ -777,6 +815,7 @@ impl Pano {
             input::DRAG => {
                 self.camera.yaw -= a * g;
                 self.camera.pitch = (self.camera.pitch + b * g).clamp(-1.45, 1.45);
+                self.pitch_goal = None;
                 self.holding = true;
             }
             input::RELEASE => {
@@ -793,9 +832,34 @@ impl Pano {
                 if a <= 0.0 {
                     return status::INVALID_ARGUMENT;
                 }
-                // 比例换算成距离：原点附近（dist = 0）也能推出去。
-                let d = self.camera.dist + 1.0;
-                self.camera.dist = (d / a - 1.0).clamp(0.0, MAX_DIST);
+                // 比例换算成距离：原点附近（dist = 0）也能推出去。平滑缩放在目标上累计，
+                // 连续几格滚轮叠成一段连续推进。
+                let immediate = b >= 0.5;
+                let base = if immediate {
+                    self.camera.dist
+                } else {
+                    self.dist_goal
+                };
+                self.dist_goal = ((base + 1.0) / a - 1.0).clamp(0.0, MAX_DIST);
+                if immediate {
+                    self.camera.dist = self.dist_goal;
+                }
+            }
+            input::STAGE => {
+                let (dist, pitch) = if a >= 0.5 {
+                    (0.0, 0.0)
+                } else {
+                    (GALAXY_CAMERA_DIST, GALAXY_CAMERA_PITCH)
+                };
+                self.dist_goal = dist;
+                self.vel_pitch = 0.0;
+                if b >= 0.5 {
+                    self.camera.dist = dist;
+                    self.camera.pitch = pitch;
+                    self.pitch_goal = None;
+                } else {
+                    self.pitch_goal = Some(pitch);
+                }
             }
             _ => return status::INVALID_ARGUMENT,
         }
@@ -917,10 +981,25 @@ impl Pano {
                     self.vel_pitch = 0.0;
                 }
             }
+            if self.lock.is_none() {
+                let k = 1.0 - (-ZOOM_EASE * dt).exp();
+                self.camera.dist += (self.dist_goal - self.camera.dist) * k;
+                if (self.dist_goal - self.camera.dist).abs() < GOAL_EPS {
+                    self.camera.dist = self.dist_goal;
+                }
+                if let Some(goal) = self.pitch_goal {
+                    let k = 1.0 - (-PITCH_EASE * dt).exp();
+                    self.camera.pitch += (goal - self.camera.pitch) * k;
+                    if (goal - self.camera.pitch).abs() < GOAL_EPS {
+                        self.camera.pitch = goal;
+                        self.pitch_goal = None;
+                    }
+                }
+            }
             if self.holding {
                 self.ambient = 1.0;
             } else if self.lock.is_none() {
-                self.ambient *= (-AMBIENT_DECAY * dt).exp();
+                self.ambient = (self.ambient * (-AMBIENT_DECAY * dt).exp()).max(self.idle_drift);
                 if self.ambient < AMBIENT_EPS {
                     self.ambient = 0.0;
                 }
@@ -932,7 +1011,9 @@ impl Pano {
             || self.holding
             || self.ambient > 0.0
             || self.vel_yaw != 0.0
-            || self.vel_pitch != 0.0;
+            || self.vel_pitch != 0.0
+            || self.camera.dist != self.dist_goal
+            || self.pitch_goal.is_some();
         if let Some(lock) = self.lock {
             let lt = t - lock.t0;
             let turn = ease_in_out(lt / lock.turn);
@@ -1931,12 +2012,119 @@ mod tests {
             p.out_info[info::HALO_ALPHA] > 0.5,
             "halo visible over the galaxy"
         );
-        p.input(input::ZOOM, 100.0, 0.0);
+        p.input(input::ZOOM, 100.0, 1.0);
         assert_eq!(p.camera.dist, 0.0);
         p.frame(0.1, 0.1, 800.0, 600.0);
         assert_eq!(p.out_info[info::MORPH], 1.0);
         p.input(input::DRAG, 100.0, 0.0);
         assert!(p.camera.yaw < GALAXY_CAMERA_YAW);
+    }
+
+    /// 滚轮缩放是连续的：输入只移动目标，镜头逐帧单调逼近，没有一步到位的跳变。
+    #[test]
+    fn wheel_zoom_eases_continuously_toward_the_goal() {
+        let mut p = make(30, 0, 0);
+        p.set_mode(MODE_INTERACTIVE, -1);
+        let dt = 1.0 / 60.0;
+        let mut t = 0.0;
+        p.frame(t, dt, 800.0, 600.0);
+        p.input(input::ZOOM, 4.0, 0.0);
+        assert_eq!(p.camera.dist, GALAXY_CAMERA_DIST, "goal moves, camera not yet");
+        let goal = p.dist_goal;
+        assert!(goal < GALAXY_CAMERA_DIST);
+        let mut prev = p.camera.dist;
+        let mut max_step: f32 = 0.0;
+        for _ in 0..(60 * 3) {
+            t += dt;
+            p.frame(t, dt, 800.0, 600.0);
+            assert!(p.camera.dist <= prev, "monotonic approach");
+            max_step = max_step.max(prev - p.camera.dist);
+            prev = p.camera.dist;
+        }
+        assert_eq!(p.camera.dist, goal, "snaps onto the goal");
+        assert!(
+            max_step < (GALAXY_CAMERA_DIST - goal) * 0.25,
+            "no single-frame jump: {max_step}"
+        );
+        // 两格滚轮叠在目标上，而不是各自从当前镜头算。
+        p.input(input::ZOOM, 1.25, 0.0);
+        p.input(input::ZOOM, 1.25, 0.0);
+        let expect = ((goal + 1.0) / 1.25) / 1.25 - 1.0;
+        assert!((p.dist_goal - expect).abs() < 1e-4);
+    }
+
+    /// 切换阶段：球幕 = 推到球心，星系 = 退回俯视远景，俯仰一起回位；立即模式一步到位。
+    #[test]
+    fn stage_input_toggles_galaxy_and_sphere() {
+        let mut p = make(30, 2, 4);
+        p.set_mode(MODE_INTERACTIVE, -1);
+        let dt = 1.0 / 60.0;
+        let mut t = 0.0;
+        p.input(input::STAGE, 1.0, 0.0);
+        for _ in 0..(60 * 4) {
+            t += dt;
+            p.frame(t, dt, 800.0, 600.0);
+        }
+        assert_eq!(p.camera.dist, 0.0);
+        assert_eq!(p.camera.pitch, 0.0);
+        assert_eq!(p.out_info[info::MORPH], 1.0);
+        p.input(input::STAGE, 0.0, 0.0);
+        for _ in 0..(60 * 4) {
+            t += dt;
+            p.frame(t, dt, 800.0, 600.0);
+        }
+        assert_eq!(p.camera.dist, GALAXY_CAMERA_DIST);
+        assert_eq!(p.camera.pitch, GALAXY_CAMERA_PITCH);
+        assert_eq!(p.out_info[info::MORPH], 0.0);
+        p.input(input::STAGE, 1.0, 1.0);
+        assert_eq!(p.camera.dist, 0.0);
+        assert!(p.pitch_goal.is_none());
+    }
+
+    /// 打开作品后返回 / Esc 取消锁定：回到选中前的镜头，而不是开场星系。
+    #[test]
+    fn returning_from_a_lock_restores_the_previous_camera() {
+        let mut p = make(40, 2, 0);
+        p.set_mode(MODE_INTERACTIVE, -1);
+        p.input(input::DRAG, 120.0, -40.0);
+        p.input(input::RELEASE, 0.0, 0.0);
+        p.input(input::ZOOM, 3.0, 1.0);
+        let before = p.camera;
+        assert_ne!(before, INTERACTIVE_HOME);
+        p.select(5, 0.0);
+        let mut t = 0.0;
+        for _ in 0..200 {
+            t += 1.0 / 60.0;
+            p.frame(t, 1.0 / 60.0, 800.0, 600.0);
+        }
+        assert_ne!(p.camera, before, "the lock moved the camera");
+        p.set_mode(MODE_INTERACTIVE, -1);
+        assert_eq!(p.camera, before);
+        assert_eq!(p.dist_goal, before.dist);
+        // 不在锁定中进入交互模式（首次进入 / 从分享动画切回）仍回开场镜头。
+        p.set_mode(MODE_CINEMATIC, -1);
+        p.set_mode(MODE_INTERACTIVE, -1);
+        assert_eq!(p.camera, INTERACTIVE_HOME);
+    }
+
+    /// 空闲漂移：开了之后环境动效停在下限、场景一直在动（背景词不会定住）。
+    #[test]
+    fn idle_drift_keeps_ambient_motion_alive() {
+        let mut p = make(12, 2, 3);
+        p.set_mode(MODE_INTERACTIVE, -1);
+        p.input(input::IDLE_DRIFT, 0.3, 0.0);
+        let dt = 1.0 / 60.0;
+        let mut t = 0.0;
+        for _ in 0..(60 * 30) {
+            t += dt;
+            p.frame(t, dt, 800.0, 600.0);
+        }
+        assert_eq!(p.out_info[info::MOVING], 1.0);
+        assert!((p.ambient - 0.3).abs() < 1e-6);
+        let before = p.out_pos[..p.verts * 2].to_vec();
+        t += dt;
+        p.frame(t, dt, 800.0, 600.0);
+        assert_ne!(&p.out_pos[..p.verts * 2], &before[..], "words keep drifting");
     }
 
     /// 空闲收敛：惯性与环境动效衰减到零后 MOVING = 0 且画面不再变；任何输入立刻恢复。
