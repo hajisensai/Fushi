@@ -959,15 +959,22 @@ fn sync2_command(
             json!({})
         }
         // 文件到文件的流式封 / 解（大媒体不整份进内存；审查 S-9）：返回明文的字节数与 sha256（内容寻址核对用，
-        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。
+        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。解不开（不是本机读写出错）不算命令失败：
+        // 回 `{"failure": "unauthenticated" | "corrupt"}`（media_seal.rs [OpenError]），媒体对账据此决定记不记可疑。
         "seal_file" | "open_file" => {
+            use crate::sync2::media_seal::OpenError;
             let key = crate::sync2::keys::CollectionKey(key32(&req["key"])?.ok_or("seal/open: missing key")?);
             let aad = format!("fushi-srs-media:{}", s("name")?);
             let (src, dst) = (std::path::Path::new(s("src")?), std::path::Path::new(s("dst")?));
             let done = if op == "seal_file" {
                 crate::sync2::media_seal::seal_file(&key, src, dst, aad.as_bytes())?
             } else {
-                crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes())?
+                match crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes()) {
+                    Ok(done) => done,
+                    Err(OpenError::Unauthenticated) => return Ok(json!({"failure": "unauthenticated"})),
+                    Err(OpenError::Corrupt) => return Ok(json!({"failure": "corrupt"})),
+                    Err(e @ OpenError::Io(_)) => return Err(e.into()),
+                }
             };
             let sha: String = done.sha256.iter().map(|b| format!("{b:02x}")).collect();
             json!({"sha256": sha, "bytes": done.plain_len})

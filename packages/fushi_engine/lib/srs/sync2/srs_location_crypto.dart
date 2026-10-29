@@ -313,6 +313,21 @@ Future<SrsLocationHandshake> srsLocationHandshake(
   return h;
 }
 
+/// [SrsMediaCipher.openFile] 解不开的原因（内核 native/fushi_fsrs/src/sync2/media_seal.rs `OpenError`）。
+enum SrsMediaOpenFailure {
+  /// 第一块就认证不过：密钥不对 / 不是按这个名字封的——证明不了密钥是对的，不怪位置上的对象。
+  unauthenticated,
+
+  /// 前面的块认证过了（密钥对），后面坏了 / 截断，或短到不像任何封装：位置上的对象（或这次下载）坏了。
+  corrupt,
+
+  /// 本机读写失败：这一轮没拿到，不怪对象也不怪密钥。
+  local,
+}
+
+/// [SrsMediaCipher.openFile] 的结论：解开了是明文的 sha256（[failure] 为 null），否则是原因。
+typedef SrsMediaOpened = ({String? sha256, SrsMediaOpenFailure? failure});
+
 /// 加密位置上媒体的封装 / 解封（内核 XChaCha20-Poly1305，AAD = 内容哈希 / 文件名）。
 ///
 /// 格式是分块流式 AEAD（native/fushi_fsrs/src/sync2/media_seal.rs，审查 S-9）：[sealFile] / [openFile] 文件到文件、
@@ -343,20 +358,29 @@ class SrsMediaCipher {
           })).map['sha256']!
           as String;
 
-  /// 把 [src] 解封进 [dst]，返回明文的 sha256；解不开（被篡改 / 截断 / 口令不对）返回 null，且不留 [dst]。
-  Future<String?> openFile(String name, File src, File dst) async {
+  /// 把 [src] 解封进 [dst]，交回明文的 sha256；解不开时交回原因（[SrsMediaOpenFailure]），且不留 [dst]。
+  Future<SrsMediaOpened> openFile(String name, File src, File dst) async {
+    final Map<String, Object?> r;
     try {
-      return (await host.sync2Command(<String, Object?>{
-            'op': 'open_file',
-            'key': keyHex,
-            'name': name,
-            'src': src.path,
-            'dst': dst.path,
-          })).map['sha256']
-          as String?;
+      r = (await host.sync2Command(<String, Object?>{
+        'op': 'open_file',
+        'key': keyHex,
+        'name': name,
+        'src': src.path,
+        'dst': dst.path,
+      })).map;
     } on Object {
-      return null;
+      // 内核把本机读写失败（打不开下载下来的文件、写不了目标）报成命令失败。
+      return (sha256: null, failure: SrsMediaOpenFailure.local);
     }
+    return switch (r['failure']) {
+      'unauthenticated' => (
+        sha256: null,
+        failure: SrsMediaOpenFailure.unauthenticated,
+      ),
+      'corrupt' => (sha256: null, failure: SrsMediaOpenFailure.corrupt),
+      _ => (sha256: r['sha256']! as String, failure: null),
+    };
   }
 
   /// 解不开（被篡改 / 口令不对）时返回 null。
