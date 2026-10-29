@@ -1761,6 +1761,7 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.manga ||
     HomeTab.video ||
     HomeTab.games ||
+    HomeTab.music ||
     HomeTab.browse => true,
     _ => false,
   };
@@ -4265,14 +4266,11 @@ String? homeShellTitleFor(
     HomeTab.video ||
     HomeTab.games ||
     HomeTab.browse ||
-    HomeTab.dictionaries => homeNavItemFor(tab).label,
-    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）；音乐库
-    // 页同样自己画浮动顶栏（标题 + 加文件夹 / 重扫）。
-    HomeTab.home ||
-    HomeTab.web ||
-    HomeTab.srs ||
+    // 音乐库页与其他库页同一套浮动工具栏行（2026-10-30），页面名同样由外壳给。
     HomeTab.music ||
-    HomeTab.settings => null,
+    HomeTab.dictionaries => homeNavItemFor(tab).label,
+    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）。
+    HomeTab.home || HomeTab.web || HomeTab.srs || HomeTab.settings => null,
   };
 }
 
