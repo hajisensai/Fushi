@@ -120,6 +120,61 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'interactive: idle scene stops scheduling frames, input wakes it',
+    (WidgetTester tester) async {
+      final PanoramaAssets a = await _assets(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 800,
+            height: 600,
+            child: PanoramaStage(assets: a, onOpen: (PanoramaWork w) async {}),
+          ),
+        ),
+      );
+      // 刚开场环境动效在跑：一直有帧排着。
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+      // 环境动效约 9 秒收敛到零；给足 30 秒。
+      int pumps = 0;
+      while (tester.binding.hasScheduledFrame && pumps < 300) {
+        await tester.pump(const Duration(milliseconds: 100));
+        pumps++;
+      }
+      expect(
+        tester.binding.hasScheduledFrame,
+        isFalse,
+        reason: 'settled scene must stop the ticker',
+      );
+      expect(pumps, greaterThan(30), reason: 'ambient motion eases out');
+      // 静止后多等一会儿仍然不排帧。
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      // 拖拽输入：立刻恢复出帧。
+      final TestGesture g = await tester.startGesture(
+        tester.getCenter(find.byType(PanoramaStage)),
+      );
+      await g.moveBy(const Offset(40, 0));
+      await g.moveBy(const Offset(40, 0));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+      await tester.pump(const Duration(milliseconds: 16));
+      await g.up();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+
+      // 再次空闲后又停。
+      pumps = 0;
+      while (tester.binding.hasScheduledFrame && pumps < 300) {
+        await tester.pump(const Duration(milliseconds: 100));
+        pumps++;
+      }
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('reduced motion: tapping a card opens it directly', (
     WidgetTester tester,
   ) async {

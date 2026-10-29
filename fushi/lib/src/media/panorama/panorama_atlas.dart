@@ -18,6 +18,7 @@ import 'package:fushi_compute/fushi_compute.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/panorama/panorama_library.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 辉光留边 = 封面短边 × 本比例（图集格子与高清图共用）。
 const double kPanoramaFramePadRatio = 0.16;
@@ -228,8 +229,9 @@ Future<({ui.Image image, double aspect})?> _decodeThumb(
     codec.dispose();
     desc.dispose();
     return (image: frame.image, aspect: aspect);
-  } catch (_) {
-    // 坏图 / 读不了：当没封面画占位。
+  } catch (e, s) {
+    // 坏图 / 读不了：记日志（带路径，便于定位是哪张封面），再当没封面画占位。
+    ErrorLogService.instance.log('PanoramaAtlas.decodeCover($path)', e, s);
     return null;
   }
 }

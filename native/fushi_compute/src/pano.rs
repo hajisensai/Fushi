@@ -39,6 +39,12 @@ const LOCK_FLY: f32 = 1.6;
 pub const T_HANDOFF: f32 = T_LOOK_END + LOCK_TURN + LOCK_FLY;
 /// 过渡里每张卡起始时间的最大错开（秒）与过渡总长。
 const MORPH_STAGGER: f32 = 1.2;
+/// 交互模式空闲后环境动效（公转 / 自转 / 环绕）的衰减率（1/秒）：约 9 秒从全速收到 1%。
+const AMBIENT_DECAY: f32 = 0.5;
+/// 环境动效低于此倍率即视为停稳（此时每帧位移已远小于一个像素）。
+const AMBIENT_EPS: f32 = 0.01;
+/// 惯性角速度（弧度/秒）低于此值即归零。
+const VEL_EPS: f32 = 1e-3;
 const MORPH_SECONDS: f32 = T_SPHERE_END - T_GALAXY_END;
 
 const SPHERE_RADIUS: f32 = 12.0;
@@ -95,6 +101,8 @@ pub mod info {
     pub const DIM: usize = 22;
     /// 0 = 星系，1 = 球幕。
     pub const MORPH: usize = 23;
+    /// 1 = 场景仍在变化（宿主要继续出帧），0 = 已静止（宿主可停帧循环，等输入再起）。
+    pub const MOVING: usize = 24;
     pub const LEN: usize = 32;
 }
 
@@ -484,6 +492,11 @@ pub struct Pano {
     lock: Option<Lock>,
     /// 交互模式下的动画时钟（秒，供公转 / 自转 / 轨道）。
     clock: f32,
+    /// 交互模式的环境动效强度（[clock] 的走速倍率）：有输入 / 按住 / 切模式时回到 1，
+    /// 空闲时按 [AMBIENT_DECAY] 指数收敛，低于 [AMBIENT_EPS] 归零——星系转慢直到停稳。
+    ambient: f32,
+    /// 最近一帧之后场景是否仍在变化（写进 `info::MOVING`）。
+    moving: bool,
 
     items: Vec<Item>,
     poses: Vec<Pose>,
@@ -712,6 +725,8 @@ impl Pano {
             holding: false,
             lock: None,
             clock: 0.0,
+            ambient: 1.0,
+            moving: true,
             items: Vec::with_capacity(n_works + n_words),
             out_pos: vec![0.0; vcap.max(1) * 2],
             out_uv: vec![0.0; vcap.max(1) * 2],
@@ -734,6 +749,8 @@ impl Pano {
         self.vel_yaw = 0.0;
         self.vel_pitch = 0.0;
         self.holding = false;
+        self.ambient = 1.0;
+        self.moving = true;
         self.cinematic_target = if target >= 0 && (target as usize) < self.works.len() {
             Some(target as usize)
         } else {
@@ -782,6 +799,9 @@ impl Pano {
             }
             _ => return status::INVALID_ARGUMENT,
         }
+        // 有效输入唤醒环境动效（宿主据 `info::MOVING` 重启帧循环）。
+        self.ambient = 1.0;
+        self.moving = true;
         status::OK
     }
 
@@ -882,7 +902,7 @@ impl Pano {
                 }
             }
         } else {
-            self.clock += dt;
+            self.clock += dt * self.ambient;
             frame.clock = self.clock;
             if self.lock.is_none() && !self.holding {
                 self.camera.yaw += self.vel_yaw * dt;
@@ -890,8 +910,29 @@ impl Pano {
                 let decay = (-3.2 * dt).exp();
                 self.vel_yaw *= decay;
                 self.vel_pitch *= decay;
+                if self.vel_yaw.abs() < VEL_EPS {
+                    self.vel_yaw = 0.0;
+                }
+                if self.vel_pitch.abs() < VEL_EPS {
+                    self.vel_pitch = 0.0;
+                }
+            }
+            if self.holding {
+                self.ambient = 1.0;
+            } else if self.lock.is_none() {
+                self.ambient *= (-AMBIENT_DECAY * dt).exp();
+                if self.ambient < AMBIENT_EPS {
+                    self.ambient = 0.0;
+                }
             }
         }
+        // 分享动画按时间轴一直在动（收尾由宿主按时长判定）；交互模式看锁定 / 按住 / 惯性 / 环境动效。
+        self.moving = self.mode == MODE_CINEMATIC
+            || self.lock.is_some()
+            || self.holding
+            || self.ambient > 0.0
+            || self.vel_yaw != 0.0
+            || self.vel_pitch != 0.0;
         if let Some(lock) = self.lock {
             let lt = t - lock.t0;
             let turn = ease_in_out(lt / lock.turn);
@@ -1144,6 +1185,7 @@ impl Pano {
         info_buf[info::FOCAL] = focal;
         info_buf[info::DIM] = f.dim;
         info_buf[info::MORPH] = f.morph;
+        info_buf[info::MOVING] = if self.moving { 1.0 } else { 0.0 };
         info_buf[info::PHASE] = if self.mode == MODE_INTERACTIVE {
             4.0
         } else if t < T_BANG_END {
@@ -1895,6 +1937,51 @@ mod tests {
         assert_eq!(p.out_info[info::MORPH], 1.0);
         p.input(input::DRAG, 100.0, 0.0);
         assert!(p.camera.yaw < GALAXY_CAMERA_YAW);
+    }
+
+    /// 空闲收敛：惯性与环境动效衰减到零后 MOVING = 0 且画面不再变；任何输入立刻恢复。
+    #[test]
+    fn interactive_settles_when_idle_and_wakes_on_input() {
+        let mut p = make(12, 2, 3);
+        p.set_mode(MODE_INTERACTIVE, -1);
+        p.input(input::DRAG, 40.0, 10.0);
+        p.input(input::RELEASE, 900.0, -300.0);
+        let dt = 1.0 / 60.0;
+        let mut t = 0.0;
+        p.frame(t, dt, 800.0, 600.0);
+        assert_eq!(p.out_info[info::MOVING], 1.0, "moving right after release");
+        let mut settled_at = None;
+        for i in 0..(60 * 30) {
+            t += dt;
+            p.frame(t, dt, 800.0, 600.0);
+            if p.out_info[info::MOVING] == 0.0 {
+                settled_at = Some(i);
+                break;
+            }
+        }
+        let settled_at = settled_at.expect("interactive scene settles within 30 s");
+        assert!(
+            settled_at > 60 * 3,
+            "ambient motion eases out, not cut at once"
+        );
+        // 静止后再出帧：顶点逐位不变（宿主据此可停帧循环而不丢画面）。
+        let before = p.out_pos[..p.verts * 2].to_vec();
+        t += 1.0;
+        p.frame(t, dt, 800.0, 600.0);
+        assert_eq!(p.out_info[info::MOVING], 0.0);
+        assert_eq!(&p.out_pos[..p.verts * 2], &before[..]);
+        // 输入唤醒。
+        p.input(input::ZOOM, 1.1, 0.0);
+        t += dt;
+        p.frame(t, dt, 800.0, 600.0);
+        assert_eq!(p.out_info[info::MOVING], 1.0, "input wakes the scene");
+        // 锁定期间始终在动。
+        p.select(0, t);
+        for _ in 0..(60 * 20) {
+            t += dt;
+            p.frame(t, dt, 800.0, 600.0);
+            assert_eq!(p.out_info[info::MOVING], 1.0);
+        }
     }
 
     #[test]

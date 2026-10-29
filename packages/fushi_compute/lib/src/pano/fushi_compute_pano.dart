@@ -135,6 +135,9 @@ abstract final class FfcPanoInfo {
 
   /// 0 = 星系，1 = 球幕。
   static const int morph = 23;
+
+  /// 1 = 场景仍在变化（继续出帧），0 = 已静止（可停帧循环，等输入 / 切模式再起）。
+  static const int moving = 24;
   static const int length = 32;
 }
 
@@ -231,6 +234,9 @@ final class FfcPanoFrame {
 
   bool get targetVisible => info[FfcPanoInfo.targetVisible] > 0.5;
   bool get handoff => info[FfcPanoInfo.handoff] > 0.5;
+
+  /// 场景是否仍在变化（惯性 / 环境动效 / 锁定 / 分享动画）；false 时再出帧画面不变。
+  bool get moving => info[FfcPanoInfo.moving] > 0.5;
 }
 
 /// 媒体库全景的原生状态句柄（布局、镜头、每帧投影都在 Rust，见 native/fushi_compute/src/pano.rs）。

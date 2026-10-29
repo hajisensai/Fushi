@@ -9,6 +9,10 @@
 /// - [FfcPanoMode.cinematic]（分享用）：16 秒开场动画，最后锁定 [PanoramaStage.cinematicTarget]。
 ///
 /// 动效开关：墨水屏 / 系统「减弱动态效果」下不跑 Ticker（只在输入时重算一帧），点封面直接打开。
+///
+/// 空闲停帧：可操作模式下 Rust 每帧报告场景是否仍在变化（`FfcPanoFrame.moving`：惯性、
+/// 环境动效、锁定）。静止且没有翻书 / 打开在进行时停掉 Ticker，首页闲置不再每帧出图；
+/// 输入、选中、回到可操作时再起。
 library;
 
 import 'dart:async';
@@ -118,6 +122,10 @@ class _PanoramaStageState extends State<PanoramaStage>
   Size _size = Size.zero;
   Duration _last = Duration.zero;
   double _t = 0;
+
+  /// Ticker 每次（重新）启动时 [_t] 的起点：空闲停帧后再起，舞台时钟（锁定的 t0、背景
+  /// 着色器时间）接着走，不因 Ticker 的 elapsed 归零而倒退。
+  double _tBase = 0;
   bool _motion = true;
   double _lastScale = 1;
 
@@ -168,7 +176,7 @@ class _PanoramaStageState extends State<PanoramaStage>
     super.didChangeDependencies();
     _motion = fushiMotionEnabled(context);
     if (_motion) {
-      if (!_ticker.isActive) _ticker.start();
+      _wake();
     } else {
       if (_ticker.isActive) _ticker.stop();
       // 不跑动画：交互模式停在球幕静帧（分享动画由入口直接跳过，不会走到这里）。
@@ -190,8 +198,16 @@ class _PanoramaStageState extends State<PanoramaStage>
   void _onTick(Duration elapsed) {
     final double dt = (elapsed - _last).inMicroseconds / 1e6;
     _last = elapsed;
-    _t = elapsed.inMicroseconds / 1e6;
+    _t = _tBase + elapsed.inMicroseconds / 1e6;
     _compute(dt);
+  }
+
+  /// 场景有变化可能（输入、选中、回到可操作）时重启帧循环；已在跑或不放动效时什么也不做。
+  void _wake() {
+    if (!_motion || _ticker.isActive) return;
+    _tBase = _t;
+    _last = Duration.zero;
+    _ticker.start();
   }
 
   void _renderOnce() {
@@ -209,6 +225,15 @@ class _PanoramaStageState extends State<PanoramaStage>
       height: _size.height,
     );
     _frames.update(f, _size);
+    // 空闲停帧：Rust 报告场景已静止（惯性、环境动效收敛到零，没有锁定），且这边也没有
+    // 翻书 / 打开在进行——再出帧画面不变，停掉 Ticker，等输入经 [_wake] 再起。
+    if (_ticker.isActive &&
+        !f.moving &&
+        _target < 0 &&
+        !_flipping &&
+        !_opening) {
+      _ticker.stop();
+    }
     // 分享动画没有可锁定的作品（-1）：放满 16 秒后自行收尾。
     if (widget.mode == FfcPanoMode.cinematic &&
         _target < 0 &&
@@ -311,6 +336,7 @@ class _PanoramaStageState extends State<PanoramaStage>
     _excerpt = null;
     _pano.setMode(FfcPanoMode.interactive);
     _renderOnce();
+    _wake();
   }
 
   void _select(int index) {
@@ -325,12 +351,17 @@ class _PanoramaStageState extends State<PanoramaStage>
     _target = index;
     _prepareTarget(index);
     _pano.select(index, _t);
+    _wake();
   }
 
   void _input(FfcPanoInput kind, double a, [double b = 0]) {
     if (_target >= 0) return;
     _pano.input(kind, a, b);
-    if (!_motion) _renderOnce();
+    if (_motion) {
+      _wake();
+    } else {
+      _renderOnce();
+    }
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
