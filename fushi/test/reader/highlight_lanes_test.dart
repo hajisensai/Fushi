@@ -232,7 +232,7 @@ void main() {
   });
 
   test(
-    'reader CSS colours every lane group and e-ink hides the layer',
+    'reader CSS colours every lane group and e-ink turns lanes into lines',
     () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
@@ -261,10 +261,21 @@ void main() {
         settings: settings,
         einkMode: true,
       );
-      final int hide = eink.lastIndexOf('fushi-hl-lanes {');
-      expect(hide, greaterThan(0));
+      // BUG-3874：墨水屏不再隐藏窄条层——查词 / 当前句 / 搜索的窄条去掉底色、画成外侧
+      // 一条线；收藏的底色窄条隐藏（收藏保留原下划线）。
+      final int layer = eink.lastIndexOf('fushi-hl-lanes {');
       expect(
-        eink.substring(hide, eink.indexOf('}', hide)),
+        eink.substring(layer, eink.indexOf('}', layer)),
+        isNot(contains('display: none')),
+      );
+      expect(
+        eink,
+        contains('fushi-hl-lane[data-hl="fushi-sentence-audio"]::after'),
+      );
+      final int fav = eink.indexOf('fushi-hl-lane[data-hl^="fushi-hl-"] {');
+      expect(fav, greaterThan(0));
+      expect(
+        eink.substring(fav, eink.indexOf('}', fav)),
         contains('display: none'),
       );
     },

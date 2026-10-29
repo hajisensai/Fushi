@@ -1,0 +1,14 @@
+## BUG-3874 · 墨水屏跟读线在注音 / 着重号处断开、字形被切（VN）
+- **报告**：2026-10-29（用户：Android 墨水屏手机截图，竖排 VN、有声书在播，「vn模式遇到振假名会把字截断，貌似之前window也有这个问题」，随后补充「着重号也有同样的问题」。截图里当前句「あの少年が満身創痍の少女を抱きしめている。」的跟读线在「あの少年が」之后断开，带注音的「満身創痍の」整段没有线，下一列「少女を…」又接上）
+- **真实性**：✅ 真 bug（基线 upstream/develop `476c6b38c3`）。墨水屏模式关掉窄条层（`fushi/lib/src/reader/reader_content_styles.dart` `_einkOverrideCss` 旧 `fushi-hl-lanes { display: none }`），改给 `::highlight(fushi-sentence-audio)` / `::highlight(fushi-selection)` / `::highlight(fushi-search)` 与对应 wrapper、ruby class 加 `text-decoration` 下划线。于是在 Blink（Android WebView / WebView2）上：
+  - 下划线让这层高亮不再是空操作，窄条层注册表钩子（`reader_selection_scripts.dart` `paintable` / `unpainted`，BUG-3776）把整句交给引擎绘制——Blink 把生效的 CSS Highlight 覆盖的文字裁进文字片段盒重画，BUG-3776 在彩色模式修掉的「字形墨迹被切」在墨水屏上原样回来。
+  - 同一个钩子把**带着重号的文字**剔出引擎绘制件（防傍点被裁），墨水屏下这段文字就没有下划线——跟读线在着重号处断开（用户补充的现象）。真 Chrome（headless shell 1243）与小米平板 Chrome 156 均复现：「抱きしめて」段无线，前后有线。
+  - 注音所在列丢线（用户截图）是同一条 `::highlight` 装饰线路径在用户设备的 WebView / 字体下的表现；本机 headless Chromium 与平板 Chrome 156 上这一段未丢线，未能在手头设备复现。
+  - 「之前 Windows 也有」= BUG-3776（WebView2 上 VN 高亮条把字截断、傍点只剩一角），当时只修了彩色模式的路径。
+- **[x] ① 已修复** — `reader_content_styles.dart` `_einkOverrideCss`：墨水屏不再隐藏窄条层，查词 / 跟读 / 搜索三组窄条去掉底色，用 `::after` 在窄条块末端外侧画线（竖排在列左、横排在行下，与原下划线同位：查词 0.14em 实线、跟读 0.10em 实线、搜索双线）；这三类的 `::highlight`、ruby class、wrapper 不再加下划线，保持普通规则里的「透明底 + 继承字色」空操作，钩子整份不交给引擎。线随窄条层逐文本节点量出、跨注音并条，着重号文字照常有线、傍点不被裁。收藏色在墨水屏下维持原样（保留下划线、底色窄条隐藏）。翻页 / 滚动在墨水屏下原来靠 wrapper 下划线，现在同样由窄条层画线，三种 view mode 一致。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_eink_highlight_line_bug3874_test.dart`（+ `_harness.mjs`）：真 Chrome、生产 CSS（einkMode）+ 引擎壳 + 选区脚本，翻页 / 滚动 / VN × 横竖排，当前句跨注音词、两段着重号、换列：断言引擎不绘制当前句高亮，并沿每一行逐像素扫块末端外侧的线带——行首、行中缺口 ≤3px，行尾只允许标点墨迹收尾的 ≤0.5em。变异对照：换回 develop 版 CSS 后竖排 VN 红在「the engine still paints the cue highlight (7 ranges)」与「longest inner gap 176 px」（着重号段）。随改：`reader_eink_mode_test.dart`（线式标记改查窄条线规则）、`highlight_lanes_test.dart`（墨水屏不再隐藏窄条层）。
+- **三种 view mode**：测试覆盖翻页 / 滚动 / VN × 横竖排，全绿；本机截图对照三种模式墨水屏的线均从句首连到句尾。
+- **备注**：
+  - 真设备：小米平板（Android，Chrome 156.0.8078.47）用生产 VN 页面做修复前 / 修复后 A/B 截图，修复前着重号段断线、修复后连续。未在用户的墨水屏设备、未在真 app（有声书 + 原书）里复测；注音列丢线未复现，待用户新版复测。
+  - WebKit（iOS / macOS 墨水屏）同样改走窄条层画线，未在 Mac 上验证。
+  - 非 sasayaki cue（SRT / VTT 合成书的 `.fushi-active`）在墨水屏下也会多一条窄条线；`AudiobookBridge` 自己给它的底色未改。
