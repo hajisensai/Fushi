@@ -49,6 +49,11 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 首页「继续」混排 Audiobookshelf（opt-in）：生效点是首页 dashboard 的取数与混排，
+  // harness 设置页里没有首页。
+  'services/Show in Home Continue':
+      'test/pages/home_dashboard_page_test.dart（opt-in 关着：不问服务器、不混排；'
+      '打开后立即混进来）',
   // app 内浏览器（系统 › 浏览器）：生效点在全屏浏览页 / 标签页 WebView，harness 设置页
   // 没有浏览页。浏览页每次打开现读这些偏好。
   'system/Tab style':
@@ -524,6 +529,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Skip intros and credits automatically':
       'test/media/video/video_theme_song_tracker_test.dart'
       '（VideoThemeSongTracker：开关每次现读，只在刚进段 3 s 内自动跳一次）',
+  'video/Auto-hide jump-back pill':
+      'test/media/video/video_jump_pill_hover_test.dart'
+      '（过期后控制条再出现也不显示 / 视频页接线：时长现读偏好、历史变化重新计时）',
   'video/Auto-align downloaded subtitles':
       'test/media/video/embedded_reference_subtitle_sync_test.dart'
       '（gatedAutomaticSubtitleAligner：开关每次现读）',

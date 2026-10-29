@@ -2,10 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 void main() {
-  test('LapisPreset defaults == LapisNoteType.defaultFieldMappings', () {
+  test('Lapis preset defaults == LapisNoteType.defaultFieldMappings', () {
     final noteType =
         AnkiNoteType(id: 1, name: 'Lapis', fields: LapisNoteType.fields);
-    final mappings = LapisPreset.applyDefaults(noteType, {});
+    final mappings = NoteTypePresets.applyDefaults(noteType, {});
     for (final entry in LapisNoteType.defaultFieldMappings.entries) {
       expect(mappings[entry.key], entry.value);
     }
@@ -23,7 +23,7 @@ void main() {
     final noteType =
         AnkiNoteType(id: 1, name: 'Lapis', fields: LapisNoteType.fields);
     final result =
-        LapisPreset.applyDefaults(noteType, {'Expression': '{reading}'});
+        NoteTypePresets.applyDefaults(noteType, {'Expression': '{reading}'});
     expect(result['Expression'], '{reading}');
   });
 }

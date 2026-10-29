@@ -655,9 +655,7 @@ void main() {
     // 宽版式左栏 560 宽、视口 800、「原样」档：铺满上限 = 视口 40% = 320。
     final SrsPictureLimits limits = srsPictureLimits(
       SrsReviewImageSize.original,
-      wide: true,
       viewport: 800,
-      thumb: 84,
     );
     expect(limits.fillWidth, isTrue);
     Size box(double aspect, {double column = 560}) => srsCardMediaBoxSize(
@@ -681,9 +679,7 @@ void main() {
     // 矮视口 +「原样」档：图片不铺满，视频同样不铺满（同一份 limits）。
     final SrsPictureLimits short = srsPictureLimits(
       SrsReviewImageSize.original,
-      wide: true,
       viewport: 500,
-      thumb: 84,
     );
     expect(short.fillWidth, isFalse);
     expect(

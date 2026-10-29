@@ -7,6 +7,11 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi/src/media/video/video_watched_marks.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/sync/jellyfin_library_scope.dart';
+import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/updates/video_library_update_probe.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
@@ -188,6 +193,53 @@ void main() {
     expect((await library.statusOf(browser, series)).inLibrary, isFalse);
   });
 
+  test('「在库」只认本地行：整库混排关着时不连服务器、不另存加入项清单；在库的集'
+      '标已看回写那台服务器', () async {
+    expect(await library.addToLibrary(browser, series), 3);
+    expect((await library.statusOf(browser, series)).inLibrary, isTrue);
+
+    final PreferencesRepository prefs = PreferencesRepository(database);
+    await prefs.loadFromDb();
+    expect(prefs.jellyfinShowInLibrary, isFalse);
+    expect(
+      await resolveJellyfinLibraryClient(
+        prefs: prefs,
+        syncRepo: SyncRepository(database),
+      ),
+      isNull,
+      reason: '加入媒体库的条目是本地行，不靠第二份「加入项」清单去列服务器',
+    );
+    expect(await database.getPref('jellyfin_library_items'), isNull);
+
+    final _PlayedRecorder server = _PlayedRecorder();
+    final List<String> resolved = <String>[];
+    final WatchedMarkResult result = await setVideosWatched(
+      db: database,
+      watched: true,
+      localUids: <String>['e1', 'e2'],
+      mediaServerMarker: (String serverId) async {
+        resolved.add(serverId);
+        return server;
+      },
+    );
+    expect(result.localChanged, 2);
+    expect(server.calls, unorderedEquals(<String>['e1:true', 'e2:true']));
+    expect(resolved.toSet(), <String>{browser.serverId});
+  });
+
+  test('lib 里不再有第二份「在库」真相源（jellyfin_library_items）', () {
+    final List<String> hits = <String>[
+      for (final FileSystemEntity e in Directory(
+        'lib',
+      ).listSync(recursive: true))
+        if (e is File &&
+            e.path.endsWith('.dart') &&
+            e.readAsStringSync().contains('jellyfin_library_items'))
+          e.path,
+    ];
+    expect(hits, isEmpty);
+  });
+
   test('movie is one row keyed by itself and is not a series work', () async {
     const MediaServerItem movie = MediaServerItem(
       id: 'm1',
@@ -282,4 +334,13 @@ void main() {
     );
     expect(await repository.getByBookUid('e1'), isNotNull);
   });
+}
+
+class _PlayedRecorder implements RemoteVideoPlayedMark {
+  final List<String> calls = <String>[];
+
+  @override
+  Future<void> setRemoteVideoPlayed(String id, {required bool played}) async {
+    calls.add('$id:$played');
+  }
 }

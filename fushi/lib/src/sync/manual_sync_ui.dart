@@ -72,21 +72,21 @@ String summarizeSyncReport(SyncRunReport r) {
 /// （`browserTimeout` 加进来时就正是如此）。switch 表达式对枚举强制穷尽 —— 新增值
 /// 不显式给出登出决定就编译不过。
 bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
-      SyncAuthFailureKind.credentials => true,
-      SyncAuthFailureKind.forbidden => false,
-      SyncAuthFailureKind.browserTimeout => false,
-      SyncAuthFailureKind.cancelled => false,
-      // BUG-2377：互联的「登出」会清空 `sync_hibiki_client_urls`——全部对端地址、
-      // TOFU 指纹和 per-peer token 一起没。用一台对端的 401 去清整份配对配置，
-      // 正是 BUG-1550 / BUG-1578 要消灭的株连。凭据失效由配对流程处理，不在这
-      // 里代劳。（`shouldSignOutChannelOnAuthError` 已按通道拦了一层，这里是同
-      // 一决定的第二道：裸 SyncAuthError 走不到那层。）
-      SyncAuthFailureKind.pairingRejected => false,
-      // 压根没有凭据可丢，登出无事可做。
-      SyncAuthFailureKind.pairingNotConfigured => false,
-      // BUG-2631：服务端回的是网页，凭据根本没被评估过；要改的是地址，不是会话。
-      SyncAuthFailureKind.htmlPage => false,
-    };
+  SyncAuthFailureKind.credentials => true,
+  SyncAuthFailureKind.forbidden => false,
+  SyncAuthFailureKind.browserTimeout => false,
+  SyncAuthFailureKind.cancelled => false,
+  // BUG-2377：互联的「登出」会清空 `sync_hibiki_client_urls`——全部对端地址、
+  // TOFU 指纹和 per-peer token 一起没。用一台对端的 401 去清整份配对配置，
+  // 正是 BUG-1550 / BUG-1578 要消灭的株连。凭据失效由配对流程处理，不在这
+  // 里代劳。（`shouldSignOutChannelOnAuthError` 已按通道拦了一层，这里是同
+  // 一决定的第二道：裸 SyncAuthError 走不到那层。）
+  SyncAuthFailureKind.pairingRejected => false,
+  // 压根没有凭据可丢，登出无事可做。
+  SyncAuthFailureKind.pairingNotConfigured => false,
+  // BUG-2631：服务端回的是网页，凭据根本没被评估过；要改的是地址，不是会话。
+  SyncAuthFailureKind.htmlPage => false,
+};
 
 /// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。
 ///
@@ -110,6 +110,8 @@ bool shouldSignOutChannelOnAuthError(SyncChannelAuthError e) {
 /// 本地化的同步阶段名（进度行用）。
 String syncPhaseLabel(SyncPhase phase) {
   switch (phase) {
+    case SyncPhase.remoteListing:
+      return t.sync_progress_remote_listing;
     case SyncPhase.books:
       return t.sync_progress_books;
     case SyncPhase.readingData:
@@ -132,6 +134,8 @@ String syncPhaseLabel(SyncPhase phase) {
       return t.sync_progress_deletions;
     case SyncPhase.pendingMines:
       return t.sync_progress_pending_mines;
+    case SyncPhase.finishing:
+      return t.sync_progress_finishing;
   }
 }
 
@@ -217,26 +221,24 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
   bool announceCompleted = true,
   Set<SyncAssetChannelScope>? onlyChannels,
   SyncConflictDecider? conflictDecider,
-}) =>
-    _runWithSyncFeedback(
-      context: context,
-      appModel: appModel,
-      announceNotConfigured: announceNotConfigured,
-      announceBusy: announceBusy,
-      announceCompleted: announceCompleted,
-      conflictDecider: conflictDecider,
-      run: () => runManualFullSync(
-        onlyChannels: onlyChannels,
-        db: appModel.database,
-        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-        audioDatabaseRoot:
-            Directory('${appModel.appDirectory.path}/audiobooks'),
-        tempDir: appModel.temporaryDirectory,
-        localAudioEntries: appModel.localAudioDbsOnThisDevice,
-        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-        onPostRun: appModel.refreshAfterSyncRun,
-      ),
-    );
+}) => _runWithSyncFeedback(
+  context: context,
+  appModel: appModel,
+  announceNotConfigured: announceNotConfigured,
+  announceBusy: announceBusy,
+  announceCompleted: announceCompleted,
+  conflictDecider: conflictDecider,
+  run: () => runManualFullSync(
+    onlyChannels: onlyChannels,
+    db: appModel.database,
+    dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+    audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+    tempDir: appModel.temporaryDirectory,
+    localAudioEntries: appModel.localAudioDbsOnThisDevice,
+    onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+    onPostRun: appModel.refreshAfterSyncRun,
+  ),
+);
 
 /// 设置页「词典 / 本地音频数据库」两行的显式上传 / 下载动作在 UI 层的入口。
 ///
@@ -249,28 +251,26 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
   required SyncAssetKind kind,
   required SyncAssetDirection direction,
   SyncAssetChannelScope scope = SyncAssetChannelScope.cloud,
-}) =>
-    _runWithSyncFeedback(
-      context: context,
-      appModel: appModel,
-      announceNotConfigured: true,
-      announceBusy: true,
-      announceCompleted: true,
-      run: () => runManualAssetTransfer(
-        db: appModel.database,
-        kind: kind,
-        direction: direction,
-        scope: scope,
-        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-        audioDatabaseRoot:
-            Directory('${appModel.appDirectory.path}/audiobooks'),
-        tempDir: appModel.temporaryDirectory,
-        localAudioEntries: appModel.localAudioDbsOnThisDevice,
-        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-        fontSync: AppFontSyncLocal(appModel),
-        onPostRun: appModel.refreshAfterSyncRun,
-      ),
-    );
+}) => _runWithSyncFeedback(
+  context: context,
+  appModel: appModel,
+  announceNotConfigured: true,
+  announceBusy: true,
+  announceCompleted: true,
+  run: () => runManualAssetTransfer(
+    db: appModel.database,
+    kind: kind,
+    direction: direction,
+    scope: scope,
+    dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+    audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
+    tempDir: appModel.temporaryDirectory,
+    localAudioEntries: appModel.localAudioDbsOnThisDevice,
+    onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+    fontSync: AppFontSyncLocal(appModel),
+    onPostRun: appModel.refreshAfterSyncRun,
+  ),
+);
 
 /// 逐通道呈现冲突：用**各自通道的后端**（合并报告的冲突可能来自互联通道，用云后端
 /// 去 apply 会写错端），两条通道共用一本裁决簿。[decider] 非 null 时不弹窗、交给它落地。
@@ -386,7 +386,9 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
   } catch (e) {
     if (context.mounted) {
       showSyncMessage(
-          context, t.sync_error(message: friendlySyncErrorDetail(e)));
+        context,
+        t.sync_error(message: friendlySyncErrorDetail(e)),
+      );
     }
     return ManualSyncOutcome.notConfigured;
   }

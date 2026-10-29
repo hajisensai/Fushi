@@ -207,6 +207,107 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// 流读错误：数据本身不对（[DecodeError]），或 zstd 流解不开。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamError {
+    Decode(DecodeError),
+    Zstd(String),
+}
+
+impl std::fmt::Display for StreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamError::Decode(e) => e.fmt(f),
+            StreamError::Zstd(m) => write!(f, "zstd: {m}"),
+        }
+    }
+}
+
+impl From<DecodeError> for StreamError {
+    fn from(e: DecodeError) -> Self {
+        StreamError::Decode(e)
+    }
+}
+
+/// 读窗口每次至少补这么多字节。
+const WINDOW: usize = 64 * 1024;
+
+/// 一个 zstd 帧的流式顺序读：边解压边按 [Reader] 解值，手里只有一个读窗口，不随明文总长增长
+/// （64 KiB 起，单个值更大时涨到装得下它）。
+pub struct ZstdWindow<'s> {
+    decoder: ruzstd::decoding::StreamingDecoder<&'s [u8], ruzstd::decoding::FrameDecoder>,
+    buf: Vec<u8>,
+    pos: usize,
+    eof: bool,
+}
+
+impl<'s> ZstdWindow<'s> {
+    pub fn new(compressed: &'s [u8]) -> Result<ZstdWindow<'s>, StreamError> {
+        let decoder =
+            ruzstd::decoding::StreamingDecoder::new(compressed).map_err(|e| StreamError::Zstd(e.to_string()))?;
+        Ok(ZstdWindow { decoder, buf: Vec::new(), pos: 0, eof: false })
+    }
+
+    /// 补读：先丢掉已解的前缀，再补 [WINDOW] 与未解部分中较大者。
+    fn fill(&mut self) -> Result<(), StreamError> {
+        use std::io::Read;
+        if self.pos > 0 {
+            self.buf.drain(..self.pos);
+            self.pos = 0;
+        }
+        let have = self.buf.len();
+        let want = have + WINDOW.max(have);
+        self.buf.resize(want, 0);
+        let mut got = have;
+        let mut failed = None;
+        while got < want {
+            match self.decoder.read(&mut self.buf[got..]) {
+                Ok(0) => {
+                    self.eof = true;
+                    break;
+                }
+                Ok(k) => got += k,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => {
+                    failed = Some(e.to_string());
+                    break;
+                }
+            }
+        }
+        self.buf.truncate(got);
+        failed.map_or(Ok(()), |m| Err(StreamError::Zstd(m)))
+    }
+
+    /// 解一个值；缺字节（[Reader] 的截断错误）就补读重试，流读完了还缺才算截断。
+    pub fn parse<T>(&mut self, f: impl Fn(&mut Reader<'_>) -> DResult<T>) -> Result<T, StreamError> {
+        loop {
+            let mut r = Reader::new(&self.buf[self.pos..]);
+            match f(&mut r) {
+                Ok(v) => {
+                    self.pos += r.pos;
+                    return Ok(v);
+                }
+                Err(e) if e.0.starts_with("truncated") && !self.eof => self.fill()?,
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
+    /// 流里没有剩余字节了。
+    pub fn at_end(&mut self) -> Result<bool, StreamError> {
+        if self.pos == self.buf.len() && !self.eof {
+            self.fill()?;
+        }
+        Ok(self.pos == self.buf.len())
+    }
+
+    /// 当前读窗口的容量（测试看内存上界用）。
+    #[cfg(test)]
+    pub fn window_capacity(&self) -> usize {
+        self.buf.capacity()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

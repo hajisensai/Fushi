@@ -132,6 +132,8 @@ typedef FushiReorderCallback = void Function(int from, int to);
 ///   都精确跟手、零偏移（无 SDK 的全局↔本地空间错配）。
 ///
 /// 上下箭头按钮等其它重排路径不受影响（它们直接改父列表 + setState）。
+///
+/// 横向排布用姊妹件 [FushiReorderableRow]（同一套实现，只换主轴）。
 class FushiReorderableColumn extends StatefulWidget {
   const FushiReorderableColumn({
     required this.itemCount,
@@ -141,8 +143,28 @@ class FushiReorderableColumn extends StatefulWidget {
     this.spacing = 0,
     this.feedbackBorderRadius,
     this.useDragHandles = false,
+    this.touchDragEnabled = true,
     super.key,
+  }) : axis = Axis.vertical;
+
+  const FushiReorderableColumn._withAxis({
+    required this.axis,
+    required this.itemCount,
+    required this.itemBuilder,
+    required this.keyForIndex,
+    required this.onReorder,
+    required this.spacing,
+    required this.feedbackBorderRadius,
+    required this.useDragHandles,
+    required this.touchDragEnabled,
   });
+
+  /// 主轴：本类公开构造恒为竖向，[FushiReorderableRow] 走横向。
+  final Axis axis;
+
+  /// 触摸屏是否参与重排（长按起拖）。false 时触屏手势全部留给外层：
+  /// 滑动交给滚动、长按交给行自己的菜单（如浏览器标签条：触屏横滑平移、长按出菜单）。
+  final bool touchDragEnabled;
 
   final int itemCount;
   final FushiReorderItemBuilder itemBuilder;
@@ -156,7 +178,7 @@ class FushiReorderableColumn extends StatefulWidget {
   /// 默认 false 延续既有整行拖动行为。
   final bool useDragHandles;
 
-  /// 相邻行之间的间距，由**列表**插入（而非塞进每个 item 自带 padding）。
+  /// 相邻行（横向时为相邻列）之间的间距，由**列表**插入（而非塞进每个 item 自带 padding）。
   /// 这样拖拽中的浮层复制只包住行内容本身、不会把行间空隙也涂成背景色
   /// （item 自带 bottom padding 时，浮层的 [Material] 会把空隙连同行一起涂色，
   /// 表现为「被拖行下方多出一条背景」）。默认 0：行紧贴，行为与历史一致。
@@ -175,20 +197,24 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
   /// 显示顺序：display 位置 → 原始 index（拖拽中实时变化；提交后重置为恒等）。
   late List<int> _display;
 
-  /// 每个原始 index 的测高 GlobalKey（行身份稳定，用于读高度）。
-  final Map<int, GlobalKey> _rowKeys = <int, GlobalKey>{};
+  /// 每行的测量 GlobalKey，按行身份 [FushiReorderableColumn.keyForIndex] 索引
+  /// （不按下标）：父列表在中间插入 / 删除行后，各行仍挂回自己的 GlobalKey，
+  /// 不会把旧行的子树 state（进场动画等）挪给占了它下标的新行。
+  final Map<Key, GlobalKey> _rowKeys = <Key, GlobalKey>{};
 
   /// 本列表根 [Stack] 的 key，用于 `globalToLocal` 把指针转成本地坐标。
   final GlobalKey _rootKey = GlobalKey();
 
   int? _dragOriginal; // 正在拖拽的原始 index（null = 未拖拽）
   int _dragStartDi = 0; // 起拖时被拖行的 display 下标（提交 from，不依赖「起始必恒等」）
-  double _feedbackTop = 0; // 浮层复制的本地 Y（列表本地坐标）
-  double _grabDy = 0; // 抓取点相对被拖行顶部的本地偏移
-  final Map<int, double> _heights = <int, double>{}; // 原始 index → 行高
+  double _feedbackStart = 0; // 浮层复制在主轴上的本地起点（列表本地坐标）
+  double _grabOffset = 0; // 抓取点相对被拖行主轴起点的本地偏移
+  final Map<int, double> _extents = <int, double>{}; // 原始 index → 主轴尺寸
+
+  bool get _vertical => widget.axis == Axis.vertical;
 
   // ── 拖拽近视口边缘自动滚动（本列表常挂在 SingleChildScrollView 内，行数超一屏时
-  //    需能把浮层拖到视口外的槽位；此前缺这段，长列表里第 1 项**拖不到**第 30 项，
+  //    需能把浮层拖到视口外的槽位；横向标签条同理沿横轴滚）此前缺这段，长列表里第 1 项**拖不到**第 30 项，
   //    只能拖到当前可见范围的边界）。起拖时抓最近的祖先 [ScrollableState]，指针进入
   //    视口上/下边缘带就按帧步进 [ScrollPosition.jumpTo]，滚动后用最近一次指针全局
   //    坐标重跑 [_updateDrag]（`globalToLocal` 已消滚动位移，浮层/目标槽随内容自洽）。
@@ -199,7 +225,7 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
   double _autoScrollStepSigned = 0; // 当前每帧步进（含方向）；0 = 不滚
   bool _autoScrollScheduled = false;
 
-  /// 触发自动滚动的视口上/下边缘带宽（指针进入即滚）。
+  /// 触发自动滚动的视口主轴两端边缘带宽（指针进入即滚）。
   static const double _autoScrollEdge = 64.0;
 
   /// 自动滚动每帧步进（像素）。
@@ -214,7 +240,8 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
   @override
   void didUpdateWidget(covariant FushiReorderableColumn oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.itemCount != widget.itemCount) {
+    if (oldWidget.itemCount != widget.itemCount ||
+        oldWidget.axis != widget.axis) {
       _resetDisplay();
       _stopAutoScroll();
       _dragOriginal = null;
@@ -223,63 +250,69 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
 
   void _resetDisplay() {
     _display = List<int>.generate(widget.itemCount, (int i) => i);
-    for (int i = 0; i < widget.itemCount; i++) {
-      _rowKeys.putIfAbsent(i, () => GlobalKey());
-    }
-    // itemCount 缩减后修剪陈旧 key/高度，避免无界增长。
-    _rowKeys.removeWhere((int i, _) => i >= widget.itemCount);
-    _heights.removeWhere((int i, _) => i >= widget.itemCount);
+    // 修剪已不在列表里的行 key / 尺寸，避免无界增长。
+    final Set<Key> live = <Key>{
+      for (int i = 0; i < widget.itemCount; i++) widget.keyForIndex(i),
+    };
+    _rowKeys.removeWhere((Key k, _) => !live.contains(k));
+    _extents.removeWhere((int i, _) => i >= widget.itemCount);
   }
 
-  double _localY(Offset globalPosition) {
+  GlobalKey _rowKeyOf(int original) =>
+      _rowKeys.putIfAbsent(widget.keyForIndex(original), GlobalKey.new);
+
+  /// 指针在本列表主轴上的本地坐标（`globalToLocal` 消掉祖先缩放 / 平移）。
+  double _localMain(Offset globalPosition) {
     final RenderObject? ro = _rootKey.currentContext?.findRenderObject();
-    if (ro is! RenderBox || !ro.hasSize) return globalPosition.dy;
-    return ro.globalToLocal(globalPosition).dy;
+    final Offset local = ro is RenderBox && ro.hasSize
+        ? ro.globalToLocal(globalPosition)
+        : globalPosition;
+    return _vertical ? local.dy : local.dx;
   }
 
-  /// 读取当前各行高度（长按起始时行已布局，可同步读 GlobalKey 的 size）。
-  void _measureHeights() {
+  /// 读取当前各行主轴尺寸（起拖时行已布局，可同步读 GlobalKey 的 size）。
+  void _measureExtents() {
     for (int i = 0; i < widget.itemCount; i++) {
-      final RenderObject? ro = _rowKeys[i]?.currentContext?.findRenderObject();
+      final RenderObject? ro = _rowKeyOf(i).currentContext?.findRenderObject();
       if (ro is RenderBox && ro.hasSize) {
-        _heights[i] = ro.size.height;
+        _extents[i] = _vertical ? ro.size.height : ro.size.width;
       }
     }
   }
 
-  double _heightOf(int original) => _heights[original] ?? 0;
+  double _extentOf(int original) => _extents[original] ?? 0;
 
-  /// display 位置 di 的槽顶（按当前 _display 累加高度 + 行间距）。
-  /// di 之前有 di 个行间距（每相邻两行一个），故加 `spacing * di`。
-  double _slotTop(int di) {
-    double top = 0;
+  /// display 位置 di 的槽起点（按当前 _display 累加主轴尺寸 + 间距）。
+  /// di 之前有 di 个间距（每相邻两行一个），故加 `spacing * di`。
+  double _slotStart(int di) {
+    double start = 0;
     for (int k = 0; k < di; k++) {
-      top += _heightOf(_display[k]);
+      start += _extentOf(_display[k]);
     }
-    return top + widget.spacing * di;
+    return start + widget.spacing * di;
   }
 
-  double get _totalHeight {
+  double get _totalExtent {
     if (_display.isEmpty) return 0;
-    double h = 0;
+    double total = 0;
     for (final int oi in _display) {
-      h += _heightOf(oi);
+      total += _extentOf(oi);
     }
-    return h + widget.spacing * (_display.length - 1);
+    return total + widget.spacing * (_display.length - 1);
   }
 
   void _startDrag(int original, Offset globalPosition) {
-    _measureHeights();
+    _measureExtents();
     final int di = _display.indexOf(original);
-    final double top = _slotTop(di);
-    final double localY = _localY(globalPosition);
+    final double start = _slotStart(di);
+    final double localMain = _localMain(globalPosition);
     _scrollable = context.findAncestorStateOfType<ScrollableState>();
     _lastPointerGlobal = globalPosition;
     setState(() {
       _dragOriginal = original;
       _dragStartDi = di;
-      _grabDy = (localY - top).clamp(0.0, _heightOf(original));
-      _feedbackTop = top;
+      _grabOffset = (localMain - start).clamp(0.0, _extentOf(original));
+      _feedbackStart = start;
     });
   }
 
@@ -288,33 +321,36 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
     if (dragged == null) return;
     _lastPointerGlobal = globalPosition;
     _maybeAutoScroll(globalPosition);
-    final double draggedH = _heightOf(dragged);
-    final double maxTop = (_totalHeight - draggedH).clamp(0.0, double.infinity);
-    final double newTop = (_localY(globalPosition) - _grabDy).clamp(
+    final double draggedExtent = _extentOf(dragged);
+    final double maxStart = (_totalExtent - draggedExtent).clamp(
       0.0,
-      maxTop,
+      double.infinity,
+    );
+    final double newStart = (_localMain(globalPosition) - _grabOffset).clamp(
+      0.0,
+      maxStart,
     );
 
-    // 浮层中心落在哪个槽 → 目标 display 下标。用 `<=`（含边界）而非 `<`：
-    // 拖到最顶端时 newTop 被 clamp 到 0，等高行的浮层中心恰好停在第一行中点
+    // 浮层中心落在哪个槽 → 目标 display 下标（以下以竖向表述，横向同理）。
+    // 用 `<=`（含边界）而非 `<`：拖到最顶端时 newStart 被 clamp 到 0，等高行的浮层中心恰好停在第一行中点
     // （centerY == h/2 == 第一槽中点）。若用严格 `<`，该相等边界判否 → target
     // 永远到不了 0、被拖行卡在索引 1（非第一项无法拖到第一、且浮层在上而空位在下）。
     // 含边界后相等即归入当前槽，第一项可达；末项边界对称由默认 length-1 兜底，不受影响。
-    final double centerY = newTop + draggedH / 2;
+    final double center = newStart + draggedExtent / 2;
     int target = _display.length - 1;
     double acc = 0;
     for (int di = 0; di < _display.length; di++) {
-      final double h = _heightOf(_display[di]);
-      if (centerY <= acc + h / 2) {
+      final double extent = _extentOf(_display[di]);
+      if (center <= acc + extent / 2) {
         target = di;
         break;
       }
-      acc += h + widget.spacing; // 跨到下一槽顶时要算上行间距
+      acc += extent + widget.spacing; // 跨到下一槽起点时要算上行间距
     }
 
     final int currentDi = _display.indexOf(dragged);
     setState(() {
-      _feedbackTop = newTop;
+      _feedbackStart = newStart;
       if (target != currentDi) {
         _display.removeAt(currentDi);
         _display.insert(target, dragged);
@@ -347,8 +383,8 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
       _autoScrollStepSigned = 0;
       return;
     }
-    // 仅纵向 Scrollable 参与（横向祖先误滚防御）。
-    if (sc.position.axis != Axis.vertical) {
+    // 仅与本列表同主轴的 Scrollable 参与（异轴祖先误滚防御）。
+    if (sc.position.axis != widget.axis) {
       _autoScrollStepSigned = 0;
       return;
     }
@@ -361,11 +397,13 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
       ro.getTransformTo(null),
       Offset.zero & ro.size,
     );
+    final double pointer = _vertical ? globalPosition.dy : globalPosition.dx;
+    final double lead = _vertical ? viewport.top : viewport.left;
+    final double trail = _vertical ? viewport.bottom : viewport.right;
     double step = 0;
-    if (globalPosition.dy < viewport.top + _autoScrollEdge &&
-        pos.pixels > pos.minScrollExtent) {
+    if (pointer < lead + _autoScrollEdge && pos.pixels > pos.minScrollExtent) {
       step = -_autoScrollStep;
-    } else if (globalPosition.dy > viewport.bottom - _autoScrollEdge &&
+    } else if (pointer > trail - _autoScrollEdge &&
         pos.pixels < pos.maxScrollExtent) {
       step = _autoScrollStep;
     }
@@ -400,23 +438,30 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
   @override
   Widget build(BuildContext context) {
     final int? dragged = _dragOriginal;
+    final Widget gap = _vertical
+        ? SizedBox(height: widget.spacing)
+        : SizedBox(width: widget.spacing);
     return Stack(
       key: _rootKey,
       children: <Widget>[
-        Column(
+        Flex(
+          direction: widget.axis,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             for (int di = 0; di < _display.length; di++) ...<Widget>[
-              if (di > 0) SizedBox(height: widget.spacing),
+              if (di > 0) gap,
               _buildSlot(_display[di]),
             ],
           ],
         ),
         if (dragged != null)
           Positioned(
-            top: _feedbackTop,
-            left: 0,
-            right: 0,
+            // 竖向：主轴定 top、横向撑满；横向：主轴定 left + 宽度、纵向撑满。
+            top: _vertical ? _feedbackStart : 0,
+            bottom: _vertical ? null : 0,
+            left: _vertical ? 0 : _feedbackStart,
+            right: _vertical ? 0 : null,
+            width: _vertical ? null : _extentOf(dragged),
             child: IgnorePointer(
               // 浮层只包行内容（不含行间距，间距由上面的 Column 统一插入）；
               // 抬起观感统一走 [FushiReorderDragProxy]（两套设计系统各自的拖拽浮起）。
@@ -477,7 +522,7 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
 
   Widget _buildSlot(int original) {
     final Widget content = KeyedSubtree(
-      key: _rowKeys[original],
+      key: _rowKeyOf(original),
       child: widget.itemBuilder(context, original),
     );
     // 被拖行在原位保留高度但透明（充当随实时重排移动的「空位」），可见的是浮层复制。
@@ -517,23 +562,73 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
                     _onMultiDragStart(original, position);
               },
             ),
-        // 触摸屏：长按再拖。
-        DelayedMultiDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-              DelayedMultiDragGestureRecognizer
-            >(
-              () => DelayedMultiDragGestureRecognizer(
-                supportedDevices: _delayedDragDevices,
+        // 触摸屏：长按再拖（touchDragEnabled=false 时不装，触屏手势全留给外层）。
+        if (widget.touchDragEnabled)
+          DelayedMultiDragGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                DelayedMultiDragGestureRecognizer
+              >(
+                () => DelayedMultiDragGestureRecognizer(
+                  supportedDevices: _delayedDragDevices,
+                ),
+                (DelayedMultiDragGestureRecognizer instance) {
+                  instance.onStart = (Offset position) =>
+                      _onMultiDragStart(original, position);
+                },
               ),
-              (DelayedMultiDragGestureRecognizer instance) {
-                instance.onStart = (Offset position) =>
-                    _onMultiDragStart(original, position);
-              },
-            ),
       },
       child: child,
     );
   }
+}
+
+/// [FushiReorderableColumn] 的横向姊妹件：同一套「浮层渲染在列表自身 Stack、
+/// 指针经 `globalToLocal` 消掉祖先缩放」的实现，只把主轴换成横轴（BUG-778 同根因：
+/// SDK 横向 `ReorderableListView` 的 Overlay 代理在界面缩放非 100% 时同样漂移）。
+///
+/// 放进横向 `SingleChildScrollView` 即可横滚；拖到视口左右边缘带时自动沿横轴滚动。
+/// 鼠标 / 触控板 / 笔越过拖动阈值才拾起（单击、中键、右键照常）；触屏是否长按起拖
+/// 由 [touchDragEnabled] 决定。
+class FushiReorderableRow extends StatelessWidget {
+  const FushiReorderableRow({
+    required this.itemCount,
+    required this.itemBuilder,
+    required this.keyForIndex,
+    required this.onReorder,
+    this.spacing = 0,
+    this.feedbackBorderRadius,
+    this.touchDragEnabled = true,
+    super.key,
+  });
+
+  final int itemCount;
+  final FushiReorderItemBuilder itemBuilder;
+  final FushiReorderKeyBuilder keyForIndex;
+
+  /// 「item[from] 移到最终下标 to」。
+  final FushiReorderCallback onReorder;
+
+  /// 相邻项之间的横向间距。
+  final double spacing;
+
+  /// 拖拽浮层复制的圆角。
+  final BorderRadius? feedbackBorderRadius;
+
+  /// 触摸屏是否长按起拖；false 时触屏横滑全给外层滚动、长按全给项自己的菜单。
+  final bool touchDragEnabled;
+
+  @override
+  Widget build(BuildContext context) => FushiReorderableColumn._withAxis(
+    axis: Axis.horizontal,
+    itemCount: itemCount,
+    itemBuilder: itemBuilder,
+    keyForIndex: keyForIndex,
+    onReorder: onReorder,
+    spacing: spacing,
+    feedbackBorderRadius: feedbackBorderRadius,
+    useDragHandles: false,
+    touchDragEnabled: touchDragEnabled,
+  );
 }
 
 /// [FushiReorderableColumn.useDragHandles] 的起拖区域。使用原列表的本地坐标

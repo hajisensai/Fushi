@@ -60,6 +60,23 @@ void main() {
       ], reason: '集自身的 Backdrop 不参与：服务器给集报的背景通常就是剧的');
     });
 
+    test('集：服务器报了剧海报时剧 Primary 排第一，其余序列照旧', () {
+      final _CoverFakeBrowser browser = _CoverFakeBrowser();
+      const MediaServerItem episode = MediaServerItem(
+        id: 'ep',
+        name: 'Ep',
+        type: MediaServerItemType.episode,
+        hasThumb: true,
+        hasCover: true,
+        seriesCoverItemId: 'series',
+      );
+      expect(urlsOf(mediaServerContinueImages(browser, episode)), <String>[
+        'series|primary',
+        'ep|thumb',
+        'ep|primary',
+      ]);
+    });
+
     test('集没有任何自身图：直接落到剧的横图；没有上级 id 就不造请求', () {
       final _CoverFakeBrowser browser = _CoverFakeBrowser();
       expect(

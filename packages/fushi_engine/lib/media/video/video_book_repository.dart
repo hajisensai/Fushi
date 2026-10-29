@@ -21,6 +21,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         videoRemoteAudioTrackAtPrefKey,
         videoRemoteAudioTrackPrefKey,
+        videoRemoteCompletedAtPrefKey,
+        videoRemoteCompletedPrefKey,
         videoRemoteDelayAtPrefKey,
         videoRemoteDelayPrefKey,
         videoRemotePositionAtPrefKey,
@@ -561,15 +563,105 @@ class VideoBookRepository {
   /// 对端后来看过就直接更新——下一次同步把刚清掉的进度原样灌回来，用户清了等于
   /// 没清。盖成 now 后本地严格更新，把「清除」当成一次进度写入推给 host。
   ///
+  /// 看完标记同理：行上的 completedAt 一起清，镜像键 `video_remote_completed_` 盖成
+  /// 「未看完 @ 现在」，对端的旧「已看」不会被同步回来（[setWatched] 同一纪律）。
+  ///
   /// 已知边界：进度 wire 只有 (positionMs, updatedAtMs) 两个字段，host 收到后镜像
   /// 行会写 `lastPlayedAt = now`（BUG-1731 纪律），所以 host 侧这一集会剩「位置 0
   /// 但有时刻」的痕迹——不显示「已看到」徽标，但合集续播锚点仍停在这一集而不是回退。
   /// 要消掉得给 wire 加「清除」语义，超出本方法范围。
-  Future<void> clearWatchProgress(String bookUid) async {
+  Future<void> clearWatchProgress(String bookUid) => _db.transaction(() async {
     await _db.clearVideoBookWatchProgress(bookUid);
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    await _db.setPrefTyped<int>(videoRemotePositionPrefKey(bookUid), 0);
+    await _stampWatchState(
+      bookUid,
+      positionMs: 0,
+      completedAt: null,
+      nowMs: nowMs,
+    );
+  });
+
+  /// 手动「标记已看 / 未看」（视频库卡菜单、合集详情页、CLI / AI 操作共用的唯一
+  /// 写入口）：行级 completedAt + 断点归零走
+  /// [FushiDatabase.setVideoBooksWatched]，同一事务里给每条存在的行盖互联 LWW 镜像
+  /// ——位置 `video_remote_position_` = 「0 @ 现在」、看完标记
+  /// `video_remote_completed_` = 「行上的 completedAt @ 现在」。
+  ///
+  /// 为什么必须盖戳（与 [clearWatchProgress] 同理）：全量同步读本地进度的时间戳取
+  /// `_at_` prefs。只清行不盖戳，本地仍是「0 @ 上次播放时刻」，host 上的旧断点至少
+  /// 打平——下一次同步把中途断点灌回来，刚标的已看立刻变成「重看到一半」。看完标记
+  /// 本身也经播放偏好通道（`VideoPlaybackSyncState.completedAt`）逐字段 LWW，两台
+  /// 设备收敛到同一份真相，而不是各留各的。
+  ///
+  /// [watched] = true 时已看过的行保留原完成时刻。返回 completedAt 真变了的条数与
+  /// 写后的行（调用方据此做服务器回写等后续）。
+  Future<({int changed, List<VideoBookRow> rows})> setWatched(
+    List<String> bookUids, {
+    required bool watched,
+    DateTime? now,
+  }) {
+    if (bookUids.isEmpty) {
+      return Future<({int changed, List<VideoBookRow> rows})>.value((
+        changed: 0,
+        rows: const <VideoBookRow>[],
+      ));
+    }
+    final DateTime at = now ?? DateTime.now();
+    return _db.transaction(() async {
+      final ({int changed, List<VideoBookRow> rows}) result = await _db
+          .setVideoBooksWatched(bookUids, watched ? at : null);
+      for (final VideoBookRow row in result.rows) {
+        await _stampWatchState(
+          row.bookUid,
+          positionMs: 0,
+          completedAt: row.completedAt,
+          nowMs: at.millisecondsSinceEpoch,
+        );
+      }
+      return result;
+    });
+  }
+
+  /// 原样恢复一行的「看完标记 + 断点」（撤销 [setWatched] 用：AI / CLI 写操作必须
+  /// 可撤销，取消已看清掉的断点要能还回去）。恢复本身是一次新的本地写入，镜像键
+  /// 按「现在」盖戳，对端随下一次同步跟上，而不是被对端旧值盖回去。行不存在时
+  /// no-op。
+  Future<void> restoreWatchState(
+    String bookUid, {
+    required DateTime? completedAt,
+    required int positionMs,
+  }) => _db.transaction(() async {
+    if (await _db.getVideoBookByBookUid(bookUid) == null) return;
+    await _db.restoreVideoBookWatchState(
+      bookUid,
+      completedAt: completedAt,
+      positionMs: positionMs,
+    );
+    await _stampWatchState(
+      bookUid,
+      positionMs: positionMs,
+      completedAt: completedAt,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  });
+
+  /// 给一行的断点与看完标记盖互联 LWW 镜像（值 + `_at_` 戳）。
+  Future<void> _stampWatchState(
+    String bookUid, {
+    required int positionMs,
+    required DateTime? completedAt,
+    required int nowMs,
+  }) async {
+    await _db.setPrefTyped<int>(
+      videoRemotePositionPrefKey(bookUid),
+      positionMs,
+    );
     await _db.setPrefTyped<int>(videoRemotePositionAtPrefKey(bookUid), nowMs);
+    await _db.setPrefTyped<int>(
+      videoRemoteCompletedPrefKey(bookUid),
+      completedAt?.millisecondsSinceEpoch ?? 0,
+    );
+    await _db.setPrefTyped<int>(videoRemoteCompletedAtPrefKey(bookUid), nowMs);
   }
 
   /// Updates local file paths after app-owned media is relocated.

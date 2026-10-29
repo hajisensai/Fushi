@@ -307,9 +307,9 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       id: _id('reposition_auto'),
       title: t.anki_reposition_auto_title,
       subtitle: t.anki_reposition_auto_hint,
-      visible: (SettingsContext c) => _vm(c).supportsDeckReposition,
+      visible: (SettingsContext c) => _vm(c).supportsAutoReposition,
       value: (SettingsContext c) =>
-          _vm(c).supportsDeckReposition && _cfg(c).autoRepositionEnabled,
+          _vm(c).supportsAutoReposition && _cfg(c).autoRepositionEnabled,
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).setAutoRepositionEnabled(v),
     ),

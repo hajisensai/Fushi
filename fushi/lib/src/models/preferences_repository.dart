@@ -30,6 +30,8 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/media/video/video_jump_pill_hover.dart'
+    show kVideoJumpPillAutoHideDefaultSeconds;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
@@ -1997,6 +1999,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「返回跳转前位置」胶囊自动隐藏秒数（0 = 不自动隐藏，只随控制条显隐）。
+  /// 超时后控制条再出现也不画胶囊，下一次跳转再亮；默认 10 秒。
+  int get videoJumpPillAutoHideSeconds => getPref(
+        'video_jump_pill_auto_hide_seconds',
+        defaultValue: kVideoJumpPillAutoHideDefaultSeconds,
+      ) as int;
+
+  Future<void> setVideoJumpPillAutoHideSeconds(int value) async {
+    await setPref('video_jump_pill_auto_hide_seconds', value);
+    notifyListeners();
+  }
+
   /// 播放器底栏时间显示「剩余时长」（`-12:34 / 24:00`）而不是已播时长。
   /// 默认 false；点按底栏时间切换并记住。
   bool get videoTimeDisplayRemaining =>
@@ -2233,6 +2247,17 @@ class PreferencesRepository extends ChangeNotifier
       );
       return const <AudiobookshelfServerConfig>[];
     }
+  }
+
+  /// 是否把 Audiobookshelf 上收听中的条目混排进首页「继续」。默认 false：与媒体
+  /// 服务器的 `jellyfin_show_in_library` 同一原则——用户自配服务器的条目混进本地
+  /// 视图是显式 opt-in，关着时首页根本不去问服务器。
+  bool get audiobookshelfShowInHome =>
+      getPref('audiobookshelf_show_in_home', defaultValue: false) as bool;
+
+  Future<void> setAudiobookshelfShowInHome(bool value) async {
+    await setPref('audiobookshelf_show_in_home', value);
+    notifyListeners();
   }
 
   Future<void> setDiscoveryAudiobookshelfServers(

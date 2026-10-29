@@ -8,11 +8,9 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/anki/anki_auto_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -801,40 +799,48 @@ void main() {
         expect((await store.cardRow(cardId))!.newPosition, isNull);
       });
 
-      test('制卡后自动重排：外层装饰器看得见复习制卡，到期后按词频排好', () async {
-        final List<AnkiAutoRepositionRun> runs = <AnkiAutoRepositionRun>[];
-        final AnkiAutoRepositionScheduler scheduler =
-            AnkiAutoRepositionScheduler(
-              runner: runner(),
-              loadSettings: () async => const AnkiSettings(
-                autoRepositionEnabled: true,
-                repositionSource: AnkiRepositionSource.field,
-              ),
-              debounce: const Duration(hours: 1),
-            )..onRunForTesting = runs.add;
-        addTearDown(scheduler.dispose);
-        final AutoRepositionAnkiRepository auto = AutoRepositionAnkiRepository(
-          inner: repo,
-          scheduler: scheduler,
-        );
+      test('出卡直接按卡上的词频：刚挖的卡不用重排就按名次出，不写新卡位置', () async {
+        final String snow = await mineRanked(repo, '雪', 'ゆき', 300);
+        final String good = await mineRanked(repo, '上手', 'じょうず', 100);
+        await mineRanked(repo, '犬', 'いぬ', 200);
+        expect(await nextExpression(), '上手');
+        for (final String id in <String>[snow, good]) {
+          expect((await store.cardsOfNote(id)).single.newPosition, isNull);
+        }
 
-        final String snow = await mineRanked(auto, '雪', 'ゆき', 300);
-        final String good = await mineRanked(auto, '上手', 'じょうず', 100);
-        expect(scheduler.isIdle, isFalse, reason: '复习制卡成功 → 调度器收到落卡牌组');
-        expect(inner.mined, 0, reason: '仍然只写复习');
-        // 先把顺序钉成「雪 在前」，自动重排必须把它翻过来。
+        // 位置（手动重排 / Anki 导入写的）不压过名次：按词频的牌组只在没有名次时看位置。
         await store.setNewCardPositions(<String, int>{
           (await store.cardsOfNote(snow)).single.id: 1,
           (await store.cardsOfNote(good)).single.id: 2,
         });
-        expect(await nextExpression(), '雪');
-
-        await scheduler.flushNow();
-        expect(runs, hasLength(1));
-        expect(runs.single.deckName, await deckName());
-        expect(runs.single.failed, 0);
         expect(await nextExpression(), '上手');
-        expect(scheduler.isIdle, isTrue);
+
+        // 「新卡顺序 = 按位置」：回到位置序（排过的在前）。
+        await store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckNewOrder: SrsNewCardOrder.position.wire,
+          },
+        );
+        expect(await nextExpression(), '雪');
+      });
+
+      test('名次随笔记字段刷新：改 FreqSort / 清空后重新落位，没有名次的排在有名次的后面', () async {
+        final String snow = await mineRanked(repo, '雪', 'ゆき', 300);
+        await mineRanked(repo, '上手', 'じょうず', 100);
+        expect(await nextExpression(), '上手');
+        await store.updateNote(
+          snow,
+          fieldsById: <String, String>{fid('FreqSort'): '<b>12</b>'},
+        );
+        expect(await nextExpression(), '雪');
+        await store.updateNote(
+          snow,
+          fieldsById: <String, String>{fid('FreqSort'): ''},
+        );
+        expect((await store.cardsOfNote(snow)).single.freqRank, isNull);
+        expect(await nextExpression(), '上手');
       });
     });
   });
@@ -950,17 +956,13 @@ void main() {
       expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
     });
 
-    test('模块开着、目标是 Fushi 复习：SRS 层外只套自动重排，快照目录与 Anki 分开', () {
+    test('模块开着、目标是 Fushi 复习：SRS 层在最外、不套自动重排，快照目录与 Anki 分开', () {
       final BaseAnkiRepository repo = container(
         srsEnabled: true,
         target: SrsMiningTarget.srs,
       ).read(ankiRepositoryProvider);
-      // 自动重排包在 SRS 层外面：SRS 层的制卡不经过里层，包在里面看不到复习制卡。
-      expect(repo, isA<AutoRepositionAnkiRepository>());
-      expect(
-        (repo as DelegatingAnkiRepository).inner,
-        isA<SrsMiningAnkiRepository>(),
-      );
+      // 复习出卡直接按词频名次排，不需要制卡后改写新卡位置：SRS 层外面不再有自动重排。
+      expect(repo, isA<SrsMiningAnkiRepository>());
       expect(repo.supportsDeckReposition, isTrue);
       expect(
         repositionSnapshotFolderFor(repo),

@@ -467,6 +467,7 @@ class JellyfinItem {
     this.hasLogoImage = false,
     this.parentThumbItemId,
     this.parentBackdropItemId,
+    this.seriesCoverItemId,
     this.overview,
     this.communityRating,
     this.genres = const <String>[],
@@ -524,6 +525,11 @@ class JellyfinItem {
   /// 拿去请求必 404。「继续观看」横卡在集自身没有横图时回落到它们。
   final String? parentThumbItemId;
   final String? parentBackdropItemId;
+
+  /// 集所属剧的竖版海报所在条目 id（`SeriesId` + `SeriesPrimaryImageTag`，缺时回落
+  /// `ParentPrimaryImageItemId` + `ParentPrimaryImageTag`）。只对 Episode 且服务器
+  /// 确实报了对应 tag 时非 null——没 tag 的 id 拿去取图必 404。
+  final String? seriesCoverItemId;
 
   /// 详情字段（`Overview` / `CommunityRating` / `Genres`）：清单请求不带对应
   /// Fields 时为空，单条目 `/Items/{id}` 全量返回。
@@ -611,6 +617,7 @@ class JellyfinItem {
     hasLogoImage: hasLogoImage,
     parentThumbItemId: parentThumbItemId,
     parentBackdropItemId: parentBackdropItemId,
+    seriesCoverItemId: seriesCoverItemId,
     overview: overview,
     communityRating: communityRating,
     genres: genres,
@@ -1891,6 +1898,25 @@ class JellyfinApi {
     }
   }
 
+  /// 手动标记已看 / 未看：`POST /Users/{uid}/PlayedItems/{id}` 标已看，`DELETE`
+  /// 取消。与播放上报无关（不写活动日志里的「播放已停止」）。非 2xx 抛
+  /// [JellyfinApiException]。
+  Future<void> setPlayed({
+    required String userId,
+    required String itemId,
+    required bool played,
+  }) async {
+    final String path = '/Users/$userId/PlayedItems/$itemId';
+    final http.Response res =
+        await (played
+                ? _client.post(_uri(path), headers: _headers)
+                : _client.delete(_uri(path), headers: _headers))
+            .timeout(kRequestTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw JellyfinApiException.fromResponse(res, path);
+    }
+  }
+
   /// 停止播放上报（POST /Sessions/Playing/Stopped）。
   ///
   /// **只在真正停止播放时发**。服务器对它有额外副作用：接近片尾时把条目标记为
@@ -2179,6 +2205,9 @@ class JellyfinApi {
     final String? parentThumbTag = json['ParentThumbImageTag'] as String?;
     final List<Object?> parentBackdropTags =
         (json['ParentBackdropImageTags'] as List?) ?? const <Object?>[];
+    final String? seriesCoverItemId = (json['Type'] as String?) == 'Episode'
+        ? _seriesCoverItemIdOf(json)
+        : null;
 
     return JellyfinItem(
       id: (json['Id'] as String?) ?? '',
@@ -2224,6 +2253,7 @@ class JellyfinApi {
       parentBackdropItemId: parentBackdropTags.isEmpty
           ? null
           : json['ParentBackdropItemId'] as String?,
+      seriesCoverItemId: seriesCoverItemId,
       overview: json['Overview'] as String?,
       communityRating: (json['CommunityRating'] as num?)?.toDouble(),
       genres: <String>[
@@ -2233,6 +2263,21 @@ class JellyfinApi {
       mediaSources: mediaSources,
       mediaSourceCount: (json['MediaSourceCount'] as num?)?.toInt(),
     );
+  }
+
+  /// 集的「剧竖版海报」所在条目 id：`SeriesId` 带 `SeriesPrimaryImageTag`，缺时
+  /// 回落 `ParentPrimaryImageItemId` 带 `ParentPrimaryImageTag`；都没有 null。
+  static String? _seriesCoverItemIdOf(Map<String, Object?> json) {
+    String? nonEmpty(Object? v) => v is String && v.isNotEmpty ? v : null;
+    final String? seriesId = nonEmpty(json['SeriesId']);
+    if (seriesId != null && nonEmpty(json['SeriesPrimaryImageTag']) != null) {
+      return seriesId;
+    }
+    final String? parentId = nonEmpty(json['ParentPrimaryImageItemId']);
+    if (parentId != null && nonEmpty(json['ParentPrimaryImageTag']) != null) {
+      return parentId;
+    }
+    return null;
   }
 
   /// `MediaSources[]` 的一项 → DTO：版本名 / 容器 / 大小 / 码率、第一条视频流的
@@ -2322,6 +2367,7 @@ class JellyfinVideoClient
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
         RemoteVideoPlaybackSession,
+        RemoteVideoPlayedMark,
         RemoteVideoQualityLimit,
         RemoteVideoCollectionIsWork,
         RemoteVideoStreamVariants,
@@ -2545,6 +2591,13 @@ class JellyfinVideoClient
     );
   }
 
+  /// 单集所属剧的封面 URL（[MediaServerItem.coverItem]：服务器报了剧海报才给，
+  /// 否则 null）。剧 / 合集卡片用它代替单集截图。
+  String? seriesCoverUrl(MediaServerItem item) {
+    final MediaServerItem cover = item.coverItem;
+    return identical(cover, item) ? null : coverUrl(cover);
+  }
+
   RemoteVideoInfo _remoteVideoInfoFor(
     MediaServerItem item, {
     int? sizeBytes,
@@ -2558,10 +2611,19 @@ class JellyfinVideoClient
     durationMs: item.durationMs,
     hasCover: item.hasCover,
     coverUrl: coverUrl(item),
+    seriesCoverUrl: seriesCoverUrl(item),
+    completedAt: completedAtOf(item),
     positionMs: item.positionMs,
     positionUpdatedAtMs: item.lastPlayedAtMs,
     collection: _collectionOf(item),
   );
+
+  /// 服务器上的「已播放」→ [RemoteVideoInfo.completedAt]（库页菜单标签与系列
+  /// 「已看 x/N」据此）。时刻取服务器的 `UserData.LastPlayedDate`：Jellyfin / Emby
+  /// 标记已播放（手动 PlayedItems 或播完）时都会盖这个时刻；已播放却没有时刻的
+  /// 只剩外部导入的旧数据，按「看完时刻未知」= null，不编造时刻。
+  static int? completedAtOf(MediaServerItem item) =>
+      item.played && item.lastPlayedAtMs > 0 ? item.lastPlayedAtMs : null;
 
   // ── MediaServerBrowser：JellyfinItem → MediaServerItem 纯函数投影 ─────────
 
@@ -2650,6 +2712,7 @@ class JellyfinVideoClient
     hasLogo: item.hasLogoImage,
     parentThumbItemId: item.parentThumbItemId,
     parentBackdropItemId: item.parentBackdropItemId,
+    seriesCoverItemId: item.seriesCoverItemId,
     overview: item.overview,
     communityRating: item.communityRating,
     genres: item.genres,
@@ -3264,6 +3327,10 @@ class JellyfinVideoClient
     }
     return out;
   }
+
+  @override
+  Future<void> setRemoteVideoPlayed(String id, {required bool played}) =>
+      api.setPlayed(userId: userId, itemId: id, played: played);
 
   /// [RemoteVideoDetailFetch]：打一次 `/Items/{id}` 把清单里省掉的重字段
   /// （MediaSources → 文件大小 / 精确文本字幕轨 / 字幕文件名）补齐。

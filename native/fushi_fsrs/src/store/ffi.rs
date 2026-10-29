@@ -726,7 +726,6 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
     use serde_json::{json, Value};
     let s = |k: &str| req.get(k).and_then(Value::as_str).ok_or_else(|| format!("sync2: missing {k}"));
     let i = |k: &str| req.get(k).and_then(Value::as_i64).ok_or_else(|| format!("sync2: missing {k}"));
-    let parse = |t: String| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string());
     // 不针对单个 profile 的命令（store/profile_data.rs：找无主数据用）。
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
@@ -734,7 +733,61 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         _ => {}
     }
     let profile = s("profile")?;
-    Ok(match s("op")? {
+    let op = s("op")?;
+    // 改投影的命令：同一次调用里接着刷新本机缓存行（store/caches.rs），Dart 只收写过哪些笔记 / 卡。缓存配置
+    // （内置笔记类型的代码默认值、默认牌组）只有 Dart 知道，随命令带来；缺了是调用方的 bug，不跳过刷新。
+    if PROJECTING_OPS.contains(&op) || op == "refresh_caches" || op == "rebuild_caches" {
+        let cfg = crate::store::caches::CacheConfig::parse(req.get("caches").ok_or("sync2: missing caches")?)?;
+        let mut v = match op {
+            "refresh_caches" => json!({}),
+            "rebuild_caches" => {
+                let w = c.writer()?;
+                let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::rebuild(conn, profile, &cfg))?;
+                return Ok(json!({"cache": written.to_json()}));
+            }
+            _ => sync2_command(c, op, profile, req, blobs, files)?,
+        };
+        let mut dirty = crate::store::caches::Dirty::of_projection(&v);
+        if op == "refresh_caches" {
+            let ids = |k: &str, into: &mut std::collections::BTreeSet<String>| {
+                for x in req.get(k).and_then(Value::as_array).into_iter().flatten() {
+                    if let Some(id) = x.as_str() {
+                        into.insert(id.to_owned());
+                    }
+                }
+            };
+            ids("notes", &mut dirty.notes);
+            ids("cards", &mut dirty.cards);
+            ids("noteTypes", &mut dirty.note_types);
+            dirty.all_notes = req["allNotes"] == Value::Bool(true);
+            dirty.all_stats = req["allStats"] == Value::Bool(true);
+        }
+        let w = c.writer()?;
+        let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::refresh(conn, profile, &cfg, dirty))?;
+        if let Some(m) = v.as_object_mut() {
+            m.insert("cache".to_owned(), written.to_json());
+        }
+        return Ok(v);
+    }
+    sync2_command(c, op, profile, req, blobs, files)
+}
+
+/// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行。
+const PROJECTING_OPS: [&str; 9] = ["apply", "ingest", "ingest_batch", "ingest_finish", "import", "resolve", "purge", "checkpoint", "restore"];
+
+fn sync2_command(
+    c: &SrsCore,
+    op: &str,
+    profile: &str,
+    req: &serde_json::Value,
+    blobs: &[Vec<u8>],
+    files: &mut Vec<(String, Vec<u8>)>,
+) -> Result<serde_json::Value, String> {
+    use serde_json::{json, Value};
+    let s = |k: &str| req.get(k).and_then(Value::as_str).ok_or_else(|| format!("sync2: missing {k}"));
+    let i = |k: &str| req.get(k).and_then(Value::as_i64).ok_or_else(|| format!("sync2: missing {k}"));
+    let parse = |t: String| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string());
+    Ok(match op {
         "identity" => c.sync2_identity(profile, i("now")?)?,
         "apply" => {
             let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?).map_err(|e| e.to_string())?;
@@ -796,7 +849,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             let key = crate::sync2::keys::CollectionKey(key32(&req["key"])?.ok_or("seal/open: missing key")?);
             let aad = format!("fushi-srs-media:{}", s("name")?);
             let input = blobs.first().ok_or("seal/open: missing input")?;
-            if s("op")? == "seal" {
+            if op == "seal" {
                 files.push(("sealed".to_owned(), key.seal(input, aad.as_bytes())));
             } else {
                 files.push(("plain".to_owned(), key.open(input, aad.as_bytes()).ok_or("media decrypt failed")?));
@@ -808,6 +861,14 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
+        // 位置媒体目录的已知内容 / 记下事实（store/sync2/media.rs）：媒体对账读日志投影，不列目录。
+        "media_known" => c.sync2_media_known(profile, s("location")?)?,
+        "media_record" => {
+            let names = |k: &str| -> Vec<String> {
+                req.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
+            };
+            c.sync2_media_record(profile, s("location")?, &names("present"), &names("absent"), req["seeded"] == Value::Bool(true), i("now")?)?
+        }
         // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,
@@ -827,7 +888,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
                 _ => crate::store::sync2::timeline::RestoreTarget::At(i("at")?),
             };
             let retract = req["retract"] == Value::Bool(true);
-            if s("op")? == "plan_restore" {
+            if op == "plan_restore" {
                 c.sync2_plan_restore(profile, &to, retract, i("now")?)?
             } else {
                 c.sync2_restore(profile, &to, retract, i("now")?)?

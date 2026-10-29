@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use super::codec::{DResult, DecodeError, Reader, Writer};
+use super::codec::{DResult, DecodeError, Reader, StreamError, Writer, ZstdWindow};
 use super::hlc::Hlc;
 use super::id::Id;
 use super::keys::{verify, CollectionKey, DeviceKey};
@@ -39,6 +39,10 @@ pub const MIN_READER: u32 = 1;
 pub const SEGMENT_TARGET_BYTES: u64 = 4 * 1024 * 1024;
 /// 每段条数上限：只是解码内存的保险（真实复习压缩后每条几十字节，4 MB 约十万条）。
 pub const SEGMENT_MAX_OPS: u64 = 250_000;
+/// 每段**解压后**的体积上限（按载荷 + 每条固定开销估计）。只按压缩后体积切时，重复度高的正文（例句、模板
+/// 化字段）压缩比能到上百倍，一个 4 MB 的段解开就是几百 MB，读端解一段要同时拿着明文与解出来的操作。
+/// 普通内容压缩比几倍，这条上限碰不到；碰到的段在 [Splitter] 交回的体积里按满段记（见 [Splitter::finish]）。
+pub const SEGMENT_MAX_RAW_BYTES: u64 = 16 * 1024 * 1024;
 /// 估算压缩体积的小块：块内一起压、块间各自压，求和是整段一起压的上界（块越大越准，也越费内存）。
 const CHUNK_OPS: usize = 4096;
 const CHUNK_RAW: usize = 256 * 1024;
@@ -186,50 +190,105 @@ fn write_body(ops: &[Op]) -> Vec<u8> {
     w.into_vec()
 }
 
-fn read_body(body: &[u8], device: Id, first: u64, last: u64) -> DResult<Vec<Op>> {
-    let mut r = Reader::new(body);
-    let n = r.uv()?;
-    if n != last - first + 1 {
-        return Err(DecodeError("segment op count"));
-    }
-    let mut out = Vec::with_capacity(n as usize);
-    let mut wall = 0i64;
-    let mut deps: Arc<Vv> = Arc::new(Vv::new());
-    for i in 0..n {
-        wall = wall.wrapping_add(r.iv()?);
-        let logical = u32::try_from(r.uv()?).map_err(|_| DecodeError("hlc logical"))?;
-        match r.u8()? {
-            0 if i > 0 => {}
-            1 => {
-                let v = Vv::read(&mut r)?;
-                if v.get(&device) != 0 {
-                    return Err(DecodeError("op deps name its own device"));
-                }
-                deps = Arc::new(v);
+/// 解一条操作（段体里的第 [i] 条；前一条的 wall / deps 是 [prev_wall] / [prev_deps]）。
+fn read_op(r: &mut Reader<'_>, device: Id, seq: u64, i: u64, prev_wall: i64, prev_deps: &Arc<Vv>) -> DResult<Op> {
+    let wall = prev_wall.wrapping_add(r.iv()?);
+    let logical = u32::try_from(r.uv()?).map_err(|_| DecodeError("hlc logical"))?;
+    let deps = match r.u8()? {
+        0 if i > 0 => prev_deps.clone(),
+        1 => {
+            let v = Vv::read(r)?;
+            if v.get(&device) != 0 {
+                return Err(DecodeError("op deps name its own device"));
             }
-            _ => return Err(DecodeError("deps flag")),
+            Arc::new(v)
         }
-        let kind = u16::try_from(r.uv()?).map_err(|_| DecodeError("op kind"))?;
-        let schema = u16::try_from(r.uv()?).map_err(|_| DecodeError("op schema"))?;
-        let purged = r.bool()?;
-        let payload: Arc<[u8]> = r.bytes()?.into();
-        if purged && payload.len() != 32 {
-            return Err(DecodeError("purged op without payload hash"));
+        _ => return Err(DecodeError("deps flag")),
+    };
+    let kind = u16::try_from(r.uv()?).map_err(|_| DecodeError("op kind"))?;
+    let schema = u16::try_from(r.uv()?).map_err(|_| DecodeError("op schema"))?;
+    let purged = r.bool()?;
+    let payload: Arc<[u8]> = r.bytes()?.into();
+    if purged && payload.len() != 32 {
+        return Err(DecodeError("purged op without payload hash"));
+    }
+    Ok(Op { id: OpId { device, seq }, hlc: Hlc { wall, logical, device }, deps, kind, schema, payload, purged })
+}
+
+impl From<StreamError> for SegmentError {
+    fn from(e: StreamError) -> Self {
+        SegmentError::Corrupt(e.to_string())
+    }
+}
+
+/// 流式解开的段体：边解压边逐条解码（[ZstdWindow]），不随段的解压后体积增长。
+/// 由 [OpenSegment::ops] / [OpenSegment::verify] 产出；格式错时产出一次 `Err` 后结束。
+pub struct OpStream<'s> {
+    window: ZstdWindow<'s>,
+    device: Id,
+    first: u64,
+    last: u64,
+    /// 段体开头声明的条数（读第一条之前取）。
+    n: Option<u64>,
+    i: u64,
+    wall: i64,
+    deps: Arc<Vv>,
+    done: bool,
+}
+
+impl<'s> OpStream<'s> {
+    fn new(compressed: &'s [u8], header: &SegmentHeader) -> Result<OpStream<'s>, SegmentError> {
+        Ok(OpStream {
+            window: ZstdWindow::new(compressed)?,
+            device: header.device,
+            first: header.first,
+            last: header.last,
+            n: None,
+            i: 0,
+            wall: 0,
+            deps: Arc::new(Vv::new()),
+            done: false,
+        })
+    }
+
+    fn step(&mut self) -> Result<Option<Op>, SegmentError> {
+        let n = match self.n {
+            Some(n) => n,
+            None => {
+                let n = self.window.parse(|r| r.uv())?;
+                if n != self.last - self.first + 1 {
+                    return Err(DecodeError("segment op count").into());
+                }
+                self.n = Some(n);
+                n
+            }
+        };
+        if self.i == n {
+            if !self.window.at_end()? {
+                return Err(DecodeError("trailing bytes in segment body").into());
+            }
+            return Ok(None);
         }
-        out.push(Op {
-            id: OpId { device, seq: first + i },
-            hlc: Hlc { wall, logical, device },
-            deps: deps.clone(),
-            kind,
-            schema,
-            payload,
-            purged,
-        });
+        let (device, seq, i, wall, deps) = (self.device, self.first + self.i, self.i, self.wall, self.deps.clone());
+        let op = self.window.parse(|r| read_op(r, device, seq, i, wall, &deps))?;
+        self.wall = op.hlc.wall;
+        self.deps = op.deps.clone();
+        self.i += 1;
+        Ok(Some(op))
     }
-    if !r.is_empty() {
-        return Err(DecodeError("trailing bytes in segment body"));
+}
+
+impl Iterator for OpStream<'_> {
+    type Item = Result<Op, SegmentError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        let r = self.step();
+        self.done = !matches!(r, Ok(Some(_)));
+        r.transpose()
     }
-    Ok(out)
 }
 
 /// 打包一段（[ops] 必须是同一设备的连续 seq，[prev_chain] 是 first − 1 处的链值）。
@@ -283,8 +342,72 @@ pub fn peek_header(bytes: &[u8]) -> Result<SegmentHeader, SegmentError> {
     Ok(SegmentHeader::read(&mut Reader::new(bytes))?)
 }
 
-/// 校验并解开一段：签名（[public]）→ 解密 → 解压 → 解码 → 重算链。
-pub fn open(bytes: &[u8], public: &[u8; 32], key: Option<&CollectionKey>) -> Result<Segment, SegmentError> {
+/// 验过签、解过密的段：段体仍是压缩的（体积受切段目标约束），操作按需流式解开（[Self::verify] / [Self::ops]）。
+pub struct OpenSegment<'a> {
+    pub header: SegmentHeader,
+    compressed: std::borrow::Cow<'a, [u8]>,
+}
+
+/// [OpenSegment::verify] 的结果：链已对上的全部操作，按 seq 升序产出。
+pub enum Verified<'a> {
+    /// 校验那一遍顺手留下的（解压后不超过 [SEGMENT_MAX_RAW_BYTES] 的段，新切的段都是）。
+    Whole(std::vec::IntoIter<Op>),
+    /// 太大没留：第二遍流式解（与校验那一遍逐字节相同）。
+    Stream(OpStream<'a>),
+}
+
+impl Iterator for Verified<'_> {
+    type Item = Result<Op, SegmentError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Verified::Whole(ops) => ops.next().map(Ok),
+            Verified::Stream(s) => s.next(),
+        }
+    }
+}
+
+impl OpenSegment<'_> {
+    /// 流式解码段体，**不**重算链：只给调用方自己逐条比链的场合（收本机身份的段找分叉点）。
+    pub fn ops(&self) -> Result<OpStream<'_>, SegmentError> {
+        OpStream::new(&self.compressed, &self.header)
+    }
+
+    /// 流式解一遍、重算链，链对上才交回操作。没超过 [SEGMENT_MAX_RAW_BYTES] 的段直接交回这一遍解出的；超过的
+    /// （旧版本只按压缩后体积切出的高可压大段，解开能有几百 MB）校验途中就扔掉，交回第二遍的流。所以解一段的
+    /// 内存峰值是「一段的上限」与「一个读窗口」中的较大者，与段的解压后体积无关；也不会先投出半段链对不上的操作。
+    pub fn verify(&self) -> Result<Verified<'_>, SegmentError> {
+        let mut chain = self.header.prev_chain;
+        let mut kept: Option<Vec<Op>> = Some(Vec::new());
+        let mut kept_raw: u64 = 0;
+        for op in self.ops()? {
+            let op = op?;
+            chain = chain_next(&chain, &op);
+            if let Some(k) = kept.as_mut() {
+                kept_raw += op.payload.len() as u64 + 24;
+                if kept_raw > SEGMENT_MAX_RAW_BYTES {
+                    kept = None;
+                } else {
+                    k.push(op);
+                }
+            }
+        }
+        if chain != self.header.last_chain {
+            return Err(SegmentError::ChainMismatch);
+        }
+        Ok(match kept {
+            Some(ops) => Verified::Whole(ops.into_iter()),
+            None => Verified::Stream(self.ops()?),
+        })
+    }
+}
+
+/// 验签、解密一段（不解压）。
+pub fn open_verified<'a>(
+    bytes: &'a [u8],
+    public: &[u8; 32],
+    key: Option<&CollectionKey>,
+) -> Result<OpenSegment<'a>, SegmentError> {
     let mut r = Reader::new(bytes);
     let header = SegmentHeader::read(&mut r)?;
     let head_len = r.pos;
@@ -301,20 +424,19 @@ pub fn open(bytes: &[u8], public: &[u8; 32], key: Option<&CollectionKey>) -> Res
     }
     let compressed = if header.encrypted {
         let k = key.ok_or(SegmentError::Undecryptable)?;
-        k.open(body, &bytes[..head_len]).ok_or(SegmentError::Undecryptable)?
+        std::borrow::Cow::Owned(k.open(body, &bytes[..head_len]).ok_or(SegmentError::Undecryptable)?)
     } else {
-        body.to_vec()
+        std::borrow::Cow::Borrowed(body)
     };
-    let plain = crate::zstd_decompress(&compressed).map_err(SegmentError::Corrupt)?;
-    let ops = read_body(&plain, header.device, header.first, header.last)?;
-    let mut chain = header.prev_chain;
-    for op in &ops {
-        chain = chain_next(&chain, op);
-    }
-    if chain != header.last_chain {
-        return Err(SegmentError::ChainMismatch);
-    }
-    Ok(Segment { header, ops })
+    Ok(OpenSegment { header, compressed })
+}
+
+/// 校验并整段解开（签名 → 解密 → 解压 → 解码 → 重算链），操作全部放进内存。只给测试这类已知小段的场合；
+/// 收段走 [open_verified] + [OpenSegment::verify]，按块处理。
+pub fn open(bytes: &[u8], public: &[u8; 32], key: Option<&CollectionKey>) -> Result<Segment, SegmentError> {
+    let seg = open_verified(bytes, public, key)?;
+    let ops = seg.verify()?.collect::<Result<Vec<Op>, SegmentError>>()?;
+    Ok(Segment { header: seg.header, ops })
 }
 
 /// 一组操作打成段体后压缩出来的字节数（不含段头、签名、加密开销，那些是每段几十字节的常数）。
@@ -325,12 +447,14 @@ pub fn compressed_len(ops: &[Op]) -> u64 {
 /// 按设计 §6.2 的目标把一台设备连续 seq 的操作流式切成段：逐条 [Splitter::push]，最后 [Splitter::finish] 得到
 /// `(first, last, 压缩后体积估计)`。不必把整段操作攒在内存里——首次提交几十万条也只占一个小块的内存。
 ///
-/// 切点只落在小块边界上；体积估计是各小块单独压缩之和（上界），所以真实段不超过 [SEGMENT_TARGET_BYTES]。
+/// 切点只落在小块边界上；体积估计是各小块单独压缩之和（上界），所以真实段不超过 [SEGMENT_TARGET_BYTES]，
+/// 解压后也不超过 [SEGMENT_MAX_RAW_BYTES]（单条操作本身更大时一条一段）。
 #[derive(Default)]
 pub struct Splitter {
     chunk: Vec<Op>,
     chunk_raw: usize,
-    cur: Option<(u64, u64, u64)>,
+    /// 当前段 `(first, last, 压缩后体积估计, 解压后体积估计)`。
+    cur: Option<(u64, u64, u64, u64)>,
     out: Vec<(u64, u64, u64)>,
 }
 
@@ -352,14 +476,20 @@ impl Splitter {
         let (Some(head), Some(tail)) = (self.chunk.first(), self.chunk.last()) else { return };
         let (first, last, n) = (head.id.seq, tail.id.seq, self.chunk.len() as u64);
         let bytes = compressed_len(&self.chunk);
+        let raw = self.chunk_raw as u64;
         match &mut self.cur {
-            Some((a, b, s)) if *s + bytes <= SEGMENT_TARGET_BYTES && *b - *a + 1 + n <= SEGMENT_MAX_OPS => {
+            Some((a, b, s, w))
+                if *s + bytes <= SEGMENT_TARGET_BYTES
+                    && *b - *a + 1 + n <= SEGMENT_MAX_OPS
+                    && *w + raw <= SEGMENT_MAX_RAW_BYTES =>
+            {
                 *b = last;
                 *s += bytes;
+                *w += raw;
             }
             cur => {
-                if let Some(done) = cur.replace((first, last, bytes)) {
-                    self.out.push(done);
+                if let Some(done) = cur.replace((first, last, bytes, raw)) {
+                    self.out.push(Self::sized(done));
                 }
             }
         }
@@ -367,10 +497,20 @@ impl Splitter {
         self.chunk_raw = 0;
     }
 
+    /// `(first, last, 体积)`：解压后已过上限一半的段按「满段」（[SEGMENT_TARGET_BYTES] 的一半）记。分层合并
+    /// （store/sync2/transport.rs）只看这个数，否则这种压缩后很小的段会每轮被挑出来重切、又切回原样。
+    fn sized((a, b, s, w): (u64, u64, u64, u64)) -> (u64, u64, u64) {
+        if w >= SEGMENT_MAX_RAW_BYTES / 2 {
+            (a, b, s.max(SEGMENT_TARGET_BYTES / 2))
+        } else {
+            (a, b, s)
+        }
+    }
+
     pub fn finish(mut self) -> Vec<(u64, u64, u64)> {
         self.flush_chunk();
         if let Some(done) = self.cur.take() {
-            self.out.push(done);
+            self.out.push(Self::sized(done));
         }
         self.out
     }
@@ -592,6 +732,99 @@ pub(crate) mod tests {
         assert_eq!(whole.last_chain, b.last_chain);
     }
 
+    /// 极易压缩的操作（每条 [size] 字节全零）。
+    fn zero_ops(device: Id, n: u64, size: usize) -> Vec<Op> {
+        let deps = Arc::new(Vv::new());
+        (1..=n)
+            .map(|seq| Op {
+                id: OpId { device, seq },
+                hlc: Hlc { wall: seq as i64, logical: 0, device },
+                deps: deps.clone(),
+                kind: 9999,
+                schema: crate::sync2::op::SCHEMA,
+                payload: vec![0u8; size].into(),
+                purged: false,
+            })
+            .collect()
+    }
+
+    /// 用任意段头与明文段体签一段（模拟签名者写出自相矛盾的段）。
+    fn sign_raw(header: &SegmentHeader, plain: &[u8], signer: &DeviceKey) -> Vec<u8> {
+        let mut hw = Writer::new();
+        header.write(&mut hw);
+        let head_bytes = hw.into_vec();
+        let body = ruzstd::encoding::compress_to_vec(plain, ruzstd::encoding::CompressionLevel::Fastest);
+        let mut signed = blake3::Hasher::new();
+        signed.update(&head_bytes);
+        signed.update(&body);
+        let sig = signer.sign(signed.finalize().as_bytes());
+        let mut out = head_bytes;
+        let mut w = Writer::new();
+        w.bytes(&body);
+        out.extend_from_slice(&w.into_vec());
+        out.extend_from_slice(&sig);
+        out
+    }
+
+    #[test]
+    fn oversized_segment_streams_through_a_small_window() {
+        // 解压后 ~40 MB、压缩后几十 KB：旧版本只按压缩后体积切出来的那种段。
+        let dev = Id([7; 16]);
+        let signer = DeviceKey::generate();
+        let ops = zero_ops(dev, 400, 100_000);
+        let (_, bytes) = pack(Id::ZERO, &ops, CHAIN_ZERO, &signer, None).unwrap();
+        assert!(bytes.len() < 1024 * 1024, "{}", bytes.len());
+        let seg = open_verified(&bytes, &signer.public(), None).unwrap();
+        let Verified::Stream(mut stream) = seg.verify().unwrap() else {
+            panic!("an oversized segment must not be kept whole");
+        };
+        let mut n = 0usize;
+        while let Some(op) = stream.next() {
+            assert_eq!(op.unwrap(), ops[n]);
+            n += 1;
+            // 窗口只需装下一条（100 KB）：远小于整段明文。
+            assert!(stream.window.window_capacity() <= 512 * 1024, "window grew to {}", stream.window.window_capacity());
+        }
+        assert_eq!(n, ops.len());
+        // 小段校验那一遍就整段留下。
+        let small = zero_ops(dev, 10, 1000);
+        let (_, bytes) = pack(Id::ZERO, &small, CHAIN_ZERO, &signer, None).unwrap();
+        let seg = open_verified(&bytes, &signer.public(), None).unwrap();
+        assert!(matches!(seg.verify().unwrap(), Verified::Whole(_)));
+    }
+
+    #[test]
+    fn oversized_segment_with_a_bad_chain_yields_nothing() {
+        let dev = Id([8; 16]);
+        let signer = DeviceKey::generate();
+        let ops = zero_ops(dev, 400, 100_000);
+        let mut header = SegmentHeader {
+            encrypted: false,
+            collection: Id::ZERO,
+            device: dev,
+            first: 1,
+            last: 400,
+            prev_chain: CHAIN_ZERO,
+            last_chain: [9; 32],
+        };
+        let bytes = sign_raw(&header, &write_body(&ops), &signer);
+        let seg = open_verified(&bytes, &signer.public(), None).unwrap();
+        assert!(matches!(seg.verify(), Err(SegmentError::ChainMismatch)));
+        // 段体多一个字节 / 少一条：格式错，不是截断后静默成功。
+        header.last_chain = ops.iter().fold(CHAIN_ZERO, |c, op| chain_next(&c, op));
+        let mut plain = write_body(&ops);
+        plain.push(0);
+        let bytes = sign_raw(&header, &plain, &signer);
+        assert!(matches!(open(&bytes, &signer.public(), None), Err(SegmentError::Corrupt(_))));
+        let bytes = sign_raw(&header, &write_body(&ops[..399]), &signer);
+        assert!(matches!(open(&bytes, &signer.public(), None), Err(SegmentError::Corrupt(_))));
+        let mut cut = write_body(&ops);
+        cut.truncate(cut.len() - 10);
+        let bytes = sign_raw(&header, &cut, &signer);
+        assert!(matches!(open(&bytes, &signer.public(), None), Err(SegmentError::Corrupt(_))));
+        assert_eq!(open(&sign_raw(&header, &write_body(&ops), &signer), &signer.public(), None).unwrap().ops, ops);
+    }
+
     #[test]
     fn tampering_and_truncation_are_classified() {
         let dev = Id([5; 16]);
@@ -695,6 +928,39 @@ pub(crate) mod tests {
             next = b + 1;
         }
         assert_eq!(next, 201);
+    }
+
+    #[test]
+    fn split_caps_uncompressed_size_and_marks_raw_full_segments_full() {
+        // 极易压缩的大载荷：每条 100 KB 全零、共 40 MB，压缩后只有几十 KB。只按压缩后体积切会是一段 40 MB 明文。
+        let dev = Id([3; 16]);
+        let deps = Arc::new(Vv::new());
+        let ops: Vec<Op> = (1..=400u64)
+            .map(|seq| Op {
+                id: OpId { device: dev, seq },
+                hlc: Hlc { wall: seq as i64, logical: 0, device: dev },
+                deps: deps.clone(),
+                kind: 9999,
+                schema: SCHEMA,
+                payload: vec![0u8; 100_000].into(),
+                purged: false,
+            })
+            .collect();
+        let r = split_ranges(&ops);
+        assert!(r.len() >= 3, "{r:?}");
+        let mut next = 1;
+        for &(a, b, bytes) in &r {
+            assert_eq!(a, next);
+            let raw: u64 = ops[(a - 1) as usize..b as usize].iter().map(|o| o.payload.len() as u64 + 24).sum();
+            assert!(raw <= SEGMENT_MAX_RAW_BYTES, "{raw}");
+            let (_, packed) = pack(Id::ZERO, &ops[(a - 1) as usize..b as usize], CHAIN_ZERO, &DeviceKey::generate(), None).unwrap();
+            assert!((packed.len() as u64) < SEGMENT_TARGET_BYTES / 8, "压缩后确实很小：{}", packed.len());
+            if raw >= SEGMENT_MAX_RAW_BYTES / 2 {
+                assert!(bytes >= SEGMENT_TARGET_BYTES / 2, "解压后过半的段按满段记，分层合并不再挑它：{bytes}");
+            }
+            next = b + 1;
+        }
+        assert_eq!(next, 401);
     }
 }
 

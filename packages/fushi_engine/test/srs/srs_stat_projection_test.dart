@@ -332,7 +332,7 @@ void main() {
   test('存量库（缓存修订号 1、投影表为空）打开时补齐', () async {
     await scenario();
     final List<String> want = await projectionRows(db);
-    expect(await cacheRev(), '5');
+    expect(await cacheRev(), '6');
     await db.customStatement('DELETE FROM srs_stat_reviews');
     await db.customStatement(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
@@ -341,7 +341,7 @@ void main() {
 
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '5');
+    expect(await cacheRev(), '6');
     expect(await fromLoader(store, jst), await fromReference(store, jst));
   });
 
@@ -353,7 +353,7 @@ void main() {
     );
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '5');
+    expect(await cacheRev(), '6');
   });
 
   test('统计读取路径不读复习日志表（大量日志：240 条笔记 × 2 卡 × 4 条）', () async {
@@ -469,7 +469,7 @@ void main() {
         templateMap: <String, String?>{vt.templates[0].id: vf.templates[1].id},
       );
       final String newCard = SrsIds.card(note, vt.templates[0].id, 0);
-      expect((await a.cardRow(card2))!.hidden, isTrue);
+      expect(await a.cardRow(card2), isNull, reason: '前身卡不再生成，删缓存行；增量与重建同一张表');
 
       final List<String> incremental = await projectionRows(a.db);
       final List<String> stats = await fromLoader(a, jst);

@@ -16,7 +16,7 @@ import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.d
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_menus.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_tab_lists.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show focusedEditableText;
@@ -44,10 +44,9 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/web_browser/web_browser_chrome_colors.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
-import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_host_feature.dart';
-import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_settings_page.dart';
 import 'package:fushi/src/web_browser/features/study/web_card_source.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/features/web_browser_features.dart';
@@ -205,6 +204,13 @@ class _FushiWebBrowserHomePageState
     _address.clear();
     await openFushiWebBrowser(context, url);
     // 浏览页里可能「加入站点」了：回来时按偏好重读。
+    if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
+  }
+
+  /// 直接进浏览页（空地址 = 只恢复上次的标签页，见 [FushiWebBrowserPage.initialUrl]）。
+  Future<void> _enterBrowser() async {
+    _addressFocus.unfocus();
+    await Navigator.of(context).push<void>(fushiWebBrowserRoute(context, ''));
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
@@ -372,6 +378,21 @@ class _FushiWebBrowserHomePageState
         SliverPadding(
           padding: EdgeInsets.fromLTRB(page, top + tokens.spacing.gap, page, 0),
           sliver: SliverToBoxAdapter(child: _buildAddressBar(context)),
+        ),
+        // 不输地址也能进浏览页：恢复上次的标签页，没有就开新标签页。
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 0),
+          sliver: SliverToBoxAdapter(
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('web-browser-enter'),
+                onPressed: () => unawaited(_enterBrowser()),
+                icon: const FushiIcon(FushiIcons.tab),
+                label: Text(t.web_browser_enter),
+              ),
+            ),
+          ),
         ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(
@@ -622,6 +643,10 @@ class _ShortcutKeyBridge extends WebBrowserFeature {
 ///
 /// 返回（系统返回 / 侧滑 / Esc）：查词弹窗 → 全屏 / 查找条 / 网格 / 抽屉 → 网页
 /// 历史 → 关掉由别的标签页打开的子页 → 离开浏览页（[webBrowserBackStep]）。
+/// 网页右侧功能侧栏（字幕列表）的缺省 / 最小宽度。
+const double kWebBrowserSidePanelDefaultWidth = 360;
+const double kWebBrowserSidePanelMinWidth = 280;
+
 class FushiWebBrowserPage extends ConsumerStatefulWidget {
   const FushiWebBrowserPage({required this.initialUrl, super.key});
 
@@ -671,6 +696,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
 
   /// 侧边栏是抽屉形态时（手机横屏）的开合，与桌面推挤形态的记忆开关分开。
   bool _drawerOpen = false;
+
+  /// 字幕侧栏拖宽进行中的宽度（null = 不在拖，用已存宽度）。
+  double? _sidePanelWidthDrag;
   bool _gridOpen = false;
   WebBrowserCollapseState _collapse = const WebBrowserCollapseState();
   final Map<String, Uint8List> _thumbnails = <String, Uint8List>{};
@@ -731,22 +759,10 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     unawaited(_restore());
   }
 
-  /// 扩展「扩展设置」（播放器菜单、报错 toast）：app 原生的扩展设置页。
+  /// 扩展「扩展设置」（播放器菜单、报错 toast）：统一「浏览器设置」，落在扩展的字幕组。
   void _openExtensionSettings() {
     if (!mounted) return;
-    final WebBrowserExtensionHostFeature? host = _features
-        .whereType<WebBrowserExtensionHostFeature>()
-        .firstOrNull;
-    if (host == null) return;
-    unawaited(
-      Navigator.of(context).push(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (BuildContext _) =>
-              WebBrowserExtensionSettingsPage(feature: host),
-        ),
-      ),
-    );
+    unawaited(_openSettings(group: WebBrowserSettingsGroup.subtitle));
   }
 
   Future<void> _restore() async {
@@ -1066,14 +1082,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     );
   }
 
-  Future<void> _openSettings() async {
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext _) =>
-            SettingsDetailPage.subPage(webBrowserSettingsDestination),
-      ),
-    );
+  /// 「⋯ › 浏览器设置」与播放器菜单「扩展设置」共用的统一入口。
+  Future<void> _openSettings({WebBrowserSettingsGroup? group}) async {
+    await openWebBrowserSettings(context, group: group);
     if (!mounted) return;
     setState(() {
       _tabStyle = webBrowserTabStyle(_prefs);
@@ -1563,9 +1574,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     return MediaQuery.paddingOf(context).top > 0;
   }
 
-  Color _barColor(BuildContext context) => isGlassDesign(context)
-      ? appleColorsOf(context).secondaryGroupedBackground
-      : Theme.of(context).colorScheme.surfaceContainer;
+  Color _barColor(BuildContext context) => webBrowserBarColor(context);
 
   Widget _addressBarFor(
     BuildContext context, {
@@ -2010,8 +2019,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     );
   }
 
-  /// 功能侧栏（[WebBrowserFeature.sidePanel]）：宽（≥ 720dp）排在网页右侧 360dp，
-  /// 窄窗口是盖住网页下半部的底部抽屉。网页本体的子树位置恒定（侧栏增删不重挂
+  /// 功能侧栏（[WebBrowserFeature.sidePanel]）：宽（≥ 720dp）排在网页右侧，左边缘
+  /// 可拖宽（与视频页字幕列表同一个宽度偏好，0 = 缺省 360dp），窄窗口是盖住网页
+  /// 下半部的底部抽屉。网页本体的子树位置恒定（侧栏增删不重挂
   /// WebView，否则平台视图会重载）。全屏看视频时不出侧栏。
   Widget _withSidePanel(
     BuildContext context,
@@ -2028,8 +2038,19 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         final bool wide = box.maxWidth >= 720;
-        final Duration d = fushiMotionDuration(context, FushiMotion.medium);
-        final double panelWidth = wide ? 360 : box.maxWidth;
+        // 拖动中逐帧跟手，不走开合动画。
+        final Duration d = _sidePanelWidthDrag != null
+            ? Duration.zero
+            : fushiMotionDuration(context, FushiMotion.medium);
+        final double maxPanelWidth = box.maxWidth * 0.6;
+        final double storedWidth = _appModel.videoSubtitleListWidth;
+        final double panelWidth = wide
+            ? (_sidePanelWidthDrag ??
+                      (storedWidth > 0
+                          ? storedWidth
+                          : kWebBrowserSidePanelDefaultWidth))
+                  .clamp(kWebBrowserSidePanelMinWidth, maxPanelWidth)
+            : box.maxWidth;
         final double panelHeight = wide ? box.maxHeight : box.maxHeight * 0.45;
         final bool open = panel != null;
         return Stack(
@@ -2065,13 +2086,82 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                             : const BorderRadius.vertical(
                                 top: Radius.circular(24),
                               ),
-                        child: panel,
+                        child: wide
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: <Widget>[
+                                  panel,
+                                  PositionedDirectional(
+                                    start: 0,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: _sidePanelResizeHandle(
+                                      currentWidth: panelWidth,
+                                      maxWidth: maxPanelWidth,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : panel,
                       ),
               ),
             ),
           ],
         );
       },
+    );
+  }
+
+  /// 侧栏左边缘的拖宽把手：向左拖变宽，松手落偏好，双击复位缺省宽度。
+  Widget _sidePanelResizeHandle({
+    required double currentWidth,
+    required double maxWidth,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        key: const ValueKey<String>('web-browser-side-panel-resize'),
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (DragUpdateDetails details) {
+          final double base = _sidePanelWidthDrag ?? currentWidth;
+          final bool rtl = Directionality.of(context) == TextDirection.rtl;
+          final double dx = rtl ? -details.delta.dx : details.delta.dx;
+          setState(
+            () => _sidePanelWidthDrag = (base - dx).clamp(
+              kWebBrowserSidePanelMinWidth,
+              maxWidth,
+            ),
+          );
+        },
+        onHorizontalDragEnd: (DragEndDetails _) {
+          final double? dragged = _sidePanelWidthDrag;
+          if (dragged != null) {
+            unawaited(_appModel.setVideoSubtitleListWidth(dragged));
+          }
+          setState(() => _sidePanelWidthDrag = null);
+        },
+        onDoubleTap: () {
+          unawaited(
+            _appModel
+                .setVideoSubtitleListWidth(0)
+                .then((_) => mounted ? setState(() {}) : null),
+          );
+        },
+        child: SizedBox(
+          width: 8,
+          child: Center(
+            child: Container(
+              width: 2,
+              // 2dp 细条两端全圆（胶囊），不另立圆角数值。
+              decoration: ShapeDecoration(
+                color: cs.outlineVariant,
+                shape: const StadiumBorder(),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

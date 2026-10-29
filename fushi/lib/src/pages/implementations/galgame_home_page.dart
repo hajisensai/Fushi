@@ -795,6 +795,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         ? t.game_status_playing
         : (hasPlayed ? t.game_focus_continue : t.game_launch);
     return FushiContinueHero(
+      cardKey: ValueKey<String>('games_home_hero_${game.id}'),
+      focusId: FushiFocusId('game-dashboard-hero-${game.id}'),
       cover: _gameCaseFrame(_GameCoverArt(game: game)),
       frameCover: false,
       coverAspectRatio: kShelfGameCaseAspectRatio,

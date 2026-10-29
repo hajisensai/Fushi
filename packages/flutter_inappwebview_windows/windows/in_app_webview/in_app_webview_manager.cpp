@@ -136,14 +136,19 @@ namespace flutter_inappwebview_plugin
       ? plugin->webViewEnvironmentManager->webViewEnvironments.at(webViewEnvironmentId.value()).get() : nullptr;
     // 窗口宿主模式（见 WebViewEnvironment::windowedHosting）：WebView2 挂成 Flutter 视图 HWND 的
     // 真子窗口自己绘制，不走 composition + WGC 纹理。子窗口必须带 WS_CHILD | WS_VISIBLE 才会画；
-    // composition 模式沿用 style 0（只作 DComp 宿主，从不显示）。
+    // composition 模式建成**不可见的子窗口**（只作 DComp 宿主与 Chromium 焦点窗的父窗，
+    // 从不显示）。上游是 style 0，即挂在 Flutter 视图上的 owned 顶层窗口：网页一拿键盘焦点
+    // （Chromium SetFocus 自己的子窗），激活窗口就跟着换成这个隐藏顶层，主窗口失活；下一次
+    // 真鼠标点击要重新激活主窗口，runner 在 WM_ACTIVATE 里把焦点还给 Flutter 视图，网页先收到
+    // blur 再收到 mousedown，YouTube 设置菜单这类失焦即收的弹层每点必关（BUG-3871）。
+    // 做成子窗口后 Chromium 的焦点窗留在主窗口的窗口树里，点网页不再触发激活切换。
     const bool windowedHosting = webViewEnvironment && webViewEnvironment->windowedHosting;
 
     RECT bounds;
     GetClientRect(plugin->registrar->GetView()->GetNativeWindow(), &bounds);
 
     auto hwnd = CreateWindowEx(0, windowClass_.lpszClassName, L"",
-      windowedHosting ? (WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS) : 0, 0,
+      windowedHosting ? (WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS) : WS_CHILD, 0,
       0, bounds.right - bounds.left, bounds.bottom - bounds.top,
       plugin->registrar->GetView()->GetNativeWindow(),
       nullptr,

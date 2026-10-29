@@ -68,3 +68,20 @@ verified at runtime on this machine.
   sub-panels) close. Removed: clicking web content leaves keyboard focus with
   WebView2, and Flutter parks focus at the root scope via the engine's
   `unfocused` view event. Test: `test/pointer_down_view_focus_test.dart`.
+
+## Composition host HWND is a hidden child, not an owned top-level (BUG-3871, 2026-10-28)
+
+- `in_app_webview_manager.cpp` `createInAppWebView`: upstream created the
+  WebView2 host window with style `0` and the Flutter view as "parent", which
+  makes it an **owned top-level** window. Chromium parks its keyboard-focus
+  window (`Chrome_WidgetWin_0`) under that host, so as soon as the page takes
+  focus the active window switches to the hidden host and the app window
+  deactivates. The user's next real mouse click has to re-activate the app
+  window; the runner's `WM_ACTIVATE` handler restores focus to the Flutter view,
+  so the page gets `blur` before `mousedown` and focus-sensitive popups close
+  (every YouTube settings sub-menu). Composition mode now creates the host with
+  `WS_CHILD` (still not `WS_VISIBLE`), keeping Chromium's focus window inside
+  the app window's tree. Flutter-synthesised pointers bypass Windows activation
+  and could not see this; evidence comes from the real-mouse mode of
+  `fushi/integration_test/web_browser_youtube_menu_probe_itest.dart`.
+  Test: `test/composition_host_child_window_test.dart`.

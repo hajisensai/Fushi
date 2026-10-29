@@ -192,13 +192,30 @@ void main() {
                 .padding!
             as EdgeInsets;
     expect(padding.bottom, greaterThan(barHeight));
+    // 滚到底栏背后的内容被底板挡住，不从评分按钮之间透出来；底板铺满整条底栏、
+    // 上沿透明渐变，下部是不透明的卡面底色。
+    final Finder scrim = find.byKey(
+      const ValueKey<String>('srs-review-bottom-bar-scrim'),
+    );
+    expect(scrim, findsOneWidget);
+    expect(tester.getSize(scrim).height, barHeight);
+    final LinearGradient gradient =
+        (tester.widget<DecoratedBox>(scrim).decoration as BoxDecoration)
+                .gradient!
+            as LinearGradient;
+    expect(gradient.colors.first.a, 0);
+    expect(gradient.colors.last.a, 1);
     await _unmount(tester);
 
     final SrsDbStore lapis = await _openStore(tester);
     await _addLapis(tester, lapis);
     await _pumpReview(tester, store: lapis, apple: false);
-    // 整面 WebView 滚不到底栏下面：卡面底边正好在底栏上沿。
+    // 整面 WebView 滚不到底栏下面：卡面底边正好在底栏上沿；不需要底板。
     expect(tester.getBottomLeft(_surface).dy, tester.getTopLeft(bar).dy);
+    expect(
+      find.byKey(const ValueKey<String>('srs-review-bottom-bar-scrim')),
+      findsNothing,
+    );
     await _unmount(tester);
   });
 

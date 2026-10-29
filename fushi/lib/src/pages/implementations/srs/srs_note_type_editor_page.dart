@@ -145,6 +145,32 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     );
   }
 
+  /// 词频序字段：显式选一个字段，或「自动」= 按字段名 `FreqSort` 认（[SrsNoteTypeView.effectiveFreqFieldId]）。
+  Future<void> _pickFreqField(SrsNoteTypeView type) async {
+    const String auto = '';
+    final String current = type.freqFieldId ?? auto;
+    final String? id = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.srs_note_types_freq_field,
+      message: t.srs_note_types_freq_field_hint,
+      icon: FushiIcons.sort,
+      selected: current,
+      options: <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(
+          value: auto,
+          label: t.srs_note_types_freq_field_auto,
+        ),
+        for (final SrsFieldDef f in type.fields)
+          FushiChoiceOption<String>(value: f.id, label: _fieldTitle(f)),
+      ],
+    );
+    if (id == null || id == current) return;
+    _run(
+      'SrsNoteTypeEditor.freqField',
+      (SrsDbStore s) => s.setFreqField(type.id, id == auto ? null : id),
+    );
+  }
+
   // ------------------------------------------------------------------ 字段
 
   String? _validateField(
@@ -552,11 +578,14 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     return SrsAdaptiveSections(sections: sections);
   }
 
-  /// 概览：名字（点了改名）+ 类型 / 内置 / 查词字段三枚标签，内置类型多一行说明。
+  /// 概览：名字（点了改名）+ 类型 / 内置 / 查词字段 / 词频序字段四枚标签，内置类型多一行说明。
   Widget _buildOverview(BuildContext context, SrsNoteTypeView type) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsFieldDef? term = type.fields
         .where((SrsFieldDef f) => f.id == type.termFieldId)
+        .firstOrNull;
+    final SrsFieldDef? freq = type.fields
+        .where((SrsFieldDef f) => f.id == type.effectiveFreqFieldId)
         .firstOrNull;
     return FushiCard(
       key: const ValueKey<String>('srs-note-type-overview'),
@@ -622,6 +651,19 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
                       onPressed: () => srsRunLogged(
                         'SrsNoteTypeEditor.termField',
                         () => _pickTermField(type),
+                      ),
+                    ),
+                    FushiActionChip(
+                      key: const ValueKey<String>('srs-note-type-freq-row'),
+                      icon: FushiIcons.sort,
+                      label: t.srs_note_types_freq_chip(
+                        name: freq == null
+                            ? t.srs_note_types_term_field_none
+                            : srsFieldDisplayName(freq),
+                      ),
+                      onPressed: () => srsRunLogged(
+                        'SrsNoteTypeEditor.freqField',
+                        () => _pickFreqField(type),
                       ),
                     ),
                   ],

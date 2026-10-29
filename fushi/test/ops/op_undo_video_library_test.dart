@@ -804,4 +804,66 @@ void main() {
       expect(File(sidecar()).existsSync(), isTrue);
     });
   });
+
+  group('视频看完标记', () {
+    final DateTime finishedAt = DateTime.fromMillisecondsSinceEpoch(
+      1700000000000,
+    );
+
+    Future<VideoBookRow> row(String uid) async =>
+        (await db.getVideoBookByBookUid(uid))!;
+
+    test('取消已看 → 撤销还回看完时刻与被清掉的断点', () async {
+      await seedVideo('video/a');
+      await db.restoreVideoBookWatchState(
+        'video/a',
+        completedAt: finishedAt,
+        positionMs: 600000,
+      );
+
+      final OpInvocation unmarked = await run(
+        'library.item.complete',
+        <String, Object?>{'key': 'video:video/a', 'completed': false},
+      );
+      expect((await row('video/a')).completedAt, isNull);
+      expect((await row('video/a')).lastPositionMs, 0);
+
+      expect(await undo(unmarked), OpUndoStatus.done);
+      expect((await row('video/a')).completedAt, finishedAt);
+      expect(
+        (await row('video/a')).lastPositionMs,
+        600000,
+        reason: '取消已看清掉的断点必须能撤销回来',
+      );
+    });
+
+    test('标已看 → 撤销回到未看 + 原断点；之后又看过 → superseded、不覆盖', () async {
+      await seedVideo('video/b');
+      await db.restoreVideoBookWatchState(
+        'video/b',
+        completedAt: null,
+        positionMs: 300000,
+      );
+
+      final OpInvocation marked = await run(
+        'library.item.complete',
+        <String, Object?>{'key': 'video:video/b', 'completed': true},
+      );
+      expect((await row('video/b')).completedAt, isNotNull);
+      expect((await row('video/b')).lastPositionMs, 0);
+      expect(await undo(marked), OpUndoStatus.done);
+      expect((await row('video/b')).completedAt, isNull);
+      expect((await row('video/b')).lastPositionMs, 300000);
+
+      final OpInvocation again = await run(
+        'library.item.complete',
+        <String, Object?>{'key': 'video:video/b', 'completed': true},
+      );
+      // 用户之后接着看了一段：撤销不得把他的新断点盖掉。
+      await db.updateVideoBookPosition('video/b', 42000, playedAt: 1);
+      expect(await undo(again), OpUndoStatus.superseded);
+      expect((await row('video/b')).lastPositionMs, 42000);
+      expect((await row('video/b')).completedAt, isNotNull);
+    });
+  });
 }

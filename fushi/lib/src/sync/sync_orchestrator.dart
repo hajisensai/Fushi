@@ -702,6 +702,7 @@ class SyncOrchestrator {
     // 逐本问。每本书之后走的判定逻辑一字未改，也没有任何「快照说没变所以跳过」的
     // 中间结论——跳过是单边不安全的操作，一旦所依赖的结论与远端实情不符，漏掉的
     // 那次对端更新会被本地 LWW 覆盖掉，那是丢数据而不是慢。
+    _emitPhaseStart(SyncPhase.remoteListing);
     final String root = await _backend.findOrCreateRootFolder();
     final SyncBackend backend = _backend;
     final RemoteListingSnapshot? listing = backend is RemoteListingCapable
@@ -930,12 +931,16 @@ class SyncOrchestrator {
     mark('deletionTombstones');
 
     // 待发制卡跨设备中转：云与互联同走资产层（__pending_mines__ 命名空间）。失败只记
-    // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。
+    // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。阶段名只在中转
+    // 真要碰远端时才公布：本机没认领落地、也没有要中转的卡时它一个请求都不发，
+    // 挂出「同步待发制卡」只会让用户以为每轮都在传卡。
     final PendingMineRelay? relay = pendingMineRelay;
     if (relay != null) {
-      _emitPhaseStart(SyncPhase.pendingMines);
       try {
-        final PendingMineRelayReport r = await relay.run(b);
+        final PendingMineRelayReport r = await relay.run(
+          b,
+          onRemoteWork: () => _emitPhaseStart(SyncPhase.pendingMines),
+        );
         report.pendingMinesReceived += r.received;
       } catch (e) {
         report.errors.add('pending mines: $e');

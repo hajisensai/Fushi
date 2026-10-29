@@ -1,6 +1,7 @@
-/// 书架页的「Kavita」子标签：浏览 Kavita 书籍库里的 EPUB 并阅读 / 下载。
+/// 一台 Kavita 服务器的书籍浏览页正文：浏览书籍库里的 EPUB 并阅读 / 下载。从书库
+/// 「媒体服务器」页签点进某台 Kavita 时整页 push。
 ///
-/// 结构：页头主位放库页壳交来的分段条（与其它库页视图同构）；正文是服务器选择
+/// 结构：页头归外层页面脚手架；正文是服务器选择
 /// （多台可用服务器时）+ 书籍系列网格（服务器分页、滚到底续页、本地搜索）。点开
 /// 系列进 [KavitaBookSeriesPage]（章列表 / 阅读 / 下载）。
 ///
@@ -22,6 +23,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/kavita/kavita_browse_page.dart'
     show KavitaSeriesCover, usableKavitaServers;
 import 'package:fushi/src/pages/implementations/kavita/kavita_book_series_page.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -31,15 +34,9 @@ import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
 
 class KavitaBooksView extends ConsumerStatefulWidget {
-  const KavitaBooksView({
-    required this.navigation,
-    super.key,
-    this.servers,
-    this.apiFor,
-  });
-
-  /// 库页壳交来的分段条，作为页头主位。
-  final Widget navigation;
+  /// 从「媒体服务器」页签点进某台时整页 push：页头与返回键归外层页面脚手架，
+  /// 本视图不画页头，只按 [FushiFloatingChromeInset] 让开页头。
+  const KavitaBooksView({super.key, this.servers, this.apiFor});
 
   /// 测试注入口；null = 现读 `prefsRepo.kavitaServers`。
   final List<KavitaServerConfig>? servers;
@@ -222,7 +219,7 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          FushiPageHeader.customTitle(title: widget.navigation),
+          SizedBox(height: FushiFloatingChromeInset.of(context)),
           if (servers.length > 1) _serverPicker(servers),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),

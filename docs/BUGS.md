@@ -33,10 +33,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3470 条。点号进各自文件。
+> 共 3477 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3873](bugs/BUG-3873-kavita-pull-ignored-after-push.md) | ✅ | ✅ | Kavita→Fushi 进度拉取失效（时间基线 + 容差吞掉服务器改动） |
+| [BUG-3872](bugs/BUG-3872-lyrics-narrow-illustration-entry.md) | ✅ | ✅ | lyrics-narrow-illustration-entry |
+| [BUG-3871](bugs/BUG-3871-webview2-host-toplevel-steals-activation.md) | ✅ | ✅ | 应用内浏览器真鼠标点 YouTube 设置二级项仍打不开（WebView2 宿主是 owned 顶层窗口，抢走激活） |
+| [BUG-3870](bugs/BUG-3870-reader-floating-leading-overflow.md) | ✅ | ✅ | reader-floating-leading-overflow |
+| [BUG-3869](bugs/BUG-3869-sync-stuck-preparing-drive-listing.md) | ✅ | ✅ | sync-stuck-preparing-drive-listing |
+| [BUG-3868](bugs/BUG-3868-sync-progress-stuck-on-pending-mines.md) | ✅ | ✅ | sync-progress-stuck-on-pending-mines |
+| [BUG-3867](bugs/BUG-3867-host-shelf-progress-stale-after-peer-push.md) | ✅ | ✅ | host-shelf-progress-stale-after-peer-push |
 | [BUG-3866](bugs/BUG-3866-bluray-menu-aacs-win-file-callback-size.md) | ✅ | ✅ | Windows 加密原盘菜单又打不开（fushi_aacs 文件回调把 seek 返回值当文件大小） |
 | [BUG-3865](bugs/BUG-3865-srs-media-sync-sync-stat-freezes-ui.md) | ✅ | ✅ | 复习同步「同步卡片媒体」阶段逐个同步 stat 本机文件，UI 卡死到 ANR |
 | [BUG-3864](bugs/BUG-3864-srs-review-space-dead-on-reveal.md) | 🚧 | 🚧 | 复习页空格翻到答案面后键盘失灵（Windows，未复现） |

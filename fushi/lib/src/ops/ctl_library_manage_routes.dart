@@ -625,6 +625,8 @@ class _LibraryManageHandlers {
     final Map<String, Object?> result = await _shelf.setCompleted(
       _key(call),
       completed: completed,
+      restoreCompletedAt: call.optInt('completedAt'),
+      restorePositionMs: call.optInt('positionMs'),
     );
     _refreshShelf();
     return result;

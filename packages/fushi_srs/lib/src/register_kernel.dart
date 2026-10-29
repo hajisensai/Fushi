@@ -237,23 +237,29 @@ SrsNoteView _noteView(SrsEntitySource s, Map<String, Object?> r) {
 }
 
 /// 内置笔记类型的代码默认值交给内核的形状（registers.rs `note_type_view`）。
-String _builtinJson(SrsBuiltinNoteType b) => jsonEncode(<String, Object?>{
-  'name': b.name,
-  'css': b.css,
-  'termFieldId': b.termFieldId,
-  'fields': <Object?>[
-    for (final SrsFieldDef f in b.fields)
-      <String, Object?>{
-        'id': f.id,
-        ...f.toValue(),
-        'description': f.description,
-      },
-  ],
-  'templates': <Object?>[
-    for (final SrsTemplateDef t in b.templates)
-      <String, Object?>{'id': t.id, ...t.toValue()},
-  ],
-});
+String _builtinJson(SrsBuiltinNoteType b) =>
+    jsonEncode(srsBuiltinNoteTypeKernelValue(b));
+
+/// [_builtinJson] 的值形态：缓存刷新的配置（native/fushi_fsrs/src/store/caches.rs `CacheConfig`）里也带它。
+Map<String, Object?> srsBuiltinNoteTypeKernelValue(SrsBuiltinNoteType b) =>
+    <String, Object?>{
+      'name': b.name,
+      'css': b.css,
+      'termFieldId': b.termFieldId,
+      'freqFieldId': b.freqFieldId,
+      'fields': <Object?>[
+        for (final SrsFieldDef f in b.fields)
+          <String, Object?>{
+            'id': f.id,
+            ...f.toValue(),
+            'description': f.description,
+          },
+      ],
+      'templates': <Object?>[
+        for (final SrsTemplateDef t in b.templates)
+          <String, Object?>{'id': t.id, ...t.toValue()},
+      ],
+    };
 
 /// 一批笔记类型的物化视图（[builtin] 是内置类型的代码默认值，没有 = null），与输入同序；整批一次 FFI 调用。
 List<SrsNoteTypeView> srsMaterializeNoteTypes(
@@ -324,6 +330,8 @@ SrsNoteTypeView _noteTypeView(SrsEntitySource s, Map<String, Object?> r) {
     ],
     css: v['css']! as String,
     termFieldId: v['tf'] as String?,
+    freqFieldId: v['qf'] as String?,
+    effectiveFreqFieldId: v['qe'] as String?,
     deletedAt: v['da'] as int?,
     builtinKey: v['bk'] as String?,
     edits: _edits(r, s.edits),
@@ -377,6 +385,7 @@ SrsDeckView _deckView(SrsEntitySource s, Map<String, Object?> r) {
     autoplayAudio: v['ap'] == true,
     replayQuestionAudio: v['rq'] == true,
     rwkvQueue: SrsRwkvQueueSettings.fromValue(v['rw']),
+    newCardOrder: SrsNewCardOrder.fromWire(v['no'] as String?),
     optimizeBaselineAt: v['ba'] as int?,
     optimizeBaselineCount: v['bn'] as int?,
     deletedAt: v['da'] as int?,

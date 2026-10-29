@@ -165,13 +165,15 @@ class SrsLocalDirectory {
   final SyncAssetStore store;
 }
 
-/// 一轮媒体同步（测试注入假实现）。[cipher] = 位置开了加密时的媒体封装（调度器一律传进来）。
+/// 一轮媒体同步（测试注入假实现）。[cipher] = 位置开了加密时的媒体封装（调度器一律传进来）；[locationId] = 位置的
+/// 稳定身份（[SrsSyncEngine.directoryKey] 同一身份）：位置上有什么读日志投影，不每轮列媒体目录。
 typedef SrsMediaSyncRunner =
     Future<SrsMediaSyncReport> Function(
       SyncAssetStore backend,
       SrsDbStore store,
       Directory mediaRoot, {
       SrsMediaCipher? cipher,
+      required String locationId,
     });
 
 /// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。
@@ -180,8 +182,10 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SrsDbStore store,
   Directory mediaRoot, {
   SrsMediaCipher? cipher,
+  required String locationId,
 }) => srsSyncMedia(
   cipher: cipher,
+  locationId: locationId,
   location: SrsAssetLocationStore(
     store: backend,
     profileUid: store.profileUid,
@@ -783,6 +787,7 @@ class SrsSyncScheduler {
             cipher: report.encrypted && locKey != null
                 ? SrsMediaCipher(store, locKey.keyHex)
                 : null,
+            locationId: key,
           );
           mediaChanged = media.downloaded > 0;
           _mediaReconciledAt[key] = _clock();

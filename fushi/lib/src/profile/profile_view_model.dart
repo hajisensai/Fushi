@@ -346,18 +346,17 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     final int previousActiveId = state.activeProfileId;
     await _repo.snapshotCurrentSettings(previousActiveId);
     await _repo.setActiveProfileId(profileId);
-    // 激活 id 一落库就同步给 UI（悬浮球「切换配置」胶囊等读 activeProfile.name 的
-    // 地方）。applyProfile + 刷新偏好 / 词典是秒级重活，等它们跑完才更新 state 的话，
-    // 胶囊会在整个切换期间一直显示旧配置名（从默认配置切出去就是「默认配置」）。
-    state = state.copyWith(activeProfileId: profileId);
+    // state.activeProfileId 只代表「已生效」的配置：应用完成前编辑器草稿、删除判据等仍按
+    // 旧配置走。切换期间要显示目标配置名的地方（悬浮球「切换配置」胶囊）读
+    // [ProfileUiState.displayProfile]，由 [ProfileDraftCoordinator.pendingSwitchTarget] 驱动。
     try {
       await _repo.applyProfile(profileId);
     } catch (_) {
-      // 应用失败：激活 id 与实时设置回到切换前，别让 UI 停在没真正生效的配置上。
+      // 应用失败：落库的激活 id 回到切换前，别停在没真正生效的配置上。
       await _repo.setActiveProfileId(previousActiveId);
-      if (mounted) state = state.copyWith(activeProfileId: previousActiveId);
       rethrow;
     }
+    state = state.copyWith(activeProfileId: profileId);
     await _onProfileApplied();
   }
 

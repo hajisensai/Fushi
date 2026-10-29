@@ -78,6 +78,15 @@ void main() {
     'lib/src/media/video/subtitle_waveform_align_panel.dart':
         'cue strip 自带 onHorizontalDrag 调延迟，放开滚动拖动会抢手势；'
         '滚轮平移由 WheelToHorizontalScroll 提供',
+    // 浏览器顶部标签条：鼠标 / 触控板 / 笔按住标签横拖 = 重排标签（Chrome / Edge
+    // 式，FushiReorderableRow 的即时拖拽识别器）。放开鼠标滚动拖动会让滚动的
+    // HorizontalDrag 与重排识别器进同一个竞技场抢同一个横拖；标签铺满整条，也没有
+    // 可供「拖空白平移」的空白。平移退路：鼠标滚轮经显式包的
+    // WheelToHorizontalScroll 投到横轴，触屏横滑照常平移（touch 在默认 dragDevices
+    // 里，且该条关了触屏重排），拖标签到左右边缘带时重排件自动横滚。
+    'lib/src/pages/implementations/web_browser/web_browser_tab_lists.dart':
+        '鼠标横拖标签是重排手势，放开滚动拖动会抢手势；'
+        '滚轮平移由 WheelToHorizontalScroll 提供，触屏横滑平移',
   };
 
   test('每个横向滚动区都放开了鼠标拖动（或在豁免清单里说明了原因）', () {

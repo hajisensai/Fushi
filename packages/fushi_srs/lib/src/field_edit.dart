@@ -82,6 +82,10 @@ abstract final class SrsFieldKeys {
   static const String css = 'css';
   static const String termField = 'termField';
 
+  /// 词频序字段（fieldId；null = 按字段名 `FreqSort` 认）：制卡占位符 `{frequency-harmonic-rank}`
+  /// 写进的那个字段。牌组「新卡顺序 = 按词频」时，新卡按这个字段里的名次出卡。
+  static const String freqField = 'freqField';
+
   // card
   static const String suspended = 'suspended';
   static const String buriedUntilDay = 'buried';
@@ -134,6 +138,9 @@ abstract final class SrsFieldKeys {
   /// 对应上游 kuma3 的 RWKV 牌组选项；缺省 = 上游默认。随参数继承走 own 祖先。
   static const String deckRwkvQueue = 'rwkvQueue';
 
+  /// 新卡出卡顺序（[SrsNewCardOrder.wire]；缺省 = 按词频）。随参数继承走 own 祖先。
+  static const String deckNewOrder = 'newOrder';
+
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
   static const String utcOffsetMin = 'utcOffsetMin';
@@ -149,7 +156,10 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
       if (fieldKey == SrsFieldKeys.deleted) return SrsFieldClass.content;
       return SrsFieldClass.content;
     case SrsEntityKind.noteType:
-      if (fieldKey == SrsFieldKeys.name || fieldKey == SrsFieldKeys.termField) {
+      // 词条字段 / 词频序字段都是「指向哪个字段」的设置：最后修改生效，不按内容冲突处理。
+      if (fieldKey == SrsFieldKeys.name ||
+          fieldKey == SrsFieldKeys.termField ||
+          fieldKey == SrsFieldKeys.freqField) {
         return SrsFieldClass.setting;
       }
       return SrsFieldClass.content;

@@ -32,6 +32,15 @@ class FushiEntranceScope extends StatefulWidget {
   /// 进场窗口长度。
   final Duration window;
 
+  /// 最近的 scope 是否允许进场动画（没有 scope 视作允许）。供
+  /// [FushiStaggeredEntrance] 之外的自写进场件（尺寸长出等）判断自己是否身处
+  /// 拖拽浮层等「已可见内容的副本」里——那里应直接显示终态、不重播进场。
+  static bool enabledOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiEntranceWindow>()
+          ?.enabled ??
+      true;
+
   @override
   State<FushiEntranceScope> createState() => _FushiEntranceScopeState();
 }

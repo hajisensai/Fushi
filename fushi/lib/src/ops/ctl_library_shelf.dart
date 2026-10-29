@@ -13,7 +13,7 @@
 ///   [removeTagFromHost]；
 /// - 书签：[BookmarkRepository]（PDF 阅读器加书签同一张表、同一口径）；
 /// - 收藏句：[FavoriteSentenceRepository] + 收藏夹导出的 [buildSentenceExport]；
-/// - 读完：[FushiDatabase.setEpubBookCompleted] / [FushiDatabase.markVideoCompleted]。
+/// - 读完：[FushiDatabase.setEpubBookCompleted] / [setVideosWatched]。
 library;
 
 import 'dart:io';
@@ -32,6 +32,7 @@ import 'package:fushi/src/media/collections/collection_episode_slot.dart'
     show videoCollectionMemberVisibility;
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart'
     show addTagToHost, removeTagFromHost, tagsForMediaRef;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -896,12 +897,19 @@ class LibraryCtlShelf {
 
   // ── 读完标记 ─────────────────────────────────────────────────────────
 
-  /// 标记 / 取消读完（书架卡「标记已读完」同一列 `EpubBooks.completedAt`；视频写
-  /// [FushiDatabase.markVideoCompleted]——自 BUG-3491 起播放不再自动打勾，这是手动
-  /// 标记视频已看的入口之一）。
+  /// 标记 / 取消读完（书架卡「标记已读完」同一列 `EpubBooks.completedAt`；视频走
+  /// [setVideosWatched]——自 BUG-3491 起播放不再自动打勾，这是手动标记视频已看
+  /// 的入口之一，与界面菜单同一语义：标记 / 取消都收回续播位置，本地入库的媒体
+  /// 服务器条目回写服务器）。
+  ///
+  /// 视频的撤销：[restorePositionMs] 非空 = 原样恢复「看完标记 + 断点」（
+  /// [VideoBookRepository.restoreWatchState]，[restoreCompletedAt] 是要恢复的看完
+  /// 时刻），而不是再标一次——取消已看清掉的断点必须能还回去。
   Future<Map<String, Object?>> setCompleted(
     LibraryCtlKey key, {
     required bool completed,
+    int? restoreCompletedAt,
+    int? restorePositionMs,
   }) async {
     switch (key.store) {
       case LibraryCtlStore.book:
@@ -921,12 +929,41 @@ class LibraryCtlShelf {
         );
       case LibraryCtlStore.video:
         await _requireVideo(key);
-        if (!completed) {
-          throw const CtlFailure.rejected(
-            '视频没有单独的「取消看完」，用 library reset 清除观看进度',
+        if (restorePositionMs != null) {
+          if (restorePositionMs < 0) {
+            throw const CtlFailure.badRequest('positionMs 不能为负');
+          }
+          await VideoBookRepository(_db).restoreWatchState(
+            key.id,
+            completedAt: !completed
+                ? null
+                : restoreCompletedAt == null || restoreCompletedAt <= 0
+                ? DateTime.now()
+                : DateTime.fromMillisecondsSinceEpoch(restoreCompletedAt),
+            positionMs: restorePositionMs,
+          );
+          final VideoBookRow? row = await _db.getVideoBookByBookUid(key.id);
+          if (row != null) {
+            await writeBackMediaServerPlayed(
+              db: _db,
+              rows: <VideoBookRow>[row],
+              played: completed,
+            );
+          }
+        } else {
+          // 统计不动，完整重置仍走 library reset。
+          await setVideosWatched(
+            db: _db,
+            watched: completed,
+            localUids: <String>[key.id],
           );
         }
-        await _db.markVideoCompleted(key.id, DateTime.now());
+        final VideoBookRow? after = await _db.getVideoBookByBookUid(key.id);
+        return <String, Object?>{
+          'key': key.wire,
+          'completed': completed,
+          'positionMs': after?.lastPositionMs ?? 0,
+        };
       case LibraryCtlStore.game:
         throw const CtlFailure.rejected('游戏的游玩状态请用 game 命令设置');
     }

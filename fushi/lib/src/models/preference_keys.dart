@@ -105,6 +105,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
   'audiobook_material_dirs',
+  // bool（默认 false）：是否把 Audiobookshelf 收听中条目混排进首页「继续」（显式
+  // opt-in，与 jellyfin_show_in_library 同原则，同样是普通偏好）。
+  'audiobookshelf_show_in_home',
   'auto_add_book_name_to_tags',
   // bool：小说阅读器制卡时给卡片追加「制卡所在字符数」标签（`chars_12345`，
   // countStudyChars 口径的全书绝对位置）。默认开。
@@ -741,6 +744,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int（默认 -1 = 自动）：互联远端视频画质档在 kInterconnectQualityPresets 里的
   // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
   'video_interconnect_quality_preset',
+  // int 秒（默认 10，0 = 不自动隐藏）：「返回跳转前位置」胶囊自上次跳转起多久后
+  // 不再随控制条出现，见 videoJumpPillLiveVisible。
+  'video_jump_pill_auto_hide_seconds',
   'video_library_auto_backfill_scrape',
   // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）
   // 补新集（video_library_update_probe.dart）；与「番剧新集提醒」开关分开。
@@ -918,9 +924,12 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'video_danmaku_episode/',
   // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
   // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步
-  //（播放偏好同步泛化批：调轴/音轨/副字幕源/副字幕调轴）。
+  //（播放偏好同步泛化批：调轴/音轨/副字幕源/副字幕调轴；看完标记 = 手动标记已看 /
+  // 未看的 LWW 镜像，值是 completedAt 毫秒、0 = 未看完）。
   'video_remote_audio_track_',
   'video_remote_audio_track_at_',
+  'video_remote_completed_',
+  'video_remote_completed_at_',
   'video_remote_delay_',
   'video_remote_delay_at_',
   'video_remote_position_',

@@ -721,6 +721,15 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         Some(s) => Some(s.to_owned()),
         None => as_str(get(builtin, "termFieldId"), "termFieldId")?.map(str::to_owned),
     };
+    // 词频序字段（新卡按词频出卡的排序键来源）：与词条字段同一套「修改记录优先、否则内置默认」。
+    let freq = match as_str(ent.value("freqField"), "freqField")? {
+        Some(s) => Some(s.to_owned()),
+        None => as_str(get(builtin, "freqFieldId"), "freqFieldId")?.map(str::to_owned),
+    };
+    // 实际生效的词频序字段（缓存行 `freq_rank` 的来源、编辑页「词频序字段」标签都读它，规则只在这里写一次）：
+    // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
+    // 从 Anki 导入的同类笔记都用这个名字）；都没有 = None。
+    let freq_effective = effective_frequency_field(freq.as_deref(), &live_fields);
     Ok(json!({
         "ak": as_int(get(payload, "ankiNum"), "ankiNum")?.unwrap_or(0),
         "nk": as_str(get(payload, "ntKind"), "ntKind")?.unwrap_or("standard"),
@@ -731,9 +740,21 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         "dt": defined_templates.items.iter().map(template_json).collect::<Vec<_>>(),
         "css": css,
         "tf": term,
+        "qf": freq,
+        "qe": freq_effective,
         "da": ent.deleted_at(),
         "bk": as_str(get(payload, "builtin"), "builtin")?,
     }))
+}
+
+/// 见 [note_type_view] 里 `qe` 的说明。
+fn effective_frequency_field(explicit: Option<&str>, fields: &[FieldDef]) -> Option<String> {
+    if let Some(id) = explicit {
+        if fields.iter().any(|f| f.id == id) {
+            return Some(id.to_owned());
+        }
+    }
+    fields.iter().find(|f| f.name.trim().to_lowercase() == "freqsort").map(|f| f.id.clone())
 }
 
 // ---------------------------------------------------------------- 物化：牌组
@@ -797,6 +818,7 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "co": *ent.value("collapsed") == Value::Bool(true),
         "po": position,
         "ap": *ent.value("autoplay") != Value::Bool(false),
+        "no": as_str(ent.value("newOrder"), "newOrder")?,
         "rq": *ent.value("replayQuestion") != Value::Bool(false),
         "rw": ent.value("rwkvQueue"),
         "ba": baseline_at,
@@ -1095,6 +1117,32 @@ pub(crate) fn deck_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<
     let parsed = parse_stored(edits)?;
     let ent = Entity::build(&parsed);
     deck_view(&ent, payload)
+}
+
+/// 笔记的物化视图（与 `materialize` 的 `note` 组同一份，键见 [note_view]）。
+pub(crate) fn note_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let concurrent = ent.concurrent_with_delete();
+    note_view(&ent, payload, &concurrent)
+}
+
+/// 笔记类型的物化视图（与 `materialize` 的 `notetype` 组同一份，键见 [note_type_view]）；[builtin] 是内置
+/// 类型的代码默认值（不是内置类型 = null）。
+pub(crate) fn note_type_view_of(payload: &Value, edits: &[StoredEdit<'_>], builtin: &Value) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    note_type_view(&ent, payload, builtin)
+}
+
+/// 卡片 ID（Dart `SrsIds.card`）：UUIDv5(笔记 ID, `<模板 ID>/<cloze 序号>`)。笔记 ID 不是 UUID = 错误
+/// （Dart `_uuidBytes` 抛 FormatException）。
+pub(crate) fn card_id(note_id: &str, template_id: &str, cloze_ord: i64) -> Result<String, String> {
+    let hex: Vec<u8> = note_id.bytes().filter(|b| *b != b'-').collect();
+    if hex.len() != 32 || !hex.iter().all(u8::is_ascii_hexdigit) {
+        return Err(format!("not a uuid: {note_id}"));
+    }
+    Ok(uuid_v5(&uuid_bytes(note_id), &format!("{template_id}/{cloze_ord}")))
 }
 
 /// 某实体某字段键的生效值（多值寄存器按读路径的规则取胜者；没有记录 = null）。

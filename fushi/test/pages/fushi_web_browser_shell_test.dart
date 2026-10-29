@@ -7,7 +7,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -131,6 +131,32 @@ void main() {
     );
     expect(entry.keyboardType, TextInputType.url);
     expect(entry.autocorrect, isFalse);
+  });
+
+  testWidgets('入口页「进入浏览器」不输地址直接进浏览页，只恢复上次的标签页', (WidgetTester tester) async {
+    await store.saveSession(
+      WebBrowserSession(
+        tabs: <WebBrowserSessionTab>[
+          WebBrowserSessionTab(
+            id: 'old',
+            url: Uri.parse('https://old.example/'),
+            title: 'Old',
+          ),
+        ],
+        activeTabId: 'old',
+      ),
+    );
+    await pumpApp(
+      tester,
+      const Size(1280, 720),
+      const FushiWebBrowserHomePage(),
+    );
+    await tester.tap(byKey('web-browser-enter'));
+    await tester.pumpAndSettle();
+    final FushiWebBrowserPageState state = page(tester);
+    expect(state.tabsController.tabs.map((WebBrowserTab t) => t.url), <Uri>[
+      Uri.parse('https://old.example/'),
+    ]);
   });
 
   testWidgets('竖屏：点站点推全屏浏览页，底栏在网页下方，地址栏点开才可编辑，后退回入口页', (
@@ -393,6 +419,70 @@ void main() {
     await tester.tap(find.text(t.web_browser_tab_close_others));
     await tester.pumpAndSettle();
     expect(state.tabsController.tabs, <WebBrowserTab>[first]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('侧边栏鼠标竖拖即排序（不用长按）', (WidgetTester tester) async {
+    await pumpBrowser(tester, const Size(1280, 720));
+    final FushiWebBrowserPageState state = page(tester);
+    state.runShortcut(ShortcutAction.webBrowserNewTab);
+    await tester.pumpAndSettle();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final WebBrowserTab first = state.tabsController.tabs.first;
+    final WebBrowserTab second = state.tabsController.tabs.last;
+    final Offset start = tester.getCenter(
+      byKey('web-browser-sidebar-tab-${first.id}'),
+    );
+    final double dy =
+        tester.getCenter(byKey('web-browser-sidebar-tab-${second.id}')).dy -
+        start.dy +
+        30;
+    final TestGesture mouse = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    for (int i = 1; i <= 10; i++) {
+      await mouse.moveTo(start + Offset(0, dy * i / 10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(state.tabsController.tabs, <WebBrowserTab>[second, first]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('侧边栏书签鼠标拖动排序，写回 position', (WidgetTester tester) async {
+    final int a = await store.addBookmark(
+      title: 'A',
+      url: Uri.parse('https://a.example/'),
+    );
+    final int b = await store.addBookmark(
+      title: 'B',
+      url: Uri.parse('https://b.example/'),
+    );
+    await pumpBrowser(tester, const Size(1280, 720));
+    final Offset start = tester.getCenter(
+      byKey('web-browser-sidebar-bookmark-$a'),
+    );
+    final double dy =
+        tester.getCenter(byKey('web-browser-sidebar-bookmark-$b')).dy -
+        start.dy +
+        20;
+    final TestGesture mouse = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    for (int i = 1; i <= 10; i++) {
+      await mouse.moveTo(start + Offset(0, dy * i / 10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(
+      (await store.bookmarks()).map((WebBrowserBookmark e) => e.id).toList(),
+      <int>[b, a],
+    );
     expect(tester.takeException(), isNull);
   });
 

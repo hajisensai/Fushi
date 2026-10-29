@@ -102,6 +102,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> expandRow(WidgetTester tester, int index) async {
+    await tester.tap(find.byKey(ValueKey<String>('abs-server-$index-row')));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> enter(WidgetTester tester, String key, String text) async {
     final Finder field = find.byKey(ValueKey<String>(key));
     await tester.ensureVisible(field);
@@ -158,6 +163,12 @@ void main() {
 
     await pumpSection(tester);
     expect(
+      find.byKey(const ValueKey<String>('abs-server-0-sign-out')),
+      findsNothing,
+      reason: '已存在的服务器默认收起',
+    );
+    await expandRow(tester, 0);
+    expect(
       find.byKey(const ValueKey<String>('abs-server-0-password')),
       findsNothing,
       reason: '已登录时不显示凭据输入框',
@@ -181,6 +192,7 @@ void main() {
   testWidgets('设置页开着期间发生的令牌轮换不会被草稿里的旧令牌覆盖', (WidgetTester tester) async {
     await seedSignedIn();
     await pumpSection(tester);
+    await expandRow(tester, 0);
 
     // 发现源在后台刷新了令牌（refresh token 轮换）。
     const AudiobookshelfTokens tokensB = AudiobookshelfTokens(
@@ -204,6 +216,7 @@ void main() {
   testWidgets('改服务器地址即退出登录（旧令牌不能发给新地址）', (WidgetTester tester) async {
     await seedSignedIn();
     await pumpSection(tester);
+    await expandRow(tester, 0);
 
     await enter(tester, 'abs-server-0-url', 'https://other.example.com');
     await flushDebounce(tester);

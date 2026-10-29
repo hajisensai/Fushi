@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -12,6 +13,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -19,7 +21,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_favicon.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
-import 'package:fushi/utils.dart' show HorizontalDragScrollable;
+import 'package:fushi/utils.dart' show WheelToHorizontalScroll;
 import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 /// 侧边栏 / 顶部标签栏 / 标签页网格共用的标签操作。
@@ -45,8 +47,16 @@ class WebBrowserTabCallbacks {
 
   /// 标签区域右键 / 长按（[globalPosition] 定位菜单）。
   final void Function(WebBrowserTab tab, Offset globalPosition) onContextMenu;
+
+  /// 标签重排，沿 SDK `ReorderableList` 口径：[newIndex] 是**移除前**的插入点
+  /// （往后拖时比最终下标大 1）。本文件的重排件给出的是最终下标，经
+  /// [_reorderToListIndex] 换算后再交给这里。
   final void Function(int oldIndex, int newIndex) onReorder;
 }
+
+/// [FushiReorderableColumn] / [FushiReorderableRow] 的「最终下标 to」换成
+/// [WebBrowserTabCallbacks.onReorder] 的 `ReorderableList` 口径（移除前插入点）。
+int _reorderToListIndex(int from, int to) => to > from ? to + 1 : to;
 
 Color _chromeColor(BuildContext context) => isGlassDesign(context)
     ? appleColorsOf(context).secondaryGroupedBackground
@@ -79,7 +89,7 @@ String _tabLabel(WebBrowserTab tab) {
 
 /// 插入时从零宽 / 零高长出来（标签增删的尺寸过渡）。
 class _GrowIn extends StatefulWidget {
-  const _GrowIn({required this.child, this.axis = Axis.vertical, super.key});
+  const _GrowIn({required this.child, this.axis = Axis.vertical});
 
   final Widget child;
   final Axis axis;
@@ -96,7 +106,10 @@ class _GrowInState extends State<_GrowIn> with SingleTickerProviderStateMixin {
     super.didChangeDependencies();
     if (_c.isDismissed && !_c.isAnimating) {
       _c.duration = fushiMotionDuration(context, FushiMotion.medium);
-      if (_c.duration == Duration.zero) {
+      // 拖拽浮层里的副本（FushiEntranceScope(enabled: false)）是已可见标签的复制，
+      // 直接显示终态，不从零宽长出来。
+      if (_c.duration == Duration.zero ||
+          !FushiEntranceScope.enabledOf(context)) {
         _c.value = 1;
       } else {
         _c.forward();
@@ -119,8 +132,8 @@ class _GrowInState extends State<_GrowIn> with SingleTickerProviderStateMixin {
   );
 }
 
-/// 一个标签的菜单手势：右键（或用户在快捷键里改绑的「打开菜单」键，经
-/// [ContextMenuTrigger]）/ 长按。
+/// 一个标签的指针手势：右键（或用户在快捷键里改绑的「打开菜单」键，经
+/// [ContextMenuTrigger]）/ 长按开菜单；中键单击关闭（与 Chrome / Edge 一致）。
 Widget _tabGestures({
   required WebBrowserTab tab,
   required WebBrowserTabCallbacks callbacks,
@@ -129,6 +142,7 @@ Widget _tabGestures({
   onInvoke: (Offset p) => callbacks.onContextMenu(tab, p),
   child: GestureDetector(
     behavior: HitTestBehavior.opaque,
+    onTertiaryTapUp: (TapUpDetails _) => callbacks.onClose(tab),
     onLongPressStart: (LongPressStartDetails d) =>
         callbacks.onContextMenu(tab, d.globalPosition),
     child: child,
@@ -180,25 +194,12 @@ class WebBrowserTabStrip extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               Flexible(
-                // 桌面鼠标按住左右拖也能平移标签栏（默认 dragDevices 不含鼠标）。
-                child: HorizontalDragScrollable(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: <Widget>[
-                        for (final WebBrowserTab tab in tabs)
-                          _GrowIn(
-                            key: ValueKey<String>('strip-${tab.id}'),
-                            axis: Axis.horizontal,
-                            child: SizedBox(
-                              width: width,
-                              child: _StripTab(tab: tab, callbacks: callbacks),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                // 鼠标按住标签横拖 = 排序（Chrome / Edge 式），所以不再让鼠标拖动平移
+                // 标签栏；平移改走滚轮（纵向滚轮投到横轴）与触屏拖动。
+                child: _StripReorderList(
+                  tabs: tabs,
+                  callbacks: callbacks,
+                  tabWidth: width,
                 ),
               ),
               FushiIconButton(
@@ -233,6 +234,82 @@ class WebBrowserTabStrip extends StatelessWidget {
   }
 }
 
+/// 标签栏的横向可排序列表（[FushiReorderableRow]：浮层画在列表自身 Stack 里、
+/// 指针经 globalToLocal 消掉祖先缩放，界面大小非 100% 时也不漂移，BUG-778）。
+///
+/// - 鼠标 / 触控板 / 笔：横拖越过拖动阈值即拾起标签（单击仍是切换，中键关闭、
+///   右键菜单不受影响），松手落到新位置。
+/// - 触屏：不参与重排——横滑平移标签栏（滚动件默认 dragDevices 含 touch），
+///   长按出菜单。
+/// - 鼠标平移走滚轮：[WheelToHorizontalScroll] 把纵向滚轮投到横轴。鼠标左键横拖
+///   已是重排手势，所以不包 HorizontalDragScrollable（会与重排抢同一个横拖）。
+class _StripReorderList extends StatefulWidget {
+  const _StripReorderList({
+    required this.tabs,
+    required this.callbacks,
+    required this.tabWidth,
+  });
+
+  final List<WebBrowserTab> tabs;
+  final WebBrowserTabCallbacks callbacks;
+  final double tabWidth;
+
+  @override
+  State<_StripReorderList> createState() => _StripReorderListState();
+}
+
+class _StripReorderListState extends State<_StripReorderList> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: kWebBrowserTabStripHeight,
+      child: WheelToHorizontalScroll(
+        controller: _scroll,
+        child: SingleChildScrollView(
+          controller: _scroll,
+          scrollDirection: Axis.horizontal,
+          child: FushiReorderableRow(
+            itemCount: widget.tabs.length,
+            keyForIndex: (int i) =>
+                ValueKey<String>('strip-${widget.tabs[i].id}'),
+            onReorder: (int from, int to) =>
+                widget.callbacks.onReorder(from, _reorderToListIndex(from, to)),
+            // 触屏长按留给标签菜单、横滑留给平移。
+            touchDragEnabled: false,
+            feedbackBorderRadius: _kStripTabRadius,
+            itemBuilder: (BuildContext context, int i) => Align(
+              alignment: Alignment.bottomCenter,
+              child: _GrowIn(
+                axis: Axis.horizontal,
+                child: SizedBox(
+                  width: widget.tabWidth,
+                  child: _StripTab(
+                    tab: widget.tabs[i],
+                    callbacks: widget.callbacks,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 顶部标签的上圆角（标签本体与拖拽浮层同形）。
+const BorderRadius _kStripTabRadius = BorderRadius.vertical(
+  top: Radius.circular(10),
+);
+
 /// 标题栏模式下标签栏末尾至少保留的拖窗空白。
 const double _kCaptionDragReserve = 48;
 
@@ -258,14 +335,10 @@ class _StripTab extends StatelessWidget {
             label: _tabLabel(tab),
             child: Material(
               color: active ? _chromeColor(context) : Colors.transparent,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(10),
-              ),
+              borderRadius: _kStripTabRadius,
               child: InkWell(
                 key: ValueKey<String>('web-browser-strip-tab-${tab.id}'),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(10),
-                ),
+                borderRadius: _kStripTabRadius,
                 onTap: () => callbacks.onSelect(tab),
                 child: SizedBox(
                   height: 30,
@@ -411,22 +484,25 @@ class WebBrowserSidebar extends StatelessWidget {
               ),
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                sliver: SliverReorderableList(
-                  itemCount: tabs.length,
-                  onReorder: callbacks.onReorder,
-                  itemBuilder: (BuildContext context, int i) {
-                    final WebBrowserTab tab = tabs[i];
-                    return ReorderableDelayedDragStartListener(
-                      key: ValueKey<String>('sidebar-${tab.id}'),
-                      index: i,
-                      child: _GrowIn(
-                        child: FushiStaggeredEntrance(
-                          index: i,
-                          child: _SidebarTab(tab: tab, callbacks: callbacks),
-                        ),
+                // 鼠标：拖过阈值即排序；触屏：长按后拖（列表滚动占着竖滑）。
+                // 自实现重排件：SDK SliverReorderableList 的 Overlay 代理不认祖先
+                // 缩放，界面大小非 100% 时浮层漂移（BUG-778）。
+                sliver: SliverToBoxAdapter(
+                  child: FushiReorderableColumn(
+                    itemCount: tabs.length,
+                    keyForIndex: (int i) =>
+                        ValueKey<String>('sidebar-${tabs[i].id}'),
+                    onReorder: (int from, int to) => callbacks.onReorder(
+                      from,
+                      _reorderToListIndex(from, to),
+                    ),
+                    itemBuilder: (BuildContext context, int i) => _GrowIn(
+                      child: FushiStaggeredEntrance(
+                        index: i,
+                        child: _SidebarTab(tab: tabs[i], callbacks: callbacks),
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
               SliverPadding(
@@ -567,12 +643,26 @@ class _SidebarBookmarksState extends State<_SidebarBookmarks> {
     setState(() => _items = items.take(12).toList(growable: false));
   }
 
+  /// 拖动排序：列出的是根目录按 position 排好的前几条，下标即同级位置。
+  void _reorder(int from, int to) {
+    if (from == to) return;
+    final WebBrowserBookmark moved = _items[from];
+    setState(() {
+      _items = <WebBrowserBookmark>[..._items]
+        ..removeAt(from)
+        ..insert(to, moved);
+    });
+    unawaited(widget.store.updateBookmark(moved.id, position: to));
+  }
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: <Widget>[
-      for (final WebBrowserBookmark b in _items) widget.itemBuilder(context, b),
-    ],
+  Widget build(BuildContext context) => FushiReorderableColumn(
+    itemCount: _items.length,
+    keyForIndex: (int i) =>
+        ValueKey<String>('web-browser-sidebar-bookmark-row-${_items[i].id}'),
+    onReorder: _reorder,
+    itemBuilder: (BuildContext context, int i) =>
+        widget.itemBuilder(context, _items[i]),
   );
 }
 

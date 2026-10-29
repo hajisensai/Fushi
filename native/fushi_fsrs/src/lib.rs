@@ -25,6 +25,7 @@
 //!   ffsrs_memory_input / ffsrs_rwkv_now_rows
 //!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）
 
+pub mod card_cache;
 pub mod history;
 pub mod ordering;
 pub mod projection;

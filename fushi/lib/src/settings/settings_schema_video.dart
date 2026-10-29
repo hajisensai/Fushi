@@ -8,6 +8,8 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_jump_pill_hover.dart'
+    show kVideoJumpPillAutoHideDefaultSeconds, kVideoJumpPillAutoHideOptions;
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
@@ -240,6 +242,33 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoSlimProgressBar(value);
             },
             defaultValue: false,
+          ),
+          // 「返回跳转前位置」胶囊：自上次跳转起超过这个秒数后，控制条再出现也不画它，
+          // 下一次跳转再亮。0 = 旧行为（一直随控制条显隐）。播放中现读偏好，无需双写。
+          SettingsSegmentedItem<int>(
+            id: 'video.playback.jump_pill_auto_hide',
+            title: t.video_setting_jump_pill_auto_hide,
+            subtitle: t.video_setting_jump_pill_auto_hide_hint,
+            icon: Icons.timer_outlined,
+            options: <SettingsSegmentOption<int>>[
+              for (final int seconds in kVideoJumpPillAutoHideOptions)
+                SettingsSegmentOption<int>(
+                  value: seconds,
+                  label: seconds == 0
+                      ? t.video_setting_jump_pill_auto_hide_never
+                      : t.video_setting_jump_pill_auto_hide_seconds(
+                          seconds: seconds,
+                        ),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoJumpPillAutoHideSeconds,
+            onChanged: (SettingsContext settingsContext, int seconds) async {
+              await settingsContext.appModel.setVideoJumpPillAutoHideSeconds(
+                seconds,
+              );
+            },
+            defaultValue: kVideoJumpPillAutoHideDefaultSeconds,
           ),
         ],
       ),

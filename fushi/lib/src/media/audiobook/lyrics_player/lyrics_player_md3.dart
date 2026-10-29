@@ -11,6 +11,8 @@ import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiExpressiveShape, FushiExpressiveShapeBorder;
@@ -71,6 +73,7 @@ class _NarrowGeometry {
     required this.headerHeight,
     required this.seekRowHeight,
     required this.bar,
+    required this.topBarBottom,
   });
 
   factory _NarrowGeometry.of(
@@ -134,6 +137,7 @@ class _NarrowGeometry {
       headerHeight: header,
       seekRowHeight: seekRow,
       bar: bar,
+      topBarBottom: padding.top + 8 + topBar,
     );
   }
 
@@ -148,6 +152,16 @@ class _NarrowGeometry {
 
   /// 卡片内容区宽度。
   double get innerWidth => math.max(0, bar.width - 2 * _kNarrowCardPadding);
+
+  /// 标题上方插图卡的最大框：宽取卡片的 60%，高不超过 320、也不顶到顶栏
+  /// （顶栏底到卡片顶之间再各留 12）。
+  Size get popupSize => Size(
+    bar.width * 0.6,
+    math.max(0, math.min(320, bar.top - topBarBottom - 24)),
+  );
+
+  /// 顶栏底边（含系统顶 inset 与 8 外边距）。
+  final double topBarBottom;
 }
 
 /// 图标按钮实际命中区的边长：触控平台（padded）撑到 48，桌面精确指针保持 40
@@ -309,6 +323,27 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
           right: padding.right + 8,
           height: geometry.topBarHeight,
           child: _NarrowTopBar(data: data, callbacks: callbacks),
+        ),
+        // 播放走过插图：标题上方弹出插图卡（与宽屏封面位同一套弹出逻辑），
+        // 贴播放卡左缘、底边停在卡片上方 12。
+        Positioned(
+          left: geometry.bar.left,
+          bottom: size.height - geometry.bar.top + 12,
+          width: geometry.popupSize.width,
+          height: geometry.popupSize.height,
+          child: LyricsIllustrationPopupCard(
+            controller: data.illustrations,
+            width: geometry.popupSize.width,
+            height: geometry.popupSize.height,
+            // 弹出插图是一张卡：走 M3E 卡片形状档，不另立圆角数值。
+            borderRadius: FushiM3eShape.cardRadius,
+            onOpen: callbacks.onOpenIllustration == null
+                ? null
+                : (int index) => callbacks.onOpenIllustration!(
+                    index,
+                    returnToCover: false,
+                  ),
+          ),
         ),
         Positioned.fromRect(
           rect: geometry.bar,
@@ -1379,11 +1414,19 @@ class _NarrowControlBar extends StatelessWidget {
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints lead) {
                   final double room = lead.maxWidth;
-                  if (room < _kNarrowMinTitleWidth) {
+                  // 本书有插图时小封面是窄屏唯一的插图入口：宽度不够先省章名
+                  // （章名只是提示信息），封面留到最后。
+                  final bool hasIllustrations =
+                      data.illustrations?.items.isNotEmpty ?? false;
+                  final bool showTitle = hasIllustrations
+                      ? room >= _kMiniCoverSize + 12 + _kNarrowMinTitleWidth
+                      : room >= _kNarrowMinTitleWidth;
+                  final bool showCover = hasIllustrations
+                      ? room >= _kMiniCoverSize
+                      : room >= _kMiniCoverSize + 12 + _kNarrowMinTitleWidth;
+                  if (!showTitle && !showCover) {
                     return const SizedBox.shrink();
                   }
-                  final bool showCover =
-                      room >= _kMiniCoverSize + 12 + _kNarrowMinTitleWidth;
                   return Row(
                     children: <Widget>[
                       if (showCover) ...<Widget>[
@@ -1407,17 +1450,28 @@ class _NarrowControlBar extends StatelessWidget {
                                 size: _kMiniCoverSize,
                               ),
                         ),
-                        const SizedBox(width: 12),
+                        if (showTitle) const SizedBox(width: 12),
                       ],
-                      Expanded(
-                        child: _TitleBlock(
-                          // 书名已在顶栏：这里有章名就只放章名（强调色），
-                          // 没有才放书名。
-                          title: chapter.isEmpty ? data.title : '',
-                          chapterLabel: chapter.isEmpty ? null : chapter,
-                          large: false,
+                      if (showTitle)
+                        Expanded(
+                          // 章名也是插图入口（与小封面同一动作）。
+                          child: LyricsIllustrationTapTarget(
+                            controller: data.illustrations,
+                            onOpen: callbacks.onOpenIllustration == null
+                                ? null
+                                : (int index) => callbacks.onOpenIllustration!(
+                                    index,
+                                    returnToCover: true,
+                                  ),
+                            child: _TitleBlock(
+                              // 书名已在顶栏：这里有章名就只放章名（强调色），
+                              // 没有才放书名。
+                              title: chapter.isEmpty ? data.title : '',
+                              chapterLabel: chapter.isEmpty ? null : chapter,
+                              large: false,
+                            ),
+                          ),
                         ),
-                      ),
                     ],
                   );
                 },

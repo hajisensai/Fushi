@@ -645,19 +645,38 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       kana,
     );
     if (kana.isEmpty) return const <Widget>[];
-    return <Widget>[
-      SrsPitchGraph(
-        key: const ValueKey<String>('srs-fushi-pitch'),
-        kana: kana,
-        position: positions.firstOrNull,
-        categories: f['PitchCategories'] ?? '',
-        style: s.text(
-          s.tokens.emphasisLine,
-          scale: s.appearance.textScale,
-          height: 1.3,
+    final TextStyle style = s.text(
+      s.tokens.emphasisLine,
+      scale: s.appearance.textScale,
+      height: 1.3,
+    );
+    // 一个读音有几种声调就画几张图（没有可解析的声调时只显示读音本身）；key 各不相同，
+    // 同一个 Wrap 里重复 key 会直接抛错。
+    final List<int?> graphs = positions.isEmpty
+        ? const <int?>[null]
+        : positions;
+    final List<Widget> out = <Widget>[
+      for (int i = 0; i < graphs.length; i++)
+        SrsPitchGraph(
+          key: ValueKey<String>(
+            i == 0 ? 'srs-fushi-pitch' : 'srs-fushi-pitch-$i',
+          ),
+          kana: kana,
+          position: graphs[i],
+          categories: f['PitchCategories'] ?? '',
+          style: style,
+          dark: s.dark,
+          fallbackColor: s.scheme.onSurface,
         ),
-        dark: s.dark,
-        fallbackColor: s.scheme.onSurface,
+    ];
+    if (!center || out.length < 2) return out;
+    // 正面居中竖排的 Column 里：多张图横向并排、放不下再折行。
+    return <Widget>[
+      Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 12,
+        runSpacing: 6,
+        children: out,
       ),
     ];
   }
@@ -701,8 +720,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   /// 词条区：「发音键｜词条 + 读音行」。左栏统一网格——卡片 / 图片通栏，词条区与底部
   /// 元信息缩进一个卡片内边距，发音键与例句卡里的发音键落在同一条竖线上、后面的文字
-  /// 也从同一个 x 起头。[trailing] 是窄版式标题右侧的缩略图。
-  Widget _header(_SrsCardStyle s, BoxConstraints c, {Widget? trailing}) {
+  /// 也从同一个 x 起头。词条独占整行宽：手机上不再与右侧缩略图抢宽度（短词被折成两行）。
+  Widget _header(_SrsCardStyle s, BoxConstraints c) {
     final List<String> audio = srsAudioSources(
       widget.fields['ExpressionAudio'] ?? '',
     );
@@ -745,16 +764,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return Padding(
       key: const ValueKey<String>('srs-fushi-header'),
       padding: EdgeInsets.symmetric(horizontal: s.pad),
-      child: trailing == null
-          ? body
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(child: body),
-                SizedBox(width: s.gap),
-                trailing,
-              ],
-            ),
+      child: body,
     );
   }
 
@@ -781,7 +791,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  Widget? _picture(_SrsCardStyle s, {required bool wide}) {
+  /// 图片 / 视频片段：宽版式左栏与窄版式同一套规则——常见比例铺满栏宽（窄版式就是整屏
+  /// 宽），怪比例限高完整显示。窄版式以前是标题右侧 126×118 的缩略图，手机上视频片段
+  /// 小得看不清、播放 / 放大 / 重播三个角标挤在一起。
+  Widget? _picture(_SrsCardStyle s) {
     if (!srsFushiBlockVisible(
       FushiCardBlock.picture,
       widget.fields,
@@ -792,21 +805,17 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final String picture = widget.fields['Picture']!;
     final SrsPictureLimits limits = srsPictureLimits(
       ref.watch(srsReviewImageSizeProvider),
-      wide: wide,
       viewport: _viewport,
-      thumb: s.thumb,
     );
-    final double? maxWidth = limits.maxWidth;
     final double maxHeight = limits.maxHeight;
     // 视频片段（WebM `<video>` / MP4 `[sound:]`）：在卡面上原生播，复习页的音频序列经
     // 片段通道驱动它（先单词音频、再片段）。
     final String? clip = srsVideoSources(picture).firstOrNull;
     if (clip != null) {
-      // 尺寸与图片同一套规则：宽版式左栏常见比例铺满栏宽、超过高度上限等比缩小。
+      // 尺寸与图片同一套规则：常见比例铺满栏宽、超过高度上限等比缩小。
       return SrsCardVideoClip(
         key: const ValueKey<String>('srs-fushi-picture'),
         name: clip,
-        maxWidth: maxWidth,
         maxHeight: maxHeight,
         fillWidth: limits.fillWidth,
         maxFillHeight: limits.maxFillHeight,
@@ -818,11 +827,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return _MediaImage(
       key: const ValueKey<String>('srs-fushi-picture'),
       name: name,
-      // 窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）。宽版式左栏：
       // 常见比例（视频截图 16:9、4:3 等）铺满栏宽、与例句卡等宽；竖长 / 超宽的怪比例
       // 限高完整显示。铺满的图有高度上限，再高就整张等比缩小（不裁切），不把例句挤出
       // 首屏。各上限随「卡面图片大小」设置，见 [srsPictureLimits]。
-      maxWidth: maxWidth,
       maxHeight: maxHeight,
       fillWidth: limits.fillWidth,
       maxFillHeight: limits.maxFillHeight,
@@ -1118,7 +1125,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     _SrsCardStyle s,
     BoxConstraints c,
   ) {
-    final Widget? picture = _picture(s, wide: false);
+    final Widget? picture = _picture(s);
     final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: false);
     final double viewport = c.maxHeight.isFinite ? _viewport : 800;
@@ -1126,11 +1133,21 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final double defsHeight = reported > kSrsDefsMaxInlineHeight
         ? viewport
         : reported;
+    // 自上而下与宽版式左栏同序：词条 → 图片 / 视频（通栏）→ 例句 → 释义 → 元信息。
     final List<Widget> blocks = <Widget>[
       Padding(
         padding: EdgeInsets.fromLTRB(s.pad, s.pad, s.pad, 0),
-        child: _header(s, c, trailing: picture),
+        child: _header(s, c),
       ),
+      if (picture != null)
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: s.pad),
+          // 放松外层 stretch 的紧约束：铺满时按栏宽定高，怪比例靠左按原比例显示。
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: picture,
+          ),
+        ),
       if (sentence != null)
         Padding(
           padding: EdgeInsets.symmetric(horizontal: s.pad),
@@ -1176,7 +1193,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     _SrsCardStyle s,
     BoxConstraints c,
   ) {
-    final Widget? picture = _picture(s, wide: true);
+    final Widget? picture = _picture(s);
     final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: true);
     final List<Widget> left = <Widget>[
@@ -1260,8 +1277,6 @@ class _SrsCardStyle {
   double get gap => tokens.gap(appearance.density);
 
   double get pad => tokens.pad(appearance.density);
-
-  double get thumb => 84;
 
   /// 字阶角色的字号。
   double sizeOf(TextStyle role) => fushiContentTypeSize(role).fontSize!;
@@ -1627,43 +1642,32 @@ bool srsIsAnimatedImageName(String name) {
 
 /// 原生卡面图片的尺寸上限（[srsPictureLimits] 按「卡面图片大小」设置给出）。
 typedef SrsPictureLimits = ({
-  double? maxWidth,
   double maxHeight,
   bool fillWidth,
   double maxFillHeight,
 });
 
 /// Fushi 卡片图片（含视频片段）的尺寸上限，与 WebView 卡面的 [srsReviewImageSizeCss]
-/// 读同一个设置。[wide]：宽版式左栏；否则是窄版式标题右侧的缩略图（[thumb] 为基准边长）。
+/// 读同一个设置。宽版式左栏与窄版式（手机）通栏同一套规则，栏宽由父级给。
 ///
-/// - 原样：左栏常见比例铺满栏宽（视口高于 520 时），怪比例 / 视频片段最高 220（矮视口
-///   120）；铺满的图最高占视口的 [kSrsPictureFillMaxViewportFraction]。缩略图 1.5 × 1.4 基准边。
-/// - 适应宽度：任何视口都铺满栏宽，限高放宽到 360（矮视口 180）/ 视口的 55%；缩略图 ×1.5。
-/// - 放大：铺满栏宽，限高到视口的 [kSrsReviewLargeImageMaxVh]%；缩略图 ×2。
+/// - 原样：常见比例铺满栏宽（视口高于 520 时），怪比例 / 视频片段最高 220（矮视口
+///   120）；铺满的图最高占视口的 [kSrsPictureFillMaxViewportFraction]。
+/// - 适应宽度：任何视口都铺满栏宽，限高放宽到 360（矮视口 180）/ 视口的 55%。
+/// - 放大：铺满栏宽，限高到视口的 [kSrsReviewLargeImageMaxVh]%。
 @visibleForTesting
 SrsPictureLimits srsPictureLimits(
   SrsReviewImageSize size, {
-  required bool wide,
   required double viewport,
-  required double thumb,
 }) {
   final bool short = viewport <= 520;
-  final double thumbScale = switch (size) {
-    SrsReviewImageSize.original => 1,
-    SrsReviewImageSize.fitWidth => 1.5,
-    SrsReviewImageSize.large => 2,
-  };
   final double largeCap = viewport * kSrsReviewLargeImageMaxVh / 100;
   return (
-    maxWidth: wide ? null : thumb * 1.5 * thumbScale,
-    maxHeight: !wide
-        ? thumb * 1.4 * thumbScale
-        : switch (size) {
-            SrsReviewImageSize.original => short ? 120 : 220,
-            SrsReviewImageSize.fitWidth => short ? 180 : 360,
-            SrsReviewImageSize.large => largeCap,
-          },
-    fillWidth: wide && (size != SrsReviewImageSize.original || !short),
+    maxHeight: switch (size) {
+      SrsReviewImageSize.original => short ? 120 : 220,
+      SrsReviewImageSize.fitWidth => short ? 180 : 360,
+      SrsReviewImageSize.large => largeCap,
+    },
+    fillWidth: size != SrsReviewImageSize.original || !short,
     maxFillHeight: switch (size) {
       SrsReviewImageSize.original =>
         viewport * kSrsPictureFillMaxViewportFraction,
@@ -1712,7 +1716,6 @@ class _MediaImage extends ConsumerStatefulWidget {
     super.key,
     required this.name,
     required this.radius,
-    this.maxWidth,
     this.maxHeight,
     this.fillWidth = false,
     this.maxFillHeight,
@@ -1720,7 +1723,6 @@ class _MediaImage extends ConsumerStatefulWidget {
 
   final String name;
   final double radius;
-  final double? maxWidth;
   final double? maxHeight;
 
   /// 常见比例时铺满父级宽度（按原比例定高）；怪比例退回 [maxHeight] 限高。
@@ -1864,10 +1866,7 @@ class _MediaImageState extends ConsumerState<_MediaImage>
               kind: SrsCardMediaKind.image,
               size: srsCardMediaBoxSize(
                 aspect: kSrsCardMediaFallbackAspect,
-                maxWidth: math.min(
-                  widget.maxWidth ?? double.infinity,
-                  c.maxWidth,
-                ),
+                maxWidth: c.maxWidth,
                 maxHeight: widget.maxHeight ?? 220,
                 fillWidth: widget.fillWidth,
                 maxFillHeight: widget.maxFillHeight,
@@ -1930,31 +1929,28 @@ class _MediaImageState extends ConsumerState<_MediaImage>
         ? const SizedBox.shrink()
         // 框与原图同比例；contain 保证取整误差下也不裁掉边。
         : picture(fit: fill ? BoxFit.contain : null);
+    // 铺满与否同一棵树（只换约束）：比例解出来那一刻从「限高」切到「铺满」时不换父节点，
+    // 画面层不被卸载重建（否则首帧要重新解码一次，动图从头再播）。
     final Widget box = ClipRRect(
       borderRadius: BorderRadius.all(Radius.circular(radius)),
-      child: fill
-          // 铺满：按原比例定高；超过 [maxFillHeight] 就整张等比缩小到这个高度（不裁切），
-          // 靠左对齐卡片边缘。
-          ? LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints c) =>
-                  SizedBox.fromSize(
-                    size: srsCardMediaBoxSize(
-                      aspect: aspect,
-                      maxWidth: c.maxWidth,
-                      maxHeight: widget.maxHeight ?? 220,
-                      fillWidth: true,
-                      maxFillHeight: widget.maxFillHeight,
-                    ),
-                    child: image,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints c) => ConstrainedBox(
+          constraints: fill
+              // 铺满：按原比例定高；超过 [maxFillHeight] 就整张等比缩小到这个高度
+              // （不裁切），靠左对齐卡片边缘。
+              ? BoxConstraints.tight(
+                  srsCardMediaBoxSize(
+                    aspect: aspect,
+                    maxWidth: c.maxWidth,
+                    maxHeight: widget.maxHeight ?? 220,
+                    fillWidth: true,
+                    maxFillHeight: widget.maxFillHeight,
                   ),
-            )
-          : ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: widget.maxWidth ?? double.infinity,
-                maxHeight: widget.maxHeight ?? 220,
-              ),
-              child: image,
-            ),
+                )
+              : BoxConstraints(maxHeight: widget.maxHeight ?? 220),
+          child: image,
+        ),
+      ),
     );
     if (provider == null) return box;
     return FushiPressScale(

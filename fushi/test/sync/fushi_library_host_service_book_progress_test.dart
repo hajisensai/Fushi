@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -182,6 +183,30 @@ void main() {
       expect(got.sectionIndex, 2);
       expect(got.normCharOffset, 3000);
       expect(got.updatedAtMs, 1700000000000);
+    });
+
+    test('对端 PUT 落库 → watchReaderPositionsChanged 发信号（host 书架据此刷新）',
+        () async {
+      // 用户报告：手机读到 2%（推给作 host 的电脑并已落库），电脑书架仍显示
+      // 17%——书架只听本机同步收尾的 refreshTab，对端 PUT 不经那里。书架现在
+      // 订阅这条表信号，这里钉住「对端 PUT 一定发出它」。
+      await _seedHostBook(db, 'BookW');
+      final LocalLibraryHostService svc = _svc(db);
+      int signals = 0;
+      final StreamSubscription<void> sub =
+          db.watchReaderPositionsChanged().listen((_) => signals++);
+      await pumpEventQueue();
+      await svc.putBookProgress(
+        'BookW',
+        const RemoteBookProgress(
+            sectionIndex: 1,
+            normCharOffset: 100,
+            charOffset: 10,
+            updatedAtMs: 1700000000000),
+      );
+      await pumpEventQueue();
+      await sub.cancel();
+      expect(signals, greaterThan(0));
     });
 
     test('上报旧时间戳 → 不覆盖 host 已存新进度（取较新）', () async {

@@ -11,6 +11,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
+import 'package:fushi/src/pages/implementations/media_server/user_media_servers_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 
 import '../helpers/source_guard.dart';
@@ -101,6 +102,13 @@ void main() {
       // 空 ProviderScope 只是满足 ConsumerWidget 的签名。
       await tester.pumpWidget(
         ProviderScope(
+          // 「媒体服务器」页签按用户是否配了 Kavita 门控（另见
+          // user_media_servers_view_test.dart）；这里钉在「没配」。
+          overrides: <Override>[
+            userMediaServersAvailableProvider(
+              UserMediaServersDomain.manga,
+            ).overrideWithValue(false),
+          ],
           child: Consumer(
             builder: (BuildContext context, WidgetRef ref, Widget? _) {
               built = const MangaLibraryPage().build(context, ref);
@@ -183,6 +191,8 @@ void main() {
         // 服务器的发现视图（2026-10-27 用户拍板），同一个视图，不是按宿主分叉。
         'builtInDiscover || userServerDiscover',
         'isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga)',
+        // 「媒体服务器」：用户自己的 Kavita（不是平台 / 扩展宿主分叉）。
+        'mediaServers',
       }, reason: '视图列表只许按合规门分叉；按平台/扩展宿主分叉一律不行');
       for (final String removed in <String>[
         'mangaSources',

@@ -75,9 +75,9 @@ void main() {
     );
   });
 
-  // 所有者 2026-10-20：「制卡后自动重排 走新手教程那步的时候默认开启」——Fushi 复习
-  // 路径不经过 Anki 步，开关必须摆在复习方式一步里，并在离开那一步时写回。
-  test('Fushi 复习路径：开关挂在复习方式一步，离开时写回（产品代码判据）', () {
+  // Fushi 复习出卡直接按卡上的词频名次排（牌组「新卡顺序」），不需要制卡后改写位置：
+  // 复习方式一步不摆这颗开关，离开时也不写它（否则用户以为复习还要靠它排序）。
+  test('Fushi 复习路径：复习方式一步没有自动重排开关、也不写回（产品代码判据）', () {
     final String src = maskComments(
       File(
         'lib/src/pages/implementations/onboarding_wizard_page.dart',
@@ -87,16 +87,7 @@ void main() {
     final int nextCase = src.indexOf('case OnboardingStepId.anki:', stepCase);
     expect(stepCase, isNonNegative);
     final String step = src.substring(stepCase, nextCase);
-    for (final String needle in <String>[
-      't.onboarding_review_fushi_auto_reposition_hint',
-      'value: _autoReposition',
-    ]) {
-      expect(
-        step.contains(needle),
-        isTrue,
-        reason: '复习方式一步里没有 `$needle`：Fushi 路径看不到自动重排开关',
-      );
-    }
+    expect(step.contains('_autoReposition'), isFalse);
 
     final String next = methodBody(src, 'Future<void> _goNextAsync() async {');
     final int reviewBranch = next.indexOf(
@@ -109,10 +100,6 @@ void main() {
       isTrue,
       reason: '照着默认按下一步时没把复习方式写进偏好',
     );
-    expect(
-      branch.contains('.setAutoRepositionEnabled(_autoReposition)'),
-      isTrue,
-      reason: '离开复习方式一步时没把开关写进 AnkiSettings.autoRepositionEnabled',
-    );
+    expect(branch.contains('setAutoRepositionEnabled'), isFalse);
   });
 }

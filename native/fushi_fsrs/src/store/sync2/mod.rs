@@ -10,6 +10,7 @@
 //! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
 
 pub mod config;
+pub mod media;
 pub mod schema;
 pub(crate) mod semantics;
 pub mod timeline;
@@ -308,8 +309,10 @@ fn note_legacy(conn: &Connection, profile: &str, device: &Id, seq: u64, l: &Lega
 /// 一次投影涉及的东西（交回 Dart 刷新缓存 / 做标记用）。
 #[derive(Default, Debug)]
 pub(crate) struct Touched {
-    /// 真正落进投影的事件（旧事件 JSON 形态，`{"t":..,"x":..}`）。
-    pub events: Vec<Value>,
+    /// 真正落进投影的事件的粗粒度摘要（受影响实体 + 修订号增量）。以前这里存每条事件的全文 JSON 原样交回
+    /// Dart，一批 8 MiB 的压缩段解开后是几百 MB，跨 isolate 拷一份再在 UI 线程逐条解析，大同步直接卡死 /
+    /// OOM；Dart 只拿它做标记和计数，所以内核在这里就把标记算完，只回实体 ID 与几个计数。
+    pub marks: Marks,
     /// 被新落的修改记录支配、从投影删掉的修改记录 ID。
     pub dominated: Vec<String>,
     /// 需要重放的卡（新落的日志、血统变化）。牌组配置 / 归属的变化不在这里：派生日志按自己记下的配置快照
@@ -320,6 +323,102 @@ pub(crate) struct Touched {
     /// 这一次被彻底清除的实体 (kind, id)：Dart 侧要通知依赖它们的派生表（RWKV 分数表）。
     pub purged: BTreeSet<(String, String)>,
     pub diagnostics: Vec<String>,
+}
+
+/// 落进投影的事件对 Dart 缓存 / 修订号的影响（规则与 Dart `SrsDbStore` 旧 `_absorbProjection` 逐条解析时
+/// 相同：`_markEntity` / `_touchesContent` / `_touchesRwkvScores` / `_noteTypeKeyAffectsCaches`）。
+#[derive(Default, Debug)]
+pub(crate) struct Marks {
+    /// 缓存要刷新的笔记 / 卡 / 笔记类型（类型只记影响缓存行的字段键，见 [note_type_key_affects_caches]）。
+    pub notes: BTreeSet<String>,
+    pub cards: BTreeSet<String>,
+    pub note_types: BTreeSet<String>,
+    /// 落进投影的事件数（Dart 修订号的增量）。
+    pub landed: u64,
+    /// 其中推进内容修订号的（日志与界面状态类修改记录以外）。
+    pub content: u64,
+    /// 界面状态类修改记录（牌组收起 / 展开、排序位、新卡位置）。
+    pub view: u64,
+    /// 推进 RWKV 分数表全量刷新的（牌组 / profile 的身份记录与非界面状态修改记录）。
+    pub rwkv: u64,
+}
+
+impl Marks {
+    fn mark(&mut self, kind: EntKind, id: &str, key: Option<&str>) {
+        match kind {
+            EntKind::Note => {
+                self.notes.insert(id.to_owned());
+            }
+            EntKind::Card => {
+                self.cards.insert(id.to_owned());
+            }
+            EntKind::NoteType => {
+                if key.is_none_or(note_type_key_affects_caches) {
+                    self.note_types.insert(id.to_owned());
+                }
+            }
+            EntKind::Deck | EntKind::Profile => {}
+        }
+    }
+
+    /// 一条身份记录落进投影。
+    pub(crate) fn entity(&mut self, kind: EntKind, id: &str) {
+        self.mark(kind, id, None);
+        self.landed += 1;
+        self.content += 1;
+        if matches!(kind, EntKind::Deck | EntKind::Profile) {
+            self.rwkv += 1;
+        }
+    }
+
+    /// 一条修改记录落进投影。
+    pub(crate) fn edit(&mut self, kind: EntKind, id: &str, key: &str) {
+        self.mark(kind, id, Some(key));
+        self.landed += 1;
+        let view = is_view_state(kind, key);
+        if view {
+            self.view += 1;
+        } else {
+            self.content += 1;
+            if matches!(kind, EntKind::Deck | EntKind::Profile) {
+                self.rwkv += 1;
+            }
+        }
+    }
+
+    /// 一条复习日志落进投影。
+    pub(crate) fn log(&mut self, card: &str) {
+        self.cards.insert(card.to_owned());
+        self.landed += 1;
+    }
+
+    /// 交回 Dart 的形态：`{"notes":[..],"cards":[..],"noteTypes":[..],"landed":n,"content":n,"view":n,"rwkv":n}`。
+    pub(crate) fn to_json(&self) -> Value {
+        json!({
+            "notes": self.notes,
+            "cards": self.cards,
+            "noteTypes": self.note_types,
+            "landed": self.landed,
+            "content": self.content,
+            "view": self.view,
+            "rwkv": self.rwkv,
+        })
+    }
+}
+
+/// 字段类别是不是界面状态（Dart `srsFieldClassOf` 的 viewState 分支，packages/fushi_srs/lib/src/field_edit.dart）。
+pub(crate) fn is_view_state(kind: EntKind, key: &str) -> bool {
+    match kind {
+        EntKind::Card => key == "newPos",
+        EntKind::Deck => key == "collapsed" || key == "position",
+        _ => false,
+    }
+}
+
+/// 笔记类型的这个字段键是否影响笔记 / 卡片缓存行（Dart `SrsDbStore._noteTypeKeyAffectsCaches`：名字、CSS、
+/// 字段说明只在渲染 / 编辑时读）。
+pub(crate) fn note_type_key_affects_caches(key: &str) -> bool {
+    key != "name" && key != "css" && !key.starts_with("fieldDesc/")
 }
 
 pub(crate) fn canonical(v: &Value) -> String {
@@ -488,6 +587,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
                 .map_err(sql)?;
             }
         }
+        Body::MediaAt { location, flags, names } => media::project_media_at(conn, profile, op, &location, flags, &names)?,
         Body::LegacyUnknown { json } => {
             if project {
                 let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
@@ -542,7 +642,7 @@ fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, da
         .map_err(sql)?
         .execute(params![idt, profile, kind.wire(), canonical(&d), d["createdAt"].as_i64().unwrap_or(0)])
         .map_err(sql)?;
-        t.events.push(json!({"t": "entity", "x": rec}));
+        t.marks.entity(kind, idt);
     }
     Ok(())
 }
@@ -643,7 +743,7 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
         }
         _ => {}
     }
-    t.events.push(json!({"t": "edit", "x": row}));
+    t.marks.edit(e.kind, &ent, &e.key);
     Ok(())
 }
 
@@ -681,7 +781,7 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         .map_err(sql)?;
         upsert_server_time(conn, profile, &lid, l.legacy_server_time, now)?;
         t.cards.insert(card.clone());
-        t.events.push(json!({"t": "log", "x": row}));
+        t.marks.log(&card);
     }
     semantics::evaluate_holds(conn, profile, "card", &card, now, t)?;
     if let Some(n) = &l.note {
@@ -1089,7 +1189,7 @@ impl SrsCore {
 
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
     /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>}`。返回
-    /// `{"events":[落进投影的事件], "landed":[每项是否落了], "dominated":[...], "replayed":[...]}`。
+    /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "replayed":[...]}`。
     pub fn sync2_apply_local(&self, profile: &str, now: i64, input: &str) -> Result<String, String> {
         let items: Vec<Value> = serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))?;
         let w = self.writer()?;
@@ -1101,7 +1201,6 @@ impl SrsCore {
             let mut applied = applied_vv(c, profile)?;
             let mut t = Touched::default();
             let mut landed = Vec::with_capacity(items.len());
-            let mut out_events = Vec::with_capacity(items.len());
             // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
             let mut tree: Option<config::DeckTree> = None;
             for it in &items {
@@ -1124,7 +1223,7 @@ impl SrsCore {
                         other
                     }
                 };
-                let before = t.events.len();
+                let before = t.marks.landed;
                 // 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除。
                 let bodies = match &body {
                     Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" && e.legacy.is_none() => {
@@ -1155,17 +1254,13 @@ impl SrsCore {
                     let op = append_local(c, &mut local, &mut applied, b, now)?;
                     project(c, profile, &op, now, true, &mut t)?;
                 }
-                let did = t.events.len() > before;
-                landed.push(did);
-                // 一项可能拆成多条操作（标签）：交回最后落进投影的那一行（合成的 `tags` 行是最终值）。
-                out_events.push(if did { t.events.last().cloned().unwrap_or(Value::Null) } else { Value::Null });
+                landed.push(t.marks.landed > before);
             }
             local.save(c)?;
             let replayed = replay_touched(c, &t)?;
             Ok(json!({
-                "events": out_events,
+                "marks": t.marks.to_json(),
                 "landed": landed,
-                "dominated": t.dominated,
                 "replayed": replayed,
                 "diagnostics": t.diagnostics,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
@@ -1275,8 +1370,7 @@ impl SrsCore {
             local.save(c)?;
             let replayed = replay_touched(c, &t)?;
             Ok(json!({
-                "events": t.events,
-                "dominated": t.dominated,
+                "marks": t.marks.to_json(),
                 "replayed": replayed,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
                 "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
@@ -1388,6 +1482,8 @@ pub fn parse_device(s: &str) -> Result<Id, String> {
     Id::parse(s).ok_or_else(|| format!("bad device id {s}"))
 }
 
+#[cfg(test)]
+mod mem_bench;
 #[cfg(test)]
 pub(crate) mod tests;
 

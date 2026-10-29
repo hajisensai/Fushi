@@ -19,6 +19,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/discovery_server_probes.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/settings_server_expandable_row.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
@@ -44,6 +46,9 @@ class _AudiobookshelfServerSettingsSectionState
   AppModel? _appModel;
 
   final Map<String, _ProbeState> _probes = <String, _ProbeState>{};
+
+  /// 展开中的服务器（按草稿 id）；已存在的默认收起，新加的默认展开。
+  final Set<String> _expanded = <String>{};
 
   @override
   void dispose() {
@@ -80,18 +85,28 @@ class _AudiobookshelfServerSettingsSectionState
             hint: t.discovery_audiobookshelf_settings_hint,
             icon: Icons.headphones_outlined,
           ),
-          for (int index = 0; index < _drafts.length; index++) _card(index),
+          FushiEntranceScope(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int index = 0; index < _drafts.length; index++)
+                  _card(index),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
             child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('abs-server-add'),
-              onPressed: () => setState(
-                () => _drafts.add(
-                  _AbsDraft.empty(
-                    'server-${DateTime.now().microsecondsSinceEpoch}',
-                  ),
-                ),
-              ),
+              onPressed: () => setState(() {
+                final _AbsDraft draft = _AbsDraft.empty(
+                  'server-${DateTime.now().microsecondsSinceEpoch}',
+                );
+                _drafts.add(draft);
+                _expanded.add(draft.id);
+              }),
               icon: const Icon(Icons.add),
               label: Text(t.discovery_audiobookshelf_server_add),
             ),
@@ -105,139 +120,149 @@ class _AudiobookshelfServerSettingsSectionState
     final _AbsDraft draft = _drafts[index];
     final _ProbeState? probe = _probes[draft.id];
     final bool signedIn = draft.tokens != null;
-    return FushiCard(
+    final String title = draft.name.trim().isNotEmpty
+        ? draft.name.trim()
+        : (draft.url.trim().isNotEmpty
+              ? draft.url.trim()
+              : t.discovery_audiobookshelf_server_add);
+    final String subtitle = signedIn && draft.username.isNotEmpty
+        ? draft.username
+        : (draft.name.trim().isNotEmpty ? draft.url.trim() : '');
+    return SettingsServerExpandableRow(
       key: ValueKey<String>('abs-server-${draft.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: FushiSwitchListTile.adaptive(
-                  key: ValueKey<String>('abs-server-$index-enabled'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: Text(t.discovery_audiobookshelf_server_enabled),
-                  value: draft.enabled,
-                  onChanged: (bool value) =>
-                      _update(index, draft.copyWith(enabled: value)),
-                ),
-              ),
-              FushiIconButtonControl(
-                key: ValueKey<String>('abs-server-$index-remove'),
-                tooltip: t.discovery_audiobookshelf_server_remove,
-                onPressed: () {
-                  setState(() {
-                    _probes.remove(_drafts[index].id);
-                    _drafts.removeAt(index);
-                  });
-                  unawaited(_saveValidDrafts());
-                },
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-            ],
+      rowKey: ValueKey<String>('abs-server-$index-row'),
+      index: index,
+      count: _drafts.length,
+      title: title,
+      subtitle: subtitle,
+      expanded: _expanded.contains(draft.id),
+      onToggle: () => setState(() {
+        if (!_expanded.remove(draft.id)) _expanded.add(draft.id);
+      }),
+      panel: <Widget>[
+        FushiSwitchListTile.adaptive(
+          key: ValueKey<String>('abs-server-$index-enabled'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.discovery_audiobookshelf_server_enabled),
+          value: draft.enabled,
+          onChanged: (bool value) =>
+              _update(index, draft.copyWith(enabled: value)),
+        ),
+        SettingsFormField(
+          key: ValueKey<String>('abs-server-$index-name'),
+          label: t.discovery_audiobookshelf_name_label,
+          initialValue: draft.name,
+          hintText: t.discovery_audiobookshelf_name_hint,
+          onChanged: (String value) =>
+              _update(index, draft.copyWith(name: value)),
+        ),
+        SettingsFormField(
+          key: ValueKey<String>('abs-server-$index-url'),
+          label: t.discovery_audiobookshelf_url_label,
+          initialValue: draft.url,
+          helperText: t.discovery_audiobookshelf_url_hint,
+          keyboardType: TextInputType.url,
+          errorText: draft.urlError,
+          // 换了服务器地址，旧令牌属于另一台服务器：一律退出登录，免得把它
+          // 发给新地址。
+          onChanged: (String value) =>
+              _update(index, draft.copyWith(url: value).signedOut()),
+        ),
+        FushiSwitchListTile.adaptive(
+          key: ValueKey<String>('abs-server-$index-allow-http'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.discovery_audiobookshelf_http_allow),
+          subtitle: Text(t.discovery_audiobookshelf_http_allow_hint),
+          value: draft.allowInsecureHttp,
+          onChanged: (bool value) =>
+              _update(index, draft.copyWith(allowInsecureHttp: value)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Text(
+            signedIn
+                ? t.discovery_audiobookshelf_session_signed_in(
+                    name: draft.username.isEmpty ? 'API key' : draft.username,
+                  )
+                : t.discovery_audiobookshelf_session_signed_out,
+            key: ValueKey<String>('abs-server-$index-status'),
+            style: Theme.of(context).textTheme.labelLarge,
           ),
-          SettingsFormField(
-            key: ValueKey<String>('abs-server-$index-name'),
-            label: t.discovery_audiobookshelf_name_label,
-            initialValue: draft.name,
-            hintText: t.discovery_audiobookshelf_name_hint,
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(name: value)),
-          ),
-          SettingsFormField(
-            key: ValueKey<String>('abs-server-$index-url'),
-            label: t.discovery_audiobookshelf_url_label,
-            initialValue: draft.url,
-            helperText: t.discovery_audiobookshelf_url_hint,
-            keyboardType: TextInputType.url,
-            errorText: draft.urlError,
-            // 换了服务器地址，旧令牌属于另一台服务器：一律退出登录，免得把它
-            // 发给新地址。
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(url: value).signedOut()),
-          ),
-          FushiSwitchListTile.adaptive(
-            key: ValueKey<String>('abs-server-$index-allow-http'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: Text(t.discovery_audiobookshelf_http_allow),
-            subtitle: Text(t.discovery_audiobookshelf_http_allow_hint),
-            value: draft.allowInsecureHttp,
-            onChanged: (bool value) =>
-                _update(index, draft.copyWith(allowInsecureHttp: value)),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              signedIn
-                  ? t.discovery_audiobookshelf_session_signed_in(
-                      name: draft.username.isEmpty ? 'API key' : draft.username,
+        ),
+        // 已登录时不显示凭据输入框：密码 / API key 只在换令牌那一下有用，
+        // 登录成功后从树里拿掉，输入框里的明文也就跟着消失。
+        if (!signedIn) ..._credentialFields(index, draft),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            FushiOutlinedButton.icon(
+              key: ValueKey<String>('abs-server-$index-connect'),
+              onPressed: !draft.canConnect || probe?.running == true
+                  ? null
+                  : () => unawaited(_connect(draft.id)),
+              icon: probe?.running == true
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : t.discovery_audiobookshelf_session_signed_out,
-              key: ValueKey<String>('abs-server-$index-status'),
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-          ),
-          // 已登录时不显示凭据输入框：密码 / API key 只在换令牌那一下有用，
-          // 登录成功后从树里拿掉，输入框里的明文也就跟着消失。
-          if (!signedIn) ..._credentialFields(index, draft),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              FushiOutlinedButton.icon(
-                key: ValueKey<String>('abs-server-$index-connect'),
-                onPressed: !draft.canConnect || probe?.running == true
-                    ? null
-                    : () => unawaited(_connect(draft.id)),
-                icon: probe?.running == true
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: FushiCircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        signedIn
-                            ? Icons.network_check_outlined
-                            : Icons.login_outlined,
-                      ),
-                label: Text(
-                  signedIn
-                      ? t.discovery_audiobookshelf_session_test
-                      : t.discovery_audiobookshelf_session_sign_in,
-                ),
-              ),
-              if (signedIn)
-                FushiTextButton.icon(
-                  key: ValueKey<String>('abs-server-$index-sign-out'),
-                  onPressed: () {
-                    setState(() => _probes.remove(draft.id));
-                    _update(index, draft.signedOut());
-                  },
-                  icon: const Icon(Icons.logout_outlined),
-                  label: Text(t.discovery_audiobookshelf_session_sign_out),
-                ),
-            ],
-          ),
-          if (probe != null && !probe.running)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                probe.message,
-                key: ValueKey<String>('abs-server-$index-probe-result'),
-                style: TextStyle(
-                  color: probe.ok
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.error,
-                ),
+                  : Icon(
+                      signedIn
+                          ? Icons.network_check_outlined
+                          : Icons.login_outlined,
+                    ),
+              label: Text(
+                signedIn
+                    ? t.discovery_audiobookshelf_session_test
+                    : t.discovery_audiobookshelf_session_sign_in,
               ),
             ),
-        ],
-      ),
+            if (signedIn)
+              FushiTextButton.icon(
+                key: ValueKey<String>('abs-server-$index-sign-out'),
+                onPressed: () {
+                  setState(() => _probes.remove(draft.id));
+                  _update(index, draft.signedOut());
+                },
+                icon: const Icon(Icons.logout_outlined),
+                label: Text(t.discovery_audiobookshelf_session_sign_out),
+              ),
+          ],
+        ),
+        if (probe != null && !probe.running)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              probe.message,
+              key: ValueKey<String>('abs-server-$index-probe-result'),
+              style: TextStyle(
+                color: probe.ok
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FushiTextButton(
+            key: ValueKey<String>('abs-server-$index-remove'),
+            destructive: true,
+            onPressed: () {
+              setState(() {
+                _probes.remove(_drafts[index].id);
+                _expanded.remove(_drafts[index].id);
+                _drafts.removeAt(index);
+              });
+              unawaited(_saveValidDrafts());
+            },
+            child: Text(t.discovery_audiobookshelf_server_remove),
+          ),
+        ),
+      ],
     );
   }
 
@@ -318,8 +343,9 @@ class _AudiobookshelfServerSettingsSectionState
     final _AbsDraft? draft = _draftById(draftId);
     // 与落盘同一个令牌真相源：本区没动过令牌时以偏好里的为准——发现源刷新时会
     // 轮换 refresh token，草稿里那份可能已经作废，拿它探测会误报「会话失效」。
-    final AudiobookshelfServerConfig? config =
-        draft?.toConfig(_storedConfigs()[draftId]);
+    final AudiobookshelfServerConfig? config = draft?.toConfig(
+      _storedConfigs()[draftId],
+    );
     if (draft == null || config == null) return;
     setState(() => _probes[draftId] = const _ProbeState.running());
 

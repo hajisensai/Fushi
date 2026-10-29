@@ -316,6 +316,16 @@ class KavitaMangaSyncSession {
                 ? now()
                 : null,
           );
+          // 服务器上这章不是「读完」（含被网页端标未读回到第 0 页）：本地的已读标记
+          // 也要撤掉，否则作品页仍显示已读。只在用户已确认采用服务器（冲突弹窗 /
+          // 本机没动过）时走到这里，所以不会静默丢本机进度。
+          if (local?.readAt != null &&
+              !isKavitaChapterFinished(page: page, totalPages: pages)) {
+            await db.clearMangaChapterRead(
+              bookUid: bookUid,
+              chapterKey: chapterKey,
+            );
+          }
           adoptedPage = page;
           lastPushedPage = page;
           syncedPage = page;
@@ -392,3 +402,129 @@ int? _asInt(Object? value) => switch (value) {
   final String v => int.tryParse(v),
   _ => null,
 };
+
+/// 作品页刷新后把服务器的逐章已读状态并进本地章进度（`manga_chapter_states`）。
+///
+/// 只处理**本机还没有记录**的章（别的设备读过、这台从没打开）和「服务器已读完而
+/// 本机没标已读」的章；本机已有进度的章（半途页号）不动——它们的新旧由开章时的
+/// [KavitaMangaSyncSession.attach] 逐章精确裁决（含冲突询问），这里没有服务器时刻
+/// 可比。读完的章只增不减，与阅读器的已读标记规则一致。
+///
+/// 服务器把某章标未读（pagesRead 回 0）而本机仍是已读的情形**不在这里处理**：
+/// 这里既没有服务器时刻也没有同步基线，分不出「服务器被重置」和「本机离线读完、
+/// 还没推上去」，贸然清掉会丢本机进度。该情形由开章时的 attach 按页基线裁决
+/// （本机没动过 → 冲突弹窗，用户选采用服务器才清已读），与 EPUB 一致。
+////// [chapters] 是描述符章表（`raw` 里有刷新时存的 `pages` / `pagesRead`）。返回
+/// 写入的章数。永不抛错。
+///
+/// [stamps] 给了时，本机有**未推上去**的改动（章进度页 != 同步基线页，例如离线时
+/// 标的已读 / 未读）的章也跳过：服务器那份是旧的，按它改会把本机的标记撤销；这些
+/// 章在开章时由 attach 按基线判成「本地动过」推上去。
+Future<int> reconcileKavitaChapterStates({
+  required FushiDatabase db,
+  required String bookUid,
+  required List<OnlineMangaChapter> chapters,
+  KavitaMangaSyncStampStore? stamps,
+  int Function()? nowMs,
+}) async {
+  if (bookUid.isEmpty) return 0;
+  final int Function() now =
+      nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
+  int written = 0;
+  try {
+    final Map<String, MangaChapterStateRow> states = await db
+        .getMangaChapterStates(bookUid);
+    for (final OnlineMangaChapter chapter in chapters) {
+      final int pages = _asInt(chapter.raw['pages']) ?? 0;
+      final int pagesRead = _asInt(chapter.raw['pagesRead']) ?? 0;
+      if (pages <= 0 || pagesRead <= 0) continue;
+      final MangaChapterStateRow? local = states[chapter.key];
+      final int? baseline = stamps?.stampOf(bookUid, chapter.key)?.page;
+      if (local != null && baseline != null && local.lastPage != baseline) {
+        continue;
+      }
+      final bool serverFinished = pagesRead >= pages;
+      if (local != null && !(serverFinished && local.readAt == null)) continue;
+      final int page = (serverFinished ? pages - 1 : pagesRead).clamp(
+        0,
+        pages - 1,
+      );
+      await db.saveMangaChapterState(
+        bookUid: bookUid,
+        chapterKey: chapter.key,
+        lastPage: serverFinished ? (local?.lastPage ?? page) : page,
+        pageCount: pages,
+        readAt: serverFinished ? now() : null,
+      );
+      written++;
+    }
+  } on Object {
+    // 对账失败不影响作品页展示；下次刷新再来。
+  }
+  return written;
+}
+
+/// 在 Fushi 里手动把一章标已读 / 未读（Kavita 条目；服务器那边已由调用方标好）后，
+/// 对齐本地章进度与同步基线。
+///
+/// 位置与基线必须一起改：只改服务器，下次开章时本地旧页 != 基线会被
+/// [resolveKavitaProgress] 判成「本地动过」，把旧进度推回去，等于标记被撤销。
+/// - 标未读：`readAt` 清空、`lastPage` 回 0、基线页 0；
+/// - 标已读：`readAt` 记现在、`lastPage` 落最后一页（[totalPages] 未知则不动页）、
+///   基线页同步。
+///
+/// [serverConfirmed] = false：服务器没标成（离线 / 出错）。本机照样生效，但基线
+/// **不**前移到新页——基线留在服务器上一次已知的页（已有基线不动；从没有基线时用
+/// [knownServerPage]，即作品页最近一次从服务器取到的这一章进度），于是本机页 !=
+/// 基线 = 「本地动过、还没推」：开章时 attach 把它推上去，作品页刷新时的
+/// [reconcileKavitaChapterStates] 也不会按服务器的旧状态把它改回去。
+/// 永不抛错。
+Future<void> alignKavitaMangaChapterMark({
+  required FushiDatabase db,
+  required KavitaMangaSyncStampStore stamps,
+  required String bookUid,
+  required String chapterKey,
+  required bool read,
+  int totalPages = 0,
+  bool serverConfirmed = true,
+  int? knownServerPage,
+  int Function()? nowMs,
+}) async {
+  if (bookUid.isEmpty || chapterKey.isEmpty) return;
+  final int now = (nowMs ?? () => DateTime.now().millisecondsSinceEpoch)();
+  try {
+    final MangaChapterStateRow? existing = await db.getMangaChapterState(
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+    );
+    final int pages = totalPages > 0 ? totalPages : (existing?.pageCount ?? 0);
+    final int page = read
+        ? (pages > 0 ? pages - 1 : existing?.lastPage ?? 0)
+        : 0;
+    await db.saveMangaChapterState(
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+      lastPage: page,
+      pageCount: pages > 0 ? pages : null,
+      readAt: read ? now : null,
+    );
+    if (!read) {
+      await db.clearMangaChapterRead(bookUid: bookUid, chapterKey: chapterKey);
+    }
+    if (serverConfirmed) {
+      await stamps.record(bookUid, chapterKey, now, page: page);
+    } else {
+      final KavitaMangaSyncStamp? stamp = stamps.stampOf(bookUid, chapterKey);
+      if (stamp?.page == null && knownServerPage != null) {
+        await stamps.record(
+          bookUid,
+          chapterKey,
+          stamp?.at ?? now,
+          page: knownServerPage,
+        );
+      }
+    }
+  } on Object {
+    // 对齐失败：下次开章由逐章对账兜底。
+  }
+}

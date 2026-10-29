@@ -50,7 +50,7 @@ void main() {
   });
 
   group('笔记类型管理', () {
-    test('新建基础类型 → 加笔记生成卡；加模板为已有笔记生成卡；删模板隐藏卡；对端一致', () async {
+    test('新建基础类型 → 加笔记生成卡；加模板为已有笔记生成卡；删模板删掉那张卡的缓存行；对端一致', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');
       final String nt = await a.createStockNoteType(
@@ -97,7 +97,11 @@ void main() {
 
       expect(await a.visibleCardsOfTemplate(tpl2), 1);
       await a.deleteTemplate(nt, tpl2);
-      expect((await a.cardRow(reversed.id))!.hidden, isTrue);
+      expect(
+        await a.cardRow(reversed.id),
+        isNull,
+        reason: '删模板：卡不再生成，删缓存行；增量与重建同一张表',
+      );
       v = await type(a, nt);
       expect(v.templates, hasLength(1));
       await expectLater(
@@ -106,7 +110,7 @@ void main() {
         reason: '最后一个模板不能删',
       );
       await syncAll(<SrsDbStore>[a, b]);
-      expect((await b.cardRow(reversed.id))!.hidden, isTrue);
+      expect(await b.cardRow(reversed.id), isNull);
     });
 
     test('字段：加 / 改名（模板不动）/ 调序 / 删（模板引用一起去掉）；内置 Lapis 的保护', () async {
@@ -366,7 +370,7 @@ void main() {
   });
 
   group('更改笔记类型', () {
-    test('字段按映射搬值、新卡继承复习历史与标志、没映射的旧卡隐藏；同步后对端一致', () async {
+    test('字段按映射搬值、新卡继承复习历史与标志、没映射的旧卡不再生成；同步后对端一致', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');
       final String from = await a.createStockNoteType(
@@ -423,8 +427,12 @@ void main() {
         expect(n.noteTypeId, to);
         expect(n.field(vt.fields[0].id), 'cat');
         expect(n.field(vt.fields[1].id), '猫');
-        expect((await s.cardRow(card1))!.hidden, isTrue);
-        expect((await s.cardRow(card2))!.hidden, isTrue);
+        expect(
+          await s.cardRow(card1),
+          isNull,
+          reason: '前身卡不再生成，删缓存行；增量与重建同一张表',
+        );
+        expect(await s.cardRow(card2), isNull);
         final SrsCardCacheRow c = (await s.cardRow(newCard))!;
         expect(c.hidden, isFalse);
         expect(c.lastLogId, l2.id, reason: '排程状态 = 继承历史里最后一条有效日志');

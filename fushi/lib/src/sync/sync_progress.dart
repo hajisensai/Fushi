@@ -13,6 +13,11 @@ library;
 /// label; keeping it an enum (not a pre-localized string) keeps i18n in the
 /// widget layer and makes the orchestrator testable.
 enum SyncPhase {
+  /// 解析同步根 + 一次列举远端清单（`snapshotListing`）+ 清理根下残留。每轮最先走网络的
+  /// 一步，库大时可达数十秒；没有这个阶段名时进度行停在「正在准备同步」，与「等锁 /
+  /// 鉴权」同形，用户看不出同步在干活。
+  remoteListing,
+
   /// Downloading + importing books that exist remotely but not locally.
   books,
 
@@ -51,6 +56,11 @@ enum SyncPhase {
 
   /// Pending card-mining relay (`__pending_mines__`).
   pendingMines,
+
+  /// 通道编排跑完之后的后置步骤（复习同步、刷新库页）。它们不发阶段 tick，没有
+  /// 这一档时进度行会一直挂着编排的最后一个阶段名（用户看到的是「同步待发制卡」
+  /// 长时间不动，以为每轮都在传卡）。
+  finishing,
 }
 
 /// One progress tick within a sync phase.
