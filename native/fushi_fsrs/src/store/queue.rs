@@ -13,9 +13,12 @@
 //!   不信写入方报的值，所以 Drift 嵌套事务的 `ROLLBACK TO`、整笔回滚都不会让内存与库分叉：被回滚的行也在
 //!   「待重读」里，重读到的就是回滚后的值。
 //! - **事务边界**（失效判据）：写连接上的事务没结束时，触发器记下的 id 是「未提交」的；写连接回到 autocommit
-//!   （写锁守卫释放时检查，[StudyHub::settle]）才挪进「已提交」。读连接上的排队（读快照）只重读已提交的 id——
-//!   挪的时候那笔提交已经可见，先取 id 再开快照，取到的 id 一定看得见；写连接上事务里的排队（作答后接着排、
-//!   Drift 事务里的读）两种都重读，未提交的 id 不清掉，提交 / 回滚后再按库里的终态重读一遍。
+//!   （写锁守卫释放时检查，[StudyHub::settle]）才挪进「已提交」。挪动晚于 COMMIT 对别的连接可见（守卫释放在
+//!   COMMIT 之后；SQLite 也没有「提交可见的同一刻」的钩子：commit hook 在可见之前、提前挪会让读快照取走 id 却
+//!   看不到提交，之后永远漏读），所以排队无论在哪条连接上都**两种 id 都重读**：已提交的取走，未提交的只读不清。
+//!   读快照上重读一行未提交的改动读到的是旧值（与快照一致），提交 / 回滚挪进已提交后再按终态重读一遍——重读
+//!   以库里的行为准，幂等。以前读快照只重读已提交的：COMMIT 之后、守卫释放之前开的快照看得见新行却不重读它，
+//!   这一次排队漏读（集成审查【中低】）。
 //! - **整份重建**：会话的日界（今天的日序号、翻日时刻、UTC 偏移）与请求不同（跨日：到期 / 埋卡 / 最近 30 天
 //!   都随日变）；或一个 profile 攒的待重读 id 超过 [DIRTY_CAP]（导入、整体重建缓存、大同步收段），不再逐个记。
 //! - 牌组树（含每日上限、父子关系、新卡顺序）每次排队照读（只与牌组数有关），改上限立即生效；新卡出卡仍走
@@ -229,21 +232,21 @@ impl StudyHub {
         lock(&self.touched).browse.take(profile, uncommitted)
     }
 
-    /// 在 [profile] 的会话上跑 [f]：先取走待重读的 id（[uncommitted] = 写连接上事务里的读，连未提交的一起），
-    /// 会话不存在 / 日界不同 / 攒满了就整份重建，否则只重读那几行。[c] 是这次排队的连接（读快照，或写连接上的
-    /// SAVEPOINT）；必须在这条连接这次读事务的第一条读之前调（先取 id 再开快照）。重建 / 重读出错时丢掉会话，
-    /// 下次整份重建。
+    /// 在 [profile] 的会话上跑 [f]：先取走已提交的待重读 id、并上未提交的（只读不清，见文件头「事务边界」；
+    /// [_uncommitted] = [c] 是写连接上还没结束的事务，两种连接现在同一口径，参数留给调用方表态），会话不存在 /
+    /// 日界不同 / 攒满了就整份重建，否则只重读那几行。[c] 是这次排队的连接（读快照，或写连接上的 SAVEPOINT）；
+    /// 必须在这条连接这次读事务的第一条读之前调（先取 id 再开快照）。重建 / 重读出错时丢掉会话，下次整份重建。
     pub(crate) fn with_session<T>(
         &self,
         c: &Connection,
         profile: &str,
         day: Day,
         today: i64,
-        uncommitted: bool,
+        _uncommitted: bool,
         f: impl FnOnce(&Session) -> Result<T, String>,
     ) -> Result<T, String> {
         let mut sessions = lock(&self.sessions);
-        let dirty = lock(&self.touched).study.take(profile, uncommitted);
+        let dirty = lock(&self.touched).study.take(profile, true);
         let fresh = match sessions.get(profile) {
             Some(s) => s.day != day || s.today != today || dirty.overflow,
             None => true,
