@@ -821,6 +821,8 @@ fn sync2_command(
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
         "study" => c.study(profile, req)?,
+        // 卡片浏览的常驻会话（store/browse.rs）：查询（筛选 + 排序）、取行、取行 id、批量目标、关闭。
+        "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close" => c.browse(op, profile, req, files)?,
         // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。
         "lineages" => {
             let cards: Vec<String> = req.get("cards").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();

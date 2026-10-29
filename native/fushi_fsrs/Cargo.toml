@@ -25,6 +25,9 @@ regex = "1"
 rusqlite = { version = "0.37", features = ["bundled", "functions"] }
 # 字段寄存器（registers.rs）：修改记录 ID 的 UUIDv5 与「释义样式去重」规范形的样式文件名（与 native/fushi_compute 同一个包）。
 sha1 = "0.10"
+# 浏览会话（store/browse.rs）的 `nid:` / `cid:`：Anki 数字 id = hash53（SHA-256，与 Dart `SrsIds.ankiNumericId` /
+# native/fushi_compute 同一算法）。与 ed25519-dalek 用同一个版本。
+sha2 = "0.11"
 # SRS 同步 v2（src/sync2/，docs/specs/2026-10-25-srs-sync-v2-design.md）。全部纯 Rust，五平台交叉编译不需要 C 工具链：
 # blake3 关掉 SIMD 汇编（`pure`）；确定性重放的 exp / ln / pow 用 libm（musl 移植），不走平台 libm（设计 §4.5）。
 blake3 = { version = "1.8", default-features = false, features = ["std", "pure"] }

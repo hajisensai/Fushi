@@ -1008,6 +1008,11 @@ class SrsDbStore implements SrsSync2Host {
       ? _sync2Raw(request, blobs: blobs)
       : runExclusive(() => _sync2Raw(request, blobs: blobs));
 
+  /// 卡片浏览的常驻会话命令（native/fushi_fsrs/src/store/browse.rs；srs_browse.dart 的 `SrsBrowseSession` 发）。
+  /// 只读（读快照；写连接上有事务时在它的 SAVEPOINT 里读，看得见未提交的行），不进写锁，在后台 isolate 跑。
+  Future<SrsSync2Result> browseCommand(Map<String, Object?> request) =>
+      _sync2Raw(request);
+
   /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
   /// 中途改本机状态。
   /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。

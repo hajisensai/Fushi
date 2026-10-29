@@ -1,14 +1,14 @@
 // 浏览页（搜索 + 排序 + 卡片 / 笔记模式 + 列表行）的输入→输出回归向量。
 //
-// 向量由**旧的 Dart 实现**（`SrsBrowseSnapshot.load` + `query`：Dart 侧整份快照、Dart 排序，2026-10-29 L4 之前）
-// 在下面的确定性库上生成，存进 fixtures/srs_browse_vectors.json；浏览搬进 Rust 常驻会话之后，新实现必须逐项
-// 给出同样的结果：每条查询 × 每种排序 × 两种模式的行序（主卡、笔记、该行的全部卡），以及每张卡的列表行
+// 向量由**旧的 Dart 实现**（`SrsBrowseSnapshot.load` + `query`：Dart 侧整份快照、Dart 排序，2026-10-29 L4 之前，
+// 已删除）在下面的确定性库上生成，存进 fixtures/srs_browse_vectors.json；浏览搬进 Rust 常驻会话
+// （`SrsBrowseSession` → native/fushi_fsrs/src/store/browse.rs）之后，新实现逐项给出同样的结果：每条查询 × 每种排序 × 两种模式的行序（主卡、笔记、该行的全部卡），以及每张卡的列表行
 // （排序字段、牌组名、笔记类型名、队列、到期天数、旗标、暂停 / 搁置、待裁决）。库里有：两种笔记类型（Lapis、
 // 内置 Fushi 卡片：字段别名）、HTML / 大小写 / 希腊文 Σ / 土耳其文 İ / 代理对（UTF-16 序与码点序不同）/ 空排序字段、
 // 嵌套牌组与已删除牌组（归默认牌组）、标签、旗标、暂停、搁置、复习卡 / 学习卡 / 新卡、改过的笔记（修改时间）、
 // 删除的笔记、同一创建时刻的笔记（按 id 定序）。
 //
-// 重新生成（只在有意改变浏览语义时）：SRS_BROWSE_VECTORS_WRITE=1 跑本文件。
+// 重新生成（只在有意改变浏览语义时；旧实现已删，生成的就是当前实现的输出）：SRS_BROWSE_VECTORS_WRITE=1 跑本文件。
 import 'dart:convert';
 import 'dart:io';
 
@@ -231,28 +231,41 @@ Future<SrsDbStore> buildBrowseVecLibrary(
 String browseVecRow(List<String> cards, String primary, List<String> all) =>
     '${cards.indexOf(primary)}:${all.map(cards.indexOf).join('.')}';
 
-/// 旧实现：每条查询 × 排序 × 模式的行序（[browseVecRow]），与每张卡的列表行。
-Future<Map<String, Object?>> oldBrowseVectors(SrsDbStore s) async {
-  final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(s);
+/// 浏览会话：每条查询 × 排序 × 模式的行序（[browseVecRow]），与每张卡的列表行。
+Future<Map<String, Object?>> browseVectors(SrsDbStore s) async {
+  final SrsBrowseSession session = SrsBrowseSession(s);
+  final List<SrsBrowseRow> all = await (await session.query()).all();
   final List<String> ids = <String>[
-    for (final SrsCardSearchSubject c in snap.cards) c.card.id,
+    for (final SrsBrowseRow r in all) r.cardId,
   ]..sort();
+  // 笔记模式一行 = 该笔记的全部可见卡（自然顺序），与查询无关。
+  final SrsBrowseResult byNote = await session.query(
+    mode: SrsBrowseMode.notes,
+  );
+  final Map<String, List<String>> cardsOf = <String, List<String>>{
+    for (final String n in await byNote.ids())
+      n: (await byNote.targets(<String>[n])).cardIds,
+  };
   final Map<String, Object?> results = <String, Object?>{};
   for (final String q in kBrowseVecQueries) {
     for (final SrsBrowseMode mode in SrsBrowseMode.values) {
       for (final SrsBrowseSort sort in browseVecSorts()) {
         final String key = '$q|${mode.name}|${browseVecSortKey(sort)}';
         try {
-          final List<SrsBrowseItem> items = await snap.query(
+          final SrsBrowseResult r = await session.query(
             query: q,
             sort: sort,
             mode: mode,
           );
           results[key] = <String>[
-            for (final SrsBrowseItem i in items)
-              browseVecRow(ids, i.cardId, <String>[
-                for (final SrsCardSearchSubject c in i.cards) c.card.id,
-              ]),
+            for (final SrsBrowseRow row in await r.all())
+              browseVecRow(
+                ids,
+                row.cardId,
+                mode == SrsBrowseMode.cards
+                    ? <String>[row.cardId]
+                    : cardsOf[row.noteId]!,
+              ),
           ].join(' ');
         } on SrsSearchUnsupported {
           results[key] = '!error';
@@ -261,22 +274,22 @@ Future<Map<String, Object?>> oldBrowseVectors(SrsDbStore s) async {
     }
   }
   final Map<String, Object?> rows = <String, Object?>{
-    for (final SrsCardSearchSubject c in snap.cards)
-      c.card.id: <Object?>[
-        c.note.id,
-        c.sortText,
-        c.deckName,
-        c.noteType.name,
-        c.queue.name,
-        c.dueInDays,
-        c.card.flag,
-        c.isSuspended,
-        c.isBuried,
-        c.note.hasPendingDecision,
-        c.card.deckId,
+    for (final SrsBrowseRow r in all)
+      r.cardId: <Object?>[
+        r.noteId,
+        r.sortText,
+        r.deckName,
+        r.noteTypeName,
+        r.queue!.name,
+        r.dueInDays,
+        r.flag,
+        r.isSuspended,
+        r.isBuried,
+        r.hasPendingDecision,
+        r.deckId,
       ],
   };
-  snap.dispose();
+  await session.close();
   return <String, Object?>{'cards': ids, 'results': results, 'rows': rows};
 }
 
@@ -287,7 +300,7 @@ void main() {
   test('浏览：查询 × 排序 × 模式 与旧实现的向量逐项一致', () async {
     int t = DateTime.utc(2026, 10, 10, 3).millisecondsSinceEpoch;
     final SrsDbStore s = await buildBrowseVecLibrary(() => t, (int v) => t = v);
-    final Map<String, Object?> got = await oldBrowseVectors(s);
+    final Map<String, Object?> got = await browseVectors(s);
     if (write) {
       File(
         _fixture,

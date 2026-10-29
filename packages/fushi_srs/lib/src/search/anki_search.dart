@@ -9,6 +9,7 @@ export 'search_corpus.dart'
         SrsSearchFieldAliases,
         SrsSearchFieldLoader,
         kSrsSearchKernelUnavailable,
-        srsDupeNormBatch;
+        srsDupeNormBatch,
+        srsSearchNodeJson;
 export 'search_node.dart';
 export 'search_parser.dart' show parseAnkiSearch;
