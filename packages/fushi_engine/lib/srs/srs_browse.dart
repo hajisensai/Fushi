@@ -1,85 +1,17 @@
 /// 卡片浏览（对齐 Anki 浏览器）：Anki 搜索语法筛选 + 排序 + 卡片 / 笔记两种模式。
 ///
 /// 浏览页的数据常驻原生会话（[SrsBrowseSession] → native/fushi_fsrs/src/store/browse.rs）：搜索语料与
-/// 列数据在 Rust 里、随写入增量更新，筛选与排序在 Rust 里做，Dart 只取命中行的分页。
-///
-/// 求值对象 [SrsCardSearchSubject] 给 AnkiConnect 兼容层与统计页筛选用（findNotes / findCards，
-/// 完整物化的 [SrsNoteView] + [SrsSearchCorpus]），搜索语义与浏览会话同一个内核（search.rs）。
+/// 列数据在 Rust 里、随写入增量更新，筛选与排序在 Rust 里做，Dart 只取命中行的分页。AnkiConnect 兼容层的
+/// findNotes / findCards / 查重用同一个会话（[srsBrowseContext]）。
 library;
 
 import 'dart:typed_data';
 
-import 'package:fushi_anki/fushi_anki_core.dart'
-    show FushiCardFields, ankiStripHtml;
-import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-
-/// 一组修改记录里最后一次改动的时刻：全部字段键当前生效记录里 HLC 物理时刻最大的一条；
-/// 没有记录 = [createdAt]。
-int srsEditsModifiedAt(int createdAt, SrsEntityEdits edits) {
-  int out = createdAt;
-  for (final SrsRegister r in edits.registers) {
-    final SrsFieldEdit? w = r.winner;
-    if (w != null && w.hlc.physical > out) out = w.hlc.physical;
-  }
-  return out;
-}
-
-/// 笔记最后一次改动的时刻（全部字段键当前生效记录里 HLC 物理时刻最大的一条；没有记录 = 创建时刻）。
-int srsNoteModifiedAt(SrsNoteView note) =>
-    srsEditsModifiedAt(note.createdAt, note.edits);
-
-/// 求值对象用到的那一半笔记数据。
-abstract interface class SrsSubjectNote {
-  String get id;
-  int get createdAt;
-  List<String> get tags;
-
-  /// 内容类待裁决（[SrsNoteView.hasPendingDecision]）。
-  bool get hasPendingDecision;
-
-  /// 最后改动时刻。
-  int get modifiedAt;
-
-  /// 字段原文（fieldId；没有值 = 空串）。
-  String field(String fieldId);
-
-  /// 排序字段（[type] 的第一个字段）去 HTML、trim 后的文本。
-  String sortText(SrsNoteTypeView type);
-}
-
-/// 完整物化的笔记（AnkiConnect / 统计页）。
-class _ViewNote implements SrsSubjectNote {
-  _ViewNote(this.view);
-
-  final SrsNoteView view;
-
-  @override
-  String get id => view.id;
-
-  @override
-  int get createdAt => view.createdAt;
-
-  @override
-  List<String> get tags => view.tags;
-
-  @override
-  bool get hasPendingDecision => view.hasPendingDecision;
-
-  @override
-  late final int modifiedAt = srsNoteModifiedAt(view);
-
-  @override
-  String field(String fieldId) => view.field(fieldId);
-
-  @override
-  String sortText(SrsNoteTypeView type) => type.fields.isEmpty
-      ? ''
-      : ankiStripHtml(view.field(type.fields.first.id)).trim();
-}
 
 /// Anki 搜索里的字面量：通配符（`*` `_` `\`）与语法字符（`"` `:`）全部转义。
 String _searchLiteral(String text) =>
@@ -97,172 +29,6 @@ String srsFieldContainsQuery(String field, String text) {
 /// （`*` `_`）、反斜杠与引号转义成字面量；层级分隔符 `::` 在引号内照原样保留。
 String srsDeckQuery(String deckFullName) =>
     'deck:"${deckFullName.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
-
-/// 搜索语料的字段别名（[SrsSearchFieldAliases]）：内置 Fushi 卡片改过名的 9 个字段带上改名前后的
-/// 另一个名字（[FushiCardFields]），`Expression:食べる`（Yomitan 查重的 findNotes）仍查到 `Term` 字段；
-/// 字段定义记录里还是旧名时 `Term:…` 也认。其它笔记类型（含 Lapis、自建）没有别名。
-Map<String, String> srsCardSearchFieldAliases(SrsSearchSubject subject) {
-  final SrsNoteTypeView type = (subject as SrsCardSearchSubject).noteType;
-  if (type.builtinKey != kSrsBuiltinFushiCardKey) {
-    return const <String, String>{};
-  }
-  return _aliasesByType[type] ??= <String, String>{
-    for (final SrsFieldDef f in type.fields)
-      if (FushiCardFields.aliasOf(f.name) case final String alias)
-        f.name: alias,
-  };
-}
-
-final Expando<Map<String, String>> _aliasesByType =
-    Expando<Map<String, String>>('srsCardSearchFieldAliases');
-
-/// 一张卡（连同笔记、笔记类型）作为 Anki 搜索的求值对象。
-class SrsCardSearchSubject implements SrsSearchSubject {
-  /// 由完整物化的笔记建（字段原文常驻，[fields] 可直接读）。
-  SrsCardSearchSubject({
-    required SrsNoteView note,
-    required this.noteType,
-    required this.card,
-    required this.deckName,
-    required this.day,
-    required this.nowMs,
-    required this.todayDayIndex,
-    this.instantDue,
-    int Function(String uuid)? numericId,
-  }) : note = _ViewNote(note),
-       _numericId = numericId ?? SrsIds.ankiNumericId;
-
-  final SrsSubjectNote note;
-  final SrsNoteTypeView noteType;
-  final SrsCardCacheRow card;
-  final SrsDayContext day;
-  final int nowMs;
-  final int Function(String uuid) _numericId;
-
-  /// 这张卡所在牌组按 RWKV-Instant 排队时：此刻会出的卡（[SrsDbStore.instantDueCardIds]）。
-  /// null = 不按 R 排（非 RWKV 牌组，或 RWKV 不可用、照旧按存下的到期日）。
-  final Set<String>? instantDue;
-
-  /// 复习卡按此刻回忆率排队：没有有意义的到期日。
-  bool get _byRecall => instantDue != null && queue == SrsQueue.review;
-
-  @override
-  final String deckName;
-
-  @override
-  final int todayDayIndex;
-
-  SrsQueue get queue => SrsQueue.parse(card.queue);
-
-  /// 这张卡的模板（模板被删了返回 null）。
-  late final SrsTemplateDef? template = noteType.templates
-      .where((SrsTemplateDef t) => t.id == card.templateId)
-      .firstOrNull;
-
-  /// 笔记最后一次改动的时刻。
-  int get modifiedAt => note.modifiedAt;
-
-  /// 排序字段（笔记类型的第一个字段，与 Anki 默认 sortf = 0 一致）去 HTML 后的文本。
-  late final String sortText = note.sortText(noteType);
-
-  @override
-  Object get noteKey => note.id;
-
-  @override
-  String get noteTypeName => noteType.name;
-
-  @override
-  late final Map<String, String> fields = <String, String>{
-    for (final SrsFieldDef f in noteType.fields) f.name: note.field(f.id),
-  };
-
-  @override
-  List<String> get tags => note.tags;
-
-  @override
-  bool get isNew => queue == SrsQueue.newCard;
-
-  @override
-  bool get isLearn =>
-      queue == SrsQueue.learning || queue == SrsQueue.relearning;
-
-  @override
-  bool get isReview => queue == SrsQueue.review || queue == SrsQueue.relearning;
-
-  @override
-  bool get isDue => switch (queue) {
-    SrsQueue.newCard => false,
-    SrsQueue.review when _byRecall => instantDue!.contains(card.id),
-    SrsQueue.review => (card.dueDay ?? 0) <= todayDayIndex,
-    SrsQueue.learning ||
-    SrsQueue.relearning => (card.dueAt ?? 0) <= nowMs + 20 * 60000,
-  };
-
-  @override
-  bool get isSuspended => card.suspended;
-
-  @override
-  bool get isBuried =>
-      card.buriedUntilDay != null && card.buriedUntilDay! > todayDayIndex;
-
-  @override
-  int get noteId => _numericId(note.id);
-
-  @override
-  int get cardId => _numericId(card.id);
-
-  @override
-  int get addedDayIndex => day.dayIndexOf(note.createdAt);
-
-  @override
-  int get flag => card.flag;
-
-  @override
-  int get cardOrdinal =>
-      noteType.isCloze ? card.clozeOrd : (template?.ord ?? 0) + 1;
-
-  @override
-  String get templateName => template?.name ?? '';
-
-  @override
-  int get intervalDays => switch (queue) {
-    SrsQueue.newCard || SrsQueue.learning => 0,
-    SrsQueue.review || SrsQueue.relearning => card.scheduledDays,
-  };
-
-  @override
-  int? get dueInDays {
-    switch (queue) {
-      case SrsQueue.newCard:
-        return null;
-      case SrsQueue.review when _byRecall:
-        return null;
-      case SrsQueue.review:
-        final int? d = card.dueDay;
-        return d == null ? null : d - todayDayIndex;
-      case SrsQueue.learning || SrsQueue.relearning:
-        final int? at = card.dueAt;
-        if (at == null) return null;
-        // rslib：(due - 明天日界) / 86400，整数除法向零截断。
-        return (at - day.dayStartMs(todayDayIndex + 1)) ~/ 86400000;
-    }
-  }
-
-  @override
-  int get reps => card.reps;
-
-  @override
-  int get lapses => card.lapses;
-
-  @override
-  double? get stability => card.stability;
-
-  @override
-  double? get difficulty => card.difficulty;
-
-  @override
-  int get editedDayIndex => day.dayIndexOf(modifiedAt);
-}
 
 /// 列表模式：一行一张卡 / 一行一条笔记。
 enum SrsBrowseMode { cards, notes }
@@ -517,6 +283,85 @@ class SrsBrowseResultGone implements Exception {
   String toString() => 'SrsBrowseResultGone: $reason';
 }
 
+/// 浏览会话查询的上下文：笔记类型（字段、别名、模板）、牌组有效全名与是否按 RWKV 回忆率排队、此刻与日界、
+/// RWKV 此刻会出的卡（[rwkvInstant] 为假时不带：`is:due` 照存下的到期日，AnkiConnect 的口径）。只与笔记类型 /
+/// 牌组数有关（RWKV 那份与它的到期卡数有关）。影响原生语料结构的部分（笔记类型、牌组名与排队方式）两种口径
+/// 相同，浏览页与 AnkiConnect 交替查询不会让语料重建。
+Future<Map<String, Object?>> srsBrowseContext(
+  SrsDbStore store, {
+  bool rwkvInstant = true,
+}) async {
+  final List<SrsNoteTypeView> types = await store.noteTypes();
+  final SrsDeckTree tree = await store.deckTree();
+  final SrsDayContext day = await store.dayContext();
+  final (int nowMs, _) = store.now();
+  final Set<String>? instant = rwkvInstant
+      ? await store.instantDueCardIds()
+      : null;
+  bool recall(String deckId) =>
+      (!rwkvInstant || instant != null) && store.instantActiveFor(tree, deckId);
+  // 牌组已不存在的卡归默认牌组（与排程配置同一判据）：显示为默认牌组、`deck:Default` 能筛到（BUG-3617）。
+  const String missing = '\u0000';
+  return <String, Object?>{
+    'now': nowMs,
+    'utcOff': day.utcOffsetMin,
+    'rollover': day.rolloverHour,
+    'types': <Object?>[
+      for (final SrsNoteTypeView t in types)
+        <String, Object?>{
+          'id': t.id,
+          'name': t.name,
+          'cloze': t.isCloze,
+          'deleted': t.deletedAt != null,
+          'fields': <Object?>[
+            for (final SrsFieldDef f in t.fields)
+              <Object?>[
+                f.id,
+                f.name,
+                if (t.builtinKey == kSrsBuiltinFushiCardKey)
+                  FushiCardFields.aliasOf(f.name),
+              ],
+          ],
+          'tpls': <Object?>[
+            for (final SrsTemplateDef p in t.templates)
+              <Object?>[p.id, p.name, p.ord],
+          ],
+        },
+    ],
+    'decks': <String, Object?>{
+      for (final SrsDeckView d in tree.decks)
+        d.id: <Object?>[
+          tree.effectiveDeckNameOf(d.id, fallback: store.defaultDeckId),
+          recall(d.id),
+        ],
+    },
+    'fallback': <Object?>[
+      tree.effectiveDeckNameOf(missing, fallback: store.defaultDeckId),
+      recall(missing),
+    ],
+    if (instant != null) 'instant': instant.toList(),
+  };
+}
+
+/// 浏览会话查询（`browse_query` / `anki_find`）的回答：求值出错（查询不合法 / 内核不可用）时抛
+/// [SrsSearchUnsupported]，否则原样交回。
+Map<String, Object?> srsBrowseCheckResult(
+  Map<String, Object?> r,
+  String query,
+) {
+  if (r['error'] case final Object error) {
+    final String at = (r['at'] as String?) ?? '';
+    throw SrsSearchUnsupported(
+      at.isEmpty ? query : at,
+      '$error',
+      r['kind'] == 'syntax'
+          ? SrsSearchErrorKind.syntax
+          : SrsSearchErrorKind.unavailable,
+    );
+  }
+  return r;
+}
+
 /// 一个浏览页的会话：搜索语料与列数据常驻原生侧（按 profile，随写入增量更新），这里只发查询、取行。
 ///
 /// 一次查询 = 一条命令（筛选 + 排序在 Rust 里做完，只回行数）；取一页行 = 一条命令（列式）。字段原文、
@@ -540,10 +385,10 @@ class SrsBrowseSession {
   }) async {
     final SrsSearchNode node = parseAnkiSearch(query);
     final SrsBrowseResult? last = _last;
-    final Map<String, Object?> r = _check(
+    final Map<String, Object?> r = srsBrowseCheckResult(
       (await store.browseCommand(<String, Object?>{
         'op': 'browse_query',
-        ...await _context(),
+        ...await srsBrowseContext(store),
         if (node is! SrsSearchAll) 'node': srsSearchNodeJson(node),
         'sort': <String, Object?>{
           'col': sort.column.name,
@@ -576,73 +421,6 @@ class SrsBrowseSession {
     } on SrsCoreException catch (e) {
       if (!e.message.contains('store is closed')) rethrow;
     }
-  }
-
-  /// 查询的上下文：笔记类型（字段、别名、模板）、牌组有效全名与是否按 RWKV 回忆率排队、此刻与日界、
-  /// RWKV 此刻会出的卡。只与笔记类型 / 牌组数有关（RWKV 那份与它的到期卡数有关）。
-  Future<Map<String, Object?>> _context() async {
-    final List<SrsNoteTypeView> types = await store.noteTypes();
-    final SrsDeckTree tree = await store.deckTree();
-    final SrsDayContext day = await store.dayContext();
-    final (int nowMs, _) = store.now();
-    final Set<String>? instant = await store.instantDueCardIds();
-    bool recall(String deckId) =>
-        instant != null && store.instantActiveFor(tree, deckId);
-    // 牌组已不存在的卡归默认牌组（与排程配置同一判据）：显示为默认牌组、`deck:Default` 能筛到（BUG-3617）。
-    const String missing = '\u0000';
-    return <String, Object?>{
-      'now': nowMs,
-      'utcOff': day.utcOffsetMin,
-      'rollover': day.rolloverHour,
-      'types': <Object?>[
-        for (final SrsNoteTypeView t in types)
-          <String, Object?>{
-            'id': t.id,
-            'name': t.name,
-            'cloze': t.isCloze,
-            'deleted': t.deletedAt != null,
-            'fields': <Object?>[
-              for (final SrsFieldDef f in t.fields)
-                <Object?>[
-                  f.id,
-                  f.name,
-                  if (t.builtinKey == kSrsBuiltinFushiCardKey)
-                    FushiCardFields.aliasOf(f.name),
-                ],
-            ],
-            'tpls': <Object?>[
-              for (final SrsTemplateDef p in t.templates)
-                <Object?>[p.id, p.name, p.ord],
-            ],
-          },
-      ],
-      'decks': <String, Object?>{
-        for (final SrsDeckView d in tree.decks)
-          d.id: <Object?>[
-            tree.effectiveDeckNameOf(d.id, fallback: store.defaultDeckId),
-            recall(d.id),
-          ],
-      },
-      'fallback': <Object?>[
-        tree.effectiveDeckNameOf(missing, fallback: store.defaultDeckId),
-        recall(missing),
-      ],
-      if (instant != null) 'instant': instant.toList(),
-    };
-  }
-
-  Map<String, Object?> _check(Map<String, Object?> r, String query) {
-    if (r['error'] case final Object error) {
-      final String at = (r['at'] as String?) ?? '';
-      throw SrsSearchUnsupported(
-        at.isEmpty ? query : at,
-        '$error',
-        r['kind'] == 'syntax'
-            ? SrsSearchErrorKind.syntax
-            : SrsSearchErrorKind.unavailable,
-      );
-    }
-    return r;
   }
 
   Future<SrsSync2Result> _command(Map<String, Object?> request) async {

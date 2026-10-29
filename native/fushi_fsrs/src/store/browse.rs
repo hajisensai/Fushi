@@ -17,6 +17,9 @@
 //! - 笔记类型（字段、模板、别名）、牌组全名、RWKV 此刻会出的卡由 Dart 每次查询传入（只与类型 / 牌组数有关），
 //!   语义与旧的 Dart 快照（`SrsBrowseSnapshot`）逐项相同：回归向量见
 //!   packages/fushi_engine/test/srs/srs_browse_vectors_test.dart。
+//! - **AnkiConnect**（L-5）：兼容层的 findNotes / findCards（`anki_find`）、canAddNotes 的库内查重（`anki_dupes`）、
+//!   getTags（`anki_tags`）用同一个会话、同一份语料，不再在 Dart 里常驻一份全库笔记镜像；查重的首字段规范形按笔记
+//!   增量维护（[Dupe]）。回归向量见 packages/fushi_engine/test/srs/ankiconnect/srs_ankiconnect_vectors_test.dart。
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -24,7 +27,6 @@ use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::{params_from_iter, types::Value as Sql, Connection};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 use crate::projection::Day;
 use crate::registers::{self, StoredEdit};
@@ -69,21 +71,12 @@ fn dart_trim(s: &str) -> &str {
     s.trim_matches(search::is_dart_trim_space)
 }
 
-/// Anki 数字 id（Dart `SrsIds.ankiNumericId` = `hash53('anki-id/<uuid>')`）。
-fn anki_numeric_id(uuid: &str) -> i64 {
-    let mut h = Sha256::new();
-    h.update(b"anki-id/");
-    h.update(uuid.as_bytes());
-    let d = h.finalize();
-    let mut v = 0u64;
-    for &b in &d[..7] {
-        v = (v << 8) | b as u64;
-    }
-    v &= (1u64 << 53) - 1;
-    if v == 0 {
-        1
+/// 缓存行的 AnkiConnect 数字 id（v13 的 `anki_id` 列，写缓存行时算好）；万一还是 0（没回填的老行）就现算。
+fn anki_id_of(stored: i64, uuid: &str) -> i64 {
+    if stored != 0 {
+        stored
     } else {
-        v as i64
+        crate::store::schema::anki_numeric_id(uuid)
     }
 }
 
@@ -123,6 +116,8 @@ struct Card {
     stab: Option<f64>,
     diff: Option<f64>,
     last_rev: Option<i64>,
+    /// AnkiConnect 数字 id。
+    num: i64,
 }
 
 impl Card {
@@ -133,12 +128,14 @@ impl Card {
 }
 
 const CARD_COLUMNS: &str = "id, note_id, template_id, cloze_ord, deck_id, suspended, buried_until_day, flag, queue, \
-     due_day, due_at, scheduled_days, reps, lapses, stability, difficulty, last_reviewed_at";
+     due_day, due_at, scheduled_days, reps, lapses, stability, difficulty, last_reviewed_at, anki_id";
 
 fn card_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Card> {
     let queue: String = r.get(8)?;
+    let id: String = r.get(0)?;
     Ok(Card {
-        id: r.get(0)?,
+        num: anki_id_of(r.get(17)?, &id),
+        id,
         note: r.get(1)?,
         tpl: r.get(2)?,
         cloze: r.get(3)?,
@@ -171,6 +168,8 @@ struct Note {
     values: HashMap<String, String>,
     /// 各寄存器生效记录的最大 HLC 物理时刻（[Session::full] 时有效；没有记录 = None）。
     modified: Option<i64>,
+    /// AnkiConnect 数字 id。
+    num: i64,
 }
 
 impl Note {
@@ -188,7 +187,7 @@ impl Note {
     }
 }
 
-const NOTE_COLUMNS: &str = "id, note_type_id, created_at, sort_field, tags_json, pending_decision";
+const NOTE_COLUMNS: &str = "id, note_type_id, created_at, sort_field, tags_json, pending_decision, anki_id";
 
 fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     let tags: String = r.get(4)?;
@@ -196,8 +195,10 @@ fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
         Ok(Value::Array(a)) => a.into_iter().filter_map(|t| t.as_str().map(str::to_owned)).collect(),
         _ => Vec::new(),
     };
+    let id: String = r.get(0)?;
     Ok(Note {
-        id: r.get(0)?,
+        num: anki_id_of(r.get(6)?, &id),
+        id,
         ty: r.get(1)?,
         created: r.get(2)?,
         sort: r.get(3)?,
@@ -429,9 +430,6 @@ struct View {
     corpus: Corpus,
     /// 语料的名字表（字符串 id → 原文）：把 [Needs::Names] 换回字段名。
     strings: Vec<String>,
-    /// `nid:` / `cid:` 的数字 id 列（SHA-256，用到才算）。
-    nid: Option<Vec<i64>>,
-    cid: Option<Vec<i64>>,
 }
 
 struct Interner {
@@ -616,8 +614,6 @@ impl View {
             note_cards,
             corpus,
             strings: it.strings,
-            nid: None,
-            cid: None,
         })
     }
 }
@@ -718,6 +714,34 @@ pub(crate) struct Session {
     view: Option<View>,
     /// 最近几次查询的结果（新的在后；浏览页与控制通道可以同时各持一份）。
     results: Vec<Res>,
+    /// AnkiConnect 查重的首字段规范形索引（第一次查重时建）。
+    dupe: Option<Dupe>,
+    /// 索引建好之后写过的笔记：下次查重前重核。
+    dupe_dirty: HashSet<String>,
+}
+
+/// AnkiConnect 查重的倒排索引：每条笔记首字段（笔记类型字段顺序第一个）的查重规范形
+/// （[search::dupe_norm]：样式去重规范形 → 去 HTML → trim）→ 笔记。只含未删除、笔记类型在（Dart 传来的
+/// [Dupe::first] 里有它）的笔记。首字段原文没变的笔记重核时沿用旧的规范形。
+struct Dupe {
+    /// 笔记类型 → 首字段 id（建索引时 Dart 传来的那份；变了整份重核）。
+    first: HashMap<String, String>,
+    /// 笔记 id → (首字段原文, 规范形)。
+    of: HashMap<String, (String, String)>,
+    /// 规范形 → 笔记 id。
+    by: HashMap<String, HashSet<String>>,
+}
+
+impl Dupe {
+    fn unlink(&mut self, id: &str) {
+        let Some((_, norm)) = self.of.remove(id) else { return };
+        if let Some(same) = self.by.get_mut(&norm) {
+            same.remove(id);
+            if same.is_empty() {
+                self.by.remove(&norm);
+            }
+        }
+    }
 }
 
 /// 一个会话留几份查询结果。
@@ -725,8 +749,6 @@ const KEEP_RESULTS: usize = 4;
 
 static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-const NOTES_SQL: &str = "SELECT id, note_type_id, created_at, sort_field, tags_json, pending_decision \
-     FROM srs_notes_cache WHERE profile_uid = ?1 AND deleted_at IS NULL";
 
 impl Session {
     fn build(c: &Connection, profile: &str) -> Result<Session, String> {
@@ -740,9 +762,12 @@ impl Session {
             shape: 0,
             view: None,
             results: Vec::new(),
+            dupe: None,
+            dupe_dirty: HashSet::new(),
         };
         {
-            let mut stmt = c.prepare_cached(NOTES_SQL).map_err(sql)?;
+            let q = format!("SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = ?1 AND deleted_at IS NULL");
+            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let mut rows = stmt.query([profile]).map_err(sql)?;
             while let Some(r) = rows.next().map_err(sql)? {
                 let n = note_of(r).map_err(sql)?;
@@ -768,6 +793,9 @@ impl Session {
         }
         for r in &mut self.results {
             r.stale = true;
+        }
+        if self.dupe.is_some() {
+            self.dupe_dirty.extend(d.notes.iter().cloned());
         }
         let ids: Vec<&String> = d.cards.iter().collect();
         for chunk in ids.chunks(CHUNK) {
@@ -997,32 +1025,9 @@ impl Session {
         let cards_mode = req.get("mode").and_then(Value::as_str) != Some("notes");
         let params = json!([req.get("node"), sort, cards_mode, req.get("types"), req.get("decks"), req.get("fallback"), req.get("instant"), ctx.today, ctx.now]);
 
-        self.ensure_view(&ctx)?;
-        let query = node.map(|n| n.to_string());
-        // 查询要的字段列、`edited:` / 按修改时间排序要的最后改动时刻、按字段排序要的那一列：先装齐再求值。
-        let mut full = column == Column::Modified;
+        // 按修改时间排序要的最后改动时刻、按字段排序要的那一列：与查询要的列一起先装齐再求值。
+        let full = column == Column::Modified;
         let mut want: HashSet<String> = HashSet::new();
-        if let Some(n) = node {
-            if uses(n, "edited") {
-                full = true;
-            }
-            let q = query.as_deref().unwrap_or_default();
-            let view = self.view.as_ref().expect("view");
-            match view.corpus.needs(q) {
-                Ok(Needs::All) => full = true,
-                Ok(Needs::Names(ids)) => {
-                    let names: HashSet<&str> = ids.iter().map(|&i| view.strings[i as usize].as_str()).collect();
-                    for t in ctx.types.values() {
-                        for (k, name) in t.slot_names.iter().enumerate() {
-                            if names.contains(name.as_str()) {
-                                want.insert(t.slot_ids[k].clone());
-                            }
-                        }
-                    }
-                }
-                Err(e) => return Ok(search_error(e)),
-            }
-        }
         if column == Column::Field {
             if let Some(f) = &field {
                 for t in ctx.types.values() {
@@ -1032,25 +1037,9 @@ impl Session {
                 }
             }
         }
-        if full {
-            self.ensure_fields(c, profile, None)?;
-        } else if !want.is_empty() {
-            self.ensure_fields(c, profile, Some(&want))?;
-        }
-        self.ensure_view(&ctx)?;
-
-        let hits: Vec<u32> = match &query {
-            None => (0..self.view.as_ref().expect("view").order.len() as u32).collect(),
-            Some(q) => {
-                let node = node.expect("query has a node");
-                self.set_columns(&ctx, node)?;
-                let view = self.view.as_ref().expect("view");
-                let mut out = vec![0u8; view.order.len()];
-                if let Err(e) = view.corpus.search(q, &mut out) {
-                    return Ok(search_error(e));
-                }
-                (0..out.len() as u32).filter(|&i| out[i as usize] != 0).collect()
-            }
+        let hits = match self.hits(c, profile, &ctx, node, full, want)? {
+            Ok(h) => h,
+            Err(e) => return Ok(search_error(e)),
         };
         let view = self.view.as_ref().expect("view");
         // 行：卡片模式一张卡一行；笔记模式每条笔记命中的第一张卡为主卡，该行是笔记的全部可见卡。
@@ -1099,23 +1088,66 @@ impl Session {
         Ok(json!({"gen": gen, "count": count, "cards": total}))
     }
 
+    /// 筛选：装齐查询要的数据（[full] / [want] 是调用方另外要装的：全部字段 + 最后改动时刻 / 这几个字段列），
+    /// 求值，交回命中的语料卡下标（自然顺序）。查询本身不合法 / 内核不可用时交回 `Ok(Err(..))`。
+    fn hits(
+        &mut self,
+        c: &Connection,
+        profile: &str,
+        ctx: &Ctx,
+        node: Option<&Value>,
+        mut full: bool,
+        mut want: HashSet<String>,
+    ) -> Result<Result<Vec<u32>, search::SearchError>, String> {
+        self.ensure_view(ctx)?;
+        let query = node.map(|n| n.to_string());
+        if let Some(n) = node {
+            if uses(n, "edited") {
+                full = true;
+            }
+            let q = query.as_deref().unwrap_or_default();
+            let view = self.view.as_ref().expect("view");
+            match view.corpus.needs(q) {
+                Ok(Needs::All) => full = true,
+                Ok(Needs::Names(ids)) => {
+                    let names: HashSet<&str> = ids.iter().map(|&i| view.strings[i as usize].as_str()).collect();
+                    for t in ctx.types.values() {
+                        for (k, name) in t.slot_names.iter().enumerate() {
+                            if names.contains(name.as_str()) {
+                                want.insert(t.slot_ids[k].clone());
+                            }
+                        }
+                    }
+                }
+                Err(e) => return Ok(Err(e)),
+            }
+        }
+        if full {
+            self.ensure_fields(c, profile, None)?;
+        } else if !want.is_empty() {
+            self.ensure_fields(c, profile, Some(&want))?;
+        }
+        self.ensure_view(ctx)?;
+        Ok(match &query {
+            None => Ok((0..self.view.as_ref().expect("view").order.len() as u32).collect()),
+            Some(q) => {
+                let node = node.expect("query has a node");
+                self.set_columns(ctx, node)?;
+                let view = self.view.as_ref().expect("view");
+                let mut out = vec![0u8; view.order.len()];
+                match view.corpus.search(q, &mut out) {
+                    Err(e) => Err(e),
+                    Ok(_) => Ok((0..out.len() as u32).filter(|&i| out[i as usize] != 0).collect()),
+                }
+            }
+        })
+    }
+
     /// 每次查询按此刻现算的数值列（语料的 [search::IntColumn] / [search::FloatColumn]）。
     fn set_columns(&mut self, ctx: &Ctx, node: &Value) -> Result<(), String> {
         let full = self.full;
         let ids = uses(node, "nid") || uses(node, "cid");
         let view = self.view.as_mut().expect("view");
-        if ids && view.nid.is_none() {
-            let mut nid = Vec::with_capacity(view.order.len());
-            let mut cid = Vec::with_capacity(view.order.len());
-            for (i, &slot) in view.order.iter().enumerate() {
-                let c = self.cards[slot as usize].as_ref().expect("visible card");
-                let n = self.notes[view.note_slot[view.card_note[i] as usize] as usize].as_ref().expect("visible note");
-                nid.push(anki_numeric_id(&n.id));
-                cid.push(anki_numeric_id(&c.id));
-            }
-            view.nid = Some(nid);
-            view.cid = Some(cid);
-        }
         let n = view.order.len();
         let mut cols: Vec<Vec<i64>> = (0..search::INT_COLUMNS).map(|_| Vec::with_capacity(n)).collect();
         let mut stab = Vec::with_capacity(n);
@@ -1133,8 +1165,8 @@ impl Session {
                 | (i64::from(c.suspended) << 4)
                 | (i64::from(ctx.is_buried(c)) << 5);
             cols[0].push(state);
-            cols[1].push(view.nid.as_ref().map_or(0, |v| v[i]));
-            cols[2].push(view.cid.as_ref().map_or(0, |v| v[i]));
+            cols[1].push(note.num);
+            cols[2].push(c.num);
             cols[3].push(ctx.day.index(note.created));
             cols[4].push(if full { ctx.day.index(note.modified_at()) } else { 0 });
             cols[5].push(ctx.today);
@@ -1148,8 +1180,8 @@ impl Session {
             diff.push(c.diff.unwrap_or(f64::NAN));
         }
         for (k, col) in cols.iter().enumerate() {
-            // 没装最后改动时刻时不给 `edited:` 列（查询用到它之前一定先装好）；数字 id 同理。
-            if (k == 4 && !full) || ((k == 1 || k == 2) && view.nid.is_none()) {
+            // 没装最后改动时刻时不给 `edited:` 列（查询用到它之前一定先装好）；数字 id 只在查询用到时给。
+            if (k == 4 && !full) || ((k == 1 || k == 2) && !ids) {
                 continue;
             }
             view.corpus.set_ints(k, col)?;
@@ -1338,6 +1370,153 @@ impl Session {
             "decks": decks,
         }))
     }
+
+    // ------------------------------------------------------------------ AnkiConnect
+
+    /// `anki_find`：findNotes / findCards。`node` = 搜索语法树（没有 = 全部），`mode` = `notes` / `cards`；上下文
+    /// （笔记类型、牌组名、此刻、日界）同浏览查询，不带 `instant`（AnkiConnect 的 `is:due` 照存下的到期日）。
+    /// 命中按自然顺序（笔记创建时刻、笔记 id、卡片序号）：卡片模式每张命中的卡一个，笔记模式每条命中的笔记一个
+    /// （第一次出现的位置）。数字 id 放进 `ids.i64`（小端 i64）；`uuids` 为真时另回卡 id 原文（guiBrowse 用）。
+    /// 不留查询结果（不挤掉浏览页的结果）。
+    fn anki_find(&mut self, c: &Connection, profile: &str, req: &Value, files: &mut Vec<(String, Vec<u8>)>) -> Result<Value, String> {
+        let ctx = Ctx::parse(req)?;
+        let node = req.get("node").filter(|n| !n.is_null() && n.get("t").and_then(Value::as_str) != Some("all"));
+        let notes = req.get("mode").and_then(Value::as_str) == Some("notes");
+        let hits = match self.hits(c, profile, &ctx, node, false, HashSet::new())? {
+            Ok(h) => h,
+            Err(e) => return Ok(search_error(e)),
+        };
+        let view = self.view.as_ref().expect("view");
+        let mut bytes: Vec<u8> = Vec::with_capacity(hits.len() * 8);
+        let mut uuids: Vec<&str> = Vec::new();
+        let want_uuids = req.get("uuids").and_then(Value::as_bool).unwrap_or(false);
+        let mut last: Option<u32> = None;
+        for &h in &hits {
+            let card = self.card(view.order[h as usize]);
+            let vn = view.card_note[h as usize];
+            let num = if notes {
+                // 同一条笔记的卡在自然顺序里挨着。
+                if last == Some(vn) {
+                    continue;
+                }
+                last = Some(vn);
+                self.note(view.note_slot[vn as usize]).num
+            } else {
+                card.num
+            };
+            bytes.extend_from_slice(&num.to_le_bytes());
+            if want_uuids {
+                uuids.push(card.id.as_str());
+            }
+        }
+        let count = bytes.len() / 8;
+        files.push(("ids.i64".to_owned(), bytes));
+        Ok(if want_uuids { json!({"count": count, "cards": uuids}) } else { json!({"count": count}) })
+    }
+
+    /// `anki_dupes`：canAddNotes / addNote 的库内查重。`first` = 笔记类型 → 首字段 id（未删除、有字段的笔记类型）；
+    /// `cands` = `[{norm, type, all, decks}]`（`norm` 是候选首字段的查重规范形，调用方已判过空；`all` = 跨笔记类型
+    /// 比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool]}`，与 `cands` 等长：库里有规范形相同、笔记
+    /// 类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的笔记。
+    fn anki_dupes(&mut self, c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+        let first: HashMap<String, String> = req
+            .get("first")
+            .and_then(Value::as_object)
+            .map(|m| m.iter().filter_map(|(k, v)| v.as_str().map(|f| (k.clone(), f.to_owned()))).collect())
+            .unwrap_or_default();
+        let cands = req.get("cands").and_then(Value::as_array).cloned().unwrap_or_default();
+        if cands.is_empty() {
+            return Ok(json!({"dup": []}));
+        }
+        let fids: HashSet<String> = first.values().cloned().collect();
+        self.ensure_fields(c, profile, Some(&fids))?;
+        self.sync_dupe(first);
+        let dupe = self.dupe.as_ref().expect("dupe index");
+        // 每个候选命中的库内笔记（笔记类型已按 `all` 过滤）；要看牌组的先收齐，一遍扫完全部卡。
+        let mut matched: Vec<Vec<&str>> = Vec::with_capacity(cands.len());
+        let mut deck_notes: HashSet<&str> = HashSet::new();
+        for cand in &cands {
+            let norm = cand.get("norm").and_then(Value::as_str).unwrap_or("");
+            let ty = cand.get("type").and_then(Value::as_str).unwrap_or("");
+            let all = cand.get("all").and_then(Value::as_bool).unwrap_or(false);
+            let scoped = cand.get("decks").is_some_and(Value::is_array);
+            let mut hit: Vec<&str> = Vec::new();
+            for id in dupe.by.get(norm).into_iter().flatten() {
+                let Some(&slot) = self.note_at.get(id) else { continue };
+                let n = self.note(slot);
+                if !all && n.ty != ty {
+                    continue;
+                }
+                hit.push(id.as_str());
+                if scoped {
+                    deck_notes.insert(id.as_str());
+                }
+            }
+            matched.push(hit);
+        }
+        let mut decks_of: HashMap<&str, HashSet<&str>> = HashMap::new();
+        if !deck_notes.is_empty() {
+            for card in self.cards.iter().flatten() {
+                if deck_notes.contains(card.note.as_str()) {
+                    decks_of.entry(card.note.as_str()).or_default().insert(card.deck.as_str());
+                }
+            }
+        }
+        let out: Vec<bool> = cands
+            .iter()
+            .zip(&matched)
+            .map(|(cand, hit)| match cand.get("decks").and_then(Value::as_array) {
+                None => !hit.is_empty(),
+                Some(ds) => {
+                    let scope: HashSet<&str> = ds.iter().filter_map(Value::as_str).collect();
+                    hit.iter().any(|id| decks_of.get(id).is_some_and(|d| d.iter().any(|x| scope.contains(x))))
+                }
+            })
+            .collect();
+        Ok(json!({"dup": out}))
+    }
+
+    /// 把查重索引刷到会话此刻的笔记：首字段映射变了（或还没建）就全部重核，否则只重核写过的笔记。
+    fn sync_dupe(&mut self, first: HashMap<String, String>) {
+        let rebuild = self.dupe.as_ref().is_none_or(|d| d.first != first);
+        let dirty: Vec<String> = if rebuild {
+            self.dupe = Some(Dupe {
+                first,
+                of: HashMap::new(),
+                by: HashMap::new(),
+            });
+            self.dupe_dirty.clear();
+            self.notes.iter().flatten().map(|n| n.id.clone()).collect()
+        } else {
+            self.dupe_dirty.drain().collect()
+        };
+        let dupe = self.dupe.as_mut().expect("dupe index");
+        for id in dirty {
+            let raw = self
+                .note_at
+                .get(&id)
+                .and_then(|&slot| self.notes[slot as usize].as_ref())
+                .and_then(|n| dupe.first.get(&n.ty).map(|f| n.value(f)));
+            let Some(raw) = raw else {
+                dupe.unlink(&id);
+                continue;
+            };
+            if dupe.of.get(&id).is_some_and(|(r, _)| r == raw) {
+                continue;
+            }
+            let norm = search::dupe_norm(raw);
+            dupe.unlink(&id);
+            dupe.by.entry(norm.clone()).or_default().insert(id.clone());
+            dupe.of.insert(id, (raw.to_owned(), norm));
+        }
+    }
+
+    /// `anki_tags`：全部未删除笔记的标签，去重、按 Dart `String.compareTo`（UTF-16 码元）排。
+    fn anki_tags(&self) -> Value {
+        let mut tags: Vec<&str> = self.notes.iter().flatten().flat_map(|n| n.tags.iter().map(String::as_str)).collect::<HashSet<_>>().into_iter().collect();
+        tags.sort_by(|a, b| cmp16(a, b));
+        json!({"tags": tags})
+    }
 }
 
 /// 语法树里有没有某种叶子（`t` 键）。
@@ -1358,7 +1537,7 @@ fn search_error(e: search::SearchError) -> Value {
 
 impl SrsCore {
     /// 浏览命令（ffi.rs 的 v2 分发器转来）：`browse_query` / `browse_rows` / `browse_ids` / `browse_targets` /
-    /// `browse_close`。读快照（写连接上事务里则在 SAVEPOINT 里，看得见未提交的行）。
+    /// `browse_close`，以及 AnkiConnect 兼容层的 `anki_find` / `anki_dupes` / `anki_tags`（同一个会话）。读快照（写连接上事务里则在 SAVEPOINT 里，看得见未提交的行）。
     pub(crate) fn browse(&self, op: &str, profile: &str, req: &Value, files: &mut Vec<(String, Vec<u8>)>) -> Result<Value, String> {
         if op == "browse_close" {
             lock(&self.browse).remove(profile);
@@ -1371,7 +1550,7 @@ impl SrsCore {
             let fresh = dirty.overflow || !sessions.contains_key(profile);
             let ready = if fresh {
                 sessions.remove(profile);
-                if op != "browse_query" {
+                if op != "browse_query" && !op.starts_with("anki_") {
                     return Err("browse: no session (query first)".into());
                 }
                 Session::build(c, profile).map(|s| {
@@ -1411,9 +1590,12 @@ impl SrsCore {
                 "browse_rows" => s.rows(req, files),
                 "browse_ids" => s.ids(req),
                 "browse_targets" => s.targets(req),
+                "anki_find" => s.anki_find(c, profile, req, files),
+                "anki_dupes" => s.anki_dupes(c, profile, req),
+                "anki_tags" => Ok(s.anki_tags()),
                 _ => Err(format!("browse: unknown op {op}")),
             };
-            if out.is_err() && op == "browse_query" {
+            if out.is_err() && (op == "browse_query" || op.starts_with("anki_")) {
                 // 求值 / 装载出错：会话可能只装了一半，丢掉，下次整份重建。
                 sessions.remove(profile);
             }
