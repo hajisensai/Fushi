@@ -1,4 +1,4 @@
-## BUG-3874 · web-mine-replay-cover-only
+## BUG-3879 · web-mine-replay-cover-only
 - **报告**：2026-10-29（用户：「网飞制卡怎么只有封面，没有视频？明明进行了录屏」；附卡片编辑器截图，图片字段只有一张静帧）
 - **真实性**：✅ 真 bug。网页播放器制卡队列逐句重放时只在 cue 中点截一张 PNG（`fushi/lib/src/mining/web_mine_replay.dart` 旧 `capture` 循环），`_mineQueuedRow`（`fushi/lib/src/pages/implementations/web_video_fushi_page.dart`）把这张 PNG 当 `providedCoverBytes` 交给引擎、不传 `imageMode`——用户图片模式是「视频片段 / 动图」时，重放整句播了一遍，画面却一帧都没留下，卡上永远是静图。
 - **[x] ① 已修复** — `WebMineReplayRunner` 新增 `captureFrames`：动图 / 片段模式下播放全程按 125 ms 采 JPEG 帧（`WebMineReplayHost.frame()`，CDP `Page.captureScreenshot` JPEG），帧时间与音频回取窗同一墙钟时基（`audioLeadMs` / `clipDurationMs`）；新 `fushi/lib/src/mining/web_mine_clip.dart` 把帧序列 + 句子音频合成中间 Matroska 片段，再走与浏览器扩展录制片段同一条 `transcodeClipToCapture` 按用户模式出音画同步片段 / 动图；图片模式录制前按目标模板解析（`resolveTargetMiningImageMode`）。合成 / 转码失败退回中点封面并记 `clip_compose_failed` / `clip_transcode_failed` warning。
