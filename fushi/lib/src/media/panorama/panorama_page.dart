@@ -23,6 +23,9 @@ import 'package:fushi/utils.dart';
 /// 打开一部作品（由首页按各域既有路径实现）。
 typedef PanoramaOpenWork = Future<void> Function(PanoramaWork work);
 
+/// 全屏页空闲时环境动效保留的走速：公转的封面与环绕的词一直慢慢转，不会定住。
+const double kPanoramaPageIdleDrift = 0.4;
+
 /// 字体套：小说正文字体、app 界面字体、复习卡片字体、游戏文本字体里各取不同的族，最多 4 套；
 /// 缺字回退 app 界面字体链。一个都没有时只有系统默认一套。
 Future<List<PanoramaFontSet>> panoramaFontSets(AppModel app) async {
@@ -48,21 +51,30 @@ Future<List<PanoramaFontSet>> panoramaFontSets(AppModel app) async {
   ];
 }
 
-/// 全景资源（数据 + 图集）：首页面板与全屏页共用；没有订阅者时释放图集显存。
-final AutoDisposeFutureProvider<PanoramaAssets> panoramaAssetsProvider =
-    FutureProvider.autoDispose<PanoramaAssets>((Ref ref) async {
+/// 全景数据（作品 + 词，不含图集）：首页面板只要它出说明文字与分享选单，不建图集、
+/// 不占显存。
+final AutoDisposeFutureProvider<PanoramaLibrary> panoramaLibraryProvider =
+    FutureProvider.autoDispose<PanoramaLibrary>((Ref ref) async {
       final AppModel app = ref.read(appProvider);
       SrsDbStore? srs;
       try {
         srs = await ref.watch(srsStoreProvider.future);
       } catch (e, s) {
         // 复习库打不开：照样出封面，只是没有词（记日志，不静默）。
-        ErrorLogService.instance.log('panoramaAssetsProvider.srs', e, s);
+        ErrorLogService.instance.log('panoramaLibraryProvider.srs', e, s);
         srs = null;
       }
-      final PanoramaLibrary library = await loadPanoramaLibrary(
-        db: app.database,
-        srs: srs,
+      return loadPanoramaLibrary(db: app.database, srs: srs);
+    });
+
+/// 全景资源（数据 + 图集）：全屏页与分享动画共用；没有订阅者时释放图集显存。
+final AutoDisposeFutureProvider<PanoramaAssets> panoramaAssetsProvider =
+    FutureProvider.autoDispose<PanoramaAssets>((
+      AutoDisposeFutureProviderRef<PanoramaAssets> ref,
+    ) async {
+      final AppModel app = ref.read(appProvider);
+      final PanoramaLibrary library = await ref.watch(
+        panoramaLibraryProvider.future,
       );
       final List<PanoramaFontSet> fonts = await panoramaFontSets(app);
       final PanoramaAtlas atlas = await buildPanoramaAtlas(
@@ -87,15 +99,63 @@ String panoramaSummary(PanoramaLibrary library) => t.panorama_summary(
   shown: library.shownWords,
 );
 
-/// 播放分享动画；减弱动态效果 / 墨水屏下跳过整段，直接打开最后要锁定的作品。
+IconData _workKindIcon(PanoramaWorkKind kind) => switch (kind) {
+  PanoramaWorkKind.book => FushiIcons.books,
+  PanoramaWorkKind.manga => FushiIcons.manga,
+  PanoramaWorkKind.video => FushiIcons.video,
+  PanoramaWorkKind.game => FushiIcons.games,
+  PanoramaWorkKind.music => FushiIcons.music,
+};
+
+/// 分享动画的作品选单顺序（纯函数）：默认锁定的作品在最前，其余按最近打开、再按标题。
+List<int> panoramaShareTargetOrder(PanoramaLibrary library) {
+  final int preferred = panoramaDefaultTarget(library);
+  final List<PanoramaWork> works = library.works;
+  final List<int> order = <int>[for (int i = 0; i < works.length; i++) i];
+  order.sort((int a, int b) {
+    if (a == preferred) return -1;
+    if (b == preferred) return 1;
+    final int byRecent = works[b].lastOpenedAt.compareTo(works[a].lastOpenedAt);
+    if (byRecent != 0) return byRecent;
+    return works[a].title.compareTo(works[b].title);
+  });
+  return order;
+}
+
+/// 让用户选分享动画最后锁定的作品（默认项 = [panoramaDefaultTarget]）；取消返回 null。
+Future<int?> pickPanoramaShareTarget(
+  BuildContext context,
+  PanoramaLibrary library,
+) {
+  return showFushiChoiceDialog<int>(
+    context: context,
+    title: t.panorama_share_pick_title,
+    message: t.panorama_share_pick_message,
+    icon: FushiIcons.share,
+    selected: panoramaDefaultTarget(library),
+    options: <FushiChoiceOption<int>>[
+      for (final int i in panoramaShareTargetOrder(library))
+        FushiChoiceOption<int>(
+          value: i,
+          label: library.works[i].title,
+          icon: _workKindIcon(library.works[i].kind),
+        ),
+    ],
+  );
+}
+
+/// 分享动画：先选最后锁定的作品，再全屏播放；减弱动态效果 / 墨水屏下跳过整段，直接打开
+/// 选中的作品。
 Future<void> playPanoramaCinematic(
   BuildContext context,
-  PanoramaAssets assets,
+  PanoramaLibrary library,
   PanoramaOpenWork onOpen,
 ) async {
-  final int target = assets.defaultTarget;
+  if (library.isEmpty) return;
+  final int? target = await pickPanoramaShareTarget(context, library);
+  if (target == null || !context.mounted) return;
   if (!fushiMotionEnabled(context)) {
-    if (target >= 0) await onOpen(assets.library.works[target]);
+    await onOpen(library.works[target]);
     return;
   }
   await Navigator.of(context).push<void>(
@@ -103,81 +163,128 @@ Future<void> playPanoramaCinematic(
       opaque: true,
       transitionDuration: fushiMotionDuration(context, FushiMotion.medium),
       pageBuilder: (_, _, _) =>
-          PanoramaCinematicPage(assets: assets, target: target, onOpen: onOpen),
+          PanoramaCinematicPage(target: target, onOpen: onOpen),
       transitionsBuilder: (_, Animation<double> a, _, Widget child) =>
           FadeTransition(opacity: a, child: child),
     ),
   );
 }
 
-/// 全屏可操作全景（星系开场，拉近收拢成球幕）。
-class PanoramaPage extends ConsumerWidget {
+/// 全屏可操作全景（星系开场，拉近收拢成球幕）。顶栏：返回 + 标题；动作：切换星系 / 球幕、
+/// 分享动画（先选作品）。
+class PanoramaPage extends ConsumerStatefulWidget {
   const PanoramaPage({super.key, required this.onOpen});
 
   final PanoramaOpenWork onOpen;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PanoramaPage> createState() => _PanoramaPageState();
+}
+
+class _PanoramaPageState extends ConsumerState<PanoramaPage> {
+  final PanoramaStageController _stage = PanoramaStageController();
+
+  @override
+  void dispose() {
+    _stage.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final AsyncValue<PanoramaAssets> assets = ref.watch(panoramaAssetsProvider);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final PanoramaAssets? ready = assets.valueOrNull;
+    final bool hasWorks = ready != null && !ready.library.isEmpty;
     return Scaffold(
       backgroundColor: const Color(0xFF05070F),
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          if (ready != null && !ready.library.isEmpty)
+          if (hasWorks)
             PanoramaStage(
               key: const ValueKey<String>('panorama-page-stage'),
               assets: ready,
-              onOpen: onOpen,
+              onOpen: widget.onOpen,
+              controller: _stage,
+              idleDrift: kPanoramaPageIdleDrift,
+              autofocus: true,
             )
           else
             Center(
               child: Text(
-                assets.isLoading ? t.panorama_loading : t.panorama_empty,
+                assets.hasError
+                    ? t.panorama_load_failed
+                    : assets.isLoading
+                    ? t.panorama_loading
+                    : t.panorama_empty,
                 style: tokens.type.metadata.copyWith(color: Colors.white70),
               ),
             ),
-          SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap,
-                tokens.spacing.page,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: FushiFloatingTopBar(
-                  key: const ValueKey<String>('panorama-top-bar'),
-                  leading: <FushiToolbarItem>[
-                    FushiToolbarItem(
-                      key: const ValueKey<String>('panorama-back'),
-                      icon: FushiIcons.back,
-                      label: MaterialLocalizations.of(
-                        context,
-                      ).backButtonTooltip,
-                      onPressed: () =>
-                          unawaited(Navigator.of(context).maybePop()),
-                    ),
-                  ],
-                  title: t.home_panel_panorama_title,
-                  subtitle: ready == null ? '' : panoramaSummary(ready.library),
-                  actions: <List<FushiToolbarItem>>[
-                    <FushiToolbarItem>[
+          // 顶栏贴顶：不给它整屏高度（否则悬浮条在屏幕中间）。
+          Positioned(
+            left: 0,
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                  tokens.spacing.page,
+                  0,
+                ),
+                child: ListenableBuilder(
+                  listenable: _stage,
+                  builder: (BuildContext context, _) => FushiFloatingTopBar(
+                    key: const ValueKey<String>('panorama-top-bar'),
+                    leading: <FushiToolbarItem>[
                       FushiToolbarItem(
-                        key: const ValueKey<String>('panorama-share-animation'),
-                        icon: FushiIcons.play,
-                        label: t.panorama_share_animation,
-                        onPressed: ready == null || ready.library.isEmpty
-                            ? null
-                            : () => unawaited(
-                                playPanoramaCinematic(context, ready, onOpen),
-                              ),
+                        key: const ValueKey<String>('panorama-back'),
+                        icon: FushiIcons.back,
+                        label: MaterialLocalizations.of(
+                          context,
+                        ).backButtonTooltip,
+                        onPressed: () =>
+                            unawaited(Navigator.of(context).maybePop()),
                       ),
                     ],
-                  ],
+                    title: t.home_panel_panorama_title,
+                    subtitle: ready == null
+                        ? ''
+                        : panoramaSummary(ready.library),
+                    actions: <List<FushiToolbarItem>>[
+                      <FushiToolbarItem>[
+                        FushiToolbarItem(
+                          key: const ValueKey<String>('panorama-stage-toggle'),
+                          icon: _stage.sphere
+                              ? FushiIcons.blur
+                              : FushiIcons.globe,
+                          label: _stage.sphere
+                              ? t.panorama_stage_to_galaxy
+                              : t.panorama_stage_to_sphere,
+                          onPressed: hasWorks ? _stage.toggleStage : null,
+                        ),
+                        FushiToolbarItem(
+                          key: const ValueKey<String>(
+                            'panorama-share-animation',
+                          ),
+                          icon: FushiIcons.share,
+                          label: t.panorama_share_animation,
+                          onPressed: hasWorks
+                              ? () => unawaited(
+                                  playPanoramaCinematic(
+                                    context,
+                                    ready.library,
+                                    widget.onOpen,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -189,23 +296,23 @@ class PanoramaPage extends ConsumerWidget {
 }
 
 /// 分享用开场动画：全屏无界面元素（便于录屏），右上角一个淡出的关闭钮。
-class PanoramaCinematicPage extends StatefulWidget {
+class PanoramaCinematicPage extends ConsumerStatefulWidget {
   const PanoramaCinematicPage({
     super.key,
-    required this.assets,
     required this.target,
     required this.onOpen,
   });
 
-  final PanoramaAssets assets;
+  /// 最后锁定的作品下标（[PanoramaLibrary.works]）。
   final int target;
   final PanoramaOpenWork onOpen;
 
   @override
-  State<PanoramaCinematicPage> createState() => _PanoramaCinematicPageState();
+  ConsumerState<PanoramaCinematicPage> createState() =>
+      _PanoramaCinematicPageState();
 }
 
-class _PanoramaCinematicPageState extends State<PanoramaCinematicPage> {
+class _PanoramaCinematicPageState extends ConsumerState<PanoramaCinematicPage> {
   bool _chrome = true;
   Timer? _hide;
 
@@ -225,21 +332,33 @@ class _PanoramaCinematicPageState extends State<PanoramaCinematicPage> {
 
   @override
   Widget build(BuildContext context) {
+    final AsyncValue<PanoramaAssets> assets = ref.watch(panoramaAssetsProvider);
+    final PanoramaAssets? ready = assets.valueOrNull;
     return Scaffold(
       backgroundColor: const Color(0xFF05070F),
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          PanoramaStage(
-            key: const ValueKey<String>('panorama-cinematic-stage'),
-            assets: widget.assets,
-            mode: FfcPanoMode.cinematic,
-            cinematicTarget: widget.target,
-            onOpen: widget.onOpen,
-            onCinematicDone: () {
-              if (mounted) unawaited(Navigator.of(context).maybePop());
-            },
-          ),
+          if (ready != null && widget.target < ready.library.works.length)
+            PanoramaStage(
+              key: const ValueKey<String>('panorama-cinematic-stage'),
+              assets: ready,
+              mode: FfcPanoMode.cinematic,
+              cinematicTarget: widget.target,
+              onOpen: widget.onOpen,
+              onCinematicDone: () {
+                if (mounted) unawaited(Navigator.of(context).maybePop());
+              },
+            )
+          else
+            Center(
+              child: Text(
+                assets.hasError ? t.panorama_load_failed : t.panorama_loading,
+                style: FushiDesignTokens.of(
+                  context,
+                ).type.metadata.copyWith(color: Colors.white70),
+              ),
+            ),
           SafeArea(
             child: Align(
               alignment: Alignment.topRight,

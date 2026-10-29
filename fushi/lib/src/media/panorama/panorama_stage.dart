@@ -3,9 +3,11 @@
 /// 并用片段着色器画背景。
 ///
 /// 两种模式：
-/// - [FfcPanoMode.interactive]（首页默认）：开场是俯视的封面星系；拖拽转视角，双指 / 滚轮 /
-///   +- 拉近时星系连续收拢成球幕、直到站在球心，拉远再散回星系；点封面 → 转向并飞到眼前 →
-///   书翻开 → 进阅读器；方向键 / Enter 同样可操作。
+/// - [FfcPanoMode.interactive]（全屏页）：开场是俯视的封面星系；拖拽转视角，双指 / 滚轮 /
+///   +- 拉近时星系连续收拢成球幕、直到站在球心，拉远再散回星系（滚轮 / 键盘是平滑的无极
+///   缩放，镜头逐帧追目标距离；捏合跟手）；[PanoramaStageController] 一键切换星系 / 球幕；
+///   点封面 → 转向并飞到眼前 → 书翻开 → 进阅读器，返回或 Esc 取消后镜头回到选中前的位置；
+///   方向键 / Enter 同样可操作。
 /// - [FfcPanoMode.cinematic]（分享用）：16 秒开场动画，最后锁定 [PanoramaStage.cinematicTarget]。
 ///
 /// 动效开关：墨水屏 / 系统「减弱动态效果」下不跑 Ticker（只在输入时重算一帧），点封面直接打开。
@@ -65,26 +67,47 @@ class PanoramaAssets {
   /// 取翻开正文用；null（测试）时翻开后显示书名。
   final FushiDatabase? db;
 
-  /// 分享动画默认锁定的作品：最近在读的书 → 任意书 → 最近打开的作品；空库为 -1。
-  int get defaultTarget {
-    final List<PanoramaWork> works = library.works;
-    int best = -1;
-    for (int i = 0; i < works.length; i++) {
-      if (!works[i].isBook) continue;
-      if (best < 0 || works[i].lastOpenedAt > works[best].lastOpenedAt) {
-        best = i;
-      }
-    }
-    if (best >= 0) return best;
-    for (int i = 0; i < works.length; i++) {
-      if (best < 0 || works[i].lastOpenedAt > works[best].lastOpenedAt) {
-        best = i;
-      }
-    }
-    return best;
-  }
+  /// 分享动画默认锁定的作品，见 [panoramaDefaultTarget]。
+  int get defaultTarget => panoramaDefaultTarget(library);
 
   void dispose() => atlas.dispose();
+}
+
+/// 分享动画默认锁定的作品：最近在读的书 → 任意书 → 最近打开的作品；空库为 -1。
+int panoramaDefaultTarget(PanoramaLibrary library) {
+  final List<PanoramaWork> works = library.works;
+  int best = -1;
+  for (int i = 0; i < works.length; i++) {
+    if (!works[i].isBook) continue;
+    if (best < 0 || works[i].lastOpenedAt > works[best].lastOpenedAt) {
+      best = i;
+    }
+  }
+  if (best >= 0) return best;
+  for (int i = 0; i < works.length; i++) {
+    if (best < 0 || works[i].lastOpenedAt > works[best].lastOpenedAt) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+/// 舞台外的控件（顶栏「切换阶段」钮）读当前阶段、发切换命令。
+class PanoramaStageController extends ChangeNotifier {
+  bool _sphere = false;
+  void Function(bool sphere)? _setStage;
+
+  /// 当前是球幕（镜头已收拢到球心一侧）；false = 星系。
+  bool get sphere => _sphere;
+
+  /// 切到另一阶段（星系 ↔ 球幕），平滑过渡；舞台未挂载时什么也不做。
+  void toggleStage() => _setStage?.call(!_sphere);
+
+  void _report(bool sphere) {
+    if (sphere == _sphere) return;
+    _sphere = sphere;
+    notifyListeners();
+  }
 }
 
 class PanoramaStage extends StatefulWidget {
@@ -95,17 +118,31 @@ class PanoramaStage extends StatefulWidget {
     this.mode = FfcPanoMode.interactive,
     this.cinematicTarget = -1,
     this.onCinematicDone,
+    this.controller,
+    this.idleDrift = 0,
+    this.autofocus = false,
   });
 
   final PanoramaAssets assets;
 
-  /// 打开作品（书 → 阅读器；其他域各自的打开路径）。返回后舞台回到可操作状态。
+  /// 打开作品（书 → 阅读器；其他域各自的打开路径）。返回后舞台回到可操作状态，
+  /// 镜头回到选中前的位置。
   final Future<void> Function(PanoramaWork work) onOpen;
   final FfcPanoMode mode;
   final int cinematicTarget;
 
   /// 分享动画结束（已打开作品或无可锁定作品）。
   final VoidCallback? onCinematicDone;
+
+  /// 外部切换阶段 / 读当前阶段（可操作模式）。
+  final PanoramaStageController? controller;
+
+  /// 空闲时环境动效保留的最低走速（0..1）：0 = 空闲收敛到停（停帧省电）；全屏页给正值，
+  /// 公转的封面与环绕的词一直慢慢转，不会定住。
+  final double idleDrift;
+
+  /// 打开即取键盘焦点（全屏页：方向键 / +- / Enter / Esc 直接可用）。
+  final bool autofocus;
 
   @override
   State<PanoramaStage> createState() => _PanoramaStageState();
@@ -141,6 +178,10 @@ class _PanoramaStageState extends State<PanoramaStage>
   /// 已备好高清封面 / 正文的作品下标（-1 = 还没备）。
   int _preparedFor = -1;
 
+  /// 「切换阶段」进行中的目标（true = 球幕）：过渡途中不按半程回报，免得按钮来回跳；
+  /// 到位或被手动缩放接管后清掉。
+  bool? _stageGoal;
+
   @override
   void initState() {
     super.initState();
@@ -158,6 +199,23 @@ class _PanoramaStageState extends State<PanoramaStage>
       },
     );
     _enterMode();
+    _pano.input(FfcPanoInput.idleDrift, widget.idleDrift.clamp(0, 1));
+    widget.controller?._setStage = _setStage;
+  }
+
+  @override
+  void didUpdateWidget(PanoramaStage old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller) {
+      if (old.controller?._setStage == _setStage) {
+        old.controller!._setStage = null;
+      }
+      widget.controller?._setStage = _setStage;
+    }
+    if (old.idleDrift != widget.idleDrift) {
+      _pano.input(FfcPanoInput.idleDrift, widget.idleDrift.clamp(0, 1));
+      _wake();
+    }
   }
 
   void _enterMode() {
@@ -187,6 +245,9 @@ class _PanoramaStageState extends State<PanoramaStage>
 
   @override
   void dispose() {
+    if (widget.controller?._setStage == _setStage) {
+      widget.controller!._setStage = null;
+    }
     _ticker.dispose();
     _pano.dispose();
     _shader?.dispose();
@@ -225,6 +286,7 @@ class _PanoramaStageState extends State<PanoramaStage>
       height: _size.height,
     );
     _frames.update(f, _size);
+    _reportStage(f.info[FfcPanoInfo.morph]);
     // 空闲停帧：Rust 报告场景已静止（惯性、环境动效收敛到零，没有锁定），且这边也没有
     // 翻书 / 打开在进行——再出帧画面不变，停掉 Ticker，等输入经 [_wake] 再起。
     if (_ticker.isActive &&
@@ -245,6 +307,26 @@ class _PanoramaStageState extends State<PanoramaStage>
     if (_target >= 0 && f.handoff && !_flipping && !_opening) {
       _handoff(f);
     }
+  }
+
+  void _reportStage(double morph) {
+    final PanoramaStageController? c = widget.controller;
+    if (c == null || widget.mode != FfcPanoMode.interactive) return;
+    final bool? goal = _stageGoal;
+    if (goal == null) {
+      c._report(morph >= 0.5);
+    } else if (goal ? morph >= 1 : morph <= 0) {
+      _stageGoal = null;
+      c._report(goal);
+    }
+  }
+
+  /// 切换阶段：镜头平滑推到球心（球幕）或退回俯视远景（星系）；不放动效时一步到位。
+  void _setStage(bool sphere) {
+    if (widget.mode != FfcPanoMode.interactive || _target >= 0) return;
+    _input(FfcPanoInput.stage, sphere ? 1 : 0);
+    _stageGoal = sphere;
+    widget.controller?._report(sphere);
   }
 
   /// 锁定开始时就备好高清封面与正文，交接那一帧已就绪。
@@ -356,6 +438,11 @@ class _PanoramaStageState extends State<PanoramaStage>
 
   void _input(FfcPanoInput kind, double a, [double b = 0]) {
     if (_target >= 0) return;
+    if (kind == FfcPanoInput.zoom || kind == FfcPanoInput.stage) {
+      // 手动缩放接管正在进行的阶段切换；不放动效时没有逐帧逼近，缩放 / 切换一步到位。
+      if (kind == FfcPanoInput.zoom) _stageGoal = null;
+      if (!_motion) b = 1;
+    }
     _pano.input(kind, a, b);
     if (_motion) {
       _wake();
@@ -370,6 +457,18 @@ class _PanoramaStageState extends State<PanoramaStage>
     }
     const double step = 60;
     final LogicalKeyboardKey k = event.logicalKey;
+    if (k == LogicalKeyboardKey.escape) {
+      // 飞入 / 翻书途中 Esc：取消锁定，镜头回到选中前的位置。没有锁定（或作品已经在
+      // 打开）时不接，交给路由返回。
+      if (_target < 0 ||
+          _opening ||
+          widget.mode != FfcPanoMode.interactive ||
+          event is! KeyDownEvent) {
+        return KeyEventResult.ignored;
+      }
+      _resetToInteractive();
+      return KeyEventResult.handled;
+    }
     if (k == LogicalKeyboardKey.arrowLeft) {
       _input(FfcPanoInput.drag, step, 0);
     } else if (k == LogicalKeyboardKey.arrowRight) {
@@ -435,7 +534,8 @@ class _PanoramaStageState extends State<PanoramaStage>
               },
               onScaleUpdate: (ScaleUpdateDetails d) {
                 if (d.pointerCount >= 2 && d.scale != _lastScale) {
-                  _input(FfcPanoInput.zoom, d.scale / _lastScale);
+                  // 捏合跟手：立即生效，不走平滑。
+                  _input(FfcPanoInput.zoom, d.scale / _lastScale, 1);
                   _lastScale = d.scale;
                 }
                 _input(
@@ -454,7 +554,11 @@ class _PanoramaStageState extends State<PanoramaStage>
               child: canvas,
             ),
           );
-          canvas = Focus(onKeyEvent: _onKey, child: canvas);
+          canvas = Focus(
+            autofocus: widget.autofocus,
+            onKeyEvent: _onKey,
+            child: canvas,
+          );
         }
         return Stack(
           fit: StackFit.expand,
