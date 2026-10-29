@@ -10,9 +10,10 @@ use std::sync::Arc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 
-use super::{applied_vv, in_savepoint, insert_op, load_op, project, replay_touched, sql, Local, Touched};
+use super::{applied_vv, in_savepoint, insert_op, load_op, observe_remote, project, replay_touched, sql, Local, Touched};
 use crate::store::SrsCore;
 use crate::sync2::codec::{Reader, ZstdWindow};
+use crate::sync2::hlc::{Hlc, MAX_AHEAD_MS};
 use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
 use crate::sync2::op::{Body, Op};
@@ -377,6 +378,10 @@ struct Delivery {
     applied: usize,
     /// 队列里已解码操作的内存估计（[held_bytes] 之和）。
     held: usize,
+    /// 这次应用的远端操作里不超前的最大 HLC（[Delivery::finish] 推进本机时钟，设计 §3.2）。
+    seen: Option<Hlc>,
+    /// 这次应用的远端操作里时钟超前（wall 超出本机墙钟 [MAX_AHEAD_MS]）的作者：打标告警。
+    ahead: BTreeSet<Id>,
 }
 
 impl Delivery {
@@ -392,7 +397,16 @@ impl Delivery {
             let chain: Chain = r.get::<_, Vec<u8>>(2).map_err(sql)?.try_into().map_err(|_| "bad chain")?;
             queues.entry(device).or_default().insert(seq, Held { op: None, chain, stored: true });
         }
-        Ok(Delivery { vv, queues, chains: BTreeMap::new(), forked: BTreeSet::new(), applied: 0, held: 0 })
+        Ok(Delivery {
+            vv,
+            queues,
+            chains: BTreeMap::new(),
+            forked: BTreeSet::new(),
+            applied: 0,
+            held: 0,
+            seen: None,
+            ahead: BTreeSet::new(),
+        })
     }
 
     fn push(&mut self, incoming: impl IntoIterator<Item = (Op, Chain)>) {
@@ -435,7 +449,7 @@ impl Delivery {
     }
 
     fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
-        let Delivery { vv, queues, chains, applied, forked, held: mem } = self;
+        let Delivery { vv, queues, chains, applied, forked, held: mem, seen, ahead } = self;
         let mut dropped: Vec<Id> = Vec::new();
         'all: loop {
             let mut progress = false;
@@ -492,7 +506,11 @@ impl Delivery {
                     }
                     insert_op(c, profile, op, &chain, now)?;
                     project(c, profile, op, now, true, t)?;
-
+                    if op.hlc.wall.saturating_sub(now) > MAX_AHEAD_MS {
+                        ahead.insert(*device);
+                    } else if seen.is_none_or(|s| op.hlc > s) {
+                        *seen = Some(op.hlc);
+                    }
                     if held.stored {
                         unstore(c, profile, device, seq)?;
                     }
@@ -512,8 +530,9 @@ impl Delivery {
         Ok(())
     }
 
-    /// 设备进度一次写；没投上的写进缓冲。返回应用条数。
-    fn finish(self, c: &Connection, profile: &str) -> Result<usize, String> {
+    /// 设备进度一次写；没投上的写进缓冲；按应用了的远端操作推进并持久化本机 HLC。返回应用条数。
+    fn finish(self, c: &Connection, profile: &str, now: i64) -> Result<usize, String> {
+        observe_remote(c, profile, self.seen, &self.ahead, now)?;
         for (device, chain) in &self.chains {
             c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2")
                 .map_err(sql)?
@@ -921,7 +940,7 @@ fn deliver_prepared(
         }
     }
     let done = *next == items.len() && !budget.stopped;
-    Ok((delivery.finish(c, profile)?, done))
+    Ok((delivery.finish(c, profile, now)?, done))
 }
 
 /// 一次投递的块（条数 / 解压后字节，先到者为准）：新切的段本来就不超过 [segment::SEGMENT_MAX_RAW_BYTES]，
@@ -982,6 +1001,12 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     .map_err(sql)?;
     conn.execute(
         "DELETE FROM sync2_edit_ops WHERE profile_uid = ?1 AND device = ?2 AND seq > ?3",
+        params![profile, old.device.0.to_vec(), keep as i64],
+    )
+    .map_err(sql)?;
+    // 寄存器反链里撤出的写入（重签发时按新 OpId 重新并入）。
+    conn.execute(
+        "DELETE FROM sync2_mvr WHERE profile_uid = ?1 AND device = ?2 AND seq > ?3",
         params![profile, old.device.0.to_vec(), keep as i64],
     )
     .map_err(sql)?;
@@ -1939,7 +1964,7 @@ impl SrsCore {
             }
             delivery.push(chunk);
             delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
-            let applied = delivery.finish(c, profile)?;
+            let applied = delivery.finish(c, profile, now)?;
             let replayed = replay_touched(c, &t)?;
             let pending: i64 = c
                 .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))

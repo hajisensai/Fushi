@@ -15,28 +15,17 @@ use serde_json::{json, Value};
 
 use crate::sync2::op::{Body, Op, MEDIA_AT_MAX_NAMES, MEDIA_AT_PRESENT, MEDIA_AT_SEEDED};
 
-use super::{append_local, applied_vv, in_savepoint, sql, Local, Touched};
+use super::{append_local, applied_vv, in_savepoint, mvr, sql, Local, Touched};
 use crate::store::SrsCore;
 
-/// 把一条 `MediaAt` 落进投影。
+/// 把一条 `MediaAt` 落进投影。每个（位置, 名字）是一个「因果优先、并发才比 HLC」的寄存器（mvr.rs）：看过「在」
+/// 之后才记的「不在」（或反过来）一定生效，与两台设备的时钟谁快无关。
 pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, location: &str, flags: u8, names: &[String]) -> Result<(), String> {
-    let present = i64::from(flags & MEDIA_AT_PRESENT != 0);
-    let stamp = (op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec());
-    let mut cur = conn
-        .prepare_cached("SELECT wall, logical, device FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
-        .map_err(sql)?;
-    let mut put = conn
-        .prepare_cached(
-            "INSERT OR REPLACE INTO sync2_media_at (profile_uid, location, name, present, wall, logical, device) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        )
-        .map_err(sql)?;
+    let present = flags & MEDIA_AT_PRESENT != 0;
     for name in names {
-        let old: Option<(i64, i64, Vec<u8>)> =
-            cur.query_row(params![profile, location, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
-        if old.is_none_or(|o| stamp > o) {
-            put.execute(params![profile, location, name, present, stamp.0, stamp.1, stamp.2]).map_err(sql)?;
-        }
+        let win = mvr::write(conn, profile, &mvr::reg("a", &[location, name]), op)?;
+        let p = if win.id == op.id { Some(present) } else { None };
+        land_media_at(conn, profile, location, name, &win, p)?;
     }
     if flags & MEDIA_AT_SEEDED != 0 {
         conn.prepare_cached(
@@ -47,6 +36,34 @@ pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, locati
         .execute(params![profile, location, op.hlc.wall])
         .map_err(sql)?;
     }
+    Ok(())
+}
+
+/// `sync2_media_at` 的一行落到寄存器的当前值 [win]（[present] = 它的在 / 不在，没给就从日志读）；相同就不写。
+pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, name: &str, win: &mvr::Write, present: Option<bool>) -> Result<(), String> {
+    let cur: Option<(i64, i64, Vec<u8>)> = conn
+        .prepare_cached("SELECT wall, logical, device FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
+        .map_err(sql)?
+        .query_row(params![profile, location, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()
+        .map_err(sql)?;
+    if cur.as_ref().is_some_and(|(w, l, d)| (*w, *l, d.as_slice()) == (win.wall, win.logical, &win.id.device.0[..])) {
+        return Ok(());
+    }
+    let present = match present {
+        Some(p) => p,
+        None => match super::load_op(conn, profile, &win.id)?.and_then(|o| o.body().ok()) {
+            Some(Body::MediaAt { flags, .. }) => flags & MEDIA_AT_PRESENT != 0,
+            _ => return Ok(()),
+        },
+    };
+    conn.prepare_cached(
+        "INSERT OR REPLACE INTO sync2_media_at (profile_uid, location, name, present, wall, logical, device) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )
+    .map_err(sql)?
+    .execute(params![profile, location, name, i64::from(present), win.wall, win.logical, win.id.device.0.to_vec()])
+    .map_err(sql)?;
     Ok(())
 }
 
