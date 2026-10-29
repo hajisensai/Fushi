@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -38,28 +39,33 @@ module.exports = {
   Future<void> install(Uint8List zip) async =>
       m.install(zip, (await m.inspect(zip)).digest);
 
+  /// 直接调保险库时照宿主契约带上数据密钥（Windows 为 null：Rust 侧 DPAPI 封装的磁盘密钥）。
+  Future<Map<String, Object?>> vault(Map<String, Object?> op) async {
+    final Uint8List? key = await testVaultKey?.call();
+    return MusicPluginNativeAsync.vault(root.path, <String, Object?>{
+      ...op,
+      if (key != null) 'dataKey': base64Encode(key),
+    });
+  }
+
   Future<void> seedData(String id) async {
     m.storageFileFor(id)
       ..parent.createSync(recursive: true)
       ..writeAsStringSync('{"token":"abc"}');
-    final Map<String, Object?> r = await MusicPluginNativeAsync.vault(
-      root.path,
-      <String, Object?>{
-        'op': 'set',
-        'plugin': id,
-        'key': 'cookie',
-        'value': 'MUSIC_U=1',
-      },
-    );
+    final Map<String, Object?> r = await vault(<String, Object?>{
+      'op': 'set',
+      'plugin': id,
+      'key': 'cookie',
+      'value': 'MUSIC_U=1',
+    });
     expect(r['error'], isNull);
   }
 
-  Future<Object?> cookie(String id) async =>
-      (await MusicPluginNativeAsync.vault(root.path, <String, Object?>{
-        'op': 'get',
-        'plugin': id,
-        'key': 'cookie',
-      }))['value'];
+  Future<Object?> cookie(String id) async => (await vault(<String, Object?>{
+    'op': 'get',
+    'plugin': id,
+    'key': 'cookie',
+  }))['value'];
 
   test('同一签名者升级：不算换签名者，登录与存储保留', () async {
     final Uint8List zip = buildPlugin(manifest(), <String, String>{
