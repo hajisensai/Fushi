@@ -518,6 +518,19 @@ class SrsSyncScheduler {
     }
   }
 
+  /// 媒体对账在 [locationId] 上有内容对象用这把密钥解不开（第一块就认证不过：密钥证明不了是对的，见
+  /// srs_media_sync.dart [SrsMediaSyncReport.undecryptable]）：按口令不对提示（[kSrsSync2WrongKey]，与握手报的同一条
+  /// 提示）。这些对象不记可疑、持有者也不覆盖重传——修不好的是密钥，不是对象。
+  void _noteMediaKey(String locationId, SrsMediaSyncReport? media) {
+    if (media == null || media.undecryptable.isEmpty) return;
+    final SrsLocationCryptoState? was = locationCrypto[locationId];
+    locationCrypto[locationId] = SrsLocationCryptoState(
+      kdf: was?.kdf,
+      encrypted: was?.encrypted ?? true,
+      error: kSrsSync2WrongKey,
+    );
+  }
+
   /// 调度器已卸下，或库正关着：这一轮不该开始 / 不该继续。
   bool get _halted => _disposed || !_canRun();
 
@@ -839,6 +852,7 @@ class SrsSyncScheduler {
             locationId: key,
           );
           mediaChanged = media.downloaded > 0;
+          _noteMediaKey(key, media);
           _mediaReconciledAt[key] = _clock();
           _mediaReconciledContent[key] = content;
         }
@@ -947,6 +961,7 @@ class SrsSyncScheduler {
           key: _locationKey?.call(l.locationId),
         );
         await _noteCrypto(l.locationId, r.crypto);
+        _noteMediaKey(l.locationId, r.media);
         // 握手没过但不是口令类问题（meta.json 读不到 / 位置来自更新版本）：如实记成这个位置没同步成。
         // 口令类问题由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。
         final String? error = (r.crypto?.needsUpgrade ?? false)
