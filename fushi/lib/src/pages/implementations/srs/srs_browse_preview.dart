@@ -306,15 +306,16 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
   }
 }
 
-/// 窄屏的预览页：在 [items] 之间左右切换。返回时浏览页重新加载（编辑可能改了内容）。
+/// 窄屏的预览页：在浏览结果 [result] 的行之间左右切换（行按页向原生会话取）。返回时浏览页刷新（编辑会写库；
+/// 没写就直接复用同一份结果）。
 class SrsBrowsePreviewPage extends ConsumerStatefulWidget {
   const SrsBrowsePreviewPage({
     super.key,
-    required this.items,
+    required this.result,
     required this.initialIndex,
   });
 
-  final List<SrsBrowseItem> items;
+  final SrsBrowseResult result;
   final int initialIndex;
 
   @override
@@ -329,7 +330,7 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
     canOwn: (FocusReclaimCause cause) =>
         mounted && (ModalRoute.of(context)?.isCurrent ?? false),
   );
-  late int _index = widget.initialIndex.clamp(0, widget.items.length - 1);
+  late int _index = widget.initialIndex.clamp(0, widget.result.length - 1);
   final SrsCardLookupController _lookupCtl = SrsCardLookupController();
   bool _showAnswer = false;
   int _revision = 0;
@@ -343,11 +344,17 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
 
   void _go(int delta) {
     final int next = _index + delta;
-    if (next < 0 || next >= widget.items.length) return;
+    if (next < 0 || next >= widget.result.length) return;
     setState(() {
       _index = next;
       _showAnswer = false;
     });
+    if (widget.result.rowAt(next) == null) {
+      srsRunLogged('SrsBrowsePreview.rows', () async {
+        await widget.result.ensure(next, next + 1);
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   void _command(SrsPreviewCommand c) {
@@ -366,7 +373,9 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
   }
 
   Future<void> _edit() async {
-    final String noteId = widget.items[_index].noteId;
+    final SrsBrowseRow? row = widget.result.rowAt(_index);
+    if (row == null) return;
+    final String noteId = row.noteId;
     await _focusOwnership.guardOverlay(
       () => Navigator.of(context).push<void>(
         adaptivePageRoute<void>(
@@ -408,10 +417,10 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool apple = isGlassDesign(context);
-    final SrsBrowseItem item = widget.items[_index];
-    final String title = item.primary.sortText.isEmpty
+    final SrsBrowseRow? item = widget.result.rowAt(_index);
+    final String title = item == null || item.sortText.isEmpty
         ? t.srs_browse_preview
-        : item.primary.sortText;
+        : item.sortText;
     final NavigatorState? navigator = Navigator.maybeOf(context);
     return Focus(
       focusNode: _focusNode,
@@ -430,7 +439,7 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
                 ),
                 child: FushiFloatingTopBar(
                   title: title,
-                  subtitle: '${_index + 1} / ${widget.items.length}',
+                  subtitle: '${_index + 1} / ${widget.result.length}',
                   leading: <FushiToolbarItem>[
                     if (navigator != null && navigator.canPop())
                       FushiToolbarItem(
@@ -451,19 +460,22 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
               tokens.spacing.page,
               tokens.spacing.gap,
             ),
-            child: SrsBrowsePreview(
-              cardId: item.cardId,
-              revision: _revision,
-              showAnswer: _showAnswer,
-              position: '${_index + 1} / ${widget.items.length}',
-              hasPrevious: _index > 0,
-              hasNext: _index < widget.items.length - 1,
-              onCommand: _command,
-              onEdit: () => srsRunLogged('SrsBrowsePreview.edit', _edit),
-              lookup: _lookupCtl,
-              onLookupClosed: () =>
-                  _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
-            ),
+            child: item == null
+                ? const FushiLoadingView()
+                : SrsBrowsePreview(
+                    cardId: item.cardId,
+                    revision: _revision,
+                    showAnswer: _showAnswer,
+                    position: '${_index + 1} / ${widget.result.length}',
+                    hasPrevious: _index > 0,
+                    hasNext: _index < widget.result.length - 1,
+                    onCommand: _command,
+                    onEdit: () => srsRunLogged('SrsBrowsePreview.edit', _edit),
+                    lookup: _lookupCtl,
+                    onLookupClosed: () => _focusOwnership.reclaim(
+                      FocusReclaimCause.overlayClosed,
+                    ),
+                  ),
           ),
         ),
       ),
