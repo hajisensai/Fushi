@@ -46,7 +46,6 @@ const Map<String, String> _kAllowed = <String, String>{
   'packages/fushi_engine/lib/srs/srs_stats.dart': 'SRS 子系统',
   'packages/fushi_engine/lib/srs/srs_backup_snapshot.dart':
       'SRS 备份读快照（Rust 只读会话上）',
-  'packages/fushi_engine/lib/srs/srs_browse_query.dart': 'SRS 浏览查询',
   'packages/fushi_engine/lib/srs/srs_note_type_store.dart': 'SRS 子系统',
   // 重复笔记建议：按笔记缓存的词形键 / 读音键分组（SrsDbStore 扩展，SQL 跑在 srs.db 的连接上）。
   'packages/fushi_engine/lib/srs/srs_duplicate_notes.dart': 'SRS 子系统',
