@@ -150,7 +150,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   void dispose() {
     // 原生侧的会话（字段文本可达几百 MB）随页面关掉释放。
     final SrsBrowseSession? session = _session;
-    if (session != null) unawaited(session.close());
+    if (session != null) srsRunLogged('SrsBrowse.close', session.close);
     _debounce?.cancel();
     _query.dispose();
     _queryFocus.dispose();
