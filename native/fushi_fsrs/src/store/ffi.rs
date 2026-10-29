@@ -680,6 +680,9 @@ pub extern "C" fn ffsrs_store_rwkv_log_tail(
 // ---------------------------------------------------------------- 同步 v2（store/sync2）
 
 /// 分帧字节块：`u32 n`，再 n 个 `u32 len + 字节`（小端）。空输入 = 0 块。
+///
+/// 这里是唯一一次复制：输入缓冲属于 Dart（调用返回就释放），收段会话要把段留到投递，所以拷成自己的；之后一路
+/// 按所有权移交（`ingest_prepare` / `ingest_batch` 直接接走），不再复制（审查 S-9）。
 fn frames(b: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     if b.is_empty() {
         return Ok(Vec::new());
@@ -722,7 +725,7 @@ fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
     }
 }
 
-fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files: &mut Vec<(String, Vec<u8>)>) -> Result<serde_json::Value, String> {
+fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>, files: &mut Vec<(String, Vec<u8>)>) -> Result<serde_json::Value, String> {
     use serde_json::{json, Value};
     let s = |k: &str| req.get(k).and_then(Value::as_str).ok_or_else(|| format!("sync2: missing {k}"));
     let i = |k: &str| req.get(k).and_then(Value::as_i64).ok_or_else(|| format!("sync2: missing {k}"));
@@ -799,7 +802,7 @@ fn sync2_command(
     op: &str,
     profile: &str,
     req: &serde_json::Value,
-    blobs: &[Vec<u8>],
+    blobs: &mut Vec<Vec<u8>>,
     files: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<serde_json::Value, String> {
     use serde_json::{json, Value};
@@ -873,9 +876,10 @@ fn sync2_command(
         }
         "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
         "ingest_begin" => c.sync2_ingest_begin(profile)?,
-        "ingest_batch" => parse(c.sync2_ingest_batch(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
+        // 段的字节交给会话持有（不再复制一份，审查 S-9）。
+        "ingest_batch" => parse(c.sync2_ingest_batch(profile, std::mem::take(blobs), key32(&req["key"])?, i("now")?)?)?,
         // 拆开的一批：prepare 在写锁外解码验签（Dart 侧也不进写锁），commit 在写锁里投递。
-        "ingest_prepare" => c.sync2_ingest_prepare(profile, blobs, key32(&req["key"])?)?,
+        "ingest_prepare" => c.sync2_ingest_prepare(profile, std::mem::take(blobs), key32(&req["key"])?)?,
         // 一次投一片（默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果
         // `more` 为真 Dart 放开写锁再调。
         "ingest_commit" => parse(c.sync2_ingest_commit(profile, i("now")?, slice_budget(c, req))?)?,
@@ -894,12 +898,27 @@ fn sync2_command(
             let key = crate::sync2::keys::CollectionKey(key32(&req["key"])?.ok_or("seal/open: missing key")?);
             let aad = format!("fushi-srs-media:{}", s("name")?);
             let input = blobs.first().ok_or("seal/open: missing input")?;
+            // 分块流式格式（sync2/media_seal.rs，审查 S-9）；解封兼容旧的整份格式。
             if op == "seal" {
-                files.push(("sealed".to_owned(), key.seal(input, aad.as_bytes())));
+                files.push(("sealed".to_owned(), crate::sync2::media_seal::seal_bytes(&key, input, aad.as_bytes())?));
             } else {
-                files.push(("plain".to_owned(), key.open(input, aad.as_bytes()).ok_or("media decrypt failed")?));
+                files.push(("plain".to_owned(), crate::sync2::media_seal::open_bytes(&key, input, aad.as_bytes())?));
             }
             json!({})
+        }
+        // 文件到文件的流式封 / 解（大媒体不整份进内存；审查 S-9）：返回明文的字节数与 sha256（内容寻址核对用，
+        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。
+        "seal_file" | "open_file" => {
+            let key = crate::sync2::keys::CollectionKey(key32(&req["key"])?.ok_or("seal/open: missing key")?);
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let (src, dst) = (std::path::Path::new(s("src")?), std::path::Path::new(s("dst")?));
+            let done = if op == "seal_file" {
+                crate::sync2::media_seal::seal_file(&key, src, dst, aad.as_bytes())?
+            } else {
+                crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes())?
+            };
+            let sha: String = done.sha256.iter().map(|b| format!("{b:02x}")).collect();
+            json!({"sha256": sha, "bytes": done.plain_len})
         }
         "digest" => match req.get("minIntervalMs").and_then(Value::as_i64) {
             Some(ms) => c.sync2_digest_due(profile, i("now")?, Some(ms))?,
@@ -1008,9 +1027,9 @@ pub extern "C" fn ffsrs_store_sync2(
     run_core(core, error_out, |c| {
         let req: serde_json::Value =
             serde_json::from_str(utf8(request, request_len)?).map_err(|e| format!("bad sync2 request: {e}"))?;
-        let blobs = frames(bytes(blobs, blobs_len).ok_or("null blobs")?)?;
+        let mut blobs = frames(bytes(blobs, blobs_len).ok_or("null blobs")?)?;
         let mut files = Vec::new();
-        let result = sync2_dispatch(c, &req, &blobs, &mut files)?;
+        let result = sync2_dispatch(c, &req, &mut blobs, &mut files)?;
         let text = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
         let mut buf = Vec::with_capacity(text.len() + 8);
         buf.extend_from_slice(&(text.len() as u32).to_le_bytes());

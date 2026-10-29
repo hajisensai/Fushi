@@ -14,10 +14,12 @@
 /// （写入者目录不自动删，设计 P7：用户在位置管理里手动清理）。
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' show sha256;
+import 'package:crypto/crypto.dart' show Digest, sha256;
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
@@ -165,6 +167,38 @@ String srsMediaContentPresenceKey(String locationId, String folder) =>
 /// 一段字节的 sha256（小写十六进制）。
 String srsMediaSha256(List<int> bytes) => sha256.convert(bytes).toString();
 
+/// 文件内容的 sha256（流式读，不整份进内存）。
+Future<String> srsMediaSha256File(File f) async =>
+    (await sha256.bind(f.openRead()).first).toString();
+
+/// 把 [src] 流式拷到 [dst]，同一遍读顺带算 sha256（[dst] 就是被核对的那份快照）。
+Future<String> _copyHashing(File src, File dst) async {
+  final _DigestCapture captured = _DigestCapture();
+  final ByteConversionSink hash = sha256.startChunkedConversion(captured);
+  final IOSink out = dst.openWrite();
+  try {
+    await for (final List<int> chunk in src.openRead()) {
+      hash.add(chunk);
+      out.add(chunk);
+    }
+    await out.flush();
+  } finally {
+    await out.close();
+  }
+  hash.close();
+  return captured.value!.toString();
+}
+
+class _DigestCapture implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) => value = data;
+
+  @override
+  void close() {}
+}
+
 /// 远端某个名字的已知状态。
 enum _Remote { present, absent, unknown }
 
@@ -279,11 +313,25 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   final SrsMediaSyncReport report = SrsMediaSyncReport();
   // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
   final String folder = cipher == null ? kSrsMediaFolder : cipher.folder;
-  // 内容按 sha256 寻址（加密时 AAD 也是 sha256：密文换了位置 / 名字解不开）。
-  Future<Uint8List> seal(String aad, Uint8List plain) async =>
-      cipher == null ? plain : await cipher.seal(aad, plain);
+  // 内容按 sha256 寻址（加密时 AAD 也是 sha256：密文换了位置 / 名字解不开）。内容目录的读写一律文件到文件、
+  // 流式（审查 S-9：大媒体不整份进内存）；只有旧的按名字目录 / 写入者目录兜底仍按字节读（旧布局，小且只读）。
   Future<Uint8List?> open(String aad, Uint8List? stored) async =>
       stored == null || cipher == null ? stored : cipher.open(aad, stored);
+  final Random rand = Random();
+  File scratch(String tag) => File(
+    p.join(
+      Directory.systemTemp.path,
+      'fushi_srs_media_${tag}_${DateTime.now().microsecondsSinceEpoch}_'
+      '${rand.nextInt(1 << 30)}',
+    ),
+  );
+  Future<void> drop(File f) async {
+    try {
+      if (await f.exists()) await f.delete();
+    } on FileSystemException {
+      // 临时文件留给系统清理。
+    }
+  }
 
   final List<String> names = (await srsReferencedMedia(
     store,
@@ -335,20 +383,31 @@ Future<SrsMediaSyncReport> srsSyncMedia({
 
   final List<(String, String)> landed = <(String, String)>[];
 
-  /// 把本机 [name]（内容应为 [sha]）传进内容目录；文件此刻的内容对不上（对账中途被改了）就留给下一轮。
-  Future<bool> upload(String name, String sha) async {
-    final Uint8List bytes = await File(
-      p.join(mediaRoot.path, name),
-    ).readAsBytes();
-    if (srsMediaSha256(bytes) != sha) return false;
-    await location.putNew(
-      srsMediaContentPath(folder, sha),
-      await seal(sha, bytes),
-    );
-    content.markPresent(sha);
-    report.uploaded++;
-    return true;
+  /// 把 [src] 作为内容 [sha] 传进内容目录；[src] 此刻的内容不是 [sha]（对账中途被改了）就不传、返回 false，留给
+  /// 下一轮。传的是核对过的那份：加密时内核封装的同一遍读顺带算出明文哈希；不加密时先流式拷一份快照再传快照。
+  Future<bool> putContent(File src, String sha) async {
+    final File staged = scratch('up');
+    try {
+      final String got = cipher == null
+          ? await _copyHashing(src, staged)
+          : await cipher.sealFile(sha, src, staged);
+      if (got != sha) return false;
+      await srsLocationPutNewFile(
+        location,
+        srsMediaContentPath(folder, sha),
+        staged,
+      );
+      content.markPresent(sha);
+      report.uploaded++;
+      return true;
+    } finally {
+      await drop(staged);
+    }
   }
+
+  /// 把本机 [name]（内容应为 [sha]）传进内容目录。
+  Future<bool> upload(String name, String sha) =>
+      putContent(File(p.join(mediaRoot.path, name)), sha);
 
   /// 确保内容 [sha] 在位置上（本机有、内容就是它）。
   Future<void> ensureUploaded(String name, String sha) async {
@@ -362,32 +421,43 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     await upload(name, sha);
   }
 
-  /// 拿内容 [sha]：内容目录 → 旧的按名字目录 → 写入者目录。[sha] 为 null（没有绑定）时只能信兜底拿到的。
-  /// 拿到的明文一律按 sha256 校验；对不上的不要。
-  Future<Uint8List?> fetch(String name, String? sha) async {
+  /// 拿内容 [sha] 落到 [dst]：内容目录 → 旧的按名字目录 → 写入者目录。[sha] 为 null（没有绑定）时只能信兜底拿到
+  /// 的。落地的明文一律按 sha256 校验，返回它的 sha256；拿不到 / 对不上返回 null，且不留 [dst]。
+  Future<String?> fetchTo(String name, String? sha, File dst) async {
     if (sha != null && content.stateOf(sha) != _Remote.absent) {
       final String path = srsMediaContentPath(folder, sha);
-      final Uint8List? stored = await location.get(path);
-      if (stored == null) {
-        content.markAbsent(sha);
-      } else {
-        final Uint8List? plain = await open(sha, stored);
-        if (plain != null && srsMediaSha256(plain) == sha) {
-          content.markPresent(sha);
-          return plain;
+      final File stored = cipher == null ? dst : scratch('down');
+      try {
+        if (!await srsLocationGetFile(location, path, stored)) {
+          content.markAbsent(sha);
+        } else {
+          final String? got = cipher == null
+              ? await srsMediaSha256File(dst)
+              : await cipher.openFile(sha, stored, dst);
+          if (got == sha) {
+            content.markPresent(sha);
+            return sha;
+          }
+          // 位置上这份内容是坏的（截断 / 被改 / 解不开）：名字就是哈希，坏的就是垃圾——删掉、记不在，持有原文件的
+          // 设备下一轮补传；不当成本机文件落地。
+          await drop(dst);
+          report.rejected.add(name);
+          await location.delete(path);
+          content.markAbsent(sha);
         }
-        // 位置上这份内容是坏的（截断 / 被改 / 解不开）：名字就是哈希，坏的就是垃圾——删掉、记不在，持有原文件的
-        // 设备下一轮补传；不当成本机文件落地。
-        report.rejected.add(name);
-        await location.delete(path);
-        content.markAbsent(sha);
+      } finally {
+        if (cipher != null) await drop(stored);
       }
     }
-    bool accept(Uint8List? plain) {
-      if (plain == null) return false;
-      if (sha == null || srsMediaSha256(plain) == sha) return true;
-      report.rejected.add(name);
-      return false;
+    Future<String?> land(Uint8List? plain) async {
+      if (plain == null) return null;
+      final String got = srsMediaSha256(plain);
+      if (sha != null && got != sha) {
+        report.rejected.add(name);
+        return null;
+      }
+      await dst.writeAsBytes(plain, flush: true);
+      return got;
     }
 
     if (byName.stateOf(name) != _Remote.absent) {
@@ -399,13 +469,14 @@ Future<SrsMediaSyncReport> srsSyncMedia({
         byName.markAbsent(name);
       } else {
         if (byName.stateOf(name) == _Remote.unknown) byName.markPresent(name);
-        if (accept(plain)) return plain;
+        final String? got = await land(plain);
+        if (got != null) return got;
       }
     }
     // 写入者目录只在第一次确认「不在」时找：日志里已记为不在的，当时已经找过。
     if (!byName.knownAbsent.contains(name)) {
-      final Uint8List? plain = await legacy?.call(name);
-      if (accept(plain)) return plain;
+      final String? got = await land(await legacy?.call(name));
+      if (got != null) return got;
     }
     return null;
   }
@@ -421,27 +492,21 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     // 本机文件要被换成别的内容：它若还不在位置上，先传上去——那份内容此刻可能只有这台设备有。
     final String? local = item.local;
     if (local != null) await ensureUploaded(name, local);
-    final Uint8List? bytes = await fetch(name, sha);
-    if (bytes == null) {
-      report.missing.add(name);
-      return;
-    }
-    final String got = sha ?? srsMediaSha256(bytes);
     final File file = File(p.join(mediaRoot.path, name));
     await mediaRoot.create(recursive: true);
     final File tmp = File('${file.path}.download');
-    await tmp.writeAsBytes(bytes, flush: true);
+    final String? got = await fetchTo(name, sha, tmp);
+    if (got == null) {
+      await drop(tmp);
+      report.missing.add(name);
+      return;
+    }
     await tmp.rename(file.path);
     landed.add((name, got));
     report.downloaded++;
     if (content.stateOf(got) != _Remote.present) {
       // 从旧目录兜底拿到的：补传进内容目录。
-      await location.putNew(
-        srsMediaContentPath(folder, got),
-        await seal(got, bytes),
-      );
-      content.markPresent(got);
-      report.uploaded++;
+      await putContent(file, got);
     }
   }
 

@@ -54,7 +54,7 @@ fn own_fork_fetches_only_past_the_divergence_and_survives_an_interrupted_round()
     // 收到一半被打断：分叉点已经找到并记下。
     let files: Vec<Vec<u8>> = own.iter().map(|p| other.0[p].clone()).collect();
     a.core.sync2_ingest_begin(P).unwrap();
-    a.core.sync2_ingest_prepare(P, &files, None).unwrap();
+    a.core.sync2_ingest_prepare(P, files, None).unwrap();
     loop {
         let r: Value = serde_json::from_str(&a.core.sync2_ingest_commit(P, T0 + 40, CommitBudget::ops(1)).unwrap()).unwrap();
         if r["more"] != json!(true) {

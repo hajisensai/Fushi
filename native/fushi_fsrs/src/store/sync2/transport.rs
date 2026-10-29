@@ -1708,7 +1708,7 @@ impl SrsCore {
     }
 
     /// 会话里收一批（[SrsCore::sync2_ingest_prepare] + 不切片的 [SrsCore::sync2_ingest_commit] 连着做）。
-    pub fn sync2_ingest_batch(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
+    pub fn sync2_ingest_batch(&self, profile: &str, segments: Vec<Vec<u8>>, key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
         self.sync2_ingest_prepare(profile, segments, key)?;
         self.sync2_ingest_commit(profile, now, CommitBudget::unlimited())
     }
@@ -1716,9 +1716,11 @@ impl SrsCore {
     /// 会话里预处理一批：不持写锁（也不长持读锁）地解压、解密、验签、重算链，结果留在会话里等
     /// [SrsCore::sync2_ingest_commit]（覆盖上一批没投递的）。手机上一批要一两秒，这期间本机作答照常写入。
     /// 出错作废会话（与 [SrsCore::sync2_ingest_commit] 出错相同）。
-    pub fn sync2_ingest_prepare(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>) -> Result<Value, String> {
+    ///
+    /// [segments] 按所有权交进来、由会话持有到投递（不复制，审查 S-9）。
+    pub fn sync2_ingest_prepare(&self, profile: &str, segments: Vec<Vec<u8>>, key: Option<[u8; 32]>) -> Result<Value, String> {
         let device = self.session_device(profile)?;
-        let prepared = self.prepare_unlocked(profile, std::borrow::Cow::Owned(segments.to_vec()), key);
+        let prepared = self.prepare_unlocked(profile, std::borrow::Cow::Owned(segments), key);
         let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
         // 预处理期间会话被换过（重开 / 删 profile）：这一批不属于现在的会话。
         if !guard.as_ref().is_some_and(|s| s.profile == profile && s.device == device) {

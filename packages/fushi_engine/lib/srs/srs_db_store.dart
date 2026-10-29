@@ -1000,7 +1000,8 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
   /// 中途改本机状态。
-  /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。
+  /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。`seal_file` / `open_file` 同理
+  ///   （媒体文件到文件的流式封 / 解，只读写调用方给的路径）。
   /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`；
   ///   `media_hash`（本机媒体文件的 sha256，首次对账要把几万个文件各读一遍；结论交给进写锁的 `media_scan`）。
   /// - `digest`：读连接上读触发器增量维护的 4096 个摘要桶求根（已提交快照，不再全库扫描），只在末尾往写连接
@@ -1019,6 +1020,8 @@ class SrsDbStore implements SrsSync2Host {
     'history',
     'digest',
     'digest_buckets',
+    'seal_file',
+    'open_file',
   };
 
   @override

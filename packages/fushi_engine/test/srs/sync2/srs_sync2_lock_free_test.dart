@@ -70,6 +70,10 @@ void main() {
       'checkpoints',
       'history',
       'digest',
+      // 读连接列摘要桶（审查 S-7）；媒体文件到文件的流式封 / 解，不碰库（审查 S-9）。
+      'digest_buckets',
+      'seal_file',
+      'open_file',
     });
     for (final String op in <String>[
       'identity',
