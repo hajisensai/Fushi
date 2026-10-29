@@ -2256,7 +2256,7 @@ void main() {
     /// 把这些笔记换成别的笔记类型（旧 Lapis 迁到 Fushi 卡片同一条路：新卡继承旧卡的历史）。
     Future<void> changeType(SrsDbStore s, List<String> guids) async {
       final List<String> noteIds = <String>[
-        for (final SrsNoteView n in await s.allNoteViews())
+        for (final SrsNoteView n in await allNotesOf(s))
           if (guids.contains(n.guid)) n.id,
       ];
       final SrsNoteTypeView from = await s.sourceTypeOf(noteIds);

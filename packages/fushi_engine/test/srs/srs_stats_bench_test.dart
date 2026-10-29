@@ -129,7 +129,6 @@ void main() {
             db.srsNotesCache,
           )..where((x) => x.profileUid.equals(kBulkUid))).get(),
         ),
-        await timed('allNoteViews', store.allNoteViews),
         await timed('noteTypes', store.noteTypes),
       ];
       // ignore: avoid_print
