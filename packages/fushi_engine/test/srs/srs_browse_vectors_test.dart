@@ -235,13 +235,10 @@ String browseVecRow(List<String> cards, String primary, List<String> all) =>
 Future<Map<String, Object?>> browseVectors(SrsDbStore s) async {
   final SrsBrowseSession session = SrsBrowseSession(s);
   final List<SrsBrowseRow> all = await (await session.query()).all();
-  final List<String> ids = <String>[
-    for (final SrsBrowseRow r in all) r.cardId,
-  ]..sort();
+  final List<String> ids = <String>[for (final SrsBrowseRow r in all) r.cardId]
+    ..sort();
   // 笔记模式一行 = 该笔记的全部可见卡（自然顺序），与查询无关。
-  final SrsBrowseResult byNote = await session.query(
-    mode: SrsBrowseMode.notes,
-  );
+  final SrsBrowseResult byNote = await session.query(mode: SrsBrowseMode.notes);
   final Map<String, List<String>> cardsOf = <String, List<String>>{
     for (final String n in await byNote.ids())
       n: (await byNote.targets(<String>[n])).cardIds,
@@ -302,9 +299,9 @@ void main() {
     final SrsDbStore s = await buildBrowseVecLibrary(() => t, (int v) => t = v);
     final Map<String, Object?> got = await browseVectors(s);
     if (write) {
-      File(
-        _fixture,
-      ).writeAsStringSync('${const JsonEncoder.withIndent(' ').convert(got)}\n');
+      File(_fixture).writeAsStringSync(
+        '${const JsonEncoder.withIndent(' ').convert(got)}\n',
+      );
       return;
     }
     final Map<String, Object?> want =
