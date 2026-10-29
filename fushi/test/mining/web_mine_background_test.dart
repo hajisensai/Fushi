@@ -9,14 +9,14 @@ import 'package:fushi/src/mining/web_mine_idle.dart';
 void main() {
   late Duration? idle;
   late List<String> pending;
-  late bool atSurface;
+  late bool nothingPlaying;
   late List<String> opened;
   late Completer<void> page;
   late WebMineBackgroundRunner runner;
 
   WebMineBackgroundRunner build() => WebMineBackgroundRunner(
     pendingBookUids: () async => pending,
-    atIdleSurface: () => atSurface,
+    nothingPlaying: () => nothingPlaying,
     openMiningPage: (String uid) {
       opened.add(uid);
       page = Completer<void>();
@@ -32,7 +32,7 @@ void main() {
     WebMineIdleScheduler.silentCaptureUnavailable = false;
     idle = Duration.zero;
     pending = <String>['book-a', 'book-b'];
-    atSurface = true;
+    nothingPlaying = true;
     opened = <String>[];
     page = Completer<void>();
     runner = build()..start();
@@ -83,11 +83,11 @@ void main() {
 
   test('不在顶层页（用户开着别的页）/ 没待办 / 静音录音不可用：不开', () async {
     idle = const Duration(minutes: 5);
-    atSurface = false;
+    nothingPlaying = false;
     runner.scheduler.tick();
     expect(opened, isEmpty);
 
-    atSurface = true;
+    nothingPlaying = true;
     WebMineIdleScheduler.silentCaptureUnavailable = true;
     runner.scheduler.tick();
     expect(opened, isEmpty);
@@ -97,5 +97,30 @@ void main() {
     await runner.refresh();
     runner.scheduler.tick();
     expect(opened, isEmpty);
+  });
+
+  test('开着自带空闲制卡的网页播放页：交给那一页，后台不另叠一页', () {
+    idle = const Duration(minutes: 5);
+    final WebMineIdleScheduler pageScheduler = WebMineIdleScheduler(
+      canStart: () => false,
+      onIdle: () {},
+      onUserActive: () {},
+      inputIdle: () => idle,
+      createTimer: (Duration d, void Function() f) =>
+          Timer(const Duration(days: 1), f),
+    )..start();
+    expect(WebMineIdleScheduler.livePageSchedulers, 1);
+    runner.scheduler.tick();
+    expect(opened, isEmpty);
+
+    pageScheduler.dispose();
+    expect(WebMineIdleScheduler.livePageSchedulers, 0);
+    runner.scheduler.tick();
+    expect(opened, <String>['book-a']);
+  });
+
+  test('后台调度器自己不算页面级（不会把自己挡住）', () {
+    expect(runner.scheduler.pageLevel, isFalse);
+    expect(WebMineIdleScheduler.livePageSchedulers, 0);
   });
 }

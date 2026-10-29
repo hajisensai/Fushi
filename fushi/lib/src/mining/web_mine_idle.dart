@@ -85,6 +85,7 @@ class WebMineIdleScheduler {
     this.threshold = kWebMineIdleThreshold,
     this.idlePoll = const Duration(seconds: 5),
     this.activePoll = const Duration(milliseconds: 500),
+    this.pageLevel = true,
     Timer Function(Duration d, void Function() f)? createTimer,
   }) : _inputIdle = inputIdle ?? systemInputIdleDuration,
        _createTimer = createTimer ?? Timer.new;
@@ -92,6 +93,14 @@ class WebMineIdleScheduler {
   /// 本进程里静音录音起不来过（系统不支持 process loopback / 找不到 WebView2 进程）。
   /// 进程级：窗口宿主档的空闲交接每次都要重开页面，按页记会在用户离开期间反复换页重试。
   static bool silentCaptureUnavailable = false;
+
+  /// 已 [start] 未 [dispose] 的**页面级**调度器数（网页播放页开着）：那一页自己负责
+  /// 空闲制卡，后台调度（[pageLevel] = false）此时不另开一页叠在它上面。
+  static int livePageSchedulers = 0;
+
+  /// 挂在播放页上（true）还是 app 级后台（false，见 `web_mine_background.dart`）。
+  final bool pageLevel;
+  bool _counted = false;
 
   /// 页面侧的其余条件（队列非空、没在播、没在跑、静音录音可用……）。
   final bool Function() canStart;
@@ -115,6 +124,10 @@ class WebMineIdleScheduler {
 
   void start() {
     if (_disposed || _timer != null) return;
+    if (pageLevel && !_counted) {
+      _counted = true;
+      livePageSchedulers++;
+    }
     _schedule(idlePoll);
   }
 
@@ -145,6 +158,10 @@ class WebMineIdleScheduler {
   }
 
   void dispose() {
+    if (_counted) {
+      _counted = false;
+      livePageSchedulers--;
+    }
     _disposed = true;
     _timer?.cancel();
     _timer = null;

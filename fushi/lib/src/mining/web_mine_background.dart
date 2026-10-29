@@ -7,16 +7,17 @@ import 'package:fushi/src/mining/web_mine_idle.dart';
 ///
 /// 页面级的 [WebMineIdleScheduler]（`web_video_fushi_page.dart`）只在播放页开着、已暂停时
 /// 生效——用户关掉播放页去干别的，攒下的队列就一直躺着，「全自动」名不副实。这里在 app
-/// 级别盯同一个系统空闲判据：整台机器 [kWebMineIdleThreshold] 无输入、Fushi 停在顶层页
-/// （没开着别的播放 / 阅读页，不打断用户留在那儿的东西）、某本网页视频书有待办 → 打开
-/// 那本书的制卡页静音重放（[openMiningPage]，跑完自己关），一次一本；还空闲就接着下一本。
+/// 级别盯同一个系统空闲判据：整台机器 [kWebMineIdleThreshold] 无输入、Fushi 里没有东西
+/// 在播（[nothingPlaying]：用户停在哪一页都行，制卡页叠上去、跑完关掉就回到原处）、没开着
+/// 自带空闲制卡的网页播放页（那一页自己跑）、某本网页视频书有待办 → 打开那本书的制卡页
+/// 静音重放（[openMiningPage]，跑完自己关），一次一本；还空闲就接着下一本。
 /// 用户一回来：页面自己的调度器录完当前这句即停、关页，本轮试过的书清空，下次空闲重来。
 ///
 /// 纯编排、无 UI：页面打开 / 顶层判断 / 待办查询全部注入，测试里用假件。
 class WebMineBackgroundRunner {
   WebMineBackgroundRunner({
     required this.pendingBookUids,
-    required this.atIdleSurface,
+    required this.nothingPlaying,
     required this.openMiningPage,
     Duration? Function()? inputIdle,
     Timer Function(Duration d, void Function() f)? createTimer,
@@ -31,6 +32,7 @@ class WebMineBackgroundRunner {
       inputIdle: inputIdle,
       idlePoll: idlePoll,
       activePoll: activePoll,
+      pageLevel: false,
       createTimer: createTimer,
     );
   }
@@ -38,8 +40,9 @@ class WebMineBackgroundRunner {
   /// 有待办、且能在网页播放器里重放的书（按最早入队排）。
   final Future<List<String>> Function() pendingBookUids;
 
-  /// Fushi 停在顶层页（导航栈没有压着别的页面）。
-  final bool Function() atIdleSurface;
+  /// 此刻能不能把制卡页叠上去：Fushi 里没有东西在播（视频 / 有声书 / 音乐）。用户
+  /// 停在哪一页都行——制卡页压在它上面，跑完关掉就回到原处。
+  final bool Function() nothingPlaying;
 
   /// 打开这本书的制卡页，页面关掉（跑完 / 让位 / 放弃）时完成。
   final Future<void> Function(String bookUid) openMiningPage;
@@ -106,8 +109,9 @@ class WebMineBackgroundRunner {
       !_disposed &&
       !_running &&
       !WebMineIdleScheduler.silentCaptureUnavailable &&
+      WebMineIdleScheduler.livePageSchedulers == 0 &&
       _next != null &&
-      atIdleSurface();
+      nothingPlaying();
 
   void _onIdle() {
     final String? uid = _next;

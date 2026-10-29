@@ -99,6 +99,8 @@ import 'package:fushi/src/media/video/web_video_bridge.dart'
     show shouldOpenInWebVideoPlayer;
 import 'package:fushi/src/media/video/web_video_hosting.dart'
     show WebVideoHosting;
+import 'package:fushi/src/media/video/video_player_controller.dart'
+    show VideoPlayerController;
 import 'package:fushi/src/mining/web_mine_background.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
@@ -521,8 +523,10 @@ class _HomePageState extends BasePageState<HomePage>
   static const Duration _periodicSyncInterval = Duration(minutes: 1);
   Timer? _periodicSyncTimer;
 
-  /// 用户不开播放页时，网页视频攒下的制卡队列也能在离开电脑时自动跑：首页是顶层页
-  /// （没压着播放 / 阅读 / 设置页）才开制卡页，免得把用户留在那儿的东西盖掉。
+  /// 用户不开播放页时，网页视频攒下的制卡队列也能在离开电脑时自动跑。停在哪一页都行
+  /// （制卡页叠在上面，跑完关掉回到原处），只在 Fushi 里有东西在播时不开：
+  /// 视频（本地 / 网页）在播、有声书 / 音乐在播，或者阅读器开着且窗口在前台（人可能
+  /// 正盯着一页在读，键鼠两分钟不动很正常）。
   void _startWebMineBackground() {
     // widget 测试里不起：调度器是常驻周期计时器，会让每个泵首页的测试都留下 pending timer。
     if (!Platform.isWindows ||
@@ -546,8 +550,21 @@ class _HomePageState extends BasePageState<HomePage>
         }
         return eligible;
       },
-      atIdleSurface: () =>
-          mounted && (ModalRoute.of(context)?.isCurrent ?? false),
+      nothingPlaying: () {
+        if (!mounted || VideoPlayerController.anyPlaying) return false;
+        if (appModelNoUpdate
+                .audioCtrl
+                .audioHandler
+                ?.playbackState
+                .value
+                .playing ??
+            false) {
+          return false;
+        }
+        final bool focused =
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+        return !(appModelNoUpdate.isMediaOpen && focused);
+      },
       openMiningPage: (String uid) async {
         if (!mounted) return;
         await Navigator.of(context).push(
