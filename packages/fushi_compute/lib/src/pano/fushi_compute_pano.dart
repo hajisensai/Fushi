@@ -46,9 +46,9 @@ typedef _BuffersC =
       Pointer<Pointer<Float>>,
       Pointer<Pointer<Float>>,
       Pointer<Pointer<Int32>>,
+      Pointer<Pointer<Uint16>>,
       Pointer<Pointer<Int32>>,
       Pointer<Pointer<Float>>,
-      Pointer<Size>,
       Pointer<Size>,
     );
 typedef _BuffersDart =
@@ -57,9 +57,9 @@ typedef _BuffersDart =
       Pointer<Pointer<Float>>,
       Pointer<Pointer<Float>>,
       Pointer<Pointer<Int32>>,
+      Pointer<Pointer<Uint16>>,
       Pointer<Pointer<Int32>>,
       Pointer<Pointer<Float>>,
-      Pointer<Size>,
       Pointer<Size>,
     );
 typedef _SetModeC = Int32 Function(Pointer<Void>, Int32, Int32);
@@ -71,25 +71,9 @@ typedef _SelectDart = int Function(Pointer<Void>, int, double);
 typedef _PickC = Int32 Function(Pointer<Void>, Float, Float);
 typedef _PickDart = int Function(Pointer<Void>, double, double);
 typedef _FrameC =
-    Int32 Function(
-      Pointer<Void>,
-      Double,
-      Float,
-      Float,
-      Float,
-      Pointer<Size>,
-      Pointer<Size>,
-    );
+    Int32 Function(Pointer<Void>, Double, Float, Float, Float, Pointer<Size>);
 typedef _FrameDart =
-    int Function(
-      Pointer<Void>,
-      double,
-      double,
-      double,
-      double,
-      Pointer<Size>,
-      Pointer<Size>,
-    );
+    int Function(Pointer<Void>, double, double, double, double, Pointer<Size>);
 
 /// `ffc_pano_*` 失败（参数表不合法、原生 panic）。
 final class FfcPanoException implements Exception {
@@ -102,7 +86,7 @@ final class FfcPanoException implements Exception {
   String toString() => 'FfcPanoException: $operation failed (status $status)';
 }
 
-/// 全景模式：首页可操作的球幕 / 分享用的 16 秒开场动画。
+/// 全景模式：首页可操作（星系开场，拉近变球幕）/ 分享用的 16 秒开场动画。
 enum FfcPanoMode {
   interactive(0),
   cinematic(1);
@@ -147,6 +131,9 @@ abstract final class FfcPanoInfo {
   static const int phase = 20;
   static const int handoff = 21;
   static const int dim = 22;
+
+  /// 0 = 星系，1 = 球幕。
+  static const int morph = 23;
   static const int length = 32;
 }
 
@@ -197,38 +184,49 @@ final class FfcPanoScene {
 }
 
 /// 一帧的输出视图（指向原生缓冲区，下一次 [FfcPanorama.frame] 前有效，别跨帧持有）。
+///
+/// 三角网格：封面是 4×4 小格的 3D 平面投影，词是屏幕空间字形片；已按远到近排好，按图集页
+/// 切批。每批画一次 `drawVertices`（纹理 = 该页图集，`BlendMode.modulate` 乘顶点色）。
 final class FfcPanoFrame {
   const FfcPanoFrame({
-    required this.sprites,
+    required this.vertices,
+    required this.indexCount,
     required this.batches,
-    required this.transforms,
-    required this.rects,
+    required this.positions,
+    required this.texCoords,
     required this.colors,
+    required this.indices,
     required this.batchTable,
     required this.info,
   });
 
-  final int sprites;
+  final int vertices;
+  final int indexCount;
   final int batches;
 
-  /// RSTransform（scos, ssin, tx, ty）× [sprites]。
-  final Float32List transforms;
+  /// 屏幕坐标 (x, y) × [vertices]。
+  final Float32List positions;
 
-  /// 源矩形（l, t, r, b）× [sprites]。
-  final Float32List rects;
+  /// 图集像素坐标 (u, v) × [vertices]；[FfcPanorama.targetPage] 批为整张高清图的 0..1。
+  final Float32List texCoords;
 
-  /// ARGB 调制色 × [sprites]（`BlendMode.modulate`）。
+  /// ARGB 调制色 × [vertices]。
   final Int32List colors;
 
-  /// (图集页, 起点, 张数) × [batches]，按远到近的绘制顺序。
+  /// 三角形索引（相对所在批的起始顶点）。
+  final Uint16List indices;
+
+  /// (图集页, 顶点起点, 顶点数, 索引起点, 索引数) × [batches]。
   final Int32List batchTable;
 
   /// 帧信息，下标见 [FfcPanoInfo]。
   final Float32List info;
 
-  int batchPage(int b) => batchTable[b * 3];
-  int batchStart(int b) => batchTable[b * 3 + 1];
-  int batchCount(int b) => batchTable[b * 3 + 2];
+  int batchPage(int b) => batchTable[b * 5];
+  int batchVertexStart(int b) => batchTable[b * 5 + 1];
+  int batchVertexCount(int b) => batchTable[b * 5 + 2];
+  int batchIndexStart(int b) => batchTable[b * 5 + 3];
+  int batchIndexCount(int b) => batchTable[b * 5 + 4];
 
   bool get targetVisible => info[FfcPanoInfo.targetVisible] > 0.5;
   bool get handoff => info[FfcPanoInfo.handoff] > 0.5;
@@ -241,19 +239,20 @@ final class FfcPanorama implements Finalizable {
   FfcPanorama._(this._b, this._handle) {
     _finalizer.attach(this, _handle, detach: this);
     using((Arena arena) {
-      final Pointer<Pointer<Float>> xf = arena<Pointer<Float>>();
-      final Pointer<Pointer<Float>> rc = arena<Pointer<Float>>();
+      final Pointer<Pointer<Float>> pos = arena<Pointer<Float>>();
+      final Pointer<Pointer<Float>> uv = arena<Pointer<Float>>();
       final Pointer<Pointer<Int32>> co = arena<Pointer<Int32>>();
+      final Pointer<Pointer<Uint16>> ix = arena<Pointer<Uint16>>();
       final Pointer<Pointer<Int32>> ba = arena<Pointer<Int32>>();
       final Pointer<Pointer<Float>> inf = arena<Pointer<Float>>();
-      final Pointer<Size> cap = arena<Size>();
-      final Pointer<Size> bcap = arena<Size>();
-      _check('buffers', _b.buffers(_handle, xf, rc, co, ba, inf, cap, bcap));
-      _capacity = cap.value;
-      _transforms = xf.value.asTypedList(_capacity * 4);
-      _rects = rc.value.asTypedList(_capacity * 4);
-      _colors = co.value.asTypedList(_capacity);
-      _batchTable = ba.value.asTypedList(bcap.value * 3);
+      final Pointer<Size> caps = arena<Size>(3);
+      _check('buffers', _b.buffers(_handle, pos, uv, co, ix, ba, inf, caps));
+      _vertexCapacity = caps[0];
+      _positions = pos.value.asTypedList(_vertexCapacity * 2);
+      _texCoords = uv.value.asTypedList(_vertexCapacity * 2);
+      _colors = co.value.asTypedList(_vertexCapacity);
+      _indices = ix.value.asTypedList(caps[1]);
+      _batchTable = ba.value.asTypedList(caps[2] * 5);
       _info = inf.value.asTypedList(FfcPanoInfo.length);
     });
   }
@@ -313,19 +312,23 @@ final class FfcPanorama implements Finalizable {
   final _PanoBindings _b;
   Pointer<Void> _handle;
 
-  /// 每帧的精灵数 / 批次数输出槽。
-  final NativeScratch _counts = NativeScratch.fixed(2 * sizeOf<Size>());
-  late final int _capacity;
-  late final Float32List _transforms;
-  late final Float32List _rects;
+  /// 每帧的顶点数 / 索引数 / 批次数输出槽。
+  final NativeScratch _counts = NativeScratch.fixed(3 * sizeOf<Size>());
+  late final int _vertexCapacity;
+  late final Float32List _positions;
+  late final Float32List _texCoords;
   late final Int32List _colors;
+  late final Uint16List _indices;
   late final Int32List _batchTable;
   late final Float32List _info;
 
   bool get isDisposed => _handle == nullptr;
 
-  /// 输出精灵容量（建图时定死）。
-  int get capacity => _capacity;
+  /// 批次表里锁定目标那一批的页号：用高清带框封面画（纹理坐标 0..1）。
+  static const int targetPage = -1;
+
+  /// 输出顶点容量（建图时定死）。
+  int get vertexCapacity => _vertexCapacity;
 
   void setMode(FfcPanoMode mode, {int target = -1}) {
     _alive();
@@ -358,18 +361,15 @@ final class FfcPanorama implements Finalizable {
   }) {
     _alive();
     final Pointer<Size> counts = _counts.pointer.cast<Size>();
-    _check(
-      'frame',
-      _b.frame(_handle, t, dt, width, height, counts, counts + 1),
-    );
-    final int sprites = counts[0];
-    final int batches = counts[1];
+    _check('frame', _b.frame(_handle, t, dt, width, height, counts));
     return FfcPanoFrame(
-      sprites: sprites,
-      batches: batches,
-      transforms: _transforms,
-      rects: _rects,
+      vertices: counts[0],
+      indexCount: counts[1],
+      batches: counts[2],
+      positions: _positions,
+      texCoords: _texCoords,
       colors: _colors,
+      indices: _indices,
       batchTable: _batchTable,
       info: _info,
     );

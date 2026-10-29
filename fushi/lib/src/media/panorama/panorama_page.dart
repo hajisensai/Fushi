@@ -63,15 +63,17 @@ final AutoDisposeFutureProvider<PanoramaAssets> panoramaAssetsProvider =
         db: app.database,
         srs: srs,
       );
+      final List<PanoramaFontSet> fonts = await panoramaFontSets(app);
       final PanoramaAtlas atlas = await buildPanoramaAtlas(
         library,
-        fonts: await panoramaFontSets(app),
+        fonts: fonts,
         spec: PanoramaAtlasSpec.current,
       );
       final PanoramaAssets assets = PanoramaAssets(
         library: library,
         atlas: atlas,
         db: app.database,
+        bookFont: fonts.first,
       );
       ref.onDispose(assets.dispose);
       return assets;
@@ -107,7 +109,7 @@ Future<void> playPanoramaCinematic(
   );
 }
 
-/// 全屏可操作全景（从球心环顾）。
+/// 全屏可操作全景（星系开场，拉近收拢成球幕）。
 class PanoramaPage extends ConsumerWidget {
   const PanoramaPage({super.key, required this.onOpen});
 

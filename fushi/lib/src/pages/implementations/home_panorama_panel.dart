@@ -94,7 +94,6 @@ class HomePanoramaPanel extends ConsumerWidget {
         key: const ValueKey<String>('home-panorama-stage'),
         assets: ready,
         onOpen: onOpen,
-        startOutside: true,
       );
     } else {
       stage = ColoredBox(

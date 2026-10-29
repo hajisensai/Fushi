@@ -431,6 +431,10 @@ Future<PanoramaAtlas> buildPanoramaAtlas(
     fontFamilyFallback: s.fallback.isEmpty ? null : s.fallback,
     fontSize: em,
     fontWeight: weight,
+    // 可变字体只认 wght 轴：同时给，静态字体忽略它。
+    fontVariations: <FontVariation>[
+      FontVariation.weight(weight.value.toDouble()),
+    ],
     height: 1.15,
     color: Colors.white,
   );

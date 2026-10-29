@@ -20,6 +20,7 @@ class PanoramaBookFlip extends StatefulWidget {
     required this.framedCover,
     required this.fallbackTitle,
     required this.accent,
+    this.font,
     required this.excerpt,
     required this.duration,
     required this.onOpened,
@@ -32,6 +33,9 @@ class PanoramaBookFlip extends StatefulWidget {
   final ui.Image? framedCover;
   final String fallbackTitle;
   final Color accent;
+
+  /// 正文字体（小说正文字体那一套；null = 系统默认）。
+  final PanoramaFontSet? font;
 
   /// 当前进度正文（null = 取不到，显示书名）。
   final Future<String?>? excerpt;
@@ -97,6 +101,7 @@ class _PanoramaBookFlipState extends State<PanoramaBookFlip>
                 rect: page,
                 text: _text ?? widget.fallbackTitle,
                 accent: widget.accent,
+                font: widget.font,
               ),
             ),
             Transform(
@@ -189,11 +194,17 @@ const Map<String, String> _verticalForms = <String, String>{
 const Set<String> _rotated = <String>{'ー', '―', '—', '〜', '～', '-'};
 
 class _PagePainter extends CustomPainter {
-  _PagePainter({required this.rect, required this.text, required this.accent});
+  _PagePainter({
+    required this.rect,
+    required this.text,
+    required this.accent,
+    this.font,
+  });
 
   final Rect rect;
   final String text;
   final Color accent;
+  final PanoramaFontSet? font;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -212,6 +223,10 @@ class _PagePainter extends CustomPainter {
     final List<String> chars = text.characters.toList();
     final TextStyle style = TextStyle(
       fontSize: fs,
+      fontFamily: font?.family,
+      fontFamilyFallback: font == null || font!.fallback.isEmpty
+          ? null
+          : font!.fallback,
       color: const Color(0xFF2A2420),
       height: 1,
     );

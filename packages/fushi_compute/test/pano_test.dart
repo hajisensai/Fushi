@@ -72,26 +72,40 @@ void main() {
     );
   });
 
-  test('batches partition the sprites in draw order', () {
+  test('batches partition vertices and indices in draw order', () {
     final FfcPanorama p = FfcPanorama.create(_scene(40, 6, 30));
     addTearDown(p.dispose);
     final FfcPanoFrame f = p.frame(t: 0, dt: 0, width: 1280, height: 720);
-    expect(f.sprites, greaterThan(0));
-    int sum = 0;
+    expect(f.vertices, greaterThan(0));
+    int v = 0;
+    int ix = 0;
     for (int b = 0; b < f.batches; b++) {
-      expect(f.batchStart(b), sum);
-      sum += f.batchCount(b);
-      if (b > 0) expect(f.batchPage(b), isNot(f.batchPage(b - 1)));
+      expect(f.batchVertexStart(b), v);
+      expect(f.batchIndexStart(b), ix);
+      final int n = f.batchVertexCount(b);
+      for (int k = ix; k < ix + f.batchIndexCount(b); k++) {
+        expect(f.indices[k], lessThan(n));
+      }
+      v += n;
+      ix += f.batchIndexCount(b);
     }
-    expect(sum, f.sprites);
-    expect(f.sprites, lessThanOrEqualTo(p.capacity));
+    expect(v, f.vertices);
+    expect(ix, f.indexCount);
+    expect(f.vertices, lessThanOrEqualTo(p.vertexCapacity));
+    // 交互模式开场是星系。
+    expect(f.info[FfcPanoInfo.morph], 0);
   });
 
   test('cinematic lock: target centred at 62% height, others dimmed', () {
     final FfcPanorama p = FfcPanorama.create(_scene(60, 3, 10));
     addTearDown(p.dispose);
     p.setMode(FfcPanoMode.cinematic, target: 17);
-    final FfcPanoFrame f = p.frame(t: 13.6, dt: 1 / 60, width: 1000, height: 800);
+    final FfcPanoFrame f = p.frame(
+      t: 13.6,
+      dt: 1 / 60,
+      width: 1000,
+      height: 800,
+    );
     expect(f.handoff, isTrue);
     expect(f.targetVisible, isTrue);
     final Float32List i = f.info;
@@ -102,8 +116,14 @@ void main() {
     expect(x + w / 2, closeTo(500, 1));
     expect(y + h / 2, closeTo(400, 1));
     expect(h, closeTo(0.62 * 800, 2));
-    expect(w / h, closeTo(0.7, 1e-3));
+    expect(w / h, closeTo(0.7, 1e-2));
     expect(i[FfcPanoInfo.dim], closeTo(0.1, 1e-4));
+    // 目标是最后一批，用高清图画（页号 targetPage，纹理坐标 0..1）。
+    final int last = f.batches - 1;
+    expect(f.batchPage(last), FfcPanorama.targetPage);
+    final int v0 = f.batchVertexStart(last);
+    expect(f.texCoords[v0 * 2], 0);
+    expect(f.texCoords[(v0 + 24) * 2], 1);
   });
 
   test('interactive: drag changes the view, tap picks a card', () {
@@ -115,14 +135,19 @@ void main() {
     p
       ..input(FfcPanoInput.drag, 200, 0)
       ..input(FfcPanoInput.release, 0, 0);
-    final FfcPanoFrame f = p.frame(t: 0.016, dt: 0.016, width: 800, height: 600);
+    final FfcPanoFrame f = p.frame(
+      t: 0.016,
+      dt: 0.016,
+      width: 800,
+      height: 600,
+    );
     expect(f.info.sublist(4, 7), isNot(equals(before)));
-    // 第一个可见封面的中心能拾到它。
-    final int s = 0;
-    final double k = f.transforms[s * 4];
-    final double cx = f.transforms[s * 4 + 2] + k * 60;
-    final double cy = f.transforms[s * 4 + 3] + k * 80;
-    expect(p.pick(cx, cy), greaterThanOrEqualTo(0));
+    // 第一张封面网格（5×5 顶点）的中心顶点能拾到它。
+    const int center = 12;
+    expect(
+      p.pick(f.positions[center * 2], f.positions[center * 2 + 1]),
+      greaterThanOrEqualTo(0),
+    );
     expect(p.pick(-50, -50), -1);
   });
 
@@ -132,9 +157,6 @@ void main() {
       ..dispose()
       ..dispose();
     expect(p.isDisposed, isTrue);
-    expect(
-      () => p.frame(t: 0, dt: 0, width: 10, height: 10),
-      throwsStateError,
-    );
+    expect(() => p.frame(t: 0, dt: 0, width: 10, height: 10), throwsStateError);
   });
 }

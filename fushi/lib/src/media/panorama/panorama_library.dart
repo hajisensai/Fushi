@@ -318,6 +318,64 @@ List<PanoramaWork> panoramaGroupVideos(
   return out;
 }
 
+/// 作品身份 / 标签形 → 作品下标的索引：笔记挂作品的唯一判据（出处优先，其次标签）。
+class PanoramaOwnerIndex {
+  PanoramaOwnerIndex(List<PanoramaWork> works) {
+    for (int i = 0; i < works.length; i++) {
+      final PanoramaWork w = works[i];
+      _byKey.putIfAbsent(w.key, () => i);
+      for (final String k in w.memberKeys) {
+        _byKey.putIfAbsent(k, () => i);
+      }
+      _byTag.putIfAbsent(panoramaTagForm(w.title), () => i);
+      for (final String t in w.matchTitles) {
+        final String form = panoramaTagForm(t);
+        if (form.isNotEmpty) _byTag.putIfAbsent(form, () => i);
+      }
+    }
+  }
+
+  final Map<String, int> _byKey = <String, int>{};
+  final Map<String, int> _byTag = <String, int>{};
+
+  /// 笔记所属作品下标；没挂上为 -1。
+  int ownerOf(PanoramaNoteInput n) {
+    for (final String k in n.sourceKeys) {
+      if (_byKey[k] case final int o) return o;
+    }
+    for (final String tag in n.tags) {
+      if (_byTag[tag.toLowerCase()] case final int o) return o;
+    }
+    return -1;
+  }
+}
+
+/// 先按作品分组再均匀抽样要用到的笔记下标（每部 [perWork]、无主 [loose]，各乘 [oversample]
+/// 余量——抽中的笔记可能取不出词）。只为这些笔记读字段，不必物化整个复习库。
+List<int> panoramaSampleNoteIndices(
+  List<PanoramaWork> works,
+  List<PanoramaNoteInput> notes, {
+  int perWork = kPanoramaWordsPerWork,
+  int loose = kPanoramaLooseWords,
+  double oversample = 1.5,
+}) {
+  final PanoramaOwnerIndex index = PanoramaOwnerIndex(works);
+  final List<List<int>> groups = <List<int>>[
+    for (int i = 0; i <= works.length; i++) <int>[],
+  ];
+  for (int i = 0; i < notes.length; i++) {
+    final int o = index.ownerOf(notes[i]);
+    groups[o < 0 ? works.length : o].add(i);
+  }
+  return <int>[
+    for (int g = 0; g <= works.length; g++)
+      ...panoramaSampleEvenly(
+        groups[g],
+        ((g == works.length ? loose : perWork) * oversample).ceil(),
+      ),
+  ]..sort();
+}
+
 /// 把笔记挂到作品上并抽样，得到展示词表。
 List<PanoramaWord> panoramaAssignWords(
   List<PanoramaWork> works,
@@ -325,20 +383,7 @@ List<PanoramaWord> panoramaAssignWords(
   int perWork = kPanoramaWordsPerWork,
   int loose = kPanoramaLooseWords,
 }) {
-  final Map<String, int> byKey = <String, int>{};
-  final Map<String, int> byTag = <String, int>{};
-  for (int i = 0; i < works.length; i++) {
-    final PanoramaWork w = works[i];
-    byKey.putIfAbsent(w.key, () => i);
-    for (final String k in w.memberKeys) {
-      byKey.putIfAbsent(k, () => i);
-    }
-    byTag.putIfAbsent(panoramaTagForm(w.title), () => i);
-    for (final String t in w.matchTitles) {
-      final String form = panoramaTagForm(t);
-      if (form.isNotEmpty) byTag.putIfAbsent(form, () => i);
-    }
-  }
+  final PanoramaOwnerIndex index = PanoramaOwnerIndex(works);
   final List<List<String>> perWorkWords = <List<String>>[
     for (int i = 0; i < works.length; i++) <String>[],
   ];
@@ -346,18 +391,8 @@ List<PanoramaWord> panoramaAssignWords(
   for (final PanoramaNoteInput n in notes) {
     final String? word = panoramaNoteWord(n.sortField, n.fields);
     if (word == null || word.isEmpty) continue;
-    int? owner;
-    for (final String k in n.sourceKeys) {
-      owner = byKey[k];
-      if (owner != null) break;
-    }
-    if (owner == null) {
-      for (final String tag in n.tags) {
-        owner = byTag[tag.toLowerCase()];
-        if (owner != null) break;
-      }
-    }
-    if (owner == null) {
+    final int owner = index.ownerOf(n);
+    if (owner < 0) {
       looseWords.add(word);
     } else {
       perWorkWords[owner].add(word);
@@ -488,18 +523,50 @@ Future<PanoramaLibrary> loadPanoramaLibrary({
               (n) => OrderingTerm.asc(n.createdAt),
             ]))
           .get();
-  // 出处只有物化后的笔记才有：全部物化（分块批量），字段顺便给内部编号的词兜底。
-  final Map<String, SrsNoteView?> views = await srs.notes(
-    rows.map((SrsNoteCacheRow r) => r.id),
+  // 出处 / 字段只有物化后的笔记才有，而物化是逐条读修改记录再过一次 FFI，全量物化 1.5 万条
+  // 笔记要 10 秒以上。分两步只物化真正要用的：
+  // 1. 带出处修改记录的笔记（制卡时写入，本机实测 1.48 万条里 113 条）——挂作品要它；
+  // 2. 按作品分组均匀抽样后，抽中且 sort_field 是内部编号、要回退读字段的那些。
+  final Set<String> sourced = <String>{
+    for (final TypedResult r
+        in await (srs.db.selectOnly(srs.db.srsFieldEdits, distinct: true)
+              ..addColumns(<Expression<Object>>[srs.db.srsFieldEdits.entityId])
+              ..where(
+                srs.db.srsFieldEdits.profileUid.equals(srs.profileUid) &
+                    srs.db.srsFieldEdits.entityKind.equals(
+                      SrsEntityKind.note.wire,
+                    ) &
+                    srs.db.srsFieldEdits.fieldKey.equals(
+                      SrsFieldKeys.noteSource,
+                    ),
+              ))
+            .get())
+      r.read(srs.db.srsFieldEdits.entityId)!,
+  };
+  final Map<String, SrsNoteView?> views = await srs.notes(<String>[
+    for (final SrsNoteCacheRow r in rows)
+      if (sourced.contains(r.id)) r.id,
+  ]);
+  PanoramaNoteInput input(SrsNoteCacheRow r) => PanoramaNoteInput(
+    sortField: r.sortField,
+    tags: _decodeTags(r.tagsJson),
+    fields: views[r.id]?.fields.values.toList() ?? const <String>[],
+    sourceKeys: panoramaSourceKeys(views[r.id]?.source),
+  );
+  final List<PanoramaNoteInput> all = <PanoramaNoteInput>[
+    for (final SrsNoteCacheRow r in rows) input(r),
+  ];
+  final List<int> picked = panoramaSampleNoteIndices(works, all);
+  views.addAll(
+    await srs.notes(<String>[
+      for (final int i in picked)
+        if (!views.containsKey(rows[i].id) &&
+            panoramaLooksLikeInternalId(rows[i].sortField))
+          rows[i].id,
+    ]),
   );
   final List<PanoramaNoteInput> notes = <PanoramaNoteInput>[
-    for (final SrsNoteCacheRow r in rows)
-      PanoramaNoteInput(
-        sortField: r.sortField,
-        tags: _decodeTags(r.tagsJson),
-        fields: views[r.id]?.fields.values.toList() ?? const <String>[],
-        sourceKeys: panoramaSourceKeys(views[r.id]?.source),
-      ),
+    for (final int i in picked) input(rows[i]),
   ];
   return PanoramaLibrary(
     works: works,

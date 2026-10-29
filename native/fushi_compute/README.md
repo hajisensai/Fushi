@@ -576,16 +576,21 @@ GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声�
 
 首页「媒体库全景」与分享用 16 秒开场动画的胖核心（`src/pano.rs`，Dart 绑定
 `packages/fushi_compute/lib/src/pano/`，消费端 `fushi/lib/src/media/panorama/`）。状态全在 Rust：
-三套布局（大爆炸 → 3 旋臂星系 → 半径 12 球幕 + 词外壳 / 绕封面的随机倾斜轨道）、交互镜头（拖拽惯性、
-缩放可推到球外）、锁定飞入（其余暗到 10%、目标沿半径飞到正前方占视口 62% 高）、每帧投影与远近样式
-（远：细小淡；近：粗大 + 白字心彩色描边，smoothstep 连续过渡）。
+布局（大爆炸 → 三旋臂星系 → 半径 12 球幕 + 词外壳 / 绕封面的随机倾斜轨道）、封面 3D 姿态（星系里面朝上
+躺平并自转、过渡时四元数 slerp 错峰约 1.2 秒立起、球幕上正面朝球心大致直立；背面画正向略暗的封面）、
+交互镜头（星系俯视开场，拉近连续收拢成球幕）、锁定飞入（其余暗到 10%、目标沿半径飞到正前方占视口 62% 高）、
+每帧投影与远近样式（远：细小淡；近：粗大 + 白字心彩色描边，smoothstep 连续过渡）。
+
+输出是三角网格：封面每张切 4×4 小格（斜看时纹理不沿对角线折开），词是屏幕空间字形片，按远到近排序、
+按图集页切批（u16 索引，每批 ≤ 65535 顶点），Dart 每批一次 `drawVertices`。锁定目标单独一批（页号 -1、
+纹理坐标 0..1），由 Dart 用高清带框封面画，和翻开的书是同一张图。
 
 | 符号 | 作用 |
 |---|---|
 | `ffc_pano_new(cells…, works…, words…, glyphs…, em_px, seed, out**) -> i32` | 一次交完图集格子 / 作品 / 词 / 字形表 |
-| `ffc_pano_buffers(p, xform**, rect**, color**, batch**, info**, cap*, bcap*)` | 取输出缓冲（建图后不变，Dart 一次性取视图） |
-| `ffc_pano_frame(p, t, dt, w, h, sprites*, batches*)` | 每帧一次：写出按远到近排序、按图集页切批的 `drawRawAtlas` 数据 + 帧信息 |
+| `ffc_pano_buffers(p, pos**, uv**, color**, index**, batch**, info**, caps*)` | 取输出缓冲（建图后不变，Dart 一次性取视图） |
+| `ffc_pano_frame(p, t, dt, w, h, counts*)` | 每帧一次：写出排好序、切好批的网格 + 帧信息 |
 | `ffc_pano_set_mode / _input / _select / _pick / _free` | 模式切换、拖拽 / 缩放 / 松手、选中飞入、拾取、释放 |
 
-每帧耗时（`cargo test --release pano::tests::big_library -- --nocapture`，400 部作品 + 1.38 万词、
-整条时间轴取样，i5-12600KF）：约 0.9 ms。
+每帧耗时（release，i5-12600KF）：合成大库 400 部作品 + 1.38 万词约 1.2 ms（`cargo test --release
+pano::tests::big_library -- --nocapture`）；本机真实库（132 部作品、展示 2,603 词、峰值 3.5 万顶点）约 0.26 ms。

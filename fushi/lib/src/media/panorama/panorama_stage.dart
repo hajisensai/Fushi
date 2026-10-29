@@ -1,9 +1,11 @@
 /// 媒体库全景的渲染舞台：每帧一次 `ffc_pano_frame`（布局 / 轨道 / 投影 / 远近样式全在
-/// Rust），Flutter 只按返回的批次 `drawRawAtlas`（Impeller 实例化绘制）并用片段着色器画背景。
+/// Rust，封面是真正的 3D 平面），Flutter 只按返回的批次 `drawVertices`（每图集页一批三角网格）
+/// 并用片段着色器画背景。
 ///
 /// 两种模式：
-/// - [FfcPanoMode.interactive]（首页默认）：拖拽环顾、双指 / 滚轮缩放（可推到球外）、点封面
-///   → 转向并飞到眼前 → 书翻开 → 进阅读器；方向键 / +- / Enter 同样可操作。
+/// - [FfcPanoMode.interactive]（首页默认）：开场是俯视的封面星系；拖拽转视角，双指 / 滚轮 /
+///   +- 拉近时星系连续收拢成球幕、直到站在球心，拉远再散回星系；点封面 → 转向并飞到眼前 →
+///   书翻开 → 进阅读器；方向键 / Enter 同样可操作。
 /// - [FfcPanoMode.cinematic]（分享用）：16 秒开场动画，最后锁定 [PanoramaStage.cinematicTarget]。
 ///
 /// 动效开关：墨水屏 / 系统「减弱动态效果」下不跑 Ticker（只在输入时重算一帧），点封面直接打开。
@@ -43,10 +45,18 @@ const double kPanoramaTargetScreenHeight = 0.62;
 
 /// 已建好的全景资源（数据 + 图集），首页面板与全屏页共用一份。
 class PanoramaAssets {
-  PanoramaAssets({required this.library, required this.atlas, this.db});
+  PanoramaAssets({
+    required this.library,
+    required this.atlas,
+    this.db,
+    this.bookFont,
+  });
 
   final PanoramaLibrary library;
   final PanoramaAtlas atlas;
+
+  /// 翻开后正文页的字体（小说正文字体那一套）；null = 系统默认。
+  final PanoramaFontSet? bookFont;
 
   /// 取翻开正文用；null（测试）时翻开后显示书名。
   final FushiDatabase? db;
@@ -80,7 +90,6 @@ class PanoramaStage extends StatefulWidget {
     required this.onOpen,
     this.mode = FfcPanoMode.interactive,
     this.cinematicTarget = -1,
-    this.startOutside = false,
     this.onCinematicDone,
   });
 
@@ -90,9 +99,6 @@ class PanoramaStage extends StatefulWidget {
   final Future<void> Function(PanoramaWork work) onOpen;
   final FfcPanoMode mode;
   final int cinematicTarget;
-
-  /// 交互模式开场从球外看（首页小卡片用；全屏从球心环顾）。
-  final bool startOutside;
 
   /// 分享动画结束（已打开作品或无可锁定作品）。
   final VoidCallback? onCinematicDone;
@@ -148,10 +154,6 @@ class _PanoramaStageState extends State<PanoramaStage>
 
   void _enterMode() {
     _pano.setMode(widget.mode, target: widget.cinematicTarget);
-    if (widget.mode == FfcPanoMode.interactive && widget.startOutside) {
-      // ZOOM 比例 a：dist' = (dist + 1) / a - 1，从球心推到 26（球半径 12 之外）。
-      _pano.input(FfcPanoInput.zoom, 1 / 27);
-    }
     _t = 0;
     _last = Duration.zero;
     _target = widget.mode == FfcPanoMode.cinematic
@@ -300,7 +302,6 @@ class _PanoramaStageState extends State<PanoramaStage>
     _hiRes = null;
     _excerpt = null;
     _pano.setMode(FfcPanoMode.interactive);
-    if (widget.startOutside) _pano.input(FfcPanoInput.zoom, 1 / 27);
     _renderOnce();
   }
 
@@ -427,6 +428,7 @@ class _PanoramaStageState extends State<PanoramaStage>
                 framedCover: _hiRes,
                 fallbackTitle: widget.assets.library.works[_target].title,
                 accent: panoramaAccent(widget.assets.atlas.hues[_target]),
+                font: widget.assets.bookFont,
                 excerpt: _excerpt,
                 duration: kPanoramaFlipDuration,
                 onOpened: () => _open(widget.assets.library.works[_target]),
@@ -475,10 +477,6 @@ class _PanoramaPainter extends CustomPainter {
   final ui.FragmentShader? Function() shader;
   final double Function() time;
 
-  static final Paint _atlasPaint = Paint()
-    ..filterQuality = FilterQuality.medium
-    ..isAntiAlias = true;
-
   @override
   void paint(Canvas canvas, Size size) {
     final FfcPanoFrame? f = frames.frame;
@@ -512,54 +510,80 @@ class _PanoramaPainter extends CustomPainter {
     }
     if (f == null) return;
     for (int b = 0; b < f.batches; b++) {
-      final int start = f.batchStart(b);
-      final int count = f.batchCount(b);
-      if (count == 0) continue;
-      canvas.drawRawAtlas(
-        pages[f.batchPage(b)],
-        Float32List.sublistView(f.transforms, start * 4, (start + count) * 4),
-        Float32List.sublistView(f.rects, start * 4, (start + count) * 4),
-        Int32List.sublistView(f.colors, start, start + count),
-        BlendMode.modulate,
-        null,
-        _atlasPaint,
-      );
-    }
-    final int t = target();
-    if (t >= 0 && f.targetVisible && !frames.hideTarget) {
-      final Float32List i = f.info;
-      final Rect cover = Rect.fromLTWH(
-        i[FfcPanoInfo.targetRect],
-        i[FfcPanoInfo.targetRect + 1],
-        i[FfcPanoInfo.targetRect + 2],
-        i[FfcPanoInfo.targetRect + 3],
-      );
-      final Size framed = panoramaFramedSize(cover.size);
-      final Rect dst = Rect.fromCenter(
-        center: cover.center,
-        width: framed.width,
-        height: framed.height,
-      );
-      final ui.Image? hi = frames.hiRes;
-      if (hi != null) {
-        canvas.drawImageRect(
-          hi,
-          Rect.fromLTWH(0, 0, hi.width.toDouble(), hi.height.toDouble()),
-          dst,
-          _atlasPaint,
-        );
+      final int page = f.batchPage(b);
+      final Paint paint;
+      if (page == FfcPanorama.targetPage) {
+        if (frames.hideTarget) continue;
+        paint = _targetPaint(target());
       } else {
-        // 高清图还没出来：先用图集里那一格（同一套边框比例）。
-        final int cell = atlasCellOfWork[t];
-        final Rect src = Rect.fromLTWH(
-          atlasRects[cell * 4],
-          atlasRects[cell * 4 + 1],
-          atlasRects[cell * 4 + 2],
-          atlasRects[cell * 4 + 3],
-        );
-        canvas.drawImageRect(pages[atlasPages[cell]], src, dst, _atlasPaint);
+        paint = _pagePaint(page);
       }
+      final int v0 = f.batchVertexStart(b);
+      final int vn = f.batchVertexCount(b);
+      final int i0 = f.batchIndexStart(b);
+      final int iN = f.batchIndexCount(b);
+      if (iN == 0) continue;
+      final ui.Vertices v = ui.Vertices.raw(
+        VertexMode.triangles,
+        Float32List.sublistView(f.positions, v0 * 2, (v0 + vn) * 2),
+        textureCoordinates: Float32List.sublistView(
+          f.texCoords,
+          v0 * 2,
+          (v0 + vn) * 2,
+        ),
+        colors: Int32List.sublistView(f.colors, v0, v0 + vn),
+        indices: Uint16List.sublistView(f.indices, i0, i0 + iN),
+      );
+      canvas.drawVertices(v, BlendMode.modulate, paint);
+      v.dispose();
     }
+  }
+
+  final Map<int, Paint> _pagePaints = <int, Paint>{};
+  ui.Image? _targetImage;
+  Paint? _targetPaintCache;
+
+  /// 图集页的纹理画笔（纹理坐标就是图集像素）。
+  Paint _pagePaint(int page) => _pagePaints[page] ??= Paint()
+    ..filterQuality = FilterQuality.medium
+    ..isAntiAlias = true
+    ..shader = ImageShader(
+      pages[page],
+      TileMode.clamp,
+      TileMode.clamp,
+      Matrix4.identity().storage,
+    );
+
+  /// 锁定目标批（纹理坐标 0..1）：高清带框封面；高清图还没出来时用图集里那一格（同一套边框
+  /// 比例），把 0..1 映射到格子矩形。
+  Paint _targetPaint(int work) {
+    final ui.Image? hi = frames.hiRes;
+    final ui.Image src;
+    final Matrix4 m;
+    if (hi != null) {
+      src = hi;
+      m = Matrix4.diagonal3Values(1 / hi.width, 1 / hi.height, 1);
+    } else {
+      final int cell = atlasCellOfWork[work];
+      src = pages[atlasPages[cell]];
+      final double cw = atlasRects[cell * 4 + 2];
+      final double ch = atlasRects[cell * 4 + 3];
+      m = Matrix4.diagonal3Values(1 / cw, 1 / ch, 1)
+        ..translateByDouble(
+          -atlasRects[cell * 4],
+          -atlasRects[cell * 4 + 1],
+          0,
+          1,
+        );
+    }
+    if (_targetPaintCache != null && identical(_targetImage, src)) {
+      return _targetPaintCache!;
+    }
+    _targetImage = src;
+    return _targetPaintCache = Paint()
+      ..filterQuality = FilterQuality.medium
+      ..isAntiAlias = true
+      ..shader = ImageShader(src, TileMode.clamp, TileMode.clamp, m.storage);
   }
 
   @override

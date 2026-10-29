@@ -156,5 +156,27 @@ void main() {
         hasLength(kPanoramaLooseWords),
       );
     });
+
+    test('sampling picks at most 1.5x the caps per owner, in order', () {
+      final List<PanoramaNoteInput> notes = <PanoramaNoteInput>[
+        for (int i = 0; i < 200; i++)
+          PanoramaNoteInput(sortField: '語$i', tags: const <String>['frieren']),
+        for (int i = 0; i < 3000; i++)
+          PanoramaNoteInput(sortField: 'id-$i', tags: const <String>[]),
+        const PanoramaNoteInput(
+          sortField: '弾く',
+          tags: <String>[],
+          sourceKeys: <String>['book_uid_1'],
+        ),
+      ];
+      final List<int> picked = panoramaSampleNoteIndices(works, notes);
+      expect(picked, orderedEquals(List<int>.of(picked)..sort()));
+      expect(picked.where((int i) => i < 200), hasLength(60));
+      expect(
+        picked.where((int i) => i >= 200 && i < 3200),
+        hasLength((kPanoramaLooseWords * 1.5).ceil()),
+      );
+      expect(picked, contains(3200), reason: 'source-owned note kept');
+    });
   });
 }
