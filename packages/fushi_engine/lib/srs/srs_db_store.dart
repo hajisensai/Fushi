@@ -512,10 +512,15 @@ class SrsDbStore implements SrsSync2Host {
       return await body();
     } finally {
       if (--state.depth == 0) {
-        await _walCheckpoint();
-        await db.customStatement(
-          'PRAGMA wal_autocheckpoint = ${state.restore}',
-        );
+        // 并回失败（库正被关 / 开不了 checkpoint 连接）也必须恢复自动 checkpoint：否则这条连接之后一直不并回，
+        // WAL 无上限地涨到下次开库。
+        try {
+          await _walCheckpoint();
+        } finally {
+          await db.customStatement(
+            'PRAGMA wal_autocheckpoint = ${state.restore}',
+          );
+        }
       }
     }
   }
