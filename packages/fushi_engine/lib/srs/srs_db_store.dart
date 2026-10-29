@@ -3091,10 +3091,10 @@ class SrsDbStore implements SrsSync2Host {
     _Instant? instant,
   }) async {
     final List<String>? deckList = decks?.toList();
-    // 不限牌组时整张表都要数：`+profile_uid` 让 SQLite 顺序扫表，而不是沿只有 profile
-    // 一列有用的复合索引逐行回表（真实库 4.4 万张卡：40 ms 对 100 ms）。限定子树时
-    // (profile_uid, deck_id) 前缀有选择性，照常走索引。
-    final String profileCol = deckList == null ? '+profile_uid' : 'profile_uid';
+    // 走 `idx_srs_cards_cache_tally`（srs.db v9，`hidden = 0` 的覆盖索引，按牌组有序）：聚合要的列全在索引里，
+    // 不回表、不另排序；不限牌组时也是顺着索引扫这个 profile 的全部可见卡（以前没有覆盖索引，只能写成
+    // `+profile_uid` 顺序扫表，免得沿复合索引逐行回表）。计划钉在 test/srs/srs_queue_index_plan_test.dart。
+    const String profileCol = 'profile_uid';
     final List<QueryRow> rows = await db
         .customSelect(
           'SELECT deck_id, COUNT(*) AS total, '
