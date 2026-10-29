@@ -1390,6 +1390,80 @@ pub fn dupe_norm(field: &str) -> String {
 mod tests {
     use super::*;
 
+    /// 搜索内核的回归向量：tests/fixtures/search_kernel_vectors.json.zst 是删掉 Dart `SrsSearchCorpus` 之前，
+    /// packages/fushi_srs/test/search 下 anki_search_test / search_engine_differences_test / search_parity_test
+    /// 经那层 Dart 包装喂给内核的**原样输入**（语料布局与名字表、分批上传的字段值、数值列）与内核当时的输出
+    /// （每条查询的命中位图，或语法 / 内部错误），由临时埋在 FFI 入口的记录钩子录下（2026-10-30 L-5）。Dart
+    /// 那几份测试的断言都落在这些输出上；包装删了，这里直接对拍内核。重录：把录下的 JSON 路径放进
+    /// `FFSRS_SEARCH_VECTORS_FROM` 跑本测试，会先把它压成 fixture。
+    #[test]
+    fn kernel_vectors_from_the_dart_search_tests() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/search_kernel_vectors.json.zst");
+        if let Ok(src) = std::env::var("FFSRS_SEARCH_VECTORS_FROM") {
+            let raw = std::fs::read(src).unwrap();
+            let frame = ruzstd::encoding::compress_to_vec(raw.as_slice(), ruzstd::encoding::CompressionLevel::Fastest);
+            std::fs::write(path, frame).unwrap();
+        }
+        let frame = std::fs::read(path).unwrap();
+        let mut decoder = ruzstd::decoding::StreamingDecoder::new(frame.as_slice()).unwrap();
+        let mut raw = Vec::new();
+        std::io::Read::read_to_end(&mut decoder, &mut raw).unwrap();
+        let sessions: Vec<serde_json::Value> = serde_json::from_slice(&raw).unwrap();
+        let u32s = |v: &serde_json::Value| -> Vec<u32> { v.as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect() };
+        let (mut matches, mut errors) = (0usize, 0usize);
+        for (k, s) in sessions.iter().enumerate() {
+            let mut c = Corpus::new(s["text"].as_str().unwrap().as_bytes(), &u32s(&s["layout"])).unwrap();
+            for st in s["steps"].as_array().unwrap() {
+                match st["op"].as_str().unwrap() {
+                    "attach" => {
+                        let _ = c.attach(st["text"].as_str().unwrap().to_owned(), &u32s(&st["fields"]), &u32s(&st["spans"]));
+                    }
+                    "ints" => {
+                        let data: Vec<i64> = st["data"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+                        let _ = c.set_ints(st["col"].as_u64().unwrap() as usize, &data);
+                    }
+                    "floats" => {
+                        let data: Vec<f64> = st["data"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap_or(f64::NAN)).collect();
+                        let _ = c.set_floats(st["col"].as_u64().unwrap() as usize, &data);
+                    }
+                    "match" => {
+                        let q = st["q"].as_str().unwrap();
+                        let mut out = vec![0u8; c.card_count()];
+                        let got = c.search(q, &mut out);
+                        if let Some(kind) = st.get("err").and_then(|e| e.as_str()) {
+                            let e = got.err().unwrap_or_else(|| panic!("session {k}: expected {kind} error for {q}"));
+                            assert_eq!(e.kind, kind, "session {k}: {q}");
+                            errors += 1;
+                        } else {
+                            got.unwrap_or_else(|e| panic!("session {k}: {q}: {}", e.reason));
+                            let mut bits = vec![0u8; out.len().div_ceil(8)];
+                            for (i, &b) in out.iter().enumerate() {
+                                if b != 0 {
+                                    bits[i >> 3] |= 1 << (i & 7);
+                                }
+                            }
+                            let hex: String = bits.iter().map(|b| format!("{b:02x}")).collect();
+                            assert_eq!(hex, st["bits"].as_str().unwrap(), "session {k}: {q}");
+                            matches += 1;
+                        }
+                    }
+                    op => panic!("unknown step {op}"),
+                }
+            }
+        }
+        assert_eq!(sessions.len(), 159);
+        assert_eq!(matches + errors, 5575);
+        // 那几份 Dart 测试里的求值错误都在求值前的需求分析（`needs`）就报了，没走到 match：录下的全是命中位图。
+        // search_engine_differences_test 的「Rust regex 不支持的 → 语法错误」在这里直接测编译。
+        assert_eq!(errors, 0);
+        for v in ["a(?=b)", "a(?!b)", "(?<=a)b", r"(a)\1", r"(?<n>a)\k<n>", "[^]"] {
+            let q = serde_json::json!({"t": "re", "v": v, "at": format!("re:{v}")}).to_string();
+            let e = Corpus::columns_used(&q).err().unwrap_or_else(|| panic!("{v} must not compile"));
+            assert_eq!(e.kind, "syntax", "{v}");
+        }
+    }
+
+
     /// 测试语料：每条笔记一个字段排布；[joined_layout] 为 true 时按 Dart 补传全部字段的形状上传
     /// （同一笔记的字段紧挨着、隔 0x1f），否则每个字段值单独一块（走拼接缓存）。
     fn corpus_with(
