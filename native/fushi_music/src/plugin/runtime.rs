@@ -34,6 +34,15 @@ const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_STORAGE_KEY: usize = 256;
 const MAX_STORAGE_VALUE: usize = 1024 * 1024;
 const MAX_RESULT_BYTES: usize = 8 * 1024 * 1024;
+/// 同时在途的宿主调用上限（宿主那边每条都是一次网络 / 磁盘操作与一份缓冲）。
+pub(crate) const MAX_INFLIGHT_CALLS: usize = 32;
+/// 单次 step 内新发起的宿主调用上限。
+pub(crate) const MAX_CALLS_PER_STEP: usize = 64;
+/// 单次 step 内交给宿主的调用参数总字节上限（请求体等）。
+pub(crate) const MAX_OUT_BYTES_PER_STEP: usize = 16 * 1024 * 1024;
+/// 单次 step 交回的能力结果条数与总字节上限。
+pub(crate) const MAX_SETTLED_PER_STEP: usize = 256;
+pub(crate) const MAX_SETTLED_BYTES_PER_STEP: usize = 16 * 1024 * 1024;
 /// 宿主调用的超时下限 / 上限（毫秒）；插件不给就用默认。
 const HTTP_TIMEOUT_DEFAULT: u64 = 20_000;
 const HTTP_TIMEOUT_MAX: u64 = 60_000;
@@ -46,9 +55,31 @@ pub(crate) struct Outbox {
     pub(crate) settled: Vec<Json>,
     pub(crate) logs: Vec<Json>,
     logs_dropped: usize,
+    /// 已发给宿主、尚未 complete 的宿主调用 id。
+    pending_calls: std::collections::BTreeSet<u64>,
+    /// 宿主发起、尚未 settle 的能力调用 id（插件自己调 `__fushi_invoke` 伪造的 settle 不收）。
+    pending_invs: std::collections::BTreeSet<u64>,
+    step_calls: usize,
+    step_out_bytes: usize,
+    settled_bytes: usize,
+    /// 超限：本 step 结束时转成 fatal（实例作废，宿主丢弃后按需重建）。
+    abort: Option<String>,
 }
 
 impl Outbox {
+    fn begin_step(&mut self) {
+        self.step_calls = 0;
+        self.step_out_bytes = 0;
+        self.settled_bytes = 0;
+    }
+
+    fn fail(&mut self, msg: String) -> String {
+        if self.abort.is_none() {
+            self.abort = Some(msg.clone());
+        }
+        msg
+    }
+
     pub(crate) fn log(&mut self, level: &str, msg: &str) {
         if self.logs.len() >= MAX_LOGS_PER_STEP {
             self.logs_dropped += 1;
@@ -81,9 +112,22 @@ impl Gate {
             }
             _ => return Err(format!("未知宿主调用 {op}")),
         };
+        let size = normalized.to_string().len();
         let mut out = self.outbox.lock().unwrap();
+        if out.pending_calls.len() >= MAX_INFLIGHT_CALLS {
+            return Err(out.fail(format!("在途宿主调用超过 {MAX_INFLIGHT_CALLS} 个，插件已终止")));
+        }
+        if out.step_calls >= MAX_CALLS_PER_STEP {
+            return Err(out.fail(format!("单步宿主调用超过 {MAX_CALLS_PER_STEP} 个，插件已终止")));
+        }
+        if out.step_out_bytes + size > MAX_OUT_BYTES_PER_STEP {
+            return Err(out.fail("单步宿主调用参数超过 16 MiB，插件已终止".into()));
+        }
+        out.step_calls += 1;
+        out.step_out_bytes += size;
         out.next_call += 1;
         let id = out.next_call;
+        out.pending_calls.insert(id);
         out.calls.push(json!({ "id": id, "op": op, "args": normalized }));
         Ok(id)
     }
@@ -329,6 +373,9 @@ impl Instance {
         let over = self.over_budget() || self.fatal.is_some();
         self.disarm();
         result?;
+        if let Some(a) = self.gate.outbox.lock().unwrap().abort.take() {
+            return Err(a);
+        }
         if over {
             return Err(format!("插件加载超过 {} ms CPU 预算，已终止", self.budget_ms));
         }
@@ -389,6 +436,7 @@ impl Instance {
             Ok(v) => v,
             Err(e) => return json!({ "error": format!("step 参数不合法：{e}") }),
         };
+        self.gate.outbox.lock().unwrap().begin_step();
         self.arm();
         let caps = self.gate.manifest.capabilities.clone();
         let mut immediate: Vec<Json> = Vec::new();
@@ -403,17 +451,23 @@ impl Instance {
                             }));
                             continue;
                         }
+                        self.gate.outbox.lock().unwrap().pending_invs.insert(inv);
                         let r = ctx
                             .globals()
                             .get::<_, Function>("__fushi_invoke")
                             .and_then(|f| f.call::<_, ()>((inv, method.as_str(), args.to_string())));
                         if let Err(e) = r {
+                            self.gate.outbox.lock().unwrap().pending_invs.remove(&inv);
                             immediate.push(json!({
                                 "inv": inv, "ok": false, "error": exception_text(&ctx, e),
                             }));
                         }
                     }
                     Op::Complete { call, ok, value, error } => {
+                        // 只认还在途的调用：重复 / 未知 id 不进 JS。
+                        if !self.gate.outbox.lock().unwrap().pending_calls.remove(&call) {
+                            continue;
+                        }
                         let payload = if ok { value.to_string() } else { error };
                         let r = ctx
                             .globals()
@@ -433,6 +487,11 @@ impl Instance {
         }
         self.disarm();
         let mut out = self.gate.outbox.lock().unwrap();
+        if let Some(a) = out.abort.take() {
+            if self.fatal.is_none() {
+                self.fatal = Some(a);
+            }
+        }
         let mut settled = std::mem::take(&mut out.settled);
         settled.extend(immediate);
         let calls = std::mem::take(&mut out.calls);
@@ -452,6 +511,19 @@ impl Instance {
 /// 能力调用结束（prelude 经 `n.settle` 回报）。结果过大按失败处理，不把几十 MB 塞回宿主。
 pub(crate) fn settle(gate: &Gate, inv: u64, ok: bool, payload: String) {
     let mut out = gate.outbox.lock().unwrap();
+    // 只收宿主发起过的能力调用；插件自己调 __fushi_invoke 伪造的结果直接丢弃。
+    if !out.pending_invs.remove(&inv) {
+        return;
+    }
+    if out.settled.len() >= MAX_SETTLED_PER_STEP {
+        out.fail(format!("单步能力结果超过 {MAX_SETTLED_PER_STEP} 条，插件已终止"));
+        return;
+    }
+    out.settled_bytes += payload.len().min(MAX_RESULT_BYTES + 1);
+    if out.settled_bytes > MAX_SETTLED_BYTES_PER_STEP {
+        out.fail("单步能力结果超过 16 MiB，插件已终止".into());
+        return;
+    }
     if ok && payload.len() > MAX_RESULT_BYTES {
         out.settled
             .push(json!({ "inv": inv, "ok": false, "error": "插件返回值超过 8 MiB" }));

@@ -90,6 +90,11 @@ class MusicPluginInstance {
   /// 本实例复用的出站客户端（同一插件连续请求同一主机时复用连接）。
   HttpClient? _client;
 
+  /// 本实例在途响应体的合计缓冲上限（单条 8 MiB × Rust 侧在途上限 32 条仍可到 256 MiB）。
+  final MusicPluginResponseBudget _responseBudget = MusicPluginResponseBudget(
+    kMusicPluginInflightResponseBytes,
+  );
+
   /// 调一个能力。插件抛错 / 返回值无法解析 / 实例被终止都抛 [MusicPluginException]；超过
   /// [timeout]（缺省按能力取 [musicPluginInvokeTimeout]）抛 [MusicPluginTimeoutException]，
   /// 该次调用作废（之后插件再 settle 也只是被丢弃）。
@@ -266,6 +271,7 @@ class MusicPluginInstance {
       performMusicPluginHttp(
         args,
         client: _client ??= _httpClientFactory(),
+        budget: _responseBudget,
         checkRedirect: (String url) => MusicPluginNative.checkUrls(
           _handle,
           <String>[url],
@@ -410,6 +416,30 @@ final class MusicPluginHttpException implements Exception {
 }
 
 const int _kMaxResponseBytes = 8 * 1024 * 1024;
+
+/// 一个插件实例所有在途响应体合计可缓冲的字节数。
+const int kMusicPluginInflightResponseBytes = 32 * 1024 * 1024;
+
+/// 在途响应体的合计缓冲预算：每收到一块先占额度，请求结束（成功或失败）归还。超额的那条请求
+/// 以 [MusicPluginHttpException] 失败交回插件，不静默截断。
+final class MusicPluginResponseBudget {
+  MusicPluginResponseBudget(this.maxBytes);
+
+  final int maxBytes;
+  int _used = 0;
+
+  int get used => _used;
+
+  /// 占 [n] 字节；超额返回 false 且不占。
+  bool tryReserve(int n) {
+    if (_used + n > maxBytes) return false;
+    _used += n;
+    return true;
+  }
+
+  void release(int n) => _used -= n;
+}
+
 const int _kMaxRedirects = 5;
 
 /// 判断解析出的地址是否落在本机 / 局域网段（与 Rust `policy::check_ip` 同一判据）。
@@ -449,6 +479,7 @@ Future<Map<String, Object?>> performMusicPluginHttp(
   Map<String, Object?> args, {
   required HttpClient client,
   required String? Function(String url) checkRedirect,
+  MusicPluginResponseBudget? budget,
 }) async {
   String method = args['method']! as String;
   Uri uri = Uri.parse(args['url']! as String);
@@ -505,11 +536,24 @@ Future<Map<String, Object?>> performMusicPluginHttp(
         continue;
       }
       final BytesBuilder buf = BytesBuilder(copy: false);
-      await for (final List<int> chunk in res.timeout(timeout)) {
-        buf.add(chunk);
-        if (buf.length > _kMaxResponseBytes) {
-          throw const MusicPluginHttpException('响应体超过 8 MiB');
+      int reserved = 0;
+      try {
+        await for (final List<int> chunk in res.timeout(timeout)) {
+          if (budget != null) {
+            if (!budget.tryReserve(chunk.length)) {
+              throw MusicPluginHttpException(
+                '插件在途响应合计超过 ${budget.maxBytes ~/ (1024 * 1024)} MiB',
+              );
+            }
+            reserved += chunk.length;
+          }
+          buf.add(chunk);
+          if (buf.length > _kMaxResponseBytes) {
+            throw const MusicPluginHttpException('响应体超过 8 MiB');
+          }
         }
+      } finally {
+        budget?.release(reserved);
       }
       final Map<String, String> outHeaders = <String, String>{};
       res.headers.forEach((String name, List<String> values) {

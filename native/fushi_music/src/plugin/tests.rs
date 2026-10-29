@@ -240,3 +240,46 @@ fn boot_microtask_respects_budget() {
     let err = r.err().expect("boot 微任务死循环必须超预算失败");
     assert!(err.contains("预算"), "{err}");
 }
+
+/// 宿主调用有上限：单步发起太多 http 直接终止实例（不吞，fatal 交回宿主）。
+#[test]
+fn host_call_flood_is_fatal() {
+    let m = manifest_with(&["lyrics"], &["network"], &["api.example.com"]);
+    let js = r#"
+        module.exports = { async lyrics() {
+          const ps = [];
+          for (let i = 0; i < 200; i++) {
+            try { ps.push(fushi.http.request({ url: 'https://api.example.com/x' })); } catch (e) {}
+          }
+          return 1;
+        } };
+    "#;
+    let mut inst = open("flood", &m, &[("main.js", js)], 2000).unwrap();
+    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]));
+    let fatal = out["fatal"].as_str().expect("超限必须 fatal");
+    assert!(fatal.contains("宿主调用"), "{fatal}");
+    assert!(out["calls"].as_array().unwrap().len() <= 64);
+    // 实例作废后再 step 只回 fatal。
+    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 2, "method": "lyrics" }]));
+    assert!(out["fatal"].is_string());
+}
+
+/// 插件自己调 __fushi_invoke 伪造的能力结果不进宿主；未知 complete id 不进 JS。
+#[test]
+fn forged_settle_and_unknown_complete_are_dropped() {
+    let m = manifest_with(&["lyrics"], &[], &[]);
+    let js = r#"
+        module.exports = { async lyrics() {
+          for (let i = 0; i < 1000; i++) globalThis.__fushi_invoke(100000 + i, 'noop', '{}');
+          return 7;
+        }, noop() { return 'x'.repeat(1000); } };
+    "#;
+    let mut inst = open("forge", &m, &[("main.js", js)], 2000).unwrap();
+    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "lyrics" }]));
+    assert!(out["fatal"].is_null(), "{out}");
+    let settled = out["settled"].as_array().unwrap();
+    assert_eq!(settled.len(), 1, "{out}");
+    assert_eq!(settled[0]["inv"], 1);
+    let out = step(&mut inst, json!([{ "op": "complete", "call": 999, "ok": true, "value": null }]));
+    assert!(out["fatal"].is_null(), "{out}");
+}
