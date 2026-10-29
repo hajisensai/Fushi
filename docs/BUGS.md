@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3483 条。点号进各自文件。
+> 共 3484 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3880](bugs/BUG-3880-p2p-notice-wording.md) | 🚧 | 🚧 | BT/磁力下载提示未明确说明可能违法（用户反馈） |
 | [BUG-3879](bugs/BUG-3879-web-mine-replay-cover-only.md) | ✅ | ✅ | web-mine-replay-cover-only |
 | [BUG-3878](bugs/BUG-3878-video-remote-web-video-uncontrollable.md) | ✅ | ✅ | video-remote-web-video-uncontrollable |
 | [BUG-3877](bugs/BUG-3877-srs-sync-review-lag.md) | ✅ | ✅ | srs-sync-review-lag |
