@@ -55,6 +55,13 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   bool _failed = false;
   bool _dateSymbolsReady = false;
 
+  /// 正在装载（装载期间又来的刷新信号只记一笔，装完再跑一次，不并发重跑整份统计）。
+  bool _inFlight = false;
+  bool _again = false;
+
+  /// 上次装载用的库（换 profile / 重开库时整份重读）。
+  SrsDbStore? _loadedStore;
+
   SrsStatsRange _range = SrsStatsRange.month;
   String _deckId = '';
   bool _futureCumulative = false;
@@ -73,7 +80,38 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
   }
 
+  /// [srsRevisionProvider] 的一跳：只有会改变统计结果的事件落了库（[SrsDbStore.statsFingerprint] 变了）才重读。
+  /// 以前任何写（牌组收起 / 展开、同步空轮、媒体、去重跳过的制卡…）都整份重跑统计。
+  Future<void> _onRevision() async {
+    if (await _needsReload()) await _load();
+  }
+
+  Future<bool> _needsReload() async {
+    final SrsStatsBundle? b = _bundle;
+    final SrsDbStore? loaded = _loadedStore;
+    if (b == null || loaded == null) return true;
+    final SrsDbStore? store = await ref.read(srsStoreProvider.future);
+    if (!identical(store, loaded)) return true;
+    return store!.statsFingerprint != b.fingerprint;
+  }
+
   Future<void> _load() async {
+    if (_inFlight) {
+      _again = true;
+      return;
+    }
+    _inFlight = true;
+    try {
+      do {
+        _again = false;
+        await _loadOnce();
+      } while (_again && mounted);
+    } finally {
+      _inFlight = false;
+    }
+  }
+
+  Future<void> _loadOnce() async {
     SrsDbStore? store;
     try {
       store = await ref.read(srsStoreProvider.future);
@@ -90,6 +128,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       if (!mounted) return;
       setState(() {
         _bundle = bundle;
+        _loadedStore = store;
         _loading = false;
         _unavailable = false;
         _failed = false;
@@ -219,7 +258,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(srsRevisionProvider, (int? a, int b) => unawaited(_load()));
+    ref.listen<int>(
+      srsRevisionProvider,
+      (int? a, int b) => unawaited(_onRevision()),
+    );
     ref.listen<AsyncValue<SrsDbStore?>>(srsStoreProvider, (
       AsyncValue<SrsDbStore?>? a,
       AsyncValue<SrsDbStore?> b,
