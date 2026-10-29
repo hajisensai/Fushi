@@ -211,12 +211,17 @@ fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> Stri
     )
 }
 
-/// 到期复习候选（不排序：Rust 边扫边留最小）。
-fn due_sql(decks: usize) -> String {
+/// 到期复习卡里可提取度最低的 [DUE_TOP] 张（参数：profile, 今天, 牌组…, 今天, 排除…, 此刻）。排序键是 FSRS 遗忘曲线
+/// R = (1 + t/(9S))^-1（可提取度低的先出；与旧 Dart 排队同一条式子：除以零得 NULL，升序 NULL 在前）。`ORDER BY … LIMIT` 是 SQLite 的有界排序器（只留 LIMIT 行，
+/// 不对全集排序），在库里比逐行交给 Rust 再比快：十万张到期卡上逐行搬出要 2–3 倍时间（行步进 + 取 id 文本）。
+fn due_sql(decks: usize, exclude: usize) -> String {
+    let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
     format!(
         "SELECT id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} \
-         AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?",
-        marks(decks)
+         AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
+         ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+         / (9.0 * COALESCE(stability, 1.0))), id LIMIT {DUE_TOP}",
+        marks(decks),
     )
 }
 
@@ -402,21 +407,6 @@ fn count_tree(ctx: &Ctx, tallies: &HashMap<String, Tally>, ids: &[String], root:
     out
 }
 
-/// 复习卡排序键：FSRS 遗忘曲线 R = (1 + t/(9S))^-1，可提取度低的先出。与旧 SQL 的 ORDER BY 表达式同一语义：
-/// 除以 0 得 NULL（SQLite），NULL 排最前。
-fn review_key(now: i64, last: Option<i64>, stability: Option<f64>) -> Option<f64> {
-    let days = last.map_or(0.0, |l| (now - l) as f64 / 86_400_000.0);
-    let denom = 9.0 * stability.unwrap_or(1.0);
-    if denom == 0.0 {
-        return None;
-    }
-    let x = 1.0 + days / denom;
-    if x == 0.0 {
-        return None;
-    }
-    Some(1.0 / x)
-}
-
 struct Picker<'a> {
     c: &'a Connection,
     profile: &'a str,
@@ -430,21 +420,12 @@ struct Picker<'a> {
     due_top: RefCell<Option<(Vec<String>, Vec<DueCand>)>>,
 }
 
-/// 一张到期复习候选：(卡, 上次作答, 稳定度, 排序键)。
-type DueCand = (String, Option<i64>, Option<f64>, Option<f64>);
+/// 一张到期复习候选：(卡, 上次作答, 稳定度)。
+type DueCand = (String, Option<i64>, Option<f64>);
 
 /// 一次扫描留下的最低几张：够「下一张 + 再下一张」（后者只多排除前者）。
 const DUE_TOP: usize = 2;
 
-/// 到期复习卡的出卡序：键（可提取度）小的先出；键为 NULL（除以零）的排最前（SQLite 升序 NULL 在前）；同键按 id。
-fn due_before(key: Option<f64>, id: &str, other_key: Option<f64>, other_id: &str) -> bool {
-    match (key, other_key) {
-        (None, None) => id < other_id,
-        (None, Some(_)) => true,
-        (Some(_), None) => false,
-        (Some(a), Some(b)) => a < b || (a == b && id < other_id),
-    }
-}
 
 impl Picker<'_> {
     /// 一张卡能出，当且仅当它所在牌组到所点牌组这一路上每一层都还有剩余上限（层层上限构成层状拟阵，按任何
@@ -488,8 +469,8 @@ impl Picker<'_> {
     }
 
     /// 到期复习卡里可提取度最低的一张：顺着 `idx_srs_cards_cache_review_due`（牌组, 到期日）只扫到期候选，
-    /// 边扫边留最低的 [DUE_TOP] 张（不对全集排序、只给留下的卡分配 id），同一组牌组的下一次（「再下一张」）
-    /// 直接从留下的里取。返回 (卡, 上次作答, 稳定度)。
+    /// 在库里有界排序取最低的 [DUE_TOP] 张（[due_sql]），同一组牌组的下一次（「再下一张」，只多排除前一张）
+    /// 直接从留下的里取，不再扫一遍。返回 (卡, 上次作答, 稳定度)。
     fn lowest_due(&self, decks: &[&str], exclude: &HashSet<&str>) -> Result<Option<(String, Option<i64>, Option<f64>)>, String> {
         if decks.is_empty() {
             return Ok(None);
@@ -497,40 +478,28 @@ impl Picker<'_> {
         if let Some((scanned, top)) = self.due_top.borrow().as_ref() {
             if scanned.iter().map(String::as_str).eq(decks.iter().copied()) {
                 // 留下的都被排除了不代表没有别的卡：只有一张都没剩时才重扫。
-                if let Some((id, last, s, _)) = top.iter().find(|c| !exclude.contains(c.0.as_str())) {
-                    return Ok(Some((id.clone(), *last, *s)));
+                if let Some(c) = top.iter().find(|c| !exclude.contains(c.0.as_str())) {
+                    return Ok(Some(c.clone()));
                 }
                 if top.len() < DUE_TOP {
                     return Ok(None);
                 }
             }
         }
-        let sql_text = due_sql(decks.len());
+        let ex: Vec<&str> = exclude.iter().copied().collect();
+        let sql_text = due_sql(decks.len(), ex.len());
         let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.ctx.today)];
         args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
         args.push(Sql::Integer(self.ctx.today));
+        args.extend(ex.iter().map(|d| Sql::Text((*d).to_owned())));
+        args.push(Sql::Integer(self.ctx.now));
         let mut stmt = self.c.prepare_cached(&sql_text).map_err(sql)?;
         let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-        let mut top: Vec<DueCand> = Vec::with_capacity(DUE_TOP + 1);
+        let mut top: Vec<DueCand> = Vec::with_capacity(DUE_TOP);
         while let Some(r) = q.next().map_err(sql)? {
-            let id = r.get_ref(0).map_err(sql)?.as_str().map_err(|e| e.to_string())?;
-            if exclude.contains(id) {
-                continue;
-            }
-            let last: Option<i64> = r.get(1).map_err(sql)?;
-            let s: Option<f64> = r.get(2).map_err(sql)?;
-            let key = review_key(self.ctx.now, last, s);
-            if top.len() == DUE_TOP {
-                let worst = &top[DUE_TOP - 1];
-                if !due_before(key, id, worst.3, &worst.0) {
-                    continue;
-                }
-            }
-            let at = top.iter().position(|c| due_before(key, id, c.3, &c.0)).unwrap_or(top.len());
-            top.insert(at, (id.to_owned(), last, s, key));
-            top.truncate(DUE_TOP);
+            top.push((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?, r.get(2).map_err(sql)?));
         }
-        let best = top.first().map(|(id, last, s, _)| (id.clone(), *last, *s));
+        let best = top.first().cloned();
         *self.due_top.borrow_mut() = Some((decks.iter().map(|d| (*d).to_owned()).collect(), top));
         Ok(best)
     }
@@ -736,7 +705,7 @@ mod tests {
     }
 
     /// 排队的每条查询走上 v9 的索引（schema.rs `V9`）：学习卡 / 新卡按索引序取第一张、计数按牌组聚合、日志区间
-    /// 扫描都不回表另排序（无 TEMP B-TREE）；复习候选顺着到期索引覆盖扫描（不排序，Rust 留最小）。
+    /// 扫描都不回表另排序（无 TEMP B-TREE）；复习候选顺着到期索引覆盖扫描，只在 LIMIT 行上有界排序。
     /// 单牌组与多牌组（`deck_id IN` 一个值 / 多个值）、带排除都看。
     #[test]
     fn queue_queries_use_the_v9_indexes() {
@@ -764,19 +733,13 @@ mod tests {
                 uses("learning", &first_sql(decks, LEARNING_WHERE, LEARNING_ORDER, ex), "COVERING INDEX idx_srs_cards_cache_learning", true);
                 uses("new(freq)", &first_sql(decks, "queue = 'new'", NEW_BY_FREQUENCY, ex), "idx_srs_cards_cache_new_freq", true);
                 uses("new(position)", &first_sql(decks, "queue = 'new'", NEW_BY_POSITION, ex), "idx_srs_cards_cache_new_position", true);
+                // 排序键随此刻变，没有索引能给出这个序：在覆盖索引的到期区间上有界排序（LIMIT，见 [due_sql]）。
+                uses("review", &due_sql(decks, ex), "COVERING INDEX idx_srs_cards_cache_review_due", false);
             }
-            uses("review", &due_sql(decks), "COVERING INDEX idx_srs_cards_cache_review_due", true);
             uses("tally", &tallies_sql(Some(decks)), "COVERING INDEX idx_srs_cards_cache_tally", true);
         }
         uses("tally(all)", &tallies_sql(None), "COVERING INDEX idx_srs_cards_cache_tally", true);
         uses("logs", LOGS_SQL, "idx_srs_review_logs_profile_kind_time", true);
         assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
-    }
-
-    #[test]
-    fn review_key_follows_sqlite_null_on_zero_division() {
-        assert_eq!(review_key(0, None, Some(0.0)), None);
-        assert_eq!(review_key(86_400_000, Some(0), Some(1.0)), Some(1.0 / (1.0 + 1.0 / 9.0)));
-        assert_eq!(review_key(0, None, None), Some(1.0));
     }
 }
