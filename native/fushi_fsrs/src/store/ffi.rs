@@ -973,7 +973,15 @@ fn sync2_command(
             let names = |k: &str| -> Vec<String> {
                 req.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
             };
-            c.sync2_media_record(profile, s("location")?, &names("present"), &names("absent"), req["seeded"] == Value::Bool(true), i("now")?)?
+            c.sync2_media_record_with_suspect(
+                profile,
+                s("location")?,
+                &names("present"),
+                &names("absent"),
+                &names("suspect"),
+                req["seeded"] == Value::Bool(true),
+                i("now")?,
+            )?
         }
         // 内容寻址媒体（store/sync2/media.rs，审查 S-3）：本机文件 → 内容 / 该下载什么；下载落地后对齐；清理哪些内容。
         "media_hash" | "media_scan" => {
