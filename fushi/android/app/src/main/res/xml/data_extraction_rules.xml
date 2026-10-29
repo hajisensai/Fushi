@@ -6,12 +6,17 @@
   排行榜账户文件 <support>/leaderboard/profile_<id>.json 里是设备私钥（等同密码），
   既不上云备份也不随设备迁移。<support> = getApplicationSupportDirectory() =
   Context.getFilesDir()，即 domain="file" 的根。见 fushi/lib/src/leaderboard/leaderboard_store.dart。
+  音乐插件凭据保险库 <support>/music_plugins/.credentials/（数据密钥 key + 各插件的 AES-GCM 密文）：
+  非 Windows 平台的数据密钥与密文同目录存放，随备份上云等于把登录态一起带走，同样排除。
+  见 native/fushi_music/src/plugin/vault.rs 与 AppModel 的 music_plugins 根目录。
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="leaderboard/" />
+        <exclude domain="file" path="music_plugins/.credentials/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="leaderboard/" />
+        <exclude domain="file" path="music_plugins/.credentials/" />
     </device-transfer>
 </data-extraction-rules>
