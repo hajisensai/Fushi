@@ -611,6 +611,15 @@ impl Corpus {
         self.field_names.needs(query)
     }
 
+    /// 一条查询求值要读的数值列：(整数列位图, 小数列位图)，第 k 位 = 列号 k（[`IntColumn`] / [`FloatColumn`]）。
+    /// 调用方只需在求值前设好这几列。
+    pub fn columns_used(query: &str) -> Result<(u32, u32), SearchError> {
+        let compiled = Self::parse(query)?;
+        let mut mask = (0u32, 0u32);
+        collect_columns(&compiled, &mut mask);
+        Ok(mask)
+    }
+
     /// 本语料的字段名表（只读，可以拿出去在语料锁外做需求分析）。
     pub fn field_names(&self) -> Arc<FieldNames> {
         Arc::clone(&self.field_names)
@@ -852,6 +861,18 @@ impl Corpus {
                 *memo.entry(n).or_insert_with(|| pred(n as usize))
             })
             .collect()
+    }
+}
+
+fn collect_columns(node: &Compiled, mask: &mut (u32, u32)) {
+    match node {
+        Compiled::And(c) | Compiled::Or(c) => c.iter().for_each(|child| collect_columns(child, mask)),
+        Compiled::Not(c) => collect_columns(c, mask),
+        Compiled::State(_) => mask.0 |= 1 << IntColumn::State as u32,
+        Compiled::IntEq(col, _) | Compiled::IntProp(col, ..) | Compiled::IdIn(col, _) => mask.0 |= 1 << *col as u32,
+        Compiled::WithinDays(col, _) => mask.0 |= (1 << *col as u32) | (1 << IntColumn::Today as u32),
+        Compiled::FloatProp(col, ..) => mask.1 |= 1 << *col as u32,
+        _ => {}
     }
 }
 

@@ -902,17 +902,24 @@ pub(crate) struct Session {
 struct Dupe {
     /// 笔记类型 → 首字段 id（建索引时 Dart 传来的那份；变了整份重核）。
     first: HashMap<String, String>,
-    /// 笔记 id → (首字段原文, 规范形)。
-    of: HashMap<String, (String, String)>,
-    /// 规范形 → 笔记 id。
-    by: HashMap<String, HashSet<String>>,
+    /// 笔记 id → (首字段原文的哈希, 规范形)：原文本身已在会话笔记里，这里不再存一份。
+    of: HashMap<String, (u64, String)>,
+    /// 规范形 → 笔记 id（同一规范形通常只有一两条，用 Vec 不用 HashSet）。
+    by: HashMap<String, Vec<String>>,
+}
+
+fn raw_hash(raw: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    raw.hash(&mut h);
+    h.finish()
 }
 
 impl Dupe {
     fn unlink(&mut self, id: &str) {
         let Some((_, norm)) = self.of.remove(id) else { return };
         if let Some(same) = self.by.get_mut(&norm) {
-            same.remove(id);
+            same.retain(|x| x != id);
             if same.is_empty() {
                 self.by.remove(&norm);
             }
@@ -1129,6 +1136,9 @@ impl Session {
              LEFT JOIN srs_event_local s ON s.event_id = f.id WHERE f.entity_kind = 'note'";
         match notes {
             None => {
+                // 整列：按 (entity_kind, entity_id) 顺序读（实测 5 万笔记库比走 (profile_uid, entity_kind, entity_id,
+                // field_key) 索引快一倍多：那条按笔记顺序逐行回表是随机读；两种走法摸到的表页一样多——一列的记录
+                // 散在全部笔记的记录之间）。
                 let q = format!("{SELECT} AND +f.profile_uid = ?1{} ORDER BY f.entity_id", key_filter(2, key_args.len()));
                 let args: Vec<Sql> =
                     std::iter::once(Sql::Text(profile.to_owned())).chain(key_args.iter().map(|k| Sql::Text(k.clone()))).collect();
@@ -1321,8 +1331,7 @@ impl Session {
         Ok(match &query {
             None => Ok(self.view.as_ref().expect("view").natural.clone()),
             Some(q) => {
-                let node = node.expect("query has a node");
-                self.set_columns(ctx, node)?;
+                self.set_columns(ctx, q)?;
                 let view = self.view.as_ref().expect("view");
                 let mut out = vec![0u8; view.order.len()];
                 match view.corpus.search(q, &mut out) {
@@ -1333,59 +1342,97 @@ impl Session {
         })
     }
 
-    /// 每次查询按此刻现算的数值列（语料的 [search::IntColumn] / [search::FloatColumn]）。
-    fn set_columns(&mut self, ctx: &Ctx, node: &Value) -> Result<(), String> {
+    /// 每次查询按此刻现算的数值列（语料的 [search::IntColumn] / [search::FloatColumn]）：只算查询 [q] 真用到的
+    /// 那几列（`deck:*`、`tag:` 这类只看结构的查询一列都不用算）。
+    fn set_columns(&mut self, ctx: &Ctx, q: &str) -> Result<(), String> {
+        let (ints, floats) = match Corpus::columns_used(q) {
+            Ok(m) => m,
+            // 查询本身不合法：留给求值报出同一个错误。
+            Err(_) => return Ok(()),
+        };
+        if ints == 0 && floats == 0 {
+            return Ok(());
+        }
         let full = self.full;
-        let ids = uses(node, "nid") || uses(node, "cid");
         let view = self.view.as_mut().expect("view");
         let n = view.order.len();
-        let mut cols: Vec<Vec<i64>> = (0..search::INT_COLUMNS).map(|_| Vec::with_capacity(n)).collect();
-        let mut stab = Vec::with_capacity(n);
-        let mut diff = Vec::with_capacity(n);
+        let want = |k: usize| ints & (1 << k) != 0;
+        let mut cols: Vec<Vec<i64>> =
+            (0..search::INT_COLUMNS).map(|k| if want(k) { Vec::with_capacity(n) } else { Vec::new() }).collect();
+        let (want_stab, want_diff) = (floats & 1 != 0, floats & 2 != 0);
+        let mut stab = Vec::with_capacity(if want_stab { n } else { 0 });
+        let mut diff = Vec::with_capacity(if want_diff { n } else { 0 });
         for (i, &slot) in view.order.iter().enumerate() {
             if slot == DEAD {
-                for col in &mut cols {
-                    col.push(0);
+                for (k, col) in cols.iter_mut().enumerate() {
+                    if want(k) {
+                        col.push(0);
+                    }
                 }
-                stab.push(f64::NAN);
-                diff.push(f64::NAN);
+                if want_stab {
+                    stab.push(f64::NAN);
+                }
+                if want_diff {
+                    diff.push(f64::NAN);
+                }
                 continue;
             }
             let c = self.cards[slot as usize].as_ref().expect("visible card");
             let note = self.notes[view.note_slot[view.card_note[i] as usize] as usize].as_ref().expect("visible note");
             let ty = &ctx.types[&note.ty];
-            let learn = c.queue == Q_LEARNING || c.queue == Q_RELEARNING;
-            let review = c.queue == Q_REVIEW || c.queue == Q_RELEARNING;
-            let state = i64::from(c.queue == Q_NEW)
-                | (i64::from(learn) << 1)
-                | (i64::from(review) << 2)
-                | (i64::from(ctx.is_due(c)) << 3)
-                | (i64::from(c.suspended) << 4)
-                | (i64::from(ctx.is_buried(c)) << 5);
-            cols[0].push(state);
-            cols[1].push(note.num);
-            cols[2].push(c.num);
-            cols[3].push(ctx.day.index(note.created));
-            cols[4].push(if full { ctx.day.index(note.modified_at()) } else { 0 });
-            cols[5].push(ctx.today);
-            cols[6].push(c.flag);
-            cols[7].push(ty.ordinal(c));
-            cols[8].push(interval_days(c));
-            cols[9].push(ctx.due_in_days(c).unwrap_or(DUE_NONE));
-            cols[10].push(c.reps);
-            cols[11].push(c.lapses);
-            stab.push(c.stab.unwrap_or(f64::NAN));
-            diff.push(c.diff.unwrap_or(f64::NAN));
+            for (k, col) in cols.iter_mut().enumerate() {
+                if !want(k) {
+                    continue;
+                }
+                col.push(match k {
+                    0 => {
+                        let learn = c.queue == Q_LEARNING || c.queue == Q_RELEARNING;
+                        let review = c.queue == Q_REVIEW || c.queue == Q_RELEARNING;
+                        i64::from(c.queue == Q_NEW)
+                            | (i64::from(learn) << 1)
+                            | (i64::from(review) << 2)
+                            | (i64::from(ctx.is_due(c)) << 3)
+                            | (i64::from(c.suspended) << 4)
+                            | (i64::from(ctx.is_buried(c)) << 5)
+                    }
+                    1 => note.num,
+                    2 => c.num,
+                    3 => ctx.day.index(note.created),
+                    // 没装最后改动时刻时不会走到这里（`edited:` 查询先装好全部字段）。
+                    4 => {
+                        if full {
+                            ctx.day.index(note.modified_at())
+                        } else {
+                            0
+                        }
+                    }
+                    5 => ctx.today,
+                    6 => c.flag,
+                    7 => ty.ordinal(c),
+                    8 => interval_days(c),
+                    9 => ctx.due_in_days(c).unwrap_or(DUE_NONE),
+                    10 => c.reps,
+                    _ => c.lapses,
+                });
+            }
+            if want_stab {
+                stab.push(c.stab.unwrap_or(f64::NAN));
+            }
+            if want_diff {
+                diff.push(c.diff.unwrap_or(f64::NAN));
+            }
         }
         for (k, col) in cols.iter().enumerate() {
-            // 没装最后改动时刻时不给 `edited:` 列（查询用到它之前一定先装好）；数字 id 只在查询用到时给。
-            if (k == 4 && !full) || ((k == 1 || k == 2) && !ids) {
-                continue;
+            if want(k) {
+                view.corpus.set_ints(k, col)?;
             }
-            view.corpus.set_ints(k, col)?;
         }
-        view.corpus.set_floats(0, &stab)?;
-        view.corpus.set_floats(1, &diff)?;
+        if want_stab {
+            view.corpus.set_floats(0, &stab)?;
+        }
+        if want_diff {
+            view.corpus.set_floats(1, &diff)?;
+        }
         Ok(())
     }
 
@@ -1699,13 +1746,14 @@ impl Session {
                 dupe.unlink(&id);
                 continue;
             };
-            if dupe.of.get(&id).is_some_and(|(r, _)| r == raw) {
+            let hash = raw_hash(raw);
+            if dupe.of.get(&id).is_some_and(|(h, _)| *h == hash) {
                 continue;
             }
             let norm = search::dupe_norm(raw);
             dupe.unlink(&id);
-            dupe.by.entry(norm.clone()).or_default().insert(id.clone());
-            dupe.of.insert(id, (raw.to_owned(), norm));
+            dupe.by.entry(norm.clone()).or_default().push(id.clone());
+            dupe.of.insert(id, (hash, norm));
         }
     }
 
