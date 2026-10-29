@@ -754,10 +754,18 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>
     let op = s("op")?;
     // 改投影的命令：同一次调用里接着刷新本机缓存行（store/caches.rs），Dart 只收写过哪些笔记 / 卡。缓存配置
     // （内置笔记类型的代码默认值、默认牌组）只有 Dart 知道，随命令带来；缺了是调用方的 bug，不跳过刷新。
-    if PROJECTING_OPS.contains(&op) || op == "refresh_caches" || op == "rebuild_caches" {
+    if PROJECTING_OPS.contains(&op) || op == "refresh_caches" || op == "rebuild_caches" || op == "backfill_dupe_norms" {
         let cfg = crate::store::caches::CacheConfig::parse(req.get("caches").ok_or("sync2: missing caches")?)?;
         let mut v = match op {
             "refresh_caches" => json!({}),
+            // srs.db v15 的老行补 `dupe_norm`（只改这一列，不算缓存写入：不进 Dart 的缓存变更日志）。
+            "backfill_dupe_norms" => {
+                let w = c.writer()?;
+                let n = crate::store::sync2::in_savepoint(&w, |conn| {
+                    crate::store::caches::backfill_dupe_norms(conn, profile, &cfg)
+                })?;
+                return Ok(json!({"filled": n}));
+            }
             "rebuild_caches" => {
                 let w = c.writer()?;
                 let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::rebuild(conn, profile, &cfg))?;
