@@ -1880,3 +1880,145 @@ impl SrsCore {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+
+    use crate::store::caches::{refresh, CacheConfig, Dirty};
+    use crate::store::sync2::in_savepoint;
+    use crate::store::sync2::tests::{deck_entity, edit, Device, P};
+
+    const T0: i64 = 1_700_000_000_000;
+    const N1: &str = "0193a1b2-0000-7000-8000-0000000000a1";
+    const N2: &str = "0193a1b2-0000-7000-8000-0000000000a2";
+    const N3: &str = "0193a1b2-0000-7000-8000-0000000000a3";
+    const N4: &str = "0193a1b2-0000-7000-8000-0000000000a4";
+    const N5: &str = "0193a1b2-0000-7000-8000-0000000000a5";
+
+    fn note(id: &str, nt: &str) -> Value {
+        json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": nt}}})
+    }
+
+    fn note_type(id: &str) -> Value {
+        json!({"t": "entity", "x": {"id": id, "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}})
+    }
+
+    /// 写入一批事件并刷新缓存（与 Dart 落库同一条路径：缓存行的改动经临时触发器记进浏览的待重读）。
+    fn write(d: &Device, cfg: &CacheConfig, now: i64, events: Vec<Value>) {
+        let r = d.apply(now, events);
+        let w = d.core.writer().unwrap();
+        in_savepoint(&w, |c| refresh(c, P, cfg, Dirty::of_projection(&r))).unwrap();
+    }
+
+    fn call(d: &Device, op: &str, req: Value) -> Value {
+        let mut files = Vec::new();
+        d.core.browse(op, P, &req, &mut files).unwrap()
+    }
+
+    fn dupes(d: &Device, cands: Value) -> Vec<bool> {
+        let r = call(d, "anki_dupes", json!({"owner": "ankiconnect", "first": {"A": "fa", "B": "x"}, "cands": cands}));
+        r["dup"].as_array().unwrap().iter().map(|v| v.as_bool().unwrap()).collect()
+    }
+
+    fn cand(norm: &str, ty: &str, all: bool, decks: Value) -> Value {
+        json!({"norm": norm, "type": ty, "all": all, "decks": decks})
+    }
+
+    fn library() -> (Device, CacheConfig, String) {
+        let d = Device::new("browse-anki");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        let fdef = |name: &str, ord: i64| json!({"name": name, "ord": ord});
+        let tdef = |front: &str| json!({"name": "C", "ord": 0, "front": front});
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck})).unwrap();
+        write(
+            &d,
+            &cfg,
+            T0,
+            vec![
+                deck_entity(&deck),
+                note_type("A"),
+                edit("notetype", "A", "fieldDef/fa", fdef("Front", 0)),
+                edit("notetype", "A", "fieldDef/fb", fdef("Back", 1)),
+                edit("notetype", "A", "tmplDef/t1", tdef("{{Front}}")),
+                note_type("B"),
+                edit("notetype", "B", "fieldDef/x", fdef("Word", 0)),
+                edit("notetype", "B", "tmplDef/t2", tdef("{{Word}}")),
+                note(N1, "A"),
+                edit("note", N1, "f/fa", json!("<b>cat</b>")),
+                edit("note", N1, "f/fb", json!("dog")),
+                edit("note", N1, "tags", json!(["t1", "b"])),
+                note(N2, "A"),
+                edit("note", N2, "f/fa", json!("  cat\u{a0}")),
+                edit("note", N2, "tags", json!(["B", "t1"])),
+                note(N3, "B"),
+                edit("note", N3, "f/x", json!("cat")),
+                note(N4, "A"),
+                edit("note", N4, "f/fa", json!("<i>owl</i> ")),
+            ],
+        );
+        (d, cfg, deck)
+    }
+
+    /// `anki_dupes`：首字段查重规范形（去 HTML、trim）相同、笔记类型相符（`all` 不看类型）、范围牌组里有它的卡；
+    /// 写入（新笔记、删笔记）之后查重索引按笔记增量更新，与释放后重建的会话结果一致。
+    #[test]
+    fn anki_dupes_match_first_field_norms_types_and_decks() {
+        let (d, cfg, deck) = library();
+        let probe = |d: &Device| {
+            dupes(
+                d,
+                json!([
+                    cand("cat", "A", false, Value::Null),
+                    cand("cat", "B", false, Value::Null),
+                    cand("dog", "A", false, Value::Null),
+                    cand("owl", "A", false, Value::Null),
+                    cand("owl", "B", false, Value::Null),
+                    cand("owl", "C", true, Value::Null),
+                    cand("cat", "A", false, json!([deck])),
+                    cand("cat", "A", false, json!(["no-such-deck"])),
+                    cand("bird", "A", false, Value::Null),
+                ]),
+            )
+        };
+        assert_eq!(probe(&d), [true, true, false, true, false, true, true, false, false]);
+        assert!(dupes(&d, json!([])).is_empty());
+
+        write(
+            &d,
+            &cfg,
+            T0 + 1000,
+            vec![
+                note(N5, "A"),
+                edit("note", N5, "f/fa", json!("bird")),
+                edit("note", N1, "deleted", json!(T0 + 1000)),
+            ],
+        );
+        // N1 删了但 N2 也是 cat：仍是重复；bird 新加进来。
+        assert_eq!(probe(&d), [true, true, false, true, false, true, true, false, true]);
+        write(&d, &cfg, T0 + 2000, vec![edit("note", N2, "deleted", json!(T0 + 2000))]);
+        let incremental = probe(&d);
+        assert_eq!(incremental, [false, true, false, true, false, true, false, false, true]);
+        // 释放会话后重建：与增量结果一致。
+        assert_eq!(call(&d, "browse_close", json!({"owner": "ankiconnect"}))["released"], json!(true));
+        assert_eq!(probe(&d), incremental);
+    }
+
+    /// `anki_tags`：全部未删除笔记的标签去重，按 UTF-16 码元排（大写在前）；删了笔记它独有的标签就没了。
+    #[test]
+    fn anki_tags_dedupes_sorts_and_follows_deletes() {
+        let (d, cfg, _) = library();
+        let tags = |d: &Device| call(d, "anki_tags", json!({"owner": "ankiconnect"}))["tags"].clone();
+        assert_eq!(tags(&d), json!(["B", "b", "t1"]));
+        write(
+            &d,
+            &cfg,
+            T0 + 1000,
+            vec![edit("note", N1, "deleted", json!(T0 + 1000)), edit("note", N3, "tags", json!(["Ä", "a"]))],
+        );
+        assert_eq!(tags(&d), json!(["B", "a", "t1", "Ä"]));
+        let stats = call(&d, "browse_stats", json!({}));
+        assert_eq!(stats["owners"], json!(["ankiconnect"]));
+        assert_eq!(stats["sessions"], json!(1), "writes must not rebuild the session");
+    }
+}
