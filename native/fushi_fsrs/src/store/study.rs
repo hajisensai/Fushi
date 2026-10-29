@@ -213,7 +213,7 @@ fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> Stri
 
 /// 到期复习卡里可提取度最低的 [DUE_TOP] 张（参数：profile, 今天, 牌组…, 今天, 排除…, 此刻）。排序键是 FSRS 遗忘曲线
 /// R = (1 + t/(9S))^-1（可提取度低的先出；与旧 Dart 排队同一条式子：除以零得 NULL，升序 NULL 在前）。`ORDER BY … LIMIT` 是 SQLite 的有界排序器（只留 LIMIT 行，
-/// 不对全集排序），在库里比逐行交给 Rust 再比快：十万张到期卡上逐行搬出要 2–3 倍时间（行步进 + 取 id 文本）。
+/// 不对全集排序），比逐行交给 Rust 再比快（行步进 + 取 id 文本）：十万张到期卡上一次排队中位 114 → 99 ms。
 fn due_sql(decks: usize, exclude: usize) -> String {
     let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
     format!(
