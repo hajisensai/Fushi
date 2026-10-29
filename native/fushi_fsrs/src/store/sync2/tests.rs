@@ -1371,7 +1371,7 @@ fn bench_join_sliced() {
     b.core.sync2_ingest_begin(P).unwrap();
     let (mut slices, mut batch, mut bytes) = (0usize, Vec::new(), 0usize);
     let flush = |batch: &mut Vec<Vec<u8>>, slices: &mut usize| {
-        b.core.sync2_ingest_prepare(P, batch, None).unwrap();
+        b.core.sync2_ingest_prepare(P, batch.to_vec(), None).unwrap();
         loop {
             let r: Value = serde_json::from_str(
                 &b.core.sync2_ingest_commit(P, T0 + 30 * DAY, super::transport::CommitBudget::slice(b.core.ingest_yield_flag())).unwrap(),
@@ -1817,7 +1817,7 @@ fn batched_ingest_session_matches_one_shot_ingest() {
     many.core.sync2_ingest_begin(P).unwrap();
     let mut applied = 0;
     for b in &batches {
-        let r: Value = serde_json::from_str(&many.core.sync2_ingest_batch(P, b, None, T0 + 80).unwrap()).unwrap();
+        let r: Value = serde_json::from_str(&many.core.sync2_ingest_batch(P, b.to_vec(), None, T0 + 80).unwrap()).unwrap();
         assert_eq!(r["fork"], json!(false), "rotation is deferred to finish: {r}");
         assert_eq!(r["errors"], json!([]), "{r}");
         applied += r["applied"].as_u64().unwrap();
@@ -1887,7 +1887,7 @@ fn batched_ingest_session_matches_one_shot_ingest() {
         sliced.core.sync2_identity(P, T0 + 70).unwrap();
         sliced.core.sync2_plan(P, &heads).unwrap();
         sliced.core.sync2_ingest_begin(P).unwrap();
-        sliced.core.sync2_ingest_prepare(P, &with_garbage, None).unwrap();
+        sliced.core.sync2_ingest_prepare(P, with_garbage.clone(), None).unwrap();
         let (mut applied, mut errors, mut commits) = (0, Vec::new(), 0);
         loop {
             let r: Value = serde_json::from_str(
@@ -1949,7 +1949,7 @@ fn sliced_ingest_carries_waiting_ops_across_slices() {
     z.core.sync2_plan(P, &heads).unwrap();
     z.core.sync2_ingest_begin(P).unwrap();
     let commit_all = |segs: &[Vec<u8>], k: usize| -> (u64, i64, usize) {
-        z.core.sync2_ingest_prepare(P, segs, None).unwrap();
+        z.core.sync2_ingest_prepare(P, segs.to_vec(), None).unwrap();
         let (mut applied, mut commits) = (0, 0);
         loop {
             let r: Value =
@@ -1994,7 +1994,7 @@ fn ingest_yield_cuts_the_running_slice_short() {
     b.core.sync2_plan(P, &heads).unwrap();
     let segs: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
     b.core.sync2_ingest_begin(P).unwrap();
-    b.core.sync2_ingest_prepare(P, &segs, None).unwrap();
+    b.core.sync2_ingest_prepare(P, segs.clone(), None).unwrap();
     b.core.sync2_ingest_yield();
     let first: Value =
         serde_json::from_str(&b.core.sync2_ingest_commit(P, T0 + 402, CommitBudget::slice(b.core.ingest_yield_flag())).unwrap())
@@ -2021,11 +2021,11 @@ fn ingest_yield_cuts_the_running_slice_short() {
 fn ingest_session_requires_begin_and_a_stable_identity() {
     let a = Device::new("a");
     a.core.sync2_identity(P, T0).unwrap();
-    assert!(a.core.sync2_ingest_batch(P, &[], None, T0).is_err());
+    assert!(a.core.sync2_ingest_batch(P, Vec::new(), None, T0).is_err());
     assert!(a.core.sync2_ingest_finish(P, T0).is_err());
     a.core.sync2_ingest_begin(P).unwrap();
     a.core.sync2_rotate(P, T0 + 1).unwrap();
-    assert!(a.core.sync2_ingest_batch(P, &[], None, T0 + 2).is_err());
+    assert!(a.core.sync2_ingest_batch(P, Vec::new(), None, T0 + 2).is_err());
     assert!(a.core.sync2_ingest_finish(P, T0 + 2).is_err(), "a failed batch drops the session");
 }
 
@@ -2389,7 +2389,7 @@ fn local_apply_does_not_wait_for_ingest_decoding() {
     }));
     b.core.sync2_ingest_begin(P).unwrap();
     std::thread::scope(|s| {
-        let ingest = s.spawn(|| b.core.sync2_ingest_batch(P, &segs, None, T0 + 400));
+        let ingest = s.spawn(|| b.core.sync2_ingest_batch(P, segs.clone(), None, T0 + 400));
         entered_rx.recv_timeout(Duration::from_secs(30)).expect("prepare reached the hook");
         // 预处理卡着：作答在另一线程上必须照常完成（写锁、读锁都没被占着）。
         let (done_tx, done_rx) = mpsc::channel::<Value>();
@@ -2435,7 +2435,7 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
     let b = Device::new("b");
     b.core.sync2_identity(P, T0 + 20).unwrap();
     b.core.sync2_ingest_begin(P).unwrap();
-    b.core.sync2_ingest_prepare(P, &segs, None).unwrap();
+    b.core.sync2_ingest_prepare(P, segs.clone(), None).unwrap();
     b.core.sync2_plan(P, &heads).unwrap();
     let r: Value = serde_json::from_str(&b.core.sync2_ingest_commit(P, T0 + 30, super::transport::CommitBudget::unlimited()).unwrap()).unwrap();
     assert_eq!(r["errors"], json!([]), "{r}");

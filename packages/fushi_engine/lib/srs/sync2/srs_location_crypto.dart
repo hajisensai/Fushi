@@ -16,6 +16,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -312,7 +313,10 @@ Future<SrsLocationHandshake> srsLocationHandshake(
   return h;
 }
 
-/// 加密位置上媒体的封装 / 解封（内核 XChaCha20-Poly1305，AAD = 文件名）。
+/// 加密位置上媒体的封装 / 解封（内核 XChaCha20-Poly1305，AAD = 内容哈希 / 文件名）。
+///
+/// 格式是分块流式 AEAD（native/fushi_fsrs/src/sync2/media_seal.rs，审查 S-9）：[sealFile] / [openFile] 文件到文件、
+/// 内存只占一个块；解封兼容 S-9 之前整份封装的旧格式。[seal] / [open] 是同一格式的内存版（小内容用）。
 class SrsMediaCipher {
   const SrsMediaCipher(this.host, this.keyHex);
 
@@ -327,6 +331,33 @@ class SrsMediaCipher {
         <String, Object?>{'op': 'seal', 'key': keyHex, 'name': name},
         blobs: <Uint8List>[plain],
       )).files.single.$2;
+
+  /// 把明文文件 [src] 封进 [dst]，返回明文的 sha256（与 [src] 此刻被读到的内容一致——内容寻址的核对不必再读一遍）。
+  Future<String> sealFile(String name, File src, File dst) async =>
+      (await host.sync2Command(<String, Object?>{
+            'op': 'seal_file',
+            'key': keyHex,
+            'name': name,
+            'src': src.path,
+            'dst': dst.path,
+          })).map['sha256']!
+          as String;
+
+  /// 把 [src] 解封进 [dst]，返回明文的 sha256；解不开（被篡改 / 截断 / 口令不对）返回 null，且不留 [dst]。
+  Future<String?> openFile(String name, File src, File dst) async {
+    try {
+      return (await host.sync2Command(<String, Object?>{
+            'op': 'open_file',
+            'key': keyHex,
+            'name': name,
+            'src': src.path,
+            'dst': dst.path,
+          })).map['sha256']
+          as String?;
+    } on Object {
+      return null;
+    }
+  }
 
   /// 解不开（被篡改 / 口令不对）时返回 null。
   Future<Uint8List?> open(String name, Uint8List sealed) async {

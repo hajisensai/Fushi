@@ -63,7 +63,7 @@ fn join_sliced(bucket: &Bucket, batch: usize, slice: usize, replay: usize) -> De
     d.core.sync2_plan(P, &heads(bucket)).unwrap();
     d.core.sync2_ingest_begin(P).unwrap();
     for chunk in segs(bucket).chunks(batch.max(1)) {
-        d.core.sync2_ingest_prepare(P, chunk, None).unwrap();
+        d.core.sync2_ingest_prepare(P, chunk.to_vec(), None).unwrap();
         loop {
             let r: Value = serde_json::from_str(&d.core.sync2_ingest_commit(P, now, CommitBudget::ops(slice)).unwrap()).unwrap();
             assert_eq!(r["replayed"], json!([]), "slices only record the touched cards: {r}");
@@ -133,7 +133,7 @@ fn interrupted_session_resumes_the_pending_replay() {
         core.sync2_identity(P, now).unwrap();
         core.sync2_plan(P, &heads(&bucket)).unwrap();
         core.sync2_ingest_begin(P).unwrap();
-        core.sync2_ingest_prepare(P, &segs(&bucket), None).unwrap();
+        core.sync2_ingest_prepare(P, segs(&bucket), None).unwrap();
         loop {
             let r: Value = serde_json::from_str(&core.sync2_ingest_commit(P, now, CommitBudget::ops(3)).unwrap()).unwrap();
             if r["more"] != json!(true) {

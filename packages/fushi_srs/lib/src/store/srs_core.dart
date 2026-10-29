@@ -542,13 +542,15 @@ final class SrsCore {
       arena,
       jsonEncode(request),
     );
-    final Uint8List framed = srsSync2Frames(blobs);
-    final ffi.Pointer<ffi.Uint8> bp = _copy(arena, framed);
+    // 段直接分帧写进原生缓冲（不先拼一份 Dart 侧的帧再整份拷过去；审查 S-9）。
+    final int framedLen = srsSync2FramesLength(blobs);
+    final ffi.Pointer<ffi.Uint8> bp = arena(framedLen == 0 ? 1 : framedLen);
+    srsSync2FramesInto(bp.asTypedListOutOfLine(framedLen), blobs);
     final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
     final ffi.Pointer<ffi.Size> outLen = arena();
     final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
     err.value = ffi.nullptr;
-    _check(_b, _b.sync2(_h, rq, rqn, bp, framed.length, out, outLen, err), err);
+    _check(_b, _b.sync2(_h, rq, rqn, bp, framedLen, out, outLen, err), err);
     final int len = outLen.value;
     final Uint8List bytes = Uint8List.fromList(
       out.value.asTypedListOutOfLine(len),
@@ -812,7 +814,8 @@ final class SrsSync2Result {
 
   Map<String, Object?> get map => (json! as Map).cast<String, Object?>();
 
-  /// `u32 json_len + JSON`，再 `u32 n` 与 n 组分帧的 `(路径, 字节)`（小端）。
+  /// `u32 json_len + JSON`，再 `u32 n` 与 n 组分帧的 `(路径, 字节)`（小端）。各文件是 [b] 上的视图（不逐个复制；
+  /// 审查 S-9），[b] 由调用方交出、之后不再改。
   static SrsSync2Result decode(Uint8List b) {
     final ByteData d = ByteData.sublistView(b);
     int at = 0;
@@ -833,7 +836,7 @@ final class SrsSync2Result {
     final List<(String, Uint8List)> files = <(String, Uint8List)>[];
     for (int i = 0; i < n; i++) {
       final String path = utf8.decode(take(u32()));
-      files.add((path, Uint8List.fromList(take(u32()))));
+      files.add((path, take(u32())));
     }
     return SrsSync2Result(json, files);
   }
@@ -841,12 +844,24 @@ final class SrsSync2Result {
 
 /// 分帧：`u32 n`，再 n 个 `u32 len + 字节`（小端）。空列表 = 0 字节。
 Uint8List srsSync2Frames(List<Uint8List> blobs) {
-  if (blobs.isEmpty) return Uint8List(0);
+  final Uint8List out = Uint8List(srsSync2FramesLength(blobs));
+  srsSync2FramesInto(out, blobs);
+  return out;
+}
+
+/// [srsSync2Frames] 的总字节数。
+int srsSync2FramesLength(List<Uint8List> blobs) {
+  if (blobs.isEmpty) return 0;
   int total = 4;
   for (final Uint8List x in blobs) {
     total += 4 + x.length;
   }
-  final Uint8List out = Uint8List(total);
+  return total;
+}
+
+/// 把 [blobs] 分帧写进 [out]（长度必须是 [srsSync2FramesLength]）：调用方给原生缓冲的视图，段只拷这一次。
+void srsSync2FramesInto(Uint8List out, List<Uint8List> blobs) {
+  if (blobs.isEmpty) return;
   final ByteData d = ByteData.sublistView(out);
   d.setUint32(0, blobs.length, Endian.little);
   int at = 4;
@@ -856,5 +871,4 @@ Uint8List srsSync2Frames(List<Uint8List> blobs) {
     out.setRange(at, at + x.length, x);
     at += x.length;
   }
-  return out;
 }

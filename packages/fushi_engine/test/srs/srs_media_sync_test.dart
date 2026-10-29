@@ -3,6 +3,7 @@
 // 并校验哈希、位置缺的上传；被删笔记的媒体保留 90 天后才从位置上清，删除只凭正面证据（本机不认识的文件不删）；
 // 归档位置永不删；旧布局（按名字存的 `media/<名字>`、按写入者分目录）只读兜底。
 import 'dart:async';
+import 'dart:convert' show Encoding, utf8;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -534,6 +535,21 @@ class _StatSpyFile implements File {
   Future<int> length() => _real.length();
   @override
   Future<Uint8List> readAsBytes() => _real.readAsBytes();
+  // 流式读写（审查 S-9：上传前边拷快照边算哈希，不整份读进内存）。
+  @override
+  Stream<List<int>> openRead([int? start, int? end]) =>
+      _real.openRead(start, end);
+  @override
+  IOSink openWrite({
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+  }) => _real.openWrite(mode: mode, encoding: encoding);
+  @override
+  Future<File> copy(String newPath) => _real.copy(newPath);
+  // 文件流在当前 zone 里按路径重造 File 再 open（即本代理）。
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      _real.open(mode: mode);
   @override
   Future<File> writeAsBytes(
     List<int> bytes, {
