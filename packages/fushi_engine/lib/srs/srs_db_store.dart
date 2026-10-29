@@ -4347,61 +4347,15 @@ class SrsDbStore implements SrsSync2Host {
         await rebuildCaches();
       });
 
-  // ------------------------------------------------------------------ AnkiConnect 兼容层（只读）
-
-  /// 本 profile 的全部笔记（含已删除，调用方自行过滤），批量物化：
-  /// 三次查询（身份记录 / 修改记录 / 服务器时间）而不是每条笔记各查一遍。
-  Future<List<SrsNoteView>> allNoteViews() async {
-    final List<SrsEntityRow> rows =
-        await (db.select(db.srsEntities)..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.kind.equals(SrsEntityKind.note.wire),
-            ))
-            .get();
-    // 修改记录原文 + 服务器时刻一条 JOIN 取全，整库一次交给字段寄存器内核（一次 FFI 调用）。
-    final Map<String, List<SrsEditItem>> byEntity =
-        <String, List<SrsEditItem>>{};
-    for (final QueryRow q
-        in await db
-            .customSelect(
-              'SELECT f.entity_id AS e, CAST(f.json AS BLOB) AS j, '
-              's.server_time AS st FROM srs_field_edits f '
-              'LEFT JOIN srs_event_local s ON s.event_id = f.id '
-              'WHERE f.profile_uid = ? AND f.entity_kind = ?',
-              variables: <Variable<Object>>[
-                Variable<String>(profileUid),
-                Variable<String>(SrsEntityKind.note.wire),
-              ],
-              readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                db.srsFieldEdits,
-                db.srsEventLocal,
-              },
-            )
-            .get()) {
-      (byEntity[q.read<String>('e')] ??= <SrsEditItem>[]).add(
-        SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
-      );
-    }
-    return srsMaterializeNotes(<SrsEntitySource>[
-      for (final SrsEntityRow r in rows)
-        SrsEntitySource(
-          r.id,
-          r.payloadJson,
-          byEntity[r.id] ?? const <SrsEditItem>[],
-        ),
-    ]);
-  }
-
   /// 笔记字段（`f/` 键）的值，按页交出（媒体引用扫描用）：直接按 rowid 分页读修改记录，
-  /// 不物化笔记——以前每轮同步后都经 [allNoteViews] 把整库笔记连同每条修改记录、整张服务器时间表
+  /// 不物化笔记——以前每轮同步后都经 `allNoteViews`（已删）把整库笔记连同每条修改记录、整张服务器时间表
   /// 一次读进调用方 isolate（大库上单段阻塞数百毫秒、每轮都来一次，反馈 OMWOurRQKb）。
   ///
-  /// 只看有身份记录的笔记（与 [allNoteViews] 同一范围）。被支配的修改记录落库时就删了，一个字段键上
+  /// 只看有身份记录的笔记（与 [notes] 物化的同一范围）。被支配的修改记录落库时就删了，一个字段键上
   /// 留下的每一条都是生效候选（[SrsRegister.live]）。
   ///
   /// - [currentOnly] 为假（回收媒体前的保守口径）：已删未清的笔记也算，每个字段的全部候选值都交出；
-  /// - 为真（同步口径，与 [allNoteViews] 物化后 `deletedAt == null` 的笔记的 `fields` 同值）：跳过已删
+  /// - 为真（同步口径，与 [notes] 物化后 `deletedAt == null` 的笔记的 `fields` 同值）：跳过已删
   ///   笔记（删除键上有任一候选值是时刻，见 [srsEffectiveDeletedAt]），每个字段只交生效值——只有一条
   ///   候选的直接取它，有并发候选的（少数）按 [srsResolveRegister] 裁决后取胜者。
   Future<void> forEachNoteFieldValuePage(
