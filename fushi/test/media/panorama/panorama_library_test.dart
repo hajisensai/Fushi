@@ -1,7 +1,10 @@
 // 媒体库全景数据层的纯函数：词抽取（内部编号回退字段）、作品归并（播放列表 / 去集号同名）、
 // 挂词（出处优先、标签空格写成 _）、均匀抽样上限。
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/panorama/panorama_library.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('panoramaNoteWord', () {
@@ -179,4 +182,31 @@ void main() {
       expect(picked, contains(3200), reason: 'source-owned note kept');
     });
   });
+
+  test(
+    'book covers resolve relative to the extract dir, case-insensitively',
+    () async {
+      final Directory root = await Directory.systemTemp.createTemp('pano_cov');
+      addTearDown(() => root.delete(recursive: true));
+      final Directory a = Directory(p.join(root.path, 'a'));
+      File(p.join(a.path, 'item', 'image', 'Cover.jpg'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[1]);
+      final Directory b = Directory(p.join(root.path, 'b'))..createSync();
+      File(p.join(b.path, 'cover.png')).writeAsBytesSync(<int>[1]);
+      final Directory c = Directory(p.join(root.path, 'c'))..createSync();
+
+      final List<String?> got =
+          await panoramaResolveBookCovers(<(String, String?)>[
+            (a.path, 'item/image/cover.jpg'),
+            (b.path, null),
+            (c.path, 'missing.jpg'),
+            ('', 'x.jpg'),
+          ]);
+      expect(got[0], p.join(a.path, 'item', 'image', 'Cover.jpg'));
+      expect(got[1], p.join(b.path, 'cover.png'));
+      expect(got[2], isNull);
+      expect(got[3], isNull);
+    },
+  );
 }

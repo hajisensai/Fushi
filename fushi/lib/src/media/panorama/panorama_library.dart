@@ -26,6 +26,8 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+
 /// 每部作品最多展示的词数。
 const int kPanoramaWordsPerWork = 40;
 
@@ -417,6 +419,24 @@ List<String> panoramaSourceKeys(SrsSourceRef? source) {
   ];
 }
 
+/// 书 / 漫画的 `epub_books.cover_path` 是相对 `extract_dir` 的路径（如
+/// `item/image/cover.jpg`），不能直接当文件读。与书架同一套解析
+/// （[ReaderFushiSource.resolveCoverFilePath]：拼解压目录、大小写不敏感、
+/// `cover.jpg` 等兜底）转成磁盘绝对路径；找不到文件为 null。逐目录列文件，放后台 isolate。
+Future<List<String?>> panoramaResolveBookCovers(List<(String, String?)> books) {
+  return Isolate.run<List<String?>>(
+    () => <String?>[
+      for (final (String extractDir, String? coverPath) in books)
+        extractDir.isEmpty
+            ? null
+            : ReaderFushiSource.resolveCoverFilePath(
+                extractDir: extractDir,
+                coverPath: coverPath,
+              ),
+    ],
+  );
+}
+
 /// 从本机库与复习库读出全景数据。
 ///
 /// [srs] 为 null（复习库未就绪）时没有词。读笔记字段 / 出处走 [SrsDbStore.notes]
@@ -431,7 +451,14 @@ Future<PanoramaLibrary> loadPanoramaLibrary({
     for (final ReaderPositionRow r in await db.select(db.readerPositions).get())
       r.bookUid: r.updatedAt,
   };
-  for (final EpubBookRow b in await db.select(db.epubBooks).get()) {
+  final List<EpubBookRow> books = await db.select(db.epubBooks).get();
+  final List<String?> bookCovers = await panoramaResolveBookCovers(
+    <(String, String?)>[
+      for (final EpubBookRow b in books) (b.extractDir, b.coverPath),
+    ],
+  );
+  for (int i = 0; i < books.length; i++) {
+    final EpubBookRow b = books[i];
     final BookFormat format = BookFormat.parseOrEpub(b.format);
     final bool manga = format == BookFormat.manga;
     works.add(
@@ -439,7 +466,7 @@ Future<PanoramaLibrary> loadPanoramaLibrary({
         kind: manga ? PanoramaWorkKind.manga : PanoramaWorkKind.book,
         key: b.bookKey,
         title: b.title,
-        coverPath: b.coverPath,
+        coverPath: bookCovers[i],
         memberKeys: <String>[b.bookKey, if (b.uid.isNotEmpty) b.uid],
         matchTitles: <String>[b.title],
         extractDir: format == BookFormat.epub ? b.extractDir : null,
