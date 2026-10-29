@@ -326,7 +326,7 @@ class GameSectionTabs extends StatelessWidget {
         LibrarySectionTab<GameSection>(
           value: value,
           label: switch (candidate) {
-            LibrarySectionGroup.library => t.games,
+            LibrarySectionGroup.library => t.library_view_mine,
             LibrarySectionGroup.online =>
               members.length == 1
                   ? _labelFor(members.single)
