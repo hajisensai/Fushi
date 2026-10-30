@@ -233,7 +233,7 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
             rows.push(canonical(&edit_row(conn, profile, &op, &e)?.1));
         }
     }
-    let items: Vec<(&str, Option<i64>)> = rows.iter().map(|r| (r.as_str(), None)).collect();
+    let items: Vec<crate::registers::StoredEdit<'_>> = rows.iter().map(|r| (r.as_str(), None, None)).collect();
     // 依次落（全部当「到达」），留下没被支配的，再按读路径取胜者。
     let (landed, deleted) = crate::registers::land_stored(&items, 0)?;
     let mut live: BTreeSet<usize> = BTreeSet::new();
@@ -245,7 +245,7 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
             live.insert(i);
         }
     }
-    let live_rows: Vec<(&str, Option<i64>)> = live.iter().map(|&i| (rows[i].as_str(), None)).collect();
+    let live_rows: Vec<crate::registers::StoredEdit<'_>> = live.iter().map(|&i| (rows[i].as_str(), None, None)).collect();
     crate::registers::register_value(&live_rows, key)
 }
 

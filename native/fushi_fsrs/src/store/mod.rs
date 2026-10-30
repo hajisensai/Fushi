@@ -637,18 +637,16 @@ impl SrsCore {
     /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
     pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
         let logs = self.writer_logs(groups)?;
-        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let empty: Vec<LogRow> = Vec::new();
         let mut states = Vec::with_capacity(groups.len());
         for g in groups {
-            let mut jsons: Vec<&str> = Vec::new();
-            let mut servers: Vec<Option<i64>> = Vec::new();
+            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for c in g {
-                for (j, s) in logs.get(c).unwrap_or(&empty) {
-                    jsons.push(j);
-                    servers.push(*s);
+                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref()));
                 }
             }
-            states.push(crate::history::state_from_json(&jsons, &servers)?);
+            states.push(crate::history::state_from_stored(&stored)?);
         }
         Ok(crate::history::encode_states(&states))
     }
@@ -661,19 +659,17 @@ impl SrsCore {
     /// kind, durationMs, prevDueDay|NULL, maturityDelta。
     pub fn stat_projection(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
         let logs = self.writer_logs(groups)?;
-        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let empty: Vec<LogRow> = Vec::new();
         let mut out: Vec<Vec<Value>> = Vec::new();
         let opt = |v: Option<i64>| v.map_or(Value::Null, Value::Integer);
         for (gi, g) in groups.iter().enumerate() {
-            let mut jsons: Vec<&str> = Vec::new();
-            let mut servers: Vec<Option<i64>> = Vec::new();
+            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for c in g {
-                for (j, s) in logs.get(c).unwrap_or(&empty) {
-                    jsons.push(j);
-                    servers.push(*s);
+                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref()));
                 }
             }
-            for r in crate::history::stats_from_json(&jsons, &servers)? {
+            for r in crate::history::stats_from_stored(&stored)? {
                 out.push(vec![
                     Value::Integer(gi as i64),
                     Value::Text(r.log_id),
@@ -690,11 +686,8 @@ impl SrsCore {
         Ok(rows::encode(9, &out))
     }
 
-    /// 这些组里全部卡的日志原文 + 服务器时刻（写连接，一条 JOIN 按块取）。
-    fn writer_logs(
-        &self,
-        groups: &[Vec<String>],
-    ) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
+    /// 这些组里全部卡的日志（[LogRow]：存储值 + 服务器时刻 + 列；写连接，一条 JOIN 按块取）。
+    fn writer_logs(&self, groups: &[Vec<String>]) -> Result<std::collections::HashMap<String, Vec<LogRow>>, String> {
         let w = self.writer()?;
         logs_of(&w, groups)
     }
@@ -771,10 +764,14 @@ impl SrsCore {
 }
 
 /// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取；写连接看得见 Drift 事务里未提交的行）。
+/// [logs_of] 的一条：(存储值, 服务器时刻, 瘦存时的列)。读 `jslim` + 列（store/slim.rs `LOG_READ`），不经逐行
+/// 拼回的 `json`。
+pub(crate) type LogRow = (String, Option<i64>, Option<crate::history::LogCols>);
+
 pub(crate) fn logs_of(
     conn: &rusqlite::Connection,
     groups: &[Vec<String>],
-) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
+) -> Result<std::collections::HashMap<String, Vec<LogRow>>, String> {
     let mut wanted: Vec<&str> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for g in groups {
@@ -784,12 +781,13 @@ pub(crate) fn logs_of(
             }
         }
     }
-    let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
+    let mut logs: std::collections::HashMap<String, Vec<LogRow>> =
         std::collections::HashMap::with_capacity(wanted.len());
     for chunk in wanted.chunks(500) {
         let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
+            "SELECT srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})",
+            slim::LOG_READ
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
         let mut q = stmt
@@ -797,9 +795,9 @@ pub(crate) fn logs_of(
             .map_err(|e| e.to_string())?;
         while let Some(row) = q.next().map_err(|e| e.to_string())? {
             let card: String = row.get(0).map_err(|e| e.to_string())?;
-            let json: String = row.get(1).map_err(|e| e.to_string())?;
-            let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
-            logs.entry(card).or_default().push((json, st));
+            let st: Option<i64> = row.get(1).map_err(|e| e.to_string())?;
+            let (json, cols) = slim::log_row(row, 2).map_err(|e| e.to_string())?;
+            logs.entry(card).or_default().push((json, st, cols));
         }
     }
     Ok(logs)
