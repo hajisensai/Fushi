@@ -111,9 +111,34 @@ void main() {
     for (final LibrarySectionTab<T> tab in strip.tabs) tab.value,
   ];
 
-  // 2026-10-14 用户：视频库顶栏分组后「在线源这块其他模块也该跟进」——书架 /
-  // 漫画的来源 / 扩展并成一段「在线源」，组内由二级胶囊切换。
-  testWidgets('来源 / 扩展并成「在线源」一段：选中时出现二级胶囊，点组页签回到上次停留处', (
+  /// 工具栏右端的「导入」圆钮（切换型）。
+  FushiIconButton importButton(WidgetTester tester) => tester.widget(
+    find.byKey(const ValueKey<String>('test-library-view-import')),
+  );
+
+  Future<void> tapImport(WidgetTester tester) async {
+    importButton(tester).onTap!();
+    await tester.pumpAndSettle();
+  }
+
+  /// 顶栏下方的二级胶囊（不在浮动工具栏里的那一份）；当前组只有一个视图或停在
+  /// 导入页时没有。
+  Finder subStrip() => find.byWidgetPredicate(
+    (Widget w) => w is FushiSectionTabBar<MediaLibraryViewKind> && w.secondary,
+  );
+
+  /// 树上全部分段导航的焦点前缀（一级 + 二级）。
+  List<String> segmentedPrefixes(WidgetTester tester) => <String>[
+    for (final FushiAdjustableSegmented<MediaLibraryViewKind> seg
+        in tester.widgetList<FushiAdjustableSegmented<MediaLibraryViewKind>>(
+          find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
+        ))
+      seg.focusIdPrefix,
+  ];
+
+  // 2026-10-30 用户拍板方案 D：顶栏一级只剩「我的」/「在线」两组，组内多视图由
+  // 顶栏下方的二级胶囊切换；导入不再是页签，是工具栏右端的切换型圆钮。
+  testWidgets('一级只放两组：书架 / 在线；在线组内二级胶囊是来源 / 扩展，点组页签回到上次停留处', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -132,28 +157,41 @@ void main() {
         for (final LibrarySectionTab<MediaLibraryViewKind> tab in top.tabs)
           tab.label,
       ],
-      <String>['书架', t.media_import_segment_sources, '导入'],
+      <String>['书架', t.library_view_online],
+      reason: '「我的」组只有书架时用它自己的名字；导入不占页签',
     );
+    expect(
+      valuesOf(top),
+      isNot(contains(MediaLibraryViewKind.sources)),
+      reason: '导入由工具栏右端的圆钮进入，不是页签',
+    );
+    expect(importButton(tester).selected, isFalse);
     expect(
       find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
       findsOneWidget,
-      reason: '不在在线源组时不画二级胶囊',
+      reason: '「我的」组只有一个视图时不画二级胶囊',
     );
 
     await selectVia(tester, MediaLibraryViewKind.onlineSources);
-    final Iterable<FushiSectionTabBar<MediaLibraryViewKind>> strips = tester
-        .widgetList<FushiSectionTabBar<MediaLibraryViewKind>>(
-          find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
-        );
-    expect(strips, hasLength(2));
-    top = tester.widget(topStrip());
-    final FushiSectionTabBar<MediaLibraryViewKind> sub = strips.firstWhere(
-      (FushiSectionTabBar<MediaLibraryViewKind> s) => !identical(s, top),
+    expect(
+      find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
+      findsNWidgets(2),
+    );
+    final FushiSectionTabBar<MediaLibraryViewKind> sub = tester.widget(
+      subStrip(),
     );
     expect(valuesOf(sub), <MediaLibraryViewKind>[
       MediaLibraryViewKind.onlineSources,
       MediaLibraryViewKind.extensions,
     ]);
+    expect(
+      segmentedPrefixes(tester),
+      unorderedEquals(<String>[
+        'test-library-view',
+        'test-library-view-online',
+      ]),
+      reason: '二级胶囊的焦点前缀 = 壳前缀 + 组名，与一级互不冲突',
+    );
 
     sub.onChanged!(MediaLibraryViewKind.extensions);
     await tester.pumpAndSettle();
@@ -163,11 +201,10 @@ void main() {
     expect(valuesOf(top), <MediaLibraryViewKind>[
       MediaLibraryViewKind.library,
       MediaLibraryViewKind.extensions,
-      MediaLibraryViewKind.sources,
-    ], reason: '在线源组页签的值是组内上次停留的「扩展」，点它直接回到那里');
+    ], reason: '在线组页签的值是组内上次停留的「扩展」，点它直接回到那里');
   });
 
-  testWidgets('只有来源没有扩展：照旧单段「来源」，不画二级胶囊', (WidgetTester tester) async {
+  testWidgets('在线组只有来源：一级照旧用「来源」自己的名字，不画二级胶囊', (WidgetTester tester) async {
     await tester.pumpWidget(
       harness(<MediaLibraryViewSpec>[
         spec(0, MediaLibraryViewKind.library, '书架'),
@@ -190,8 +227,159 @@ void main() {
         for (final LibrarySectionTab<MediaLibraryViewKind> tab in top.tabs)
           tab.label,
       ],
-      <String>['书架', '来源', '导入'],
+      <String>['书架', '来源'],
     );
+  });
+
+  testWidgets('我的组 = 书架 + 媒体服务器：二级胶囊切换，一级用书架命名', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(<MediaLibraryViewSpec>[
+        spec(0, MediaLibraryViewKind.library, '书架'),
+        spec(1, MediaLibraryViewKind.mediaServers, '媒体服务器'),
+        spec(2, MediaLibraryViewKind.browse, '浏览'),
+        spec(3, MediaLibraryViewKind.sources, '导入'),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    final FushiSectionTabBar<MediaLibraryViewKind> top = tester.widget(
+      topStrip(),
+    );
+    expect(
+      <String>[
+        for (final LibrarySectionTab<MediaLibraryViewKind> tab in top.tabs)
+          tab.label,
+      ],
+      <String>['书架', '浏览'],
+    );
+    final FushiSectionTabBar<MediaLibraryViewKind> sub = tester.widget(
+      subStrip(),
+    );
+    expect(valuesOf(sub), <MediaLibraryViewKind>[
+      MediaLibraryViewKind.library,
+      MediaLibraryViewKind.mediaServers,
+    ]);
+    expect(
+      segmentedPrefixes(tester),
+      containsAll(<String>['test-library-view', 'test-library-view-library']),
+    );
+  });
+
+  testWidgets('一级只剩一组（没有在线视图）：不画一级页签，组内仍有二级胶囊', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(<MediaLibraryViewSpec>[
+        spec(0, MediaLibraryViewKind.library, '书架'),
+        spec(1, MediaLibraryViewKind.mediaServers, '媒体服务器'),
+        spec(2, MediaLibraryViewKind.sources, '导入'),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(topStrip(), findsNothing, reason: '一级只有一段时不放空壳胶囊');
+    final FushiSectionTabBar<MediaLibraryViewKind> sub = tester.widget(
+      subStrip(),
+    );
+    expect(valuesOf(sub), <MediaLibraryViewKind>[
+      MediaLibraryViewKind.library,
+      MediaLibraryViewKind.mediaServers,
+    ]);
+    expect(
+      find.byKey(const ValueKey<String>('test-library-view-import')),
+      findsOneWidget,
+      reason: '没有一级页签时导入钮照样在工具栏右端',
+    );
+  });
+
+  testWidgets('导入钮是切换型：点进导入页呈选中、高亮「我的」组，再点回到之前的视图', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(<MediaLibraryViewSpec>[
+        spec(0, MediaLibraryViewKind.library, '书架'),
+        spec(1, MediaLibraryViewKind.onlineSources, '来源'),
+        spec(2, MediaLibraryViewKind.extensions, '扩展'),
+        spec(3, MediaLibraryViewKind.sources, '导入'),
+      ]),
+    );
+    await tester.pumpAndSettle();
+    await selectVia(tester, MediaLibraryViewKind.extensions);
+    expect(initCount[3], isNull, reason: '导入页未进过不构造');
+
+    await tapImport(tester);
+    expect(importButton(tester).selected, isTrue);
+    expect(initCount[3], 1);
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is _StatefulLeaf && w.label == '导入',
+      ),
+      findsOneWidget,
+    );
+    final FushiSectionTabBar<MediaLibraryViewKind> top = tester.widget(
+      topStrip(),
+    );
+    expect(top.selected, MediaLibraryViewKind.library, reason: '导入管理的是本地库');
+    expect(subStrip(), findsNothing, reason: '导入页不属于任何组，不画二级胶囊');
+
+    await tapImport(tester);
+    expect(importButton(tester).selected, isFalse);
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is _StatefulLeaf && w.label == '扩展',
+      ),
+      findsOneWidget,
+      reason: '再点一次回到进导入页之前的「扩展」',
+    );
+    expect(initCount[3], 1, reason: '导入页保活，切走不销毁');
+  });
+
+  testWidgets('横滑顺序 = 两级页签视觉序：书架 → 媒体服务器 → 发现 → 来源 → 扩展，跨组接着滑', (
+    WidgetTester tester,
+  ) async {
+    // 声明序故意把媒体服务器放在发现后面：横滑序按组排，不按声明序。
+    await tester.pumpWidget(
+      harness(<MediaLibraryViewSpec>[
+        spec(0, MediaLibraryViewKind.library, '书架'),
+        spec(1, MediaLibraryViewKind.discover, '发现'),
+        spec(2, MediaLibraryViewKind.mediaServers, '媒体服务器'),
+        spec(3, MediaLibraryViewKind.onlineSources, '来源'),
+        spec(4, MediaLibraryViewKind.extensions, '扩展'),
+        spec(5, MediaLibraryViewKind.sources, '导入'),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    SectionSwipeNavigator<MediaLibraryViewKind> swipe() =>
+        tester.widget(find.byType(SectionSwipeNavigator<MediaLibraryViewKind>));
+    const List<MediaLibraryViewKind> order = <MediaLibraryViewKind>[
+      MediaLibraryViewKind.library,
+      MediaLibraryViewKind.mediaServers,
+      MediaLibraryViewKind.discover,
+      MediaLibraryViewKind.onlineSources,
+      MediaLibraryViewKind.extensions,
+    ];
+    expect(swipe().sections, order, reason: '导入不是页签，不在横滑序里');
+
+    // 逐个走「下一个」：跨组（媒体服务器 → 发现）照样接着滑。
+    for (int i = 1; i < order.length; i++) {
+      final SectionSwipeNavigator<MediaLibraryViewKind> nav = swipe();
+      final int at = nav.sections.indexOf(nav.selected);
+      nav.onSelect(nav.sections[at + 1]);
+      await tester.pumpAndSettle();
+      expect(swipe().selected, order[i]);
+    }
+    final FushiSectionTabBar<MediaLibraryViewKind> top = tester.widget(
+      topStrip(),
+    );
+    expect(top.selected, MediaLibraryViewKind.extensions);
+
+    await tapImport(tester);
+    expect(swipe().sections, <MediaLibraryViewKind>[
+      ...order,
+      MediaLibraryViewKind.sources,
+    ], reason: '停在导入页时它排在最后，从它能滑回相邻视图');
+    swipe().onSelect(MediaLibraryViewKind.extensions);
+    await tester.pumpAndSettle();
+    expect(swipe().sections, order, reason: '离开导入页后它又退出横滑序');
   });
 
   testWidgets('分区导航包在 FushiAdjustableSegmented 里（裸 TabBar 即转红）', (
@@ -313,7 +501,12 @@ void main() {
     final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
       stripFinder,
     );
-    strip.onChanged!(MediaLibraryViewKind.sources);
+    // 导入不再是页签（工具栏右端圆钮），一级页签是「书架 / 浏览」两组。
+    expect(valuesOf(strip), <MediaLibraryViewKind>[
+      MediaLibraryViewKind.library,
+      MediaLibraryViewKind.browse,
+    ]);
+    strip.onChanged!(MediaLibraryViewKind.browse);
     await tester.pump();
     // 投影在帧末 animateTo；Ticker 第一帧只记起点，再推一帧才有中途值。
     await tester.pump(const Duration(milliseconds: 60));
@@ -327,16 +520,16 @@ void main() {
     final TabController controller = tester
         .widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)))
         .controller!;
-    expect(controller.index, 2);
+    expect(controller.index, 1);
     expect(controller.animation!.value, greaterThan(0));
     expect(
       controller.animation!.value,
-      lessThan(2),
-      reason: '指示条应正从「书架」滑向「来源」',
+      lessThan(1),
+      reason: '指示条应正从「书架」滑向「浏览」',
     );
 
     await tester.pumpAndSettle();
-    expect(controller.animation!.value, 2);
+    expect(controller.animation!.value, 1);
   });
 
   testWidgets('分段导航注册可由 controller.requestById 定位的稳定 ID', (
@@ -349,8 +542,10 @@ void main() {
             child: MediaLibraryShell(
               focusIdPrefix: 'test-library-view',
               views: <MediaLibraryViewSpec>[
+                // 一级要有两组才画页签（只剩一组时不画）。
                 spec(0, MediaLibraryViewKind.library, '书架'),
-                spec(1, MediaLibraryViewKind.sources, '来源'),
+                spec(1, MediaLibraryViewKind.browse, '浏览'),
+                spec(2, MediaLibraryViewKind.sources, '来源'),
               ],
             ),
           ),
@@ -419,19 +614,23 @@ void main() {
     );
   }
 
-  /// 壳此刻真正切到了 [kind]：浮动工具栏里那一份页签选中它，且该视图的叶子
-  /// 已构建并在台上（非 offstage）。2026-10-06 起视图一律拿空占位导航
-  /// （886df531704），不能再用「拿到真导航条」判当前视图。
+  /// 壳此刻真正切到了 [kind]：导入页 = 工具栏右端的导入钮呈选中态，其它视图 =
+  /// 页签选中它；且该视图的叶子已构建并在台上（非 offstage）。2026-10-06 起
+  /// 视图一律拿空占位导航（886df531704），不能再用「拿到真导航条」判当前视图。
   void expectShellOn(
     WidgetTester tester,
     MediaLibraryViewKind kind,
     String leafLabel, {
     String? reason,
   }) {
-    final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
-      find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
-    );
-    expect(strip.selected, kind, reason: reason);
+    if (kind == MediaLibraryViewKind.sources) {
+      expect(importButton(tester).selected, isTrue, reason: reason);
+    } else {
+      final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
+        find.byType(FushiSectionTabBar<MediaLibraryViewKind>).first,
+      );
+      expect(strip.selected, kind, reason: reason);
+    }
     expect(
       find.byWidgetPredicate(
         (Widget w) => w is _StatefulLeaf && w.label == leafLabel,
