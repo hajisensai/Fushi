@@ -503,52 +503,122 @@ class SrsDirectoryLocationStore
   Future<Uint8List?> get(String path) async {
     final File f = _file(path);
     try {
-      return await f.readAsBytes();
+      return await _whileReplaced(f.readAsBytes);
     } on PathNotFoundException {
       return null;
     }
   }
 
+  /// Windows 平台语义：别的句柄（另一台设备 / 同步工具）正把这个路径改名替换的那一瞬间，打开它报共享冲突
+  /// （ERROR_SHARING_VIOLATION，errno 32）——文件既不是不在、也不是坏了，替换完就能读到新的那份（POSIX 上改名替换
+  /// 对读者原子，没有这一态）。只对这一个错误码、有界地重新打开；别的错误、以及超过上限的共享冲突原样抛出。
+  /// 不可控的平台限制，没有清理条件（只要位置可能在 Windows 上被并发替换就需要）。
+  static Future<T> _whileReplaced<T>(Future<T> Function() open) async {
+    for (int attempt = 0; ; attempt++) {
+      try {
+        return await open();
+      } on FileSystemException catch (e) {
+        if (e.osError?.errorCode != _kSharingViolation ||
+            attempt >= _kSharingViolationAttempts) {
+          rethrow;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    }
+  }
+
+  static const int _kSharingViolation = 32;
+  static const int _kSharingViolationAttempts = 200;
+
   @override
   Future<bool> exists(String path) => _file(path).exists();
 
-  @override
-  Future<void> put(String path, Uint8List bytes) async {
-    final File f = _file(path);
-    await f.parent.create(recursive: true);
-    final File tmp = File(
-      p.join(f.parent.path, '.srs2tmp-${_rand.nextInt(1 << 30)}'),
-    );
-    await tmp.writeAsBytes(bytes, flush: true);
-    await tmp.rename(f.path);
+  File _tempNextTo(File f) =>
+      File(p.join(f.parent.path, '.srs2tmp-${_rand.nextInt(1 << 30)}'));
+
+  /// 把写好的临时文件 [tmp] 改名成 [f]。几台设备同时写同一个路径（两台新版本同时迁移同一个位置、内容寻址的同一个
+  /// 对象）时，Windows 上改名盖一个正被别人改名 / 读的目标会报 errno 5 / 32。这时重新看目标：
+  /// - [onlyIfAbsent]（putNew 系列：只在不在时创建）：目标已经在了 = 别人先建了，正是这个调用的约定，不再盖；
+  /// - 覆盖写：目标已经是我们要写的这份字节，结果就是我们要的；
+  /// 否则原样抛出。临时文件总是删掉。
+  Future<void> _land(File tmp, File f, {required bool onlyIfAbsent}) async {
+    try {
+      // 写临时文件期间别人已经建好了：不再去替换它（替换会让正在读它的设备撞上共享冲突）。
+      if (onlyIfAbsent && await f.exists()) return;
+      await tmp.rename(f.path);
+    } on FileSystemException {
+      if (!await f.exists()) rethrow;
+      if (!onlyIfAbsent && !await _sameBytes(tmp, f)) rethrow;
+    } finally {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } on FileSystemException {
+        // 临时名不会被列出来（list 跳过 `.srs2tmp-`），留给下次清理。
+      }
+    }
   }
+
+  static Future<bool> _sameBytes(File a, File b) async {
+    try {
+      final Uint8List x = await a.readAsBytes();
+      final Uint8List y = await b.readAsBytes();
+      if (x.length != y.length) return false;
+      for (int i = 0; i < x.length; i++) {
+        if (x[i] != y[i]) return false;
+      }
+      return true;
+    } on FileSystemException {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> put(String path, Uint8List bytes) =>
+      _putBytes(path, bytes, false);
 
   @override
   Future<void> putNew(String path, Uint8List bytes) async {
     if (await _file(path).exists()) return;
-    await put(path, bytes);
+    await _putBytes(path, bytes, true);
+  }
+
+  Future<void> _putBytes(
+    String path,
+    Uint8List bytes,
+    bool onlyIfAbsent,
+  ) async {
+    final File f = _file(path);
+    await f.parent.create(recursive: true);
+    final File tmp = _tempNextTo(f);
+    await tmp.writeAsBytes(bytes, flush: true);
+    await _land(tmp, f, onlyIfAbsent: onlyIfAbsent);
   }
 
   /// 先流式拷成同目录临时文件再改名盖上去（读者看不到半截；改名失败不留临时文件）。
   @override
-  Future<void> putFile(String path, File src) async {
+  Future<void> putFile(String path, File src) => _putCopy(path, src, false);
+
+  Future<void> _putCopy(String path, File src, bool onlyIfAbsent) async {
     final File f = _file(path);
     await f.parent.create(recursive: true);
-    final File tmp = File(
-      p.join(f.parent.path, '.srs2tmp-${_rand.nextInt(1 << 30)}'),
-    );
+    final File tmp = _tempNextTo(f);
     try {
       await src.copy(tmp.path);
-      await tmp.rename(f.path);
-    } finally {
-      if (await tmp.exists()) await tmp.delete();
+    } on Object {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } on FileSystemException {
+        // 同 _land。
+      }
+      rethrow;
     }
+    await _land(tmp, f, onlyIfAbsent: onlyIfAbsent);
   }
 
   @override
   Future<bool> getFile(String path, File dst) async {
     try {
-      await _file(path).copy(dst.path);
+      await _whileReplaced(() => _file(path).copy(dst.path));
       return true;
     } on PathNotFoundException {
       return false;
@@ -558,18 +628,8 @@ class SrsDirectoryLocationStore
   /// 先流式拷成同目录临时文件再改名（读者看不到半截）。
   @override
   Future<void> putNewFile(String path, File src) async {
-    final File f = _file(path);
-    if (await f.exists()) return;
-    await f.parent.create(recursive: true);
-    final File tmp = File(
-      p.join(f.parent.path, '.srs2tmp-${_rand.nextInt(1 << 30)}'),
-    );
-    try {
-      await src.copy(tmp.path);
-      await tmp.rename(f.path);
-    } finally {
-      if (await tmp.exists()) await tmp.delete();
-    }
+    if (await _file(path).exists()) return;
+    await _putCopy(path, src, true);
   }
 
   @override
