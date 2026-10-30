@@ -352,8 +352,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             onChanged: _select,
             focusIdPrefix: 'video-library-view',
             floating: true,
-            // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序。
-            orderKey: 'video',
           );
     // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
     // 换成壳自己的，动作改由浮动动作组画。
@@ -429,6 +427,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                                 focusIdPrefix: 'video-library-subview',
                                 secondary: true,
                                 floating: true,
+                                // 反馈 ndQ5eXLcqp：自定义页签顺序落在组内的
+                                // 二级胶囊上（一级恒为两组）。
+                                orderKey: 'video-${currentGroup?.name}',
                               ),
                             ),
                           ),
