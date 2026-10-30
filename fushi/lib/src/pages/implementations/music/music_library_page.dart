@@ -560,7 +560,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       tabs: <LibrarySectionTab<MusicLibrarySection>>[
         LibrarySectionTab<MusicLibrarySection>(
           value: inLibrary ? _section : _lastLibrarySection,
-          label: t.library_view_mine,
+          label: t.music_library_tab,
           orderId: LibrarySectionGroup.library.name,
         ),
         LibrarySectionTab<MusicLibrarySection>(
