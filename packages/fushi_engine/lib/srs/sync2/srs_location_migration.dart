@@ -396,7 +396,13 @@ Future<SrsLocationPrepared> srsPrepareLocation({
     <String, Object?>{'op': 'identity', 'now': nowMs()},
   )).map['collection'];
 
-  final Object? old = await _readMeta(v1);
+  // 协议 1 之前的写入者目录（只有通道上有）：没有 v1 集合根、只有它们的位置同样要把媒体迁过来。
+  final List<String> writerDirs = writers == null
+      ? const <String>[]
+      : await writers.writers();
+  Object? old = await _readMeta(v1);
+  // 决定迁移用哪把密钥的 meta（旧根的；没有旧根时是新根的——加密与否由新根决定）。
+  Map<String, Object?>? keyMeta;
   if (identical(old, _kBadMeta)) {
     // 旧根的 meta 坏了：旧版本也读不了（它们同样停下）。新根已在用就照常同步，否则不知道该迁什么。
     if (!ready) out.error = kSrsSync2MetaUnavailable;
@@ -418,8 +424,17 @@ Future<SrsLocationPrepared> srsPrepareLocation({
       'createdAt': nowMs(),
     }, nowMs());
     await v1.putNew('meta.json', utf8.encode(jsonEncode(fence)));
-    memo?.markSwept(host.profileUid, locationId);
-    return out;
+    if (writerDirs.isEmpty) {
+      memo?.markSwept(host.profileUid, locationId);
+      return out;
+    }
+    if (!ready && key != null) {
+      // 新根还没有 meta、本机又带着密钥：这一轮的握手才定下位置加不加密，写入者目录的媒体下一轮再搬（不在定下之前
+      // 按明文写进去）。
+      return out;
+    }
+    old = fence;
+    keyMeta = cur is Map<String, Object?> ? cur : const <String, Object?>{};
   }
   final Map<String, Object?> oldMeta = old as Map<String, Object?>;
   final bool fenced = oldMeta[kSrsV1MovedToKey] == kSrsSync2Folder;
@@ -428,7 +443,10 @@ Future<SrsLocationPrepared> srsPrepareLocation({
     if (!ready) out.needsUpgrade = true;
     return out;
   }
-  final ({String? keyHex, String? error, SrsKdf? kdf}) k = _v1Key(oldMeta, key);
+  final ({String? keyHex, String? error, SrsKdf? kdf}) k = _v1Key(
+    keyMeta ?? oldMeta,
+    key,
+  );
   out.kdf = k.kdf;
   if (k.error != null) {
     // 新根已在用：旧根上的残留这一轮不扫（解不开），不挡新根的同步。
@@ -448,7 +466,7 @@ Future<SrsLocationPrepared> srsPrepareLocation({
       );
     }
   }
-  if (!await _v1HasData(v1)) {
+  if (writerDirs.isEmpty && !await _v1HasData(v1)) {
     if (!ready) {
       await current.putNew(
         'meta.json',
@@ -514,9 +532,6 @@ Future<SrsLocationPrepared> srsPrepareLocation({
   );
   await mover.plainFolder(v1PlainMediaFolder, doomed);
   await mover.sealedFolders(doomed);
-  final List<String> writerDirs = writers == null
-      ? const <String>[]
-      : await writers.writers();
   final List<String> emptiedWriters = <String>[];
   for (final String w in writerDirs) {
     if (await mover.writer(writers!, w)) emptiedWriters.add(w);
