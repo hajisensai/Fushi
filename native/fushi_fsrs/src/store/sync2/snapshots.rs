@@ -105,8 +105,13 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
 
 // ---------------------------------------------------------------- v16 升级
 
-/// 存量行改成引用形态（升级一次；可重放：已是引用的行不再动）。
-pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
+/// 快照表与 `sync2_ops` 的两列引用（可重放；没有 `sync2_ops` 的库什么也不做）。读操作的代码（[super::load_op]）
+/// 要这两列，所以升级阶梯在 v16 之前的步骤里读操作（v10 的寄存器重建等）之前就得先补上——见 store/schema.rs。
+pub(crate) fn ensure_columns(c: &Connection) -> Result<(), String> {
+    let has_ops = c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync2_ops'", [], |_| Ok(())).is_ok();
+    if !has_ops {
+        return Ok(());
+    }
     c.execute_batch(V16).map_err(sql)?;
     for (col, ty) in [("sc", "TEXT"), ("sc_at", "INTEGER")] {
         let has: i64 = c
@@ -116,6 +121,12 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
             c.execute_batch(&format!("ALTER TABLE sync2_ops ADD COLUMN {col} {ty} NULL;")).map_err(sql)?;
         }
     }
+    Ok(())
+}
+
+/// 存量行改成引用形态（升级一次；可重放：已是引用的行不再动）。
+pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
+    ensure_columns(c)?;
     // 操作日志：按主键分批读、逐行改（只有带快照原文的日志操作）。
     let ops: Vec<(String, Vec<u8>, i64, Vec<u8>)> = {
         let mut stmt = c

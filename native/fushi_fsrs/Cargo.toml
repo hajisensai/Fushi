@@ -39,6 +39,10 @@ argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 getrandom = "0.4"
 libm = "0.2.16"
 
+# 格式升级后整理库文件前查库所在卷的可用空间（store/compact.rs；Windows 直接调 kernel32）。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 

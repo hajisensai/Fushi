@@ -17,6 +17,7 @@
 pub mod bulk;
 pub(crate) mod browse;
 pub(crate) mod caches;
+pub(crate) mod compact;
 pub mod ffi;
 pub mod rows;
 mod profile_data;
@@ -239,6 +240,9 @@ impl SrsCore {
             return Err(format!("srs.db journal_mode is {mode}, expected wal"));
         }
         schema::migrate(&mut writer)?;
+        // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+        compact::run(&writer, path.parent().unwrap_or(Path::new(".")), compact::free_bytes(path), now);
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(

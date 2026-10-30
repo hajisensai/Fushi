@@ -372,6 +372,11 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    // 读操作的代码要 `sync2_ops` 的快照引用两列（v16，store/sync2/snapshots.rs）；v16 之前的步骤（v10 的寄存器重建）
+    // 已经在读操作了，所以从更老的版本直接升上来时先补上。可重放，没有 `sync2_ops` 的库什么也不做。
+    if current < 16 {
+        super::sync2::snapshots::ensure_columns(&tx)?;
+    }
     if current > SCHEMA_VERSION {
         return Err(format!(
             "srs.db schema {current} is newer than this build ({SCHEMA_VERSION})"
@@ -408,6 +413,7 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 5 {
         // V5：同步 v2 的事实表与元数据（store/sync2/schema.rs）。旧表不动：它们从此是 ops 的投影。
         exec(&tx, super::sync2::schema::V5).map_err(|e| e.to_string())?;
+        super::sync2::snapshots::ensure_columns(&tx)?;
     }
     if current < 6 {
         // V6：本机切段点记下压缩后体积（按体积切段与分层合并用，store/sync2/transport.rs）。老段留 0 = 未知，
@@ -494,6 +500,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 指针与覆盖键；行原文、摘要、Dart 的全部读法不变。摘要触发器改挂存储表（桶不用重建：原文没变）。
         super::sync2::projrows::migrate(&tx)?;
         super::sync2::digest::install(&tx)?;
+        // v16 / v17 腾出来的页只进空闲链表：打开时整理一次文件（store/compact.rs，事务外做）。
+        tx.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, '17') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [super::compact::PENDING],
+        )
+        .map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
