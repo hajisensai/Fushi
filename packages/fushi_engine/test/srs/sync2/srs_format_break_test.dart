@@ -544,10 +544,10 @@ void main() {
           path: dir('enc').path,
         );
         final SrsDbStore old = await device('old');
-        final SrsLocationKey k = await srsDeriveLocationKey(
-          old,
-          'pass',
-          pendingEnable: true,
+        // 固定密钥：下面要换进一份真实的协议 1 整份封装样本（同一把密钥封的）。
+        final SrsLocationKey k = SrsLocationKey(
+          keyHex: _kV1Key,
+          kdf: SrsKdf.fresh(),
         );
         final Directory mediaOld = dir('media_old');
         mediaFile(mediaOld, 'cat.png', <int>[4, 5, 6]);
@@ -576,6 +576,17 @@ void main() {
           isNotEmpty,
         );
         expect(snapshot(v2Root(loc)).keys, isNot(contains('media/cat.png')));
+        // 冻结的旧 Dart 跑在本版本内核上，内核的 `seal` 已经是分块格式；真实的旧版本（d407ae22ca 内核
+        // `CollectionKey::seal`）写的是整份封装。把按名字存的那份换成同一密钥、同一 AAD 的真实整份封装样本。
+        final File byName = File(
+          p.join(
+            v2Root(loc).path,
+            SrsMediaCipher(old, _kV1Key).folder,
+            'cat.png',
+          ),
+        );
+        expect(byName.existsSync(), isTrue);
+        byName.writeAsBytesSync(_unhex(_kV1CatEnvelope));
 
         final SrsDbStore b = await device('b');
         final Directory mediaB = dir('media_b');
@@ -691,3 +702,15 @@ class _FailingStore implements SrsLocationStore {
     await inner.delete(path);
   }
 }
+
+/// 协议 1 整份封装的固定样本：密钥 0x11×32，nonce 0x22×24，AAD `fushi-srs-media:cat.png`（旧内核 `seal` 的 AAD），明文 [4, 5, 6]（`nonce || 密文+tag`，
+/// 由 chacha20poly1305 0.11 的 XChaCha20Poly1305 生成，与 d407ae22ca 的 `CollectionKey::seal` 同一构造）。
+const String _kV1Key =
+    '1111111111111111111111111111111111111111111111111111111111111111';
+const String _kV1CatEnvelope =
+    '2222222222222222222222222222222222222222222222228762e122044e47b1d89c13c3d4760efc0c54e3';
+
+Uint8List _unhex(String h) => Uint8List.fromList(<int>[
+  for (int i = 0; i < h.length; i += 2)
+    int.parse(h.substring(i, i + 2), radix: 16),
+]);

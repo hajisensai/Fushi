@@ -472,23 +472,29 @@ class SrsDirectoryLocationStore
         ...dir.split('/').where((String s) => s.isNotEmpty),
       ]),
     );
-    if (!await d.exists()) return const <SrsLocationEntry>[];
     final List<SrsLocationEntry> out = <SrsLocationEntry>[];
-    await for (final FileSystemEntity e in d.list(followLinks: false)) {
-      final String name = p.basename(e.path);
-      if (name.startsWith('.srs2tmp-')) continue;
-      if (e is Directory) {
-        out.add(SrsLocationEntry(name, isFolder: true));
-      } else if (e is File) {
-        final FileStat st = await e.stat();
-        out.add(
-          SrsLocationEntry(
-            name,
-            size: st.size,
-            modifiedAt: st.modified.millisecondsSinceEpoch,
-          ),
-        );
+    try {
+      await for (final FileSystemEntity e in d.list(followLinks: false)) {
+        final String name = p.basename(e.path);
+        if (name.startsWith('.srs2tmp-')) continue;
+        if (e is Directory) {
+          out.add(SrsLocationEntry(name, isFolder: true));
+        } else if (e is File) {
+          final FileStat st = await e.stat();
+          // 列出来之后被别的设备 / 同步工具删了：当不在。
+          if (st.type == FileSystemEntityType.notFound) continue;
+          out.add(
+            SrsLocationEntry(
+              name,
+              size: st.size,
+              modifiedAt: st.modified.millisecondsSinceEpoch,
+            ),
+          );
+        }
       }
+    } on PathNotFoundException {
+      // 目录不在，或列到一半被别的设备删掉（迁移收尾删空目录、同步工具）：与云盘上列一个不存在的目录同义——空。
+      return const <SrsLocationEntry>[];
     }
     return out;
   }
