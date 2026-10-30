@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -785,7 +786,8 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
 /// 沉浸页（[FushiTitleBarColorScope] 上报了配色的阅读 / 播放页）的标题行：平时
 /// 透明且不吃指针，页面内容照常铺到窗口顶端、顶端那一截照常可点；指针进入顶边
 /// 这条标题行高度的带子时淡入，离开淡出。键盘焦点走进窗口按钮（Tab 遍历）时也
-/// 保持显示，看不见的按钮不能被聚焦后还看不见。
+/// 保持显示，看不见的按钮不能被聚焦后还看不见。触摸 / 触控笔没有悬停：在带子里
+/// 按下即浮出，下一次在带子外按下才隐去（纯触屏的 Windows 用户也要够得着窗口按钮）。
 ///
 /// [enabled] 为 false 时原样常显（普通页 / macOS）；结构恒定，开关切换不重挂
 /// 标题行子树。时长走 [fushiMotionDuration]（墨水屏 / 减弱动效归零）。
@@ -803,9 +805,36 @@ class _ImmersiveCaptionReveal extends StatefulWidget {
 class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   bool _hovered = false;
   bool _focused = false;
+  bool _touchRevealed = false;
 
   void _setHovered(bool value) {
     if (_hovered != value) setState(() => _hovered = value);
+  }
+
+  static bool _isHoverless(PointerDeviceKind kind) =>
+      kind == PointerDeviceKind.touch ||
+      kind == PointerDeviceKind.stylus ||
+      kind == PointerDeviceKind.invertedStylus;
+
+  /// 带子内的触摸按下：浮出（不吃事件，页面顶端照常收到这次按下）。
+  void _onBandPointerDown(PointerDownEvent event) {
+    if (!widget.enabled || !_isHoverless(event.kind)) return;
+    if (!_touchRevealed) setState(() => _touchRevealed = true);
+  }
+
+  /// 全局路由看所有按下：触摸落在带子外时收起。带子内的按下由
+  /// [_onBandPointerDown] 处理，这里按位置判断，与两者的分发先后无关。
+  void _onGlobalPointer(PointerEvent event) {
+    if (!_touchRevealed ||
+        event is! PointerDownEvent ||
+        !_isHoverless(event.kind)) {
+      return;
+    }
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final Offset local = box.globalToLocal(event.position);
+    if (box.size.contains(local)) return;
+    setState(() => _touchRevealed = false);
   }
 
   void _onNativeMaxButton() => setState(() {});
@@ -822,10 +851,12 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     WindowCaptionChannel.captionMaxButtonPressed.addListener(
       _onNativeMaxButton,
     );
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
   }
 
   @override
   void dispose() {
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onGlobalPointer);
     WindowCaptionChannel.captionMaxButtonHovered.removeListener(
       _onNativeMaxButton,
     );
@@ -839,13 +870,17 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   void didUpdateWidget(covariant _ImmersiveCaptionReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 换页（离开沉浸页再回来）从隐藏态开始，不沿用上一页残留的悬停。
-    if (!widget.enabled && oldWidget.enabled) _hovered = false;
+    if (!widget.enabled && oldWidget.enabled) {
+      _hovered = false;
+      _touchRevealed = false;
+    }
   }
 
   bool get _shown =>
       !widget.enabled ||
       _hovered ||
       _focused ||
+      _touchRevealed ||
       WindowCaptionChannel.captionMaxButtonHovered.value ||
       WindowCaptionChannel.captionMaxButtonPressed.value;
 
@@ -866,20 +901,24 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
       hitTestBehavior: HitTestBehavior.translucent,
       onEnter: (_) => _setHovered(true),
       onExit: (_) => _setHovered(false),
-      child: Focus(
-        canRequestFocus: false,
-        skipTraversal: true,
-        onFocusChange: (bool value) {
-          if (_focused != value) setState(() => _focused = value);
-        },
-        child: IgnorePointer(
-          ignoring: !shown,
-          child: AnimatedOpacity(
-            opacity: shown ? 1 : 0,
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            curve: FushiMotion.standard,
-            onEnd: _onFadeEnd,
-            child: widget.child,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: _onBandPointerDown,
+        child: Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          onFocusChange: (bool value) {
+            if (_focused != value) setState(() => _focused = value);
+          },
+          child: IgnorePointer(
+            ignoring: !shown,
+            child: AnimatedOpacity(
+              opacity: shown ? 1 : 0,
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              onEnd: _onFadeEnd,
+              child: widget.child,
+            ),
           ),
         ),
       ),
