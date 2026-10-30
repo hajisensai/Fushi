@@ -309,6 +309,9 @@ class _SrcCard {
   final int lapses;
   final String data;
 
+  /// 这张卡的 revlog（按 id 升序；只在带排程导入时读，见 [_Importer._importNotes]）。
+  final List<_SrcRevlog> revlogs = <_SrcRevlog>[];
+
   /// 在筛选牌组里的卡按原牌组算。
   int get homeDeck => odid != 0 ? odid : did;
 }
@@ -341,6 +344,20 @@ class _SrcRevlog {
   bool get isRating => type <= 2 && type >= 0 && ease >= 1 && ease <= 4;
 
   bool get isFiltered => type == 3;
+}
+
+/// 能看一眼当前行的游标（归并用）：[row] 为 null 即已读完。
+class _Peek {
+  _Peek(this._cur) {
+    next();
+  }
+
+  final IteratingCursor _cur;
+  Row? row;
+
+  void next() {
+    row = _cur.moveNext() ? _cur.current : null;
+  }
 }
 
 class _Importer {
@@ -1384,26 +1401,40 @@ class _Importer {
       1,
       col.db.select('SELECT count(*) AS n FROM notes').first['n'] as int,
     );
-    final PreparedStatement cardsOf = col.db.prepare(
-      'SELECT id, did, odid, ord, mod, type, queue, due, odue, ivl, factor, '
-      'reps, lapses, data FROM cards WHERE nid = ? ORDER BY ord, id',
-    );
-    final PreparedStatement revlogOf = col.db.prepare(
-      'SELECT id, ease, ivl, factor, time, type FROM revlog WHERE cid = ? ORDER BY id',
-    );
+    // 笔记、卡、revlog 三条游标按同一个键序（笔记 id → 卡 ord → 卡 id → revlog id）各排一次、流式归并。
+    // 以前每条笔记 `WHERE nid = ?`、每张卡 `WHERE cid = ?` 各查一次：来源库没有 ix_cards_nid /
+    // ix_revlog_cid（第三方生成的包、测试夹具）时每次都是全表扫描，导入耗时随规模平方增长（5k 笔记
+    // 25 s、15k 194 s、50k 约 38 min）。归并只依赖各表的主键，排序是一次 O(N log N)。
     final PreparedStatement notes = col.db.prepare(
       'SELECT id, guid, mid, mod, tags, flds FROM notes ORDER BY id',
     );
+    final PreparedStatement cards = col.db.prepare(
+      'SELECT nid, id, did, odid, ord, mod, type, queue, due, odue, ivl, '
+      'factor, reps, lapses, data FROM cards ORDER BY nid, ord, id',
+    );
+    // 不导排程时用不到 revlog（[_importCardSchedule] 只在带排程时走）。
+    final PreparedStatement? revlogs = options.withScheduling
+        ? col.db.prepare(
+            'SELECT c.nid AS nid, c.ord AS ord, r.cid AS cid, r.id AS id, '
+            'r.ease AS ease, r.ivl AS ivl, r.factor AS factor, r.time AS time, '
+            'r.type AS type FROM revlog r JOIN cards c ON c.id = r.cid '
+            'ORDER BY c.nid, c.ord, c.id, r.id',
+          )
+        : null;
     // 本机已有哪些笔记：一次读出 ID 集合，新笔记不必逐条查库（绝大多数导入全是新笔记）。
     _existingNotes = await store.entityIds(SrsEntityKind.note);
     try {
-      final IteratingCursor cur = notes.selectCursor();
+      final IteratingCursor noteCur = notes.selectCursor();
+      final _Peek cardCur = _Peek(cards.selectCursor());
+      final _Peek? logCur = revlogs == null
+          ? null
+          : _Peek(revlogs.selectCursor());
       int done = 0;
       final List<(Row, List<_SrcCard>)> chunk = <(Row, List<_SrcCard>)>[];
       Future<void> drain() async {
         final _ExistingPrefetch pre = await _prefetchExisting(chunk);
         for (final (Row n, List<_SrcCard> cards) in chunk) {
-          await _importNote(n, cards, revlogOf, pre);
+          await _importNote(n, cards, pre);
           done++;
           if (done % 50 == 0) {
             onProgress?.call(_mediaShare + (1 - _mediaShare) * done / total);
@@ -1414,22 +1445,49 @@ class _Importer {
         chunk.clear();
       }
 
-      while (cur.moveNext()) {
-        final Row n = cur.current;
-        chunk.add((
-          n,
-          <_SrcCard>[
-            for (final Row r in cardsOf.select(<Object?>[n['id']])) _SrcCard(r),
-          ],
-        ));
+      while (noteCur.moveNext()) {
+        final Row n = noteCur.current;
+        final int nid = n['id'] as int;
+        final List<_SrcCard> of = <_SrcCard>[];
+        // 没有笔记的卡（nid 不在 notes 里）跳过，与以前按笔记查卡时一样不导。
+        for (Row? r = cardCur.row; r != null; r = cardCur.row) {
+          final int cn = r['nid'] as int;
+          if (cn > nid) break;
+          if (cn == nid) of.add(_SrcCard(r));
+          cardCur.next();
+        }
+        if (logCur != null) {
+          for (final _SrcCard c in of) {
+            // 同序归并：先跳过排在这张卡之前的（属于被跳过的孤儿卡），再收这张卡的。
+            for (Row? r = logCur.row; r != null; r = logCur.row) {
+              if (!_logBefore(r, nid, c.ord, c.id)) break;
+              logCur.next();
+            }
+            for (Row? r = logCur.row; r != null; r = logCur.row) {
+              if (r['cid'] as int != c.id) break;
+              c.revlogs.add(_SrcRevlog(r));
+              logCur.next();
+            }
+          }
+        }
+        chunk.add((n, of));
         if (chunk.length >= _noteChunk) await drain();
       }
       await drain();
     } finally {
-      cardsOf.close();
-      revlogOf.close();
       notes.close();
+      cards.close();
+      revlogs?.close();
     }
+  }
+
+  /// revlog 行（带所属卡的 nid / ord）是否排在卡 (nid, ord, cid) 之前（游标的键序）。
+  static bool _logBefore(Row r, int nid, int ord, int cid) {
+    final int n = r['nid'] as int;
+    if (n != nid) return n < nid;
+    final int o = r['ord'] as int;
+    if (o != ord) return o < ord;
+    return (r['cid'] as int) < cid;
   }
 
   /// 一批攒多少条事件再落库（一个事务 + 一次缓存刷新）。太小则事务与刷新次数多；太大则单个
@@ -1511,7 +1569,6 @@ class _Importer {
   Future<void> _importNote(
     Row n,
     List<_SrcCard> cards,
-    PreparedStatement revlogOf,
     _ExistingPrefetch pre,
   ) async {
     final String guid = n['guid'] as String;
@@ -1674,7 +1731,6 @@ class _Importer {
         await _importCardSchedule(
           cardId,
           c,
-          revlogOf,
           isNew ? null : pre.histories[cardId] ?? await store.history(cardId),
         );
       } else if (isNew && (c.type != 0 || c.queue < 0)) {
@@ -1789,13 +1845,10 @@ class _Importer {
   Future<void> _importCardSchedule(
     String cardId,
     _SrcCard c,
-    PreparedStatement revlogOf,
     // 已有笔记的卡在本机的历史（块开头预读）；新笔记为 null（据此也判断笔记是否已存在）。
     SrsCardHistory? existingHistory,
   ) async {
-    final List<_SrcRevlog> revlogs = <_SrcRevlog>[
-      for (final Row r in revlogOf.select(<Object?>[c.id])) _SrcRevlog(r),
-    ];
+    final List<_SrcRevlog> revlogs = c.revlogs;
     // 整张卡的 revlog id 一次批量派生（UUIDv5 在 native/fushi_compute 里算）。
     final List<String> revlogIds = SrsIds.importedRevlogs(cardId, <int>[
       for (final _SrcRevlog r in revlogs) r.id,
