@@ -1561,13 +1561,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<VideoMetadataImageRow>? rows =
         _metadataEpisodeImagesByBook[bookUid];
     if (rows == null) return null;
-    final List<VideoMetadataImageRow> thumbs =
-        rows.where((VideoMetadataImageRow r) => r.kind == 'thumb').toList()
-          ..sort(
-            (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
-                a.position.compareTo(b.position),
-          );
-    for (final VideoMetadataImageRow row in thumbs) {
+    for (final VideoMetadataImageRow row in orderedEpisodeStills(rows)) {
       final ImageProvider? local = _localFileCover(row.localPath);
       if (local != null) return local;
       if (row.remoteUrl.isNotEmpty) return AppCachedHttpImage(row.remoteUrl);
