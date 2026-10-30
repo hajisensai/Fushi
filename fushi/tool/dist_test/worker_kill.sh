@@ -4,6 +4,20 @@
 # process tree recorded in .git/fushi-dist/run.pid is touched.
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
+# A prepare an earlier coordinator stopped waiting for (no work was left for
+# this machine) runs on to warm the caches: wait for it instead of checking a
+# new commit out under it. At most 30 minutes, keeping the new lock fresh.
+prep=$(cat .git/fushi-dist/prepare.pid 2>/dev/null || true)
+case "$prep" in
+  ''|*[!0-9]*) ;;
+  *)
+    waited=0
+    while kill -0 "$prep" 2>/dev/null && [ "$waited" -lt 1800 ]; do
+      [ ! -d .git/fushi-dist/lock ] || touch .git/fushi-dist/lock
+      sleep 5
+      waited=$((waited + 5))
+    done ;;
+esac
 # The batch script first: its trap kills the test tree and it starts no
 # further chunk.
 runner=$(cat .git/fushi-dist/runner.pid 2>/dev/null || true)

@@ -411,7 +411,19 @@ class _Scheduler {
     final Stopwatch prep = Stopwatch()..start();
     try {
       stdout.writeln('[${worker.name}] preparing');
-      await worker.prepare(snapshot, runId, prepLog);
+      if (!await _prepareWhileNeeded(worker, prepLog)) {
+        // The others ran everything this worker could have (a slow first
+        // prepare must not hold up a run that is otherwise done).
+        stdout.writeln(
+          '[${worker.name}] not needed: nothing left for it after '
+          '${prep.elapsed.inSeconds}s of preparing',
+        );
+        await worker.abandon();
+        await prepLog.close();
+        await worker.finish(runId);
+        _notify();
+        return;
+      }
       stdout.writeln('[${worker.name}] ready after ${prep.elapsed.inSeconds}s');
     } on Object catch (e) {
       stdout.writeln(
@@ -561,6 +573,39 @@ class _Scheduler {
       _usable.add(worker);
     }
     _notify();
+  }
+
+  /// Prepares [worker]; false as soon as nothing it may run is left in the
+  /// queue and no batch is in flight (whose infrastructure failure could
+  /// requeue some), i.e. the other workers have done its share. Prepare
+  /// errors propagate.
+  Future<bool> _prepareWhileNeeded(DistWorker worker, IOSink log) async {
+    bool done = false;
+    Object? error;
+    StackTrace? trace;
+    unawaited(
+      worker
+          .prepare(snapshot, runId, log)
+          .then(
+            (_) {
+              done = true;
+              _notify();
+            },
+            onError: (Object e, StackTrace s) {
+              error = e;
+              trace = s;
+              _notify();
+            },
+          ),
+    );
+    while (true) {
+      if (error != null) Error.throwWithStackTrace(error!, trace!);
+      if (done) return true;
+      if (_inFlight == 0 && !queue.remaining.any(worker.eligible)) {
+        return false;
+      }
+      await _changed.future;
+    }
   }
 
   /// Re-runs every red suite once, alone, on a worker of another machine

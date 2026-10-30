@@ -452,6 +452,10 @@ abstract class DistWorker {
   /// is pushed or prepared there; null when it can.
   Future<String?> analyzeBlocker();
 
+  /// Stops waiting on a [prepare] still under way (the run needs this worker
+  /// no more): it fails soon after, and [finish] then releases the worker.
+  Future<void> abandon() async {}
+
   /// Kills whatever batch is in flight (Ctrl-C).
   Future<void> cancel();
 
@@ -946,8 +950,58 @@ class SshDistWorker extends DistWorker {
     <String>['-n', ..._sshBase, remoteCommand],
   );
 
+  /// The prepare step's process (ssh / git push) while one runs.
+  Process? _stepProcess;
+
+  /// [abandon] was called: no further prepare step starts.
+  bool _abandoned = false;
+
+  /// Runs one prepare step as a process [abandon] can stop.
+  Future<ProcessResult> _step(
+    String executable,
+    List<String> args, {
+    Map<String, String>? environment,
+    String? workingDirectory,
+  }) async {
+    if (_abandoned) throw DistWorkerError('$name: no longer needed');
+    final Process p = await Process.start(
+      executable,
+      args,
+      environment: environment,
+      workingDirectory: workingDirectory,
+    );
+    _stepProcess = p;
+    await p.stdin.close();
+    const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
+    final Future<String> out = p.stdout.transform(decoder).join();
+    final Future<String> err = p.stderr.transform(decoder).join();
+    final int code = await p.exitCode;
+    _stepProcess = null;
+    final ProcessResult r = ProcessResult(p.pid, code, await out, await err);
+    if (_abandoned) throw DistWorkerError('$name: no longer needed');
+    return r;
+  }
+
+  @override
+  Future<void> abandon() async {
+    _abandoned = true;
+    final Process? p = _stepProcess;
+    if (p == null) return;
+    // The local end only (with git push's ssh child): a remote prepare runs
+    // on to warm the caches, and the next run's worker_kill.sh waits for it.
+    if (Platform.isWindows) {
+      await Process.run('taskkill', <String>['/PID', '${p.pid}', '/T', '/F']);
+    } else {
+      p.kill();
+    }
+  }
+
   Future<void> _sshChecked(String step, String command, IOSink log) async {
-    final ProcessResult r = await _ssh(command);
+    final ProcessResult r = await _step(distSshExecutable(), <String>[
+      '-n',
+      ..._sshBase,
+      command,
+    ]);
     log
       ..writeln('== $step (exit ${r.exitCode})')
       ..write(r.stdout)
@@ -1045,7 +1099,7 @@ class SshDistWorker extends DistWorker {
       for (final String a in _sshBase.sublist(0, _sshBase.length - 1))
         shellQuote(a),
     ].join(' ');
-    final ProcessResult push = await Process.run(
+    final ProcessResult push = await _step(
       'git',
       <String>[
         'push',
