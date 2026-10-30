@@ -2141,7 +2141,7 @@ fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
                 rusqlite::params![id, Q, legacy_writer, x.to_string()],
             )
             .unwrap_err();
-        assert!(err.to_string().contains("UNIQUE constraint failed: srs_field_edits.id"), "{err}");
+        assert!(err.to_string().contains("UNIQUE constraint failed: srs_field_edit_rows.id"), "{err}");
     }
     a.core.sync2_migrate(P, T0, None).unwrap();
     let ids_of = |profile: &str| a.rows(&format!("SELECT id, writer_id FROM srs_field_edits WHERE profile_uid = '{profile}' ORDER BY id"));

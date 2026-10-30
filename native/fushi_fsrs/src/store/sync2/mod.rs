@@ -16,6 +16,7 @@ pub(crate) mod mvr;
 pub mod relay;
 pub mod schema;
 pub(crate) mod semantics;
+pub(crate) mod projrows;
 pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
@@ -254,20 +255,22 @@ pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Opt
     })
     .optional()
     .map_err(sql)?
-    .map(|(w, l, vv, k, s, p, purged, sc, sc_at)| {
-        let deps = Vv::read(&mut crate::sync2::codec::Reader::new(&vv)).map_err(|e| e.to_string())?;
-        let p = snapshots::unpack_payload(conn, p, sc, sc_at)?;
-        Ok(Op {
-            id: *id,
-            hlc: Hlc { wall: w, logical: l as u32, device: id.device },
-            deps: Arc::new(deps),
-            kind: k as u16,
-            schema: s as u16,
-            payload: p.into(),
-            purged,
-        })
-    })
+    .map(|(w, l, vv, k, s, p, purged, sc, sc_at)| op_of_row(id, w, l, &vv, k, s, snapshots::unpack_payload(conn, p, sc, sc_at)?, purged))
     .transpose()
+}
+
+/// `sync2_ops` 一行（载荷已还原）组装成操作。
+pub(crate) fn op_of_row(id: &OpId, wall: i64, logical: i64, vv: &[u8], kind: i64, schema: i64, payload: Vec<u8>, purged: bool) -> Result<Op, String> {
+    let deps = Vv::read(&mut crate::sync2::codec::Reader::new(vv)).map_err(|e| e.to_string())?;
+    Ok(Op {
+        id: *id,
+        hlc: Hlc { wall, logical: logical as u32, device: id.device },
+        deps: Arc::new(deps),
+        kind: kind as u16,
+        schema: schema as u16,
+        payload: payload.into(),
+        purged,
+    })
 }
 
 // ---------------------------------------------------------------- 旧修改记录的因果闭包
@@ -490,11 +493,21 @@ pub(crate) fn log_row(profile: &str, op: &Op, l: &LogBody) -> Value {
 /// 修改记录投影行（Dart `SrsFieldEdit.toJson`）。v2 写入：dot = (设备, seq)、ctx = 作者已应用的版本向量
 /// 并上旧修改记录闭包；迁移进来的旧记录：原样的旧 dot / 旧 ctx / 旧 HLC。
 pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) -> Result<(String, Value), String> {
+    let closure = match &e.legacy {
+        Some(_) => Dvv::default(),
+        None => legacy_closure(conn, profile, &op.ctx())?,
+    };
+    Ok(edit_row_with(profile, op, e, closure))
+}
+
+/// [edit_row] 的纯函数部分：v2 写入的 ctx 以 [closure]（迁移进来的旧修改记录闭包）为底。投影存储按空闭包推导
+/// （projrows.rs），不同的部分记成覆盖键。
+pub(crate) fn edit_row_with(profile: &str, op: &Op, e: &EditBody, closure: Dvv) -> (String, Value) {
     let (writer, seq, ctx, hlc) = match &e.legacy {
         Some(l) => (l.writer.clone(), l.seq, serde_json::from_str::<Value>(&l.ctx_json).unwrap_or(json!({"vv": {}})), l.hlc.clone()),
         None => {
             let full = op.ctx();
-            let mut d = legacy_closure(conn, profile, &full)?;
+            let mut d = closure;
             for (dev, &s) in &full.0 {
                 d.raise(&dev.text(), s as i64);
             }
@@ -522,7 +535,7 @@ pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) 
     if e.machine {
         m.insert("m".into(), json!(true));
     }
-    Ok((id, Value::Object(m)))
+    (id, Value::Object(m))
 }
 
 fn upsert_server_time(conn: &Connection, profile: &str, id: &str, s: Option<i64>, now: i64) -> Result<(), String> {
@@ -783,15 +796,28 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     }
     for &d in &deleted[0] {
         let id = &existing[d].0;
-        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([id]).map_err(sql)?;
+        conn.prepare_cached("DELETE FROM srs_field_edit_rows WHERE id = ?1").map_err(sql)?.execute([id]).map_err(sql)?;
         t.dominated.push(id.clone());
     }
+    // 按操作存（projrows.rs）：ctx 里并进的旧修改记录闭包与推导不同时记成覆盖键。
+    let (dev, seq, x) = projrows::form_of(profile, Some(op), &row_text);
     conn.prepare_cached(
-        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO srs_field_edit_rows (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, op_dev, op_seq, x) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
     )
     .map_err(sql)?
-    .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
+    .execute(params![
+        eid,
+        profile,
+        e.kind.wire(),
+        ent,
+        e.key,
+        row["w"].as_str().unwrap_or_default(),
+        row["s"].as_i64().unwrap_or(0),
+        dev,
+        seq,
+        x
+    ])
     .map_err(sql)?;
     upsert_server_time(conn, profile, &eid, server, now)?;
     match e.kind {
@@ -832,13 +858,13 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         .exists([&lid])
         .map_err(sql)?;
     if !exists {
-        let row = log_row(profile, op, l);
+        // 行就是这条操作推出来的（projrows.rs）：只存指针。
         conn.prepare_cached(
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO srs_review_log_rows (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, \
+             op_dev, op_seq, x) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL)",
         )
         .map_err(sql)?
-        .execute(params![lid, profile, card, l.kind, l.rating, l.at, l.rtype, l.origin, l.dur, canonical(&row)])
+        .execute(params![lid, profile, card, l.kind, l.rating, l.at, l.rtype, l.origin, l.dur, op.id.device.0.to_vec(), op.id.seq as i64])
         .map_err(sql)?;
         upsert_server_time(conn, profile, &lid, l.legacy_server_time, now)?;
         t.cards.insert(card.clone());
@@ -976,10 +1002,7 @@ pub(crate) fn replay_cards(conn: &Connection, cards: &BTreeSet<String>) -> Resul
         let out = replay::replay(&input)?;
         for (k, new) in out.rows.iter().enumerate() {
             if let Some(json) = new {
-                conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = ?1")
-                    .map_err(sql)?
-                    .execute(params![rows[k].0, json])
-                    .map_err(sql)?;
+                projrows::set_text(conn, &projrows::LOGS, &rows[k].0, json)?;
                 changed.insert(rows[k].4.clone());
             }
         }

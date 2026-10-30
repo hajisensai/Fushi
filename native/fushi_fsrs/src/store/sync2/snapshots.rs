@@ -75,8 +75,15 @@ pub(crate) fn pack_payload(c: &Connection, kind: u16, payload: &[u8]) -> Result<
 
 /// [pack_payload] 的逆：在 `sc_at` 处拼回快照原文。
 pub(crate) fn unpack_payload(c: &Connection, stored: Vec<u8>, sc: Option<String>, at: Option<i64>) -> Result<Vec<u8>, String> {
-    let (Some(h), Some(at)) = (sc, at) else { return Ok(stored) };
+    let Some(h) = sc else { return Ok(stored) };
     let body = body_of(c, &h)?.ok_or_else(|| format!("config snapshot {h} missing"))?;
+    splice(stored, Some(&body), at)
+}
+
+/// [unpack_payload] 的纯函数部分（快照原文由调用方给：SQL 函数里由子查询取）。有偏移没原文 = 快照丢了，报错。
+pub(crate) fn splice(stored: Vec<u8>, body: Option<&str>, at: Option<i64>) -> Result<Vec<u8>, String> {
+    let Some(at) = at else { return Ok(stored) };
+    let body = body.ok_or("config snapshot missing")?;
     let at = usize::try_from(at).ok().filter(|&a| a <= stored.len()).ok_or("bad snapshot offset")?;
     let mut out = Vec::with_capacity(stored.len() + body.len());
     out.extend_from_slice(&stored[..at]);

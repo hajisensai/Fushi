@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 16;
+pub const SCHEMA_VERSION: i64 = 17;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -349,9 +349,17 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// 阶梯里的一批 DDL（经 [super::sync2::projrows::redirect]：v17 形状的库上重放旧步骤时索引建到存储表上）。
+fn exec(tx: &rusqlite::Connection, ddl: &str) -> rusqlite::Result<()> {
+    tx.execute_batch(&super::sync2::projrows::redirect(tx, ddl))
+}
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
+    // 视图与摘要触发器用的 SQL 函数：只建表的裸连接（测试）也要有，重放旧步骤时会写视图 / 存储表。
+    super::sync2::digest::register(conn).map_err(|e| e.to_string())?;
+    super::sync2::projrows::register(conn).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS srs_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);",
@@ -370,18 +378,18 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         ));
     }
     if current < 1 {
-        tx.execute_batch(V1).map_err(|e| e.to_string())?;
-        tx.execute_batch(&format!(
+        exec(&tx, V1).map_err(|e| e.to_string())?;
+        exec(&tx, &format!(
             "CREATE INDEX IF NOT EXISTS idx_srs_field_edits_history_from \
              ON srs_field_edits (field_key, entity_kind, entity_id) WHERE {HISTORY_FROM_CONDITION};"
         ))
         .map_err(|e| e.to_string())?;
     }
     if current < 2 {
-        tx.execute_batch(V2).map_err(|e| e.to_string())?;
+        exec(&tx, V2).map_err(|e| e.to_string())?;
     }
     if current < 3 {
-        tx.execute_batch(V3).map_err(|e| e.to_string())?;
+        exec(&tx, V3).map_err(|e| e.to_string())?;
     }
     if current < 4 {
         // ALTER 不带 IF NOT EXISTS：按列是否已在再加（与前几步的 CREATE … IF NOT EXISTS 一样可重放）。
@@ -394,12 +402,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?
             > 0;
         if !has {
-            tx.execute_batch(V4).map_err(|e| e.to_string())?;
+            exec(&tx, V4).map_err(|e| e.to_string())?;
         }
     }
     if current < 5 {
         // V5：同步 v2 的事实表与元数据（store/sync2/schema.rs）。旧表不动：它们从此是 ops 的投影。
-        tx.execute_batch(super::sync2::schema::V5).map_err(|e| e.to_string())?;
+        exec(&tx, super::sync2::schema::V5).map_err(|e| e.to_string())?;
     }
     if current < 6 {
         // V6：本机切段点记下压缩后体积（按体积切段与分层合并用，store/sync2/transport.rs）。老段留 0 = 未知，
@@ -413,12 +421,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?
             > 0;
         if !has {
-            tx.execute_batch(super::sync2::schema::V6).map_err(|e| e.to_string())?;
+            exec(&tx, super::sync2::schema::V6).map_err(|e| e.to_string())?;
         }
     }
     if current < 7 {
         // V7：MediaAt 操作的投影（媒体对账不再列目录，store/sync2/media.rs）。
-        tx.execute_batch(super::sync2::schema::V7).map_err(|e| e.to_string())?;
+        exec(&tx, super::sync2::schema::V7).map_err(|e| e.to_string())?;
     }
     if current < 8 {
         let has: bool = tx
@@ -430,16 +438,16 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?
             > 0;
         if !has {
-            tx.execute_batch(V8).map_err(|e| e.to_string())?;
+            exec(&tx, V8).map_err(|e| e.to_string())?;
         }
     }
     if current < 9 {
-        tx.execute_batch(V9).map_err(|e| e.to_string())?;
+        exec(&tx, V9).map_err(|e| e.to_string())?;
     }
     if current < 10 {
         // V10：同步 v2 寄存器改「因果优先」+ 段 / head 转发（store/sync2/schema.rs、mvr.rs、relay.rs）。建表都是
         // IF NOT EXISTS，重建是日志的确定性函数：重放这一步结果相同。
-        tx.execute_batch(super::sync2::schema::V10).map_err(|e| e.to_string())?;
+        exec(&tx, super::sync2::schema::V10).map_err(|e| e.to_string())?;
         super::sync2::mvr::rebuild(&tx)?;
     }
     if current < 12 {
@@ -449,13 +457,13 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 13 {
         for (col, ddl) in V13_NOTES {
             if !has_column(&tx, "srs_notes_cache", col)? {
-                tx.execute_batch(ddl).map_err(|e| e.to_string())?;
+                exec(&tx, ddl).map_err(|e| e.to_string())?;
             }
         }
         if !has_column(&tx, "srs_cards_cache", V13_CARDS.0)? {
-            tx.execute_batch(V13_CARDS.1).map_err(|e| e.to_string())?;
+            exec(&tx, V13_CARDS.1).map_err(|e| e.to_string())?;
         }
-        tx.execute_batch(V13_INDEXES).map_err(|e| e.to_string())?;
+        exec(&tx, V13_INDEXES).map_err(|e| e.to_string())?;
         backfill_anki_ids(&tx)?;
     }
     if current < 14 {
@@ -467,19 +475,25 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         super::sync2::digest::install(&tx)?;
         super::sync2::digest::rebuild(&tx)?;
         // 同在 V14：旧段 / 旧转发件的删除改两段式（sync2/transport.rs `pending_deletes`、sync2/relay.rs）。
-        tx.execute_batch(super::sync2::schema::V14_RELAY_GONE).map_err(|e| e.to_string())?;
+        exec(&tx, super::sync2::schema::V14_RELAY_GONE).map_err(|e| e.to_string())?;
     }
     if current < 15 {
         if !has_column(&tx, "srs_notes_cache", V15_NOTES.0)? {
-            tx.execute_batch(V15_NOTES.1).map_err(|e| e.to_string())?;
+            exec(&tx, V15_NOTES.1).map_err(|e| e.to_string())?;
         }
-        tx.execute_batch(V15_INDEX).map_err(|e| e.to_string())?;
+        exec(&tx, V15_INDEX).map_err(|e| e.to_string())?;
     }
     if current < 16 {
         // V16：磁盘占用（[V16_DROP]、store/sync2/snapshots.rs）：操作日志里的配置快照原文挪进快照表。只改
         // `sync2_ops`（投影与摘要不动），读回的载荷逐字节相同；每一步都可重放。
-        tx.execute_batch(V16_DROP).map_err(|e| e.to_string())?;
+        exec(&tx, V16_DROP).map_err(|e| e.to_string())?;
         super::sync2::snapshots::migrate(&tx)?;
+    }
+    if current < 17 {
+        // V17：日志 / 修改记录投影按操作存（store/sync2/projrows.rs）：旧表换成存储表 + 同名视图，推得出的行只留
+        // 指针与覆盖键；行原文、摘要、Dart 的全部读法不变。摘要触发器改挂存储表（桶不用重建：原文没变）。
+        super::sync2::projrows::migrate(&tx)?;
+        super::sync2::digest::install(&tx)?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

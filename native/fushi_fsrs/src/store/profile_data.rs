@@ -289,7 +289,7 @@ mod tests {
         let purged = profile_tables(&w).unwrap();
         let missing: Vec<&String> = all.iter().filter(|t| !purged.contains(t) && !SHARED_TABLES.contains(&t.as_str())).collect();
         assert!(missing.is_empty(), "tables outside the purge set: {missing:?}");
-        for t in ["srs_entities", "srs_review_logs", "srs_cards_cache", "srs_notes_cache", "srs_stat_reviews", "sync2_ops", "sync2_self", "sync2_media"] {
+        for t in ["srs_entities", "srs_review_log_rows", "srs_field_edit_rows", "srs_cards_cache", "srs_notes_cache", "srs_stat_reviews", "sync2_ops", "sync2_self", "sync2_media"] {
             assert!(purged.iter().any(|x| x == t), "{t} not in purge set");
         }
     }

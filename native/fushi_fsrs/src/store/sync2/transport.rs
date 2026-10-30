@@ -1296,7 +1296,11 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
             moved.push(op);
         }
     }
-    // 撤出：ops 行、切段点、修改记录投影（日志与身份记录按内容 ID 去重，重签发后照旧在）。
+    // 撤出：ops 行、切段点、修改记录投影（日志与身份记录按内容 ID 去重，重签发后照旧在）。指向这些操作的投影行
+    // 先写回原文（projrows.rs：操作删了就推不出来）。
+    for op in &moved {
+        super::projrows::materialize(conn, profile, op)?;
+    }
     conn.execute(
         "DELETE FROM sync2_ops WHERE profile_uid = ?1 AND device = ?2 AND seq > ?3",
         params![profile, old.device.0.to_vec(), keep as i64],
@@ -1309,7 +1313,7 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     .map_err(sql)?;
     let old_text = old.device.text();
     conn.execute(
-        "DELETE FROM srs_field_edits WHERE profile_uid = ?1 AND writer_id = ?2 AND seq > ?3",
+        "DELETE FROM srs_field_edit_rows WHERE profile_uid = ?1 AND writer_id = ?2 AND seq > ?3",
         params![profile, old_text, keep as i64],
     )
     .map_err(sql)?;
