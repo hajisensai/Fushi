@@ -840,10 +840,16 @@ class SrsDbStore implements SrsSync2Host {
                 ? pending
                 : await pending;
             if (!identical(c, e)) {
-              await (db.update(
-                db.srsFieldEdits,
-              )..where((t) => t.id.equals(r.read<String>('id')))).write(
-                SrsFieldEditsCompanion(json: Value<String>(c.canonical())),
+              // `json` 是生成列（srs.db v18，native store/slim.rs）：写去掉与列重复的键的 `jslim`。
+              await db.customUpdate(
+                'UPDATE srs_field_edits SET jslim = srs_edit_pack(?, id, '
+                'profile_uid, entity_kind, entity_id, field_key, writer_id, seq) '
+                'WHERE rowid = ?',
+                variables: <Variable<Object>>[
+                  Variable<String>(c.canonical()),
+                  Variable<int>(r.read<int>('rid')),
+                ],
+                updates: <TableInfo<Table, Object?>>{db.srsFieldEdits},
               );
               touched.add(e.entityId);
               n++;

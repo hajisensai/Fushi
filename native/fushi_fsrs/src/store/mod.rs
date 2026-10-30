@@ -20,6 +20,7 @@ pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
 pub(crate) mod ids;
+pub(crate) mod slim;
 pub mod rows;
 mod profile_data;
 mod projections;
@@ -232,6 +233,7 @@ fn configure(conn: &Connection) -> Result<(), String> {
     sync2::digest::register(conn).map_err(|e| e.to_string())?;
     // ID 列编码（store/ids.rs）：`srs_id` / `srs_idt`，Rust 与 Dart 的 SQL 都用。
     ids::register(conn).map_err(|e| e.to_string())?;
+    slim::register(conn).map_err(|e| e.to_string())?;
     // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
     // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
     // 上限 256 MB；WAL 模式下 SQLite 照常处理。
@@ -486,6 +488,7 @@ impl SrsCore {
         }
         if strip_device_local {
             let snap = Connection::open(target).map_err(|e| e.to_string())?;
+            configure(&snap)?;
             snap.execute_batch(
                 // srs_event_local 不删：它的 server_time 是迁移来的旧修改记录 / 外来带戳事件的排序键（S），
                 // 删了恢复出来的设备会按另一种顺序解寄存器、与其它设备分叉。发件箱列早已无人读写。
@@ -1275,7 +1278,7 @@ mod direct_tests {
         core.exec("BEGIN", &[], false).unwrap();
         core.exec(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
-             review_type, origin, duration_ms, json) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
+             review_type, origin, duration_ms, jslim) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
             &[],
             false,
         )
@@ -1309,7 +1312,7 @@ mod direct_tests {
         for (id, card, json) in [("a", "old", a.as_str()), ("b", "c1", b.as_str()), ("c", "c1", c.as_str()), ("u", "c1", undo)] {
             core.exec(
                 "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
-                 review_type, origin, duration_ms, json) VALUES (srs_id(?1), 'p', srs_id(?2), 'k', NULL, 0, 'r', 'o', 0, ?3)",
+                 review_type, origin, duration_ms, jslim) VALUES (srs_id(?1), 'p', srs_id(?2), 'k', NULL, 0, 'r', 'o', 0, ?3)",
                 &[Value::Text(id.into()), Value::Text(card.into()), Value::Text(json.into())],
                 false,
             )

@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 17;
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -354,6 +354,7 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     // 升级步骤与触发器用的 SQL 函数：只建表的裸连接（测试）也要有。
     super::ids::register(conn).map_err(|e| e.to_string())?;
+    super::slim::register(conn).map_err(|e| e.to_string())?;
     super::sync2::digest::register(conn).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute_batch(
@@ -376,6 +377,10 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     // 中途建出来的表在结尾再转一次。可重放。
     if (1..17).contains(&current) {
         super::ids::migrate(&tx)?;
+    }
+    // v18 的瘦 JSON（store/slim.rs）同理：旧步骤用新代码写 `jslim`，先把已有的两张投影表转过去。可重放。
+    if (1..18).contains(&current) {
+        super::slim::migrate(&tx)?;
     }
     if current > SCHEMA_VERSION {
         return Err(format!(
@@ -508,6 +513,15 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 新建的库没有可整理的页。
         if current > 0 { tx.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, '17') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [super::compact::PENDING],
+        )
+        .map_err(|e| e.to_string())?; }
+    }
+    if current < 18 {
+        // V18：两张投影表的 `json` 改成生成列，磁盘上只存去掉与列重复的键的 `jslim`（store/slim.rs）。
+        super::slim::migrate(&tx)?;
+        if current > 0 { tx.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, '18') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [super::compact::PENDING],
         )
         .map_err(|e| e.to_string())?; }
@@ -665,7 +679,7 @@ mod tests {
                 let mut log = tx
                     .prepare(
                         "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, \
-                         origin, json) VALUES (srs_id(?1), 'p', srs_id(?2), ?3, 3, ?4, ?5, 'fushi', ?6)",
+                         origin, jslim) VALUES (srs_id(?1), 'p', srs_id(?2), ?3, 3, ?4, ?5, 'fushi', ?6)",
                     )
                     .unwrap();
                 let body = format!("{{\"res\":{{\"reps\":2}},\"pad\":\"{}\"}}", "x".repeat(300));

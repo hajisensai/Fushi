@@ -26,7 +26,7 @@ fn dump(d: &Device) -> Value {
     let mut out = serde_json::Map::new();
     for t in tables.iter().skip(1) {
         let name = t[0].as_str();
-        let cols = d.rows(&format!("SELECT name FROM pragma_table_info('{name}') ORDER BY cid"));
+        let cols = d.rows(&format!("SELECT name FROM pragma_table_xinfo('{name}') ORDER BY cid"));
         let cols: Vec<String> = cols.iter().skip(1).map(|r| r[0].clone()).collect();
         let ids = id_cols.get(name).copied().unwrap_or(&[]);
         let sel: Vec<String> = cols

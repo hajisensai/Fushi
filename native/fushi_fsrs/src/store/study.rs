@@ -769,7 +769,7 @@ mod tests {
         let json = json!({"p": P, "k": "deck", "e": entity, "f": key, "w": "w", "s": *n, "v": v, "hlc": format!("{}:0:w", 1_700_000_000_000i64 + *n)}).to_string();
         exec(
             core,
-            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) VALUES (srs_id(?), srs_id(?), 'deck', srs_id(?), ?, 'w', ?, ?)",
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) VALUES (srs_id(?), srs_id(?), 'deck', srs_id(?), ?, 'w', ?, ?)",
             vec![Sql::Text(format!("e{n}")), Sql::Text(P.into()), Sql::Text(entity.into()), Sql::Text(key.into()), Sql::Integer(*n), Sql::Text(json)],
         );
     }
@@ -820,7 +820,7 @@ mod tests {
         *n += 1;
         exec(
             core,
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, 3, ?, ?, 'local', ?)",
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, 3, ?, ?, 'local', ?)",
             vec![
                 Sql::Text(format!("l{n}")),
                 Sql::Text(P.into()),

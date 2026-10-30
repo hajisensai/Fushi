@@ -1130,7 +1130,7 @@ mod link_tests {
     fn edit(c: &Connection, n: &mut i64, kind: &str, entity: &str, key: &str) {
         *n += 1;
         c.execute(
-            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
              VALUES (srs_id(?1), 'p', ?2, srs_id(?3), ?4, 'w', ?5, '{}')",
             rusqlite::params![format!("e{n}"), kind, entity, key, *n],
         )
@@ -1211,7 +1211,7 @@ mod link_tests {
             })
             .to_string();
             w.execute(
-                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json)                  VALUES (srs_id(?1), 'p', ?2, srs_id(?3), ?4, 'w', ?5, ?6)",
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim)                  VALUES (srs_id(?1), 'p', ?2, srs_id(?3), ?4, 'w', ?5, ?6)",
                 rusqlite::params![format!("e{n}"), kind, entity, key, n, json],
             )
             .unwrap();
