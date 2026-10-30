@@ -177,7 +177,7 @@ impl Source for SessionSource<'_> {
 fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> String {
     let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
     format!(
-        "SELECT srs_idt(id) AS id, due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
+        "SELECT srs_idt(id), due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
         marks(decks)
     )
 }
@@ -597,7 +597,7 @@ mod tests {
         pub(super) fn due_sql(decks: usize, exclude: usize) -> String {
             let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
             format!(
-                "SELECT srs_idt(id) AS id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} \
+                "SELECT srs_idt(id), last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} \
                  AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
                  ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
                  / (9.0 * COALESCE(stability, 1.0))), id LIMIT 2",
@@ -1093,7 +1093,7 @@ mod tests {
             .read_visible(|c| {
                 let mut stmt = c
                     .prepare(
-                        "SELECT srs_idt(id) AS id FROM srs_cards_cache ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+                        "SELECT srs_idt(id) FROM srs_cards_cache ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
                          / (9.0 * COALESCE(stability, 1.0))), id",
                     )
                     .map_err(sql)?;

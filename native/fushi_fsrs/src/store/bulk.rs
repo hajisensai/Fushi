@@ -393,7 +393,7 @@ pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value,
         let Some(xs) = req.get(key).and_then(Value::as_array) else { continue };
         let mut stmt = c
             .prepare_cached(&format!(
-                "SELECT MIN(id) FROM {table} WHERE profile_uid = srs_id(?1) AND anki_id = ?2"
+                "SELECT srs_idt(MIN(id)) FROM {table} WHERE profile_uid = srs_id(?1) AND anki_id = ?2"
             ))
             .map_err(sql)?;
         let mut ids = Vec::with_capacity(xs.len());
@@ -421,7 +421,7 @@ pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Val
     let nums: Vec<Option<i64>> =
         req.get("notes").and_then(Value::as_array).map(|a| a.iter().map(Value::as_i64).collect()).unwrap_or_default();
     let mut resolve =
-        c.prepare_cached("SELECT MIN(id) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND anki_id = ?2").map_err(sql)?;
+        c.prepare_cached("SELECT srs_idt(MIN(id)) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND anki_id = ?2").map_err(sql)?;
     let mut ids: Vec<Option<String>> = Vec::with_capacity(nums.len());
     for n in &nums {
         ids.push(match n {

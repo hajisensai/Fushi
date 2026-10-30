@@ -717,7 +717,7 @@ mod tests {
             args.extend(order_vars);
             (
                 format!(
-                    "SELECT srs_idt(id) AS id, due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({deck_in}) \
+                    "SELECT srs_idt(id), due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({deck_in}) \
                      AND {cond} ORDER BY {order} LIMIT 1"
                 ),
                 args,

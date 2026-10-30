@@ -225,8 +225,8 @@ mod tests {
         seed(&core, Q, 2, 2);
         let q_before = core.profile_footprint(Q).unwrap();
         let deps_before = count(&core, "SELECT COUNT(*) FROM sync2_deps");
-        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = '{P}'")) > 0);
-        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_self WHERE profile_uid = '{P}'")) == 1);
+        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id('{P}')")) > 0);
+        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_self WHERE profile_uid = srs_id('{P}')")) == 1);
         assert!(count(&core, &format!("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/{P}'")) >= 2);
 
         let out = core.profile_purge(P).unwrap();
