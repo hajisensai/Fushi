@@ -90,7 +90,7 @@ class _Device {
       final QueryRow r = await srs.db
           .customSelect(
             'SELECT COUNT(*) AS c FROM $t WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(uid)],
+            variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
           )
           .getSingle();
       n += r.read<int>('c');
@@ -498,7 +498,7 @@ Future<String> _guidOfOnly(_Device d) async =>
             .customSelect(
               'SELECT guid FROM srs_notes_cache WHERE profile_uid = ?',
               variables: <Variable<Object>>[
-                Variable<String>(d.store.profileUid),
+                Variable<String>(d.store.profileUid, srsIdType),
               ],
             )
             .getSingle())
