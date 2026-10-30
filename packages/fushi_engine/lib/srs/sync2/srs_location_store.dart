@@ -2,9 +2,12 @@
 /// 删文件」的哑存储。协议保证每台设备只写自己的文件、文件写一次后不可变（清除重写的段例外：同名、同链值），
 /// 所以这里不需要锁、原子比较交换或一致的列目录。
 ///
-/// 路径一律相对于一个 profile 集合的根（`fushi-srs/<profileUid>/v2/`），用 `/` 分隔：
-/// `meta.json`、`devices/<DeviceId>/{head-*.json, seg-*.bin, profile.json}`、`media/<文件名>`（加密时
-/// `media-e/<密钥指纹>/<文件名>`）。
+/// 路径一律相对于一个 profile 集合的根（`fushi-srs/<profileUid>/v3/`，[kSrsSync2Folder]），用 `/` 分隔：
+/// `meta.json`、`devices/<DeviceId>/{head-*.json, seg-*.bin, rly-*.bin, profile.json}`、内容寻址媒体
+/// `media/<sha256 前 2 位>/<sha256>`（加密时 `media-e/<密钥指纹>/<前 2 位>/<sha256>`）。
+///
+/// 协议 1 的集合根是 `fushi-srs/<profileUid>/v2/`（[kSrsSync2V1Folder]）：2026-10-30 断代后只剩一份让旧版本停下的
+/// `meta.json`（文件夹位置另有一个同名普通文件 `media`），旧数据由一次性迁移搬进新根（srs_location_migration.dart）。
 library;
 
 import 'dart:async';
@@ -142,9 +145,13 @@ Future<List<R>> srsRunPooled<T, R>(
   return <R>[for (final R? r in out) r as R];
 }
 
-/// 集合根在现有同步后端上的位置：`fushi-srs/<profileUid>/v2/`（与旧格式的写入者目录并列，互不干扰）。
+/// 集合根在现有同步后端上的位置：`fushi-srs/<profileUid>/v3/`（协议 2）。
 const String kSrsSync2Namespace = 'fushi-srs';
-const String kSrsSync2Folder = 'v2';
+const String kSrsSync2Folder = 'v3';
+
+/// 协议 1 的集合根（`fushi-srs/<profileUid>/v2/`）：旧版本只认这里。新版本只在这里写一份让旧版本停下的 `meta.json`，
+/// 并把里面的旧数据迁进 [kSrsSync2Folder]（srs_location_migration.dart）。
+const String kSrsSync2V1Folder = 'v2';
 
 /// [SyncAssetStore]（各云盘后端 / 互联 / 本机 host 目录）上的位置。后端的文件夹定位符是不透明 id，
 /// 这里按路径段逐级解析并缓存；正文经字节接口（开了「防扫盘混淆」时同样被混淆）。
@@ -160,12 +167,16 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   SrsAssetLocationStore({
     required this.store,
     required this.profileUid,
+    this.folder = kSrsSync2Folder,
     this.maxConcurrentWrites,
     Directory? tempDir,
   }) : _temp = tempDir ?? Directory.systemTemp;
 
   final SyncAssetStore store;
   final String profileUid;
+
+  /// 集合根目录名（`fushi-srs/<profileUid>/<folder>/`）：[kSrsSync2Folder]，迁移时也开一个 [kSrsSync2V1Folder] 的。
+  final String folder;
 
   /// 同时在途的写 / 删上限；null = 不限（由调用方的并发上限决定）。
   final int? maxConcurrentWrites;
@@ -195,7 +206,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   Future<String> _root() => _once('', () async {
     final String ns = await store.ensureNamespace(kSrsSync2Namespace);
     final String profile = await store.ensureFolder(ns, profileUid);
-    return store.ensureFolder(profile, kSrsSync2Folder);
+    return store.ensureFolder(profile, folder);
   });
 
   Future<T> _write<T>(Future<T> Function() body) async {
