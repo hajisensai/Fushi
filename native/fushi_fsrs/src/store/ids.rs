@@ -6,13 +6,13 @@
 //!
 //! - 列声明类型是 [DECLTYPE]（含 TEXT → TEXT 亲和：不会把 BLOB 或数字样的文本乱转）。Dart 经 SQL 桥读到的结果列
 //!   按声明类型解码（store/mod.rs），Dart 的读法不变。
-//! - 写入、比较时绑定 [Sid]（或 SQL 里写 `srs_id(?)`）；读出来用 [Id] / [text]（或 SQL 里写 `srs_idt(col)`）。
+//! - 写入、比较时在 SQL 里写 `srs_id(?)`；读出来用 [col] / [text]（或 SQL 里写 `srs_idt(col)`）。
 //!   漏编码的绑定是静默查不到：测试构建里 [audit] 盯住每条语句的扩展 SQL，绑了 UUID 形状的文本参数就报错。
 //! - 排序：UUID 的 BLOB 字节序与它的小写十六进制文本字典序一致；非 UUID 的文本 ID 与 BLOB 混排时 SQLite 把 TEXT
 //!   排在 BLOB 前面——确定性路径都按 ID 精确匹配或按 (device, seq) 排，不依赖混排顺序。
 
 use rusqlite::functions::FunctionFlags;
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, Value, ValueRef};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, Value, ValueRef};
 use rusqlite::Connection;
 
 /// ID 列的声明类型。
@@ -70,27 +70,6 @@ pub(crate) fn text(v: ValueRef<'_>) -> Option<String> {
     }
 }
 
-/// ID 文本 → 存储值。
-pub(crate) fn store(s: &str) -> Value {
-    match pack(s) {
-        Some(b) => Value::Blob(b.to_vec()),
-        None => Value::Text(s.to_owned()),
-    }
-}
-
-/// 绑定一个 ID（写入或比较）。
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Sid<'a>(pub &'a str);
-
-impl ToSql for Sid<'_> {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        Ok(match pack(self.0) {
-            Some(b) => ToSqlOutput::Owned(Value::Blob(b.to_vec())),
-            None => ToSqlOutput::Borrowed(ValueRef::Text(self.0.as_bytes())),
-        })
-    }
-}
-
 /// 读出一个 ID。
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Id(pub String);
@@ -101,19 +80,9 @@ impl FromSql for Id {
     }
 }
 
-/// 可空 ID 列。
-pub(crate) fn opt(v: ValueRef<'_>) -> Option<String> {
-    text(v)
-}
-
 /// 行里第 [i] 列的 ID。
 pub(crate) fn col(r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<String> {
     r.get::<_, Id>(i).map(|x| x.0)
-}
-
-/// 行里第 [i] 列的可空 ID。
-pub(crate) fn col_opt(r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<Option<String>> {
-    Ok(r.get::<_, Option<Id>>(i)?.map(|x| x.0))
 }
 
 /// 给 Dart 的结果里哪几列是 ID 列（声明类型 [DECLTYPE]；表达式列没有声明类型，SQL 里自己套 `srs_idt`）。
