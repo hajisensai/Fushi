@@ -26,7 +26,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
-import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow, srsIdType;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
@@ -945,8 +945,8 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
                 'AND n.deleted_at IS NULL AND $hit',
                 variables: <Variable<Object>>[
                   Variable<String>(jsonEncode(pairs)),
-                  Variable<String>(profileUid),
-                  Variable<String>(to.id),
+                  Variable<String>(profileUid, srsIdType),
+                  Variable<String>(to.id, srsIdType),
                 ],
               )
               .get()
@@ -955,7 +955,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
                 '${pairsCte}SELECT DISTINCT e.entity_id AS id '
                 'FROM json_each(?) ids '
                 "CROSS JOIN srs_field_edits e ON e.entity_kind = 'note' "
-                'AND e.entity_id = ids.value '
+                'AND e.entity_id = srs_id(ids.value) '
                 'CROSS JOIN pairs p ON p.src = e.field_key '
                 'WHERE $hit',
                 variables: <Variable<Object>>[
@@ -977,7 +977,9 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
                 'SELECT note_type_id AS t, COUNT(*) AS c FROM srs_notes_cache '
                 'WHERE profile_uid = ? AND deleted_at IS NULL '
                 'GROUP BY note_type_id',
-                variables: <Variable<Object>>[Variable<String>(profileUid)],
+                variables: <Variable<Object>>[
+                  Variable<String>(profileUid, srsIdType),
+                ],
               )
               .get())
         r.read<String>('t'): r.read<int>('c'),
