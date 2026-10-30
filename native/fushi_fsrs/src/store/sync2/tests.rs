@@ -1277,7 +1277,7 @@ fn backup_snapshot_keeps_server_times_of_legacy_edits() {
         .writer()
         .unwrap()
         .execute(
-            "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) VALUES ('legacy-1', ?1, 7, 123, 1)",
+            "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) VALUES ('legacy-1', srs_id(?1), 7, 123, 1)",
             [P],
         )
         .unwrap();
@@ -1512,27 +1512,27 @@ fn legacy_library(d: &Device) {
     for (id, at, due) in [("L1", T0, 19_700), ("L2", T0 + 3 * DAY, 19_800)] {
         w.execute(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) \
-             VALUES (?1, ?2, 'C', 'review', 3, ?3, 'review', 'fushi', ?4)",
+             VALUES (srs_id(?1), srs_id(?2), 'C', 'review', 3, ?3, 'review', 'fushi', ?4)",
             rusqlite::params![id, P, at, log(id, at, due)],
         )
         .unwrap();
     }
     w.execute(
-        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, 'deck', '{\"createdAt\":1}', 1)",
+        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'deck', '{\"createdAt\":1}', 1)",
         rusqlite::params![deck, P],
     )
     .unwrap();
     for (id, s, f, v) in [(&e1, 1, "retention", json!(0.97)), (&e2, 2, "name", json!("Deck"))] {
         w.execute(
             "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-             VALUES (?1, ?2, 'deck', ?3, ?4, 'old', ?5, ?6)",
+             VALUES (srs_id(?1), srs_id(?2), 'deck', srs_id(?3), ?4, 'old', ?5, ?6)",
             rusqlite::params![id, P, deck, f, s, edit_json(id, s, f, v)],
         )
         .unwrap();
     }
     for k in 0..5i64 {
         w.execute(
-            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, 'note', '{\"createdAt\":2}', ?3)",
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'note', '{\"createdAt\":2}', ?3)",
             rusqlite::params![format!("N{k}"), P, 2 + k],
         )
         .unwrap();
@@ -1628,7 +1628,7 @@ fn bench_migrate() {
     w.execute_batch("BEGIN").unwrap();
     for c in 0..cards {
         w.execute(
-            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, 'note', '{\"createdAt\":2}', ?3)",
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'note', '{\"createdAt\":2}', ?3)",
             rusqlite::params![format!("N{c}"), P, c],
         )
         .unwrap();
@@ -1640,7 +1640,7 @@ fn bench_migrate() {
                 "k": "note", "p": P, "s": s, "ts": "wall", "v": format!("value {c} {f}"), "w": writer});
             w.execute(
                 "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-                 VALUES (?1, ?2, 'note', ?3, ?4, ?5, ?6, ?7)",
+                 VALUES (srs_id(?1), srs_id(?2), 'note', srs_id(?3), ?4, srs_id(?5), ?6, ?7)",
                 rusqlite::params![id, P, format!("N{c}"), format!("f/{f}"), writer, s, x.to_string()],
             )
             .unwrap();
@@ -1653,7 +1653,7 @@ fn bench_migrate() {
                 "res": {"queue": "review", "dueDay": 19_700 + r, "ivl": r, "step": 0, "reps": r + 1, "lapses": 0, "scheduler": "fushi"}});
             w.execute(
                 "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) \
-                 VALUES (?1, ?2, ?3, 'review', 3, ?4, 'review', 'fushi', ?5)",
+                 VALUES (srs_id(?1), srs_id(?2), srs_id(?3), 'review', 3, ?4, 'review', 'fushi', ?5)",
                 rusqlite::params![id, P, format!("C{c}"), at, x.to_string()],
             )
             .unwrap();
@@ -2127,7 +2127,7 @@ fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
             let (id, x) = legacy_row(P, "NA", s);
             w.execute(
                 "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-                 VALUES (?1, ?2, 'note', 'NA', ?3, ?4, ?5, ?6)",
+                 VALUES (srs_id(?1), srs_id(?2), 'note', 'NA', ?3, srs_id(?4), ?5, ?6)",
                 rusqlite::params![id, P, format!("f/{s}"), legacy_writer, s, x.to_string()],
             )
             .unwrap();
@@ -2137,7 +2137,7 @@ fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
         let err = w
             .execute(
                 "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-                 VALUES (?1, ?2, 'note', 'NQ', 'f/1', ?3, 1, ?4)",
+                 VALUES (srs_id(?1), srs_id(?2), 'note', 'NQ', 'f/1', srs_id(?3), 1, ?4)",
                 rusqlite::params![id, Q, legacy_writer, x.to_string()],
             )
             .unwrap_err();

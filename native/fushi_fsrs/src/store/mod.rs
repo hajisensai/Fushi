@@ -1003,7 +1003,7 @@ mod tests {
             core.writer()
                 .unwrap()
                 .execute(
-                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, 'p', '{}')",
+                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
                     [id],
                 )
                 .unwrap();
@@ -1054,7 +1054,7 @@ mod exec_tests {
         assert!(core.in_transaction().unwrap());
         let r = core
             .exec(
-                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)",
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), srs_id(?2), ?3)",
                 &[Value::Text("a".into()), Value::Text("p".into()), Value::Text("{}".into())],
                 false,
             )
@@ -1069,7 +1069,7 @@ mod exec_tests {
         core.exec("ROLLBACK", &[], false).unwrap();
         assert!(!core.in_transaction().unwrap());
         core.exec_batch(
-            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?, 'p', '{}')"],
+            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?), 'p', '{}')"],
             &[(0, vec![Value::Text("b".into())]), (0, vec![Value::Text("c".into())])],
         )
         .unwrap();
@@ -1099,7 +1099,7 @@ mod read_routing_tests {
 
     fn insert(core: &SrsCore, id: &str) {
         core.exec(
-            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, 'p', '{}')",
+            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
             &[Value::Text(id.into())],
             false,
         )
@@ -1282,7 +1282,7 @@ mod direct_tests {
         for (id, card, json) in [("a", "old", a.as_str()), ("b", "c1", b.as_str()), ("c", "c1", c.as_str()), ("u", "c1", undo)] {
             core.exec(
                 "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
-                 review_type, origin, duration_ms, json) VALUES (?1, 'p', ?2, 'k', NULL, 0, 'r', 'o', 0, ?3)",
+                 review_type, origin, duration_ms, json) VALUES (srs_id(?1), 'p', srs_id(?2), 'k', NULL, 0, 'r', 'o', 0, ?3)",
                 &[Value::Text(id.into()), Value::Text(card.into()), Value::Text(json.into())],
                 false,
             )

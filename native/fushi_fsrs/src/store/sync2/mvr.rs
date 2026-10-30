@@ -87,7 +87,7 @@ pub(crate) fn write(conn: &Connection, profile: &str, reg: &str, op: &Op) -> Res
             del.execute(params![profile, reg, w.id.device.0.to_vec(), w.id.seq as i64]).map_err(sql)?;
         }
         set = kept;
-        conn.prepare_cached("INSERT OR IGNORE INTO sync2_mvr (profile_uid, reg, device, seq) VALUES (?1, ?2, ?3, ?4)")
+        conn.prepare_cached("INSERT OR IGNORE INTO sync2_mvr (profile_uid, reg, device, seq) VALUES (srs_id(?1), ?2, ?3, ?4)")
             .map_err(sql)?
             .execute(params![profile, reg, op.id.device.0.to_vec(), op.id.seq as i64])
             .map_err(sql)?;

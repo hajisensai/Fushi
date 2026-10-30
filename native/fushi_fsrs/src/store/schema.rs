@@ -621,7 +621,7 @@ mod tests {
                     .prepare(
                         "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, suspended, hidden, \
                          queue, due_day, due_at, stability, last_reviewed_at, note_created_at, new_position, freq_rank) \
-                         VALUES (?1, 'p', ?2, 't', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                         VALUES (srs_id(?1), 'p', srs_id(?2), 't', srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                     )
                     .unwrap();
                 let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -663,7 +663,7 @@ mod tests {
                 let mut log = tx
                     .prepare(
                         "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, \
-                         origin, json) VALUES (?1, 'p', ?2, ?3, 3, ?4, ?5, 'fushi', ?6)",
+                         origin, json) VALUES (srs_id(?1), 'p', srs_id(?2), ?3, 3, ?4, ?5, 'fushi', ?6)",
                     )
                     .unwrap();
                 let body = format!("{{\"res\":{{\"reps\":2}},\"pad\":\"{}\"}}", "x".repeat(300));

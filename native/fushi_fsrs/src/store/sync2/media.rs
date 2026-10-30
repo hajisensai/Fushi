@@ -45,7 +45,7 @@ pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, locati
     }
     if flags & MEDIA_AT_SEEDED != 0 {
         conn.prepare_cached(
-            "INSERT INTO sync2_media_seeded (profile_uid, location, wall) VALUES (?1, ?2, ?3) \
+            "INSERT INTO sync2_media_seeded (profile_uid, location, wall) VALUES (srs_id(?1), ?2, ?3) \
              ON CONFLICT(profile_uid, location) DO UPDATE SET wall = MAX(wall, excluded.wall)",
         )
         .map_err(sql)?
@@ -76,7 +76,7 @@ pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, na
     };
     conn.prepare_cached(
         "INSERT OR REPLACE INTO sync2_media_at (profile_uid, location, name, present, wall, logical, device) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7)",
     )
     .map_err(sql)?
     .execute(params![profile, location, name, present, win.wall, win.logical, win.id.device.0.to_vec()])
@@ -271,7 +271,7 @@ fn local_row(c: &Connection, profile: &str, name: &str) -> Result<Option<LocalRo
 
 fn put_local_row(c: &Connection, profile: &str, name: &str, row: &LocalRow) -> Result<(), String> {
     c.prepare_cached(
-        "INSERT OR REPLACE INTO sync2_media_local (profile_uid, name, size, mtime, sha256, synced) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT OR REPLACE INTO sync2_media_local (profile_uid, name, size, mtime, sha256, synced) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
     )
     .map_err(sql)?
     .execute(params![profile, name, row.0, row.1, row.2.to_vec(), row.3.map(|s| s.to_vec())])

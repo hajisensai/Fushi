@@ -27,7 +27,7 @@ use crate::sync2::vv::OpId;
 /// 记一条操作碰过哪个实体（冲突判定、清除都按它找）。`what` = 字段键，或 `#tag` / `#log` / `#move`。
 pub(crate) fn index(conn: &Connection, profile: &str, kind: &str, entity: &str, op: &OpId, what: &str) -> Result<(), String> {
     conn.prepare_cached(
-        "INSERT OR IGNORE INTO sync2_ent_ops (profile_uid, kind, entity, device, seq, what) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT OR IGNORE INTO sync2_ent_ops (profile_uid, kind, entity, device, seq, what) VALUES (srs_id(?1), ?2, srs_id(?3), ?4, ?5, ?6)",
     )
     .map_err(sql)?
     .execute(params![profile, kind, entity, op.device.0.to_vec(), op.seq as i64, what])
@@ -130,7 +130,7 @@ pub(crate) fn land_tag_order(conn: &Connection, profile: &str, note: &str, win: 
         },
     };
     conn.prepare_cached(
-        "INSERT OR REPLACE INTO sync2_tag_order (profile_uid, note, tags, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT OR REPLACE INTO sync2_tag_order (profile_uid, note, tags, wall, logical, device) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, ?5, ?6)",
     )
     .map_err(sql)?
     .execute(params![profile, note, serde_json::to_string(&tags).map_err(|e| e.to_string())?, win.wall, win.logical, win.id.device.0.to_vec()])
@@ -162,7 +162,7 @@ fn last_tag_hlc(conn: &Connection, profile: &str, note: &str) -> Result<String, 
 
 pub(crate) fn tag_add(conn: &Connection, profile: &str, note: &str, tag: &str, op: &Op) -> Result<(), String> {
     conn.prepare_cached(
-        "INSERT OR IGNORE INTO sync2_tag_adds (profile_uid, note, tag, device, seq, wall, logical) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT OR IGNORE INTO sync2_tag_adds (profile_uid, note, tag, device, seq, wall, logical) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, ?5, ?6, ?7)",
     )
     .map_err(sql)?
     .execute(params![profile, note, tag, op.id.device.0.to_vec(), op.id.seq as i64, op.hlc.wall, i64::from(op.hlc.logical)])
@@ -231,7 +231,7 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
         // 不能写 `INSERT OR REPLACE`：REPLACE 删旧行时（没开 recursive_triggers）不触发 DELETE 触发器，摘要桶
         // （digest.rs）只加不减，同一笔记第二次改标签起桶哈希与行数就永久错了。UPSERT 走 UPDATE 触发器（先减后加）。
         "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-         VALUES (?1, ?2, 'note', ?3, 'tags', ?4, 1, ?5) \
+         VALUES (srs_id(?1), srs_id(?2), 'note', srs_id(?3), 'tags', srs_id(?4), 1, ?5) \
          ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, entity_kind = excluded.entity_kind, \
          entity_id = excluded.entity_id, field_key = excluded.field_key, writer_id = excluded.writer_id, \
          seq = excluded.seq, json = excluded.json",
@@ -322,7 +322,7 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
                 t.dominated.push(eid);
             }
             conn.prepare_cached(
-                "INSERT OR REPLACE INTO sync2_held (profile_uid, device, seq, kind, entity) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT OR REPLACE INTO sync2_held (profile_uid, device, seq, kind, entity) VALUES (srs_id(?1), ?2, ?3, ?4, srs_id(?5))",
             )
             .map_err(sql)?
             .execute(params![profile, d.id.device.0.to_vec(), d.id.seq as i64, kind, entity])
@@ -336,7 +336,7 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
                 let cid = blake3::hash(format!("{}:{}:{k}", d.id.device.text(), d.id.seq).as_bytes()).to_hex()[..32].to_owned();
                 conn.prepare_cached(
                     "INSERT OR REPLACE INTO sync2_conflicts (id, profile_uid, kind, entity_kind, entity, device, seq, other_count, at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                     VALUES (?1, srs_id(?2), ?3, ?4, srs_id(?5), ?6, ?7, ?8, ?9)",
                 )
                 .map_err(sql)?
                 .execute(params![cid, profile, k, kind, entity, d.id.device.0.to_vec(), d.id.seq as i64, count as i64, d.hlc.wall])
@@ -480,7 +480,7 @@ pub(crate) fn purge_op(conn: &Connection, profile: &str, id: &OpId, own: Option<
 /// 只清这条清除**没见过**之后的操作：因果上在它之后的操作（作者见过它，见 [purged_for]）不动——
 /// 因果投递下它们本不会早于清除到达，这里按同一判据写，重放顺序怎样都得同一个结果。
 pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, entity: &str, purge: &Op, own: &Id, t: &mut Touched) -> Result<(), String> {
-    conn.prepare_cached("INSERT OR IGNORE INTO sync2_purged (profile_uid, kind, entity) VALUES (?1, ?2, ?3)")
+    conn.prepare_cached("INSERT OR IGNORE INTO sync2_purged (profile_uid, kind, entity) VALUES (srs_id(?1), ?2, srs_id(?3))")
         .map_err(sql)?
         .execute(params![profile, kind.wire(), entity])
         .map_err(sql)?;

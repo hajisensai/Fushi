@@ -67,7 +67,7 @@ fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, Str
     if top > last_cut {
         for (a, b, bytes) in split_seq_range(conn, local, last_cut + 1, top)? {
             conn.execute(
-                "INSERT OR IGNORE INTO sync2_segments (profile_uid, device, first, last, bytes) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT OR IGNORE INTO sync2_segments (profile_uid, device, first, last, bytes) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)",
                 params![local.profile, local.device.0.to_vec(), a as i64, b as i64, bytes as i64],
             )
             .map_err(sql)?;
@@ -171,7 +171,7 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
             for (loc, uploaded) in &locations {
                 if *uploaded >= *b {
                     conn.prepare_cached(
-                        "INSERT OR IGNORE INTO sync2_obsolete (profile_uid, location, name, last) VALUES (?1, ?2, ?3, ?4)",
+                        "INSERT OR IGNORE INTO sync2_obsolete (profile_uid, location, name, last) VALUES (srs_id(?1), ?2, ?3, ?4)",
                     )
                     .map_err(sql)?
                     .execute(params![local.profile, loc, name, *b as i64])
@@ -186,13 +186,13 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
         .map_err(sql)?;
         for (a, b, bytes) in &merged {
             conn.execute(
-                "INSERT INTO sync2_segments (profile_uid, device, first, last, bytes) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO sync2_segments (profile_uid, device, first, last, bytes) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)",
                 params![local.profile, local.device.0.to_vec(), *a as i64, *b as i64, *bytes as i64],
             )
             .map_err(sql)?;
             for (loc, uploaded) in &locations {
                 if *uploaded >= *a {
-                    conn.prepare_cached("INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) VALUES (?1, ?2, ?3)")
+                    conn.prepare_cached("INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) VALUES (srs_id(?1), ?2, ?3)")
                         .map_err(sql)?
                         .execute(params![local.profile, loc, *a as i64])
                         .map_err(sql)?;
@@ -277,7 +277,7 @@ fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String
         Some(_) => Ok(true),
         None => {
             conn.execute(
-                "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (?1, ?2, ?3, 0)",
+                "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (srs_id(?1), ?2, ?3, 0)",
                 params![profile, h.device.0.to_vec(), h.public.to_vec()],
             )
             .map_err(sql)?;
@@ -752,7 +752,7 @@ impl Delivery {
 }
 
 fn store_pending(c: &Connection, profile: &str, device: &Id, seq: u64, op: &Op, chain: &Chain) -> Result<(), String> {
-    c.prepare_cached("INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (?1, ?2, ?3, ?4, ?5)")
+    c.prepare_cached("INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64, op.encode(), chain.to_vec()])
         .map_err(sql)?;
@@ -1214,7 +1214,7 @@ fn persist_local_state(c: &Connection, profile: &str, local_state: Option<&str>,
         .ok_or("sync2 ingest: localState must be a JSON object")?
         .insert("revision".to_owned(), json!(revision));
     c.prepare_cached(
-        "INSERT INTO srs_local_state (profile_uid, json) VALUES (?1, ?2) ON CONFLICT(profile_uid) DO UPDATE SET json = excluded.json",
+        "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), ?2) ON CONFLICT(profile_uid) DO UPDATE SET json = excluded.json",
     )
     .map_err(sql)?
     .execute(params![profile, state.to_string()])
@@ -1231,7 +1231,7 @@ fn persist_local_state(c: &Connection, profile: &str, local_state: Option<&str>,
 /// 它就等于重放结果，只有真并发交错的卡在收尾前短暂显示作者结果。
 pub(crate) fn defer_replay(c: &Connection, profile: &str, cards: &BTreeSet<String>) -> Result<(), String> {
     let mut stmt = c
-        .prepare_cached("INSERT OR IGNORE INTO sync2_replay_pending (profile_uid, card_id) VALUES (?1, ?2)")
+        .prepare_cached("INSERT OR IGNORE INTO sync2_replay_pending (profile_uid, card_id) VALUES (srs_id(?1), srs_id(?2))")
         .map_err(sql)?;
     for card in cards {
         stmt.execute(params![profile, card]).map_err(sql)?;
@@ -1518,7 +1518,7 @@ impl SrsCore {
             }
             if mark > uploaded {
                 c.execute(
-                    "INSERT INTO sync2_locations (profile_uid, location, uploaded) VALUES (?1, ?2, ?3) \
+                    "INSERT INTO sync2_locations (profile_uid, location, uploaded) VALUES (srs_id(?1), ?2, ?3) \
                      ON CONFLICT(profile_uid, location) DO UPDATE SET uploaded = MAX(uploaded, excluded.uploaded)",
                     params![profile, location, mark as i64],
                 )
@@ -1647,7 +1647,7 @@ impl SrsCore {
             )
             .map_err(sql)?;
             c.execute(
-                "INSERT INTO sync2_locations (profile_uid, location, uploaded, head_gen, last_ok) VALUES (?1, ?2, ?3, ?4, ?5) \
+                "INSERT INTO sync2_locations (profile_uid, location, uploaded, head_gen, last_ok) VALUES (srs_id(?1), ?2, ?3, ?4, ?5) \
                  ON CONFLICT(profile_uid, location) DO UPDATE SET uploaded = MAX(uploaded, excluded.uploaded), \
                  head_gen = excluded.head_gen, last_ok = excluded.last_ok",
                 params![profile, location, seq as i64, head.gen as i64, now],
@@ -2361,7 +2361,7 @@ impl SrsCore {
             }
             for (device, public) in &runs {
                 c.execute(
-                    "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (?1, ?2, ?3, 0) \
+                    "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (srs_id(?1), ?2, ?3, 0) \
                      ON CONFLICT(profile_uid, device) DO UPDATE SET public = COALESCE(sync2_devices.public, excluded.public)",
                     params![profile, device.0.to_vec(), if public.is_empty() { None } else { Some(public.clone()) }],
                 )

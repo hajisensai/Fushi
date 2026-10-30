@@ -192,23 +192,23 @@ mod tests {
         for i in 0..notes {
             let deleted: Option<i64> = if i == 0 && notes > 1 { Some(5) } else { None };
             w.execute(
-                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deleted_at) VALUES (?1, ?2, 'NT', ?1, 1, ?3)",
+                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deleted_at) VALUES (srs_id(?1), srs_id(?2), 'NT', ?1, 1, ?3)",
                 params![format!("N-{profile}-{i}"), profile, deleted],
             )
             .unwrap();
             w.execute(
-                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id) VALUES (?1, ?2, ?3, 'T', 'D')",
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id) VALUES (srs_id(?1), srs_id(?2), srs_id(?3), 'T', 'D')",
                 params![format!("C-{profile}-{i}"), profile, format!("N-{profile}-{i}")],
             )
             .unwrap();
         }
-        w.execute("INSERT INTO srs_local_state (profile_uid, json) VALUES (?1, '{}')", [profile]).unwrap();
+        w.execute("INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), '{}')", [profile]).unwrap();
         w.execute_batch(
             "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (profile_uid UUIDTEXT NOT NULL, pos INTEGER NOT NULL, \
              phase INTEGER NOT NULL, src TEXT NOT NULL, PRIMARY KEY (profile_uid, pos)) WITHOUT ROWID;",
         )
         .unwrap();
-        w.execute("INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) VALUES (?1, 1, 0, 'x')", [profile]).unwrap();
+        w.execute("INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) VALUES (srs_id(?1), 1, 0, 'x')", [profile]).unwrap();
         w.execute("INSERT INTO srs_meta (key, value) VALUES ('sync2_migrating/' || ?1, '1')", [profile]).unwrap();
     }
 
