@@ -40,6 +40,9 @@ const List<String> kRawTables = <String>[
 ];
 
 /// 原始表里的 ID 列（与内核 store/ids.rs 的列清单一致）：导入向量时绑成存储编码。
+/// `json` 是生成列、写入走 `jslim` 的表（srs.db v18）。
+const Set<String> _kSlimTables = <String>{'srs_review_logs', 'srs_field_edits'};
+
 const Map<String, Set<String>> _kIdColumns = <String, Set<String>>{
   'srs_entities': <String>{'id', 'profile_uid'},
   'srs_field_edits': <String>{'id', 'profile_uid', 'entity_id', 'writer_id'},
@@ -137,7 +140,8 @@ void main() {
         await s.db.customStatement('DELETE FROM $name');
         final Set<String> idCols = _kIdColumns[name]!;
         final String sql =
-            'INSERT INTO $name (${tb.columns.map((String c) => '"$c"').join(', ')}) '
+            // 两张投影表的 `json` 是生成列（srs.db v18）：原文写进 `jslim`（不瘦也合法）。
+            'INSERT INTO $name (${tb.columns.map((String c) => c == 'json' && _kSlimTables.contains(name) ? '"jslim"' : '"$c"').join(', ')}) '
             'VALUES (${tb.columns.map((String c) => idCols.contains(c) ? 'srs_id(?)' : '?').join(', ')})';
         for (final List<Object?> r in tb.rows) {
           await s.db.customStatement(sql, <Object?>[

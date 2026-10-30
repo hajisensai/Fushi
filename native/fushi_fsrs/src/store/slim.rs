@@ -229,6 +229,24 @@ pub(crate) fn pack_expr(table: &str, json: &str, cols: &[&str]) -> String {
     format!("{f}({json}, {})", cols.join(", "))
 }
 
+/// 按列清单逐列插入（旧库搬运，`legacy_page`）时 `json` 那一列的写法：`(插入的列名, 值表达式)`。[place] 是第 i 列
+/// （0 起）的占位写法。不是这两张表的 `json` 就 None。键对应的列不在清单里就原样存原文（同样合法）。
+pub(crate) fn insert_column(table: &str, columns: &[&str], i: usize, place: impl Fn(usize) -> String) -> Option<(&'static str, String)> {
+    let keys: &[(&str, &str)] = match table {
+        "srs_review_logs" => &LOG_KEYS,
+        "srs_field_edits" => &EDIT_KEYS,
+        _ => return None,
+    };
+    if columns[i] != "json" {
+        return None;
+    }
+    let args: Option<Vec<String>> = keys.iter().map(|(_, c)| columns.iter().position(|x| x == c).map(&place)).collect();
+    Some(("jslim", match args {
+        Some(a) => pack_expr(table, &place(i), &a.iter().map(String::as_str).collect::<Vec<_>>()),
+        None => place(i),
+    }))
+}
+
 /// v18：两张投影表的 `json` 改成生成列、原文搬进 `jslim`（瘦存）。整表重建（保留 rowid、索引、触发器）；已改过的表
 /// 什么也不做——可重放。
 pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
@@ -304,6 +322,19 @@ mod tests {
         assert!(slim.starts_with('~') && slim.len() < full.len() / 2 + 60, "{slim}");
         assert_eq!(slim, r#"~{"fv":1,"hlc":"1:0:dart","res":{"ivl":0,"q":[1,{"x":"}"}]},"ts":"anchored","utcOff":0}"#);
         assert_eq!(expand(&slim, &keys, &frags), full);
+    }
+
+    #[test]
+    fn column_wise_inserts_pack_from_the_same_row() {
+        let cols = ["id", "profile_uid", "entity_kind", "entity_id", "field_key", "writer_id", "seq", "json"];
+        let place = |i: usize| format!("?{}", i + 1);
+        assert_eq!(insert_column("srs_field_edits", &cols, 0, place), None);
+        assert_eq!(
+            insert_column("srs_field_edits", &cols, 7, place),
+            Some(("jslim", "srs_edit_pack(?8, ?1, ?2, ?3, ?4, ?5, ?6, ?7)".to_owned()))
+        );
+        assert_eq!(insert_column("srs_field_edits", &cols[1..], 6, place), Some(("jslim", "?7".to_owned())));
+        assert_eq!(insert_column("srs_unknown_events", &["id", "json"], 1, place), None);
     }
 
     #[test]

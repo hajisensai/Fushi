@@ -423,12 +423,15 @@ impl SrsCore {
         let w = self.writer()?;
         // ID 列编码（store/ids.rs）：旧库搬来的是文本。
         let id_cols = ids::COLUMNS.iter().find(|(n, _)| *n == t.name).map_or(&[][..], |(_, c)| *c);
-        let marks = t.columns.iter().map(|c| if id_cols.contains(c) { "srs_id(?)" } else { "?" }).collect::<Vec<_>>().join(", ");
-        let sql = format!(
-            "INSERT INTO {} ({}) VALUES ({marks})",
-            t.name,
-            t.columns.join(", ")
-        );
+        let place = |i: usize| if id_cols.contains(&t.columns[i]) { format!("srs_id(?{})", i + 1) } else { format!("?{}", i + 1) };
+        // 投影的 `json` 是生成列（store/slim.rs）：写 `jslim`，按同一行的列值瘦存。
+        let (names, marks): (Vec<String>, Vec<String>) = (0..t.columns.len())
+            .map(|i| match slim::insert_column(t.name, t.columns, i, place) {
+                Some((name, expr)) => (name.to_owned(), expr),
+                None => (t.columns[i].to_owned(), place(i)),
+            })
+            .unzip();
+        let sql = format!("INSERT INTO {} ({}) VALUES ({})", t.name, names.join(", "), marks.join(", "));
         let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
         for row in &rows {
             stmt.execute(rusqlite::params_from_iter(row.iter()))
