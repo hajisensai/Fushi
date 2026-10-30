@@ -209,6 +209,28 @@ void main() {
     );
   });
 
+  test('冲突笔记按原因与笔记类型分行，写明类型名（BUG-3887）', () {
+    SrsImportNoteIssue issue(String guid, String nt, String reason) =>
+        SrsImportNoteIssue(guid: guid, noteType: nt, reason: reason);
+    final SrsImportReport report = SrsImportReport()
+      ..conflictNotes.addAll(<SrsImportNoteIssue>[
+        issue('a', 'Kiku', SrsImportIssueReason.noteTypeChanged),
+        issue('b', 'Kiku', SrsImportIssueReason.noteTypeChanged),
+        issue('c', 'Cloze', SrsImportIssueReason.noteTypeKindMismatch),
+        issue('d', '42', SrsImportIssueReason.missingNoteType),
+      ]);
+    final List<String> lines = srsImportReportLines(report);
+    expect(
+      lines,
+      containsAll(<String>[
+        t.srs_import_report_conflicts_type_changed(n: 2, name: 'Kiku'),
+        t.srs_import_report_conflicts_kind_mismatch(n: 1, name: 'Cloze'),
+        t.srs_import_report_conflicts_missing_type(n: 1),
+      ]),
+    );
+    expect(lines.where((String l) => l.contains('Kiku')), hasLength(1));
+  });
+
   test('带 FSRS 参数导入：报告写明已改用 RWKV；「继续用 FSRS」只切回仍自己管参数的 RWKV 牌组', () async {
     final String imported = await store.createDeck('Imported');
     final String child = await store.createDeck('Child', parentId: imported);
