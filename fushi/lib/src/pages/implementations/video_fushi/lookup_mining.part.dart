@@ -275,9 +275,15 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // BUG-3319：没有任何区间（无 cue、草稿空）时锚在**当前播放位置**（已是播放器轴，
       // 不再逆变换），与 [_mineVideoCard] 的 `sourceStartMs` 同一口径——以前落 0，静帧
       // 抽的是片头黑帧。
-      stillFrameAtMs: mergedRange == null
-          ? (controller.positionMs ?? 0)
-          : miningClipTimeMs(mergedRange.startMs, clipDelayMs),
+      // 硬字幕暂停 OCR 的默认窗口（[frameOcrFallbackCue]）：窗口起点早于文字出现，静帧
+      // 锚在暂停位置（那一刻文字一定在屏）。加了上下文句（草稿非空）就回到首句起点。
+      stillFrameAtMs:
+          (cue == null || !_miningDraft.isEmpty
+              ? null
+              : controller.frameOcrFallbackStillMs(cue)) ??
+          (mergedRange == null
+              ? (controller.positionMs ?? 0)
+              : miningClipTimeMs(mergedRange.startMs, clipDelayMs)),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
       cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
       sentence: mergedSentence,

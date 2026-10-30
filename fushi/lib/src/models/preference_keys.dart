@@ -787,10 +787,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `background` 后台（默认）/ `deferred` 看完再制卡 / `wait` 等整张卡落地。
   'video_online_mining_mode',
   // bool（默认 true）：暂停 OCR 在没有字幕轨的画面（硬字幕）上点字查词制卡时，给句子
-  // 音频一个「暂停位置往前几秒」的默认窗口（见 media/video/player_decoded_subtitle_cues.dart
+  // 音频一个「暂停位置前后各几秒」的默认窗口（见 media/video/player_decoded_subtitle_cues.dart
   // 的 buildFrameOcrFallbackCue）。关掉 = 这类查词制卡不带句子音频（`0..0` 哨兵）。
   'video_pause_ocr_audio_fallback',
-  // int（毫秒，默认 4000，夹到 1000..15000）：上面那个默认窗口的长度。
+  // int（毫秒，默认 2000，夹到 500..10000）：上面那个默认窗口在暂停位置前后**各**取多长。
   'video_pause_ocr_audio_fallback_ms',
   // String（[VideoPauseOcrScope] 的 wireName）：暂停时识别画面文字（OCR 点字查词）
   // 的范围——`all` 所有视频（默认）/ `graphic_subtitles` 只在图形字幕时 / `off`。

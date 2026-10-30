@@ -3697,7 +3697,7 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   // 硬字幕（没有字幕轨）上暂停 OCR 点字查词制卡时，是否给句子音频一个默认窗口
-  // （暂停位置往前 [videoPauseOcrAudioFallbackMs]）。默认开；关掉则这类制卡没有句子音频。
+  // （暂停位置前后各 [videoPauseOcrAudioFallbackMs]）。默认开；关掉则这类制卡没有句子音频。
   bool get videoPauseOcrAudioFallbackEnabled =>
       getPref('video_pause_ocr_audio_fallback', defaultValue: true) as bool;
 

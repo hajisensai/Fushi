@@ -4904,12 +4904,17 @@ class VideoPlayerController extends ChangeNotifier
   /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
+  /// 最近一次 [frameOcrFallbackCue] 建的锚点，以及它建出来那一刻的暂停位置（播放器轴）。
+  /// 封面静帧要锚在暂停位置（那一刻文字一定在屏），而不是窗口起点。
+  AudioCue? _frameOcrFallbackCue;
+  int? _frameOcrFallbackPauseMs;
+
   /// 硬字幕（烧进画面、没有任何字幕轨）上暂停 OCR 点字查词的锚点 cue：窗口是「当前位置
-  /// 往前 [windowMs]」（[buildFrameOcrFallbackCue]，设置里可调），制卡由此得到句子
-  /// 音频区间，高级制卡的起止偏移再微调。登记为 [_graphicAnchorCue]，[delayMsForCue] /
-  /// [cueStreamOwning] 按它的口径（[_delayMs]、自成单句流）处理。
+  /// 前后各 [windowMs]」（[buildFrameOcrFallbackCue]，设置里可调），制卡由此得到句子
+  /// 音频区间，高级制卡的起止偏移 / 波形再微调。登记为 [_graphicAnchorCue]，
+  /// [delayMsForCue] / [cueStreamOwning] 按它的口径（[_delayMs]、自成单句流）处理。
   ///
-  /// 有字幕轨在渲染（图形字幕模式）/ 未 [load] / 位置读不到 / 位置在片头 → null。
+  /// 有字幕轨在渲染（图形字幕模式）/ 未 [load] / 位置读不到 → null。
   AudioCue? frameOcrFallbackCue({
     required String text,
     int windowMs = kFrameOcrFallbackWindowMs,
@@ -4923,9 +4928,18 @@ class VideoPlayerController extends ChangeNotifier
       delayMs: _delayMs,
       windowMs: windowMs,
     );
-    if (cue != null) _graphicAnchorCue = cue;
+    if (cue != null) {
+      _graphicAnchorCue = cue;
+      _frameOcrFallbackCue = cue;
+      _frameOcrFallbackPauseMs = position;
+    }
     return cue;
   }
+
+  /// [cue] 若就是 [frameOcrFallbackCue] 建的锚点，返回它的暂停位置（播放器轴毫秒）；
+  /// 否则 null。制卡据此把封面静帧锚在暂停位置，不是窗口起点。
+  int? frameOcrFallbackStillMs(AudioCue cue) =>
+      identical(cue, _frameOcrFallbackCue) ? _frameOcrFallbackPauseMs : null;
 
   /// BUG-3319：图形字幕（libmpv 自绘）此刻在屏那句的查词 / 制卡锚点 cue。
   ///
