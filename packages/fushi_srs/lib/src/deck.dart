@@ -154,19 +154,15 @@ class SrsRwkvQueueSettings {
   );
 }
 
-/// 新卡计划（[SrsFieldKeys.deckNewPlan]）：每周新卡任务与按复习量自动调整新卡。
-/// 与每日上限一样只看牌组自己的值（不随参数继承）；缺省 = 不设每周任务、按复习量只减不增，
+/// 新卡计划（[SrsFieldKeys.deckNewPlan]）：按复习量自动调整新卡。
+/// 与每日上限一样只看牌组自己的值（不随参数继承）；缺省 = 按复习量只减不增，
 /// 与加这项设置之前的行为相同。
 class SrsNewCardPlan {
   const SrsNewCardPlan({
-    this.perWeek = 0,
     this.autoLoad = true,
     this.budgetPercent = defaultBudgetPercent,
     this.boostPercent = 0,
   });
-
-  /// 每周新卡任务（周一起算）。0 = 不启用。
-  final int perWeek;
 
   /// 按复习量自动调整新卡（[srsComputeNewCardBudget]）。
   final bool autoLoad;
@@ -181,7 +177,6 @@ class SrsNewCardPlan {
   static const int minBudgetPercent = 50;
   static const int maxBudgetPercent = 1000;
   static const int maxBoostPercent = 200;
-  static const int maxPerWeek = 99999;
 
   /// 缺项 / 坏值回落到默认值，越界的夹到合法范围。
   static SrsNewCardPlan fromValue(Object? v) {
@@ -192,7 +187,6 @@ class SrsNewCardPlan {
       _ => fallback,
     };
     return SrsNewCardPlan(
-      perWeek: read('week', d.perWeek, 0, maxPerWeek),
       autoLoad: v['auto'] != false,
       budgetPercent: read(
         'budget',
@@ -205,7 +199,6 @@ class SrsNewCardPlan {
   }
 
   Map<String, Object?> toValue() => <String, Object?>{
-    'week': perWeek,
     'auto': autoLoad,
     'budget': budgetPercent,
     'boost': boostPercent,
@@ -214,14 +207,12 @@ class SrsNewCardPlan {
   @override
   bool operator ==(Object other) =>
       other is SrsNewCardPlan &&
-      other.perWeek == perWeek &&
       other.autoLoad == autoLoad &&
       other.budgetPercent == budgetPercent &&
       other.boostPercent == boostPercent;
 
   @override
-  int get hashCode =>
-      Object.hash(perWeek, autoLoad, budgetPercent, boostPercent);
+  int get hashCode => Object.hash(autoLoad, budgetPercent, boostPercent);
 }
 
 /// 物化后的牌组。

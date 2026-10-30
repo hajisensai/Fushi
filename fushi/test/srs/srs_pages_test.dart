@@ -1758,7 +1758,7 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('牌组设置页：新卡计划（每周任务 / 按复习量调整的预算与多出比例 / 关掉调整）写进牌组', (
+    testWidgets('牌组设置页：新卡计划（按复习量调整的预算与多出比例 / 关掉调整）写进牌组', (
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
@@ -1798,14 +1798,13 @@ void main() {
         await _settle(tester);
       }
 
-      await enter('srs-settings-new-per-week', '70');
       await enter('srs-settings-new-load-budget', '120');
       await enter('srs-settings-new-load-boost', '30');
       await save();
       SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       expect(
         tree[store.defaultDeckId]!.newCardPlan,
-        const SrsNewCardPlan(perWeek: 70, budgetPercent: 120, boostPercent: 30),
+        const SrsNewCardPlan(budgetPercent: 120, boostPercent: 30),
       );
 
       // 关掉按复习量调整：预算 / 多出两项收起，保存后只改开关。
@@ -1821,7 +1820,6 @@ void main() {
       expect(
         tree[store.defaultDeckId]!.newCardPlan,
         const SrsNewCardPlan(
-          perWeek: 70,
           autoLoad: false,
           budgetPercent: 120,
           boostPercent: 30,

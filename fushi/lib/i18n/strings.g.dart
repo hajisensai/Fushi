@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176545 (10385 per locale)
+/// Strings: 176494 (10382 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -10393,7 +10393,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Many reviews due today — no new cards today';
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
   String get srs_deck_rename => 'Rename deck';
   String get srs_deck_settings => 'Deck settings';
   String get srs_duplicates_dismiss => 'Not duplicates';
@@ -11039,7 +11038,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
   String get srs_settings_new_load_budget_hint =>
@@ -11054,9 +11053,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_settings_new_per_day => 'New cards per day';
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   String get srs_settings_new_plan => 'New card plan';
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   String get srs_settings_optimize_kept =>
@@ -32362,8 +32358,6 @@ class _StringsAr extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -33443,7 +33437,7 @@ class _StringsAr extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -33467,11 +33461,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -57829,8 +57818,6 @@ class _StringsDe extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -58910,7 +58897,7 @@ class _StringsDe extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -58934,11 +58921,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -83418,8 +83400,6 @@ class _StringsEs extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -84499,7 +84479,7 @@ class _StringsEs extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -84523,11 +84503,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -109095,8 +109070,6 @@ class _StringsFr extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -110176,7 +110149,7 @@ class _StringsFr extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -110200,11 +110173,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -134536,8 +134504,6 @@ class _StringsId extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -135617,7 +135583,7 @@ class _StringsId extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -135641,11 +135607,6 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -160018,8 +159979,6 @@ class _StringsIt extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -161099,7 +161058,7 @@ class _StringsIt extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -161123,11 +161082,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -184790,8 +184744,6 @@ class _StringsJa extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -185871,7 +185823,7 @@ class _StringsJa extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -185895,11 +185847,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -209297,8 +209244,6 @@ class _StringsKo extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -210378,7 +210323,7 @@ class _StringsKo extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -210402,11 +210347,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -234511,8 +234451,6 @@ class _StringsNl extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -235592,7 +235530,7 @@ class _StringsNl extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -235616,11 +235554,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -260025,8 +259958,6 @@ class _StringsPtBr extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -261106,7 +261037,7 @@ class _StringsPtBr extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -261130,11 +261061,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -285516,8 +285442,6 @@ class _StringsRu extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -286597,7 +286521,7 @@ class _StringsRu extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -286621,11 +286545,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -310759,8 +310678,6 @@ class _StringsTh extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -311840,7 +311757,7 @@ class _StringsTh extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -311864,11 +311781,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -336067,8 +335979,6 @@ class _StringsTr extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -337148,7 +337058,7 @@ class _StringsTr extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -337172,11 +337082,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -361370,8 +361275,6 @@ class _StringsVi extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -362451,7 +362354,7 @@ class _StringsVi extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -362475,11 +362378,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -385210,8 +385108,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String srs_deck_new_reduced({required Object n}) => '今天到期较多，新卡减为 ${n} 张';
   @override
-  String get srs_deck_new_week_done => '本周新卡任务已完成';
-  @override
   String get srs_deck_rename => '重命名牌组';
   @override
   String get srs_deck_settings => '牌组设置';
@@ -386198,7 +386094,7 @@ class _StringsZhCn extends _StringsEn {
   String get srs_settings_new_load_boost => '复习少时多出新卡（%）';
   @override
   String get srs_settings_new_load_boost_hint =>
-      '到期复习不到预算一半时，新卡最多增加这么多百分比（仍不超过本周剩余任务）。0 = 不增加。';
+      '到期复习不到预算一半时，新卡最多增加这么多百分比。0 = 不增加。';
   @override
   String get srs_settings_new_load_budget => '复习预算（日均复习数的 %）';
   @override
@@ -386219,11 +386115,6 @@ class _StringsZhCn extends _StringsEn {
   String get srs_settings_new_per_day => '每日新卡上限';
   @override
   String get srs_settings_new_per_day_hint => '到期较多时会自动减少新卡';
-  @override
-  String get srs_settings_new_per_week => '每周新卡任务';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = 不启用。设置后，每天的新卡 = 本周剩余任务 ÷ 本周剩余天数（向上取整），不超过每日新卡上限。每周从周一开始。';
   @override
   String get srs_settings_new_plan => '新卡计划';
   @override
@@ -408779,8 +408670,6 @@ class _StringsZhHk extends _StringsEn {
   String srs_deck_new_reduced({required Object n}) =>
       'Many reviews due today — new cards reduced to ${n}';
   @override
-  String get srs_deck_new_week_done => 'This week\'s new card goal is done';
-  @override
   String get srs_deck_rename => 'Rename deck';
   @override
   String get srs_deck_settings => 'Deck settings';
@@ -409860,7 +409749,7 @@ class _StringsZhHk extends _StringsEn {
   String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
   @override
   String get srs_settings_new_load_boost_hint =>
-      'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
   @override
   String get srs_settings_new_load_budget =>
       'Review budget (% of daily average)';
@@ -409884,11 +409773,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
-  @override
-  String get srs_settings_new_per_week => 'Weekly new card goal';
-  @override
-  String get srs_settings_new_per_week_hint =>
-      '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
   @override
   String get srs_settings_new_plan => 'New card plan';
   @override
@@ -431125,8 +431009,6 @@ extension on _StringsEn {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -432051,7 +431933,7 @@ extension on _StringsEn {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -432070,10 +431952,6 @@ extension on _StringsEn {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -452701,8 +452579,6 @@ extension on _StringsAr {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -453627,7 +453503,7 @@ extension on _StringsAr {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -453646,10 +453522,6 @@ extension on _StringsAr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -474333,8 +474205,6 @@ extension on _StringsDe {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -475259,7 +475129,7 @@ extension on _StringsDe {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -475278,10 +475148,6 @@ extension on _StringsDe {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -495969,8 +495835,6 @@ extension on _StringsEs {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -496895,7 +496759,7 @@ extension on _StringsEs {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -496914,10 +496778,6 @@ extension on _StringsEs {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -517616,8 +517476,6 @@ extension on _StringsFr {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -518542,7 +518400,7 @@ extension on _StringsFr {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -518561,10 +518419,6 @@ extension on _StringsFr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -539223,8 +539077,6 @@ extension on _StringsId {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -540149,7 +540001,7 @@ extension on _StringsId {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -540168,10 +540020,6 @@ extension on _StringsId {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -560839,8 +560687,6 @@ extension on _StringsIt {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -561765,7 +561611,7 @@ extension on _StringsIt {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -561784,10 +561630,6 @@ extension on _StringsIt {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -582389,8 +582231,6 @@ extension on _StringsJa {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -583315,7 +583155,7 @@ extension on _StringsJa {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -583334,10 +583174,6 @@ extension on _StringsJa {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -603888,8 +603724,6 @@ extension on _StringsKo {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -604814,7 +604648,7 @@ extension on _StringsKo {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -604833,10 +604667,6 @@ extension on _StringsKo {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -625477,8 +625307,6 @@ extension on _StringsNl {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -626403,7 +626231,7 @@ extension on _StringsNl {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -626422,10 +626250,6 @@ extension on _StringsNl {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -647097,8 +646921,6 @@ extension on _StringsPtBr {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -648023,7 +647845,7 @@ extension on _StringsPtBr {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -648042,10 +647864,6 @@ extension on _StringsPtBr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -668721,8 +668539,6 @@ extension on _StringsRu {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -669647,7 +669463,7 @@ extension on _StringsRu {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -669666,10 +669482,6 @@ extension on _StringsRu {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -690305,8 +690117,6 @@ extension on _StringsTh {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -691231,7 +691041,7 @@ extension on _StringsTh {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -691250,10 +691060,6 @@ extension on _StringsTh {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -711907,8 +711713,6 @@ extension on _StringsTr {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -712833,7 +712637,7 @@ extension on _StringsTr {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -712852,10 +712656,6 @@ extension on _StringsTr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -733504,8 +733304,6 @@ extension on _StringsVi {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -734430,7 +734228,7 @@ extension on _StringsVi {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -734449,10 +734247,6 @@ extension on _StringsVi {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':
@@ -754918,8 +754712,6 @@ extension on _StringsZhCn {
         return '今天到期较多，暂停出新卡';
       case 'srs_deck_new_reduced':
         return ({required Object n}) => '今天到期较多，新卡减为 ${n} 张';
-      case 'srs_deck_new_week_done':
-        return '本周新卡任务已完成';
       case 'srs_deck_rename':
         return '重命名牌组';
       case 'srs_deck_settings':
@@ -755824,7 +755616,7 @@ extension on _StringsZhCn {
       case 'srs_settings_new_load_boost':
         return '复习少时多出新卡（%）';
       case 'srs_settings_new_load_boost_hint':
-        return '到期复习不到预算一半时，新卡最多增加这么多百分比（仍不超过本周剩余任务）。0 = 不增加。';
+        return '到期复习不到预算一半时，新卡最多增加这么多百分比。0 = 不增加。';
       case 'srs_settings_new_load_budget':
         return '复习预算（日均复习数的 %）';
       case 'srs_settings_new_load_budget_hint':
@@ -755843,10 +755635,6 @@ extension on _StringsZhCn {
         return '每日新卡上限';
       case 'srs_settings_new_per_day_hint':
         return '到期较多时会自动减少新卡';
-      case 'srs_settings_new_per_week':
-        return '每周新卡任务';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = 不启用。设置后，每天的新卡 = 本周剩余任务 ÷ 本周剩余天数（向上取整），不超过每日新卡上限。每周从周一开始。';
       case 'srs_settings_new_plan':
         return '新卡计划';
       case 'srs_settings_optimize_done':
@@ -776314,8 +776102,6 @@ extension on _StringsZhHk {
       case 'srs_deck_new_reduced':
         return ({required Object n}) =>
             'Many reviews due today — new cards reduced to ${n}';
-      case 'srs_deck_new_week_done':
-        return 'This week\'s new card goal is done';
       case 'srs_deck_rename':
         return 'Rename deck';
       case 'srs_deck_settings':
@@ -777239,7 +777025,7 @@ extension on _StringsZhHk {
       case 'srs_settings_new_load_boost':
         return 'Extra new cards on light days (%)';
       case 'srs_settings_new_load_boost_hint':
-        return 'When due reviews are below half the budget, new cards grow by up to this percentage (still within this week\'s remaining goal). 0 = never add.';
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
       case 'srs_settings_new_load_budget':
         return 'Review budget (% of daily average)';
       case 'srs_settings_new_load_budget_hint':
@@ -777258,10 +777044,6 @@ extension on _StringsZhHk {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
-      case 'srs_settings_new_per_week':
-        return 'Weekly new card goal';
-      case 'srs_settings_new_per_week_hint':
-        return '0 = off. When set, each day introduces the rest of this week\'s goal spread over the days left (rounded up), capped by the daily new card limit. Weeks start on Monday.';
       case 'srs_settings_new_plan':
         return 'New card plan';
       case 'srs_settings_optimize_done':

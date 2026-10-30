@@ -96,7 +96,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   final TextEditingController _rwkvRepeatReviews = TextEditingController();
   final TextEditingController _rwkvRepeatSeconds = TextEditingController();
   final TextEditingController _rwkvRefreshEvery = TextEditingController();
-  final TextEditingController _newPerWeek = TextEditingController();
   final TextEditingController _newLoadBudget = TextEditingController();
   final TextEditingController _newLoadBoost = TextEditingController();
   bool _newLoadAuto = true;
@@ -130,7 +129,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       _rwkvRepeatReviews,
       _rwkvRepeatSeconds,
       _rwkvRefreshEvery,
-      _newPerWeek,
       _newLoadBudget,
       _newLoadBoost,
     ]) {
@@ -179,7 +177,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
         _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
         _rwkvRefreshEvery.text = '${deck.rwkvQueue.refreshEvery}';
-        _newPerWeek.text = '${deck.newCardPlan.perWeek}';
         _newLoadAuto = deck.newCardPlan.autoLoad;
         _newLoadBudget.text = '${deck.newCardPlan.budgetPercent}';
         _newLoadBoost.text = '${deck.newCardPlan.boostPercent}';
@@ -216,7 +213,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   SrsNewCardPlan _newCardPlan(
     SrsNewCardPlan current,
   ) => SrsNewCardPlan.fromValue(<String, Object?>{
-    'week': int.tryParse(_newPerWeek.text.trim()) ?? current.perWeek,
     'auto': _newLoadAuto,
     'budget': int.tryParse(_newLoadBudget.text.trim()) ?? current.budgetPercent,
     'boost': int.tryParse(_newLoadBoost.text.trim()) ?? current.boostPercent,
@@ -838,12 +834,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         Text(
           t.srs_settings_new_plan,
           style: context.fushiType.titleSmallEmphasized,
-        ),
-        _numberField(
-          _newPerWeek,
-          t.srs_settings_new_per_week,
-          helper: t.srs_settings_new_per_week_hint,
-          key: const ValueKey<String>('srs-settings-new-per-week'),
         ),
         AdaptiveSettingsSwitchRow(
           key: const ValueKey<String>('srs-settings-new-load-auto'),
