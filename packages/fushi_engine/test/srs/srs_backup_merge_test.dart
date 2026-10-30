@@ -212,7 +212,9 @@ void main() {
         (await localSrs.db
                 .customSelect(
                   'SELECT profile_uid FROM srs_entities WHERE id = ?',
-                  variables: <Variable<Object>>[Variable<String>(id)],
+                  variables: <Variable<Object>>[
+                    Variable<String>(id, srsIdType),
+                  ],
                 )
                 .getSingleOrNull())
             ?.read<String>('profile_uid');
@@ -307,7 +309,7 @@ void main() {
           in await localSrs.db
               .customSelect(
                 'SELECT json FROM srs_local_state WHERE profile_uid = ?',
-                variables: <Variable<Object>>[Variable<String>(uid)],
+                variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
               )
               .get())
         r.read<String>('json'),
@@ -349,7 +351,7 @@ void main() {
     final QueryRow c = await localSrs.db
         .customSelect(
           'SELECT COUNT(*) AS c FROM srs_entities WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(oldUid)],
+          variables: <Variable<Object>>[Variable<String>(oldUid, srsIdType)],
         )
         .getSingle();
     expect(c.read<int>('c'), 0);

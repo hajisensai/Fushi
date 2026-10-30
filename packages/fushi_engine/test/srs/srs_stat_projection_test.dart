@@ -80,7 +80,9 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
       in await s.db
           .customSelect(
             'SELECT card_id, json FROM srs_review_logs WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(s.profileUid)],
+            variables: <Variable<Object>>[
+              Variable<String>(s.profileUid, srsIdType),
+            ],
           )
           .get()) {
     (byCard[r.read<String>('card_id')] ??= <SrsReviewLog>[]).add(

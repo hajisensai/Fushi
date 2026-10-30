@@ -285,7 +285,7 @@ void main() {
     final QueryRow ops0 = await b.srs.db
         .customSelect(
           'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(target)],
+          variables: <Variable<Object>>[Variable<String>(target, srsIdType)],
         )
         .getSingle();
     final SrsProfileMergeResult again = await srsMergeProfileUid(
@@ -301,7 +301,7 @@ void main() {
     final QueryRow ops1 = await b.srs.db
         .customSelect(
           'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(target)],
+          variables: <Variable<Object>>[Variable<String>(target, srsIdType)],
         )
         .getSingle();
     expect(ops1.read<int>('c'), ops0.read<int>('c'));
