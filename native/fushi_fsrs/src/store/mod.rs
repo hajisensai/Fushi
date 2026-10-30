@@ -210,8 +210,6 @@ fn configure(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     // 摘要桶触发器用的 SQL 函数（store/sync2/digest.rs，审查 S-7）：三张投影表的每次写入都经它们增减桶值。
     sync2::digest::register(conn).map_err(|e| e.to_string())?;
-    // 日志 / 修改记录视图的 `json` 列（store/sync2/projrows.rs）：按操作拼回原文。
-    sync2::projrows::register(conn).map_err(|e| e.to_string())?;
     // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
     // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
     // 上限 256 MB；WAL 模式下 SQLite 照常处理。
