@@ -4,135 +4,30 @@
 // 在取词时随 <rt> 被 createWalker 拒掉而丢失，嵌套弹窗按词频排序而不是按来源读音。
 // 修：selectFromPosition 产出 selection.rubyReadings 并作为 textSelected 第 3 参交给宿主。
 //
-// 在最小 fake DOM 里真执行 popup selection.js（路径经 FUSHI_POPUP_SELECTION_JS，缺省取
-// assets/popup/selection.js）。
+// 在最小 fake DOM（test/lookup/selection_fake_dom.js）里真执行 assets/popup/selection.js。
 //
 // 运行：node fushi/test/dictionary/popup_selection_ruby_readings_test.js
 
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-
-function matches(node, part) {
-  if (part.startsWith('.')) {
-    return (node.className || '').split(/\s+/).includes(part.slice(1));
-  }
-  return (node.tagName || '').toLowerCase() === part.toLowerCase();
-}
-
-function link(parent, children) {
-  parent.childNodes = children;
-  for (let i = 0; i < children.length; i++) {
-    children[i].parentElement = parent;
-    children[i].nextSibling = children[i + 1] || null;
-  }
-  parent.firstChild = children[0] || null;
-  return parent;
-}
-
-function text(content) {
-  return { nodeType: 3, textContent: content, nodeValue: content, parentElement: null, nextSibling: null };
-}
-
-function el(tagName, children, className) {
-  const node = {
-    nodeType: 1,
-    tagName: tagName.toUpperCase(),
-    className: className || '',
-    parentElement: null,
-    nextSibling: null,
-    firstChild: null,
-    childNodes: [],
-    get textContent() {
-      return this.childNodes.map((c) => c.textContent).join('');
-    },
-    closest(selector) {
-      const parts = selector.split(',').map((s) => s.trim()).filter(Boolean);
-      let cur = this;
-      while (cur && cur.nodeType === 1) {
-        if (parts.some((p) => matches(cur, p))) return cur;
-        cur = cur.parentElement;
-      }
-      return null;
-    },
-  };
-  return link(node, (children || []).map((c) => (typeof c === 'string' ? text(c) : c)));
-}
-
-function makeRange() {
-  const rect = { left: 0, right: 10, top: 0, bottom: 10, x: 0, y: 0, width: 10, height: 10 };
-  return {
-    setStart(node, offset) { this.startContainer = node; this.startOffset = offset; },
-    setEnd(node, offset) { this.endContainer = node; this.endOffset = offset; },
-    collapse() {},
-    getClientRects() { return [rect]; },
-    getBoundingClientRect() { return rect; },
-  };
-}
-
-function makeTreeWalker(root, filter) {
-  const out = [];
-  (function walk(node) {
-    for (const child of node.childNodes || []) {
-      if (child.nodeType === 3) {
-        if (!filter || filter.acceptNode(child) === 1) out.push(child);
-      } else if (child.nodeType === 1) {
-        walk(child);
-      }
-    }
-  })(root);
-  return {
-    currentNode: root,
-    nextNode() {
-      const next = out[out.indexOf(this.currentNode) + 1] || null;
-      if (next) this.currentNode = next;
-      return next;
-    },
-  };
-}
+const { el, text, loadSelectionScript } = require('../lookup/selection_fake_dom.js');
 
 // 固定读仓库内的资产（不接受外部传入路径：被执行的只能是本仓的 selection.js）。
 const src = fs.readFileSync(path.join(__dirname, '../../assets/popup/selection.js'), 'utf8');
 
 // 从 [node] 的 [offset] 起取词，返回 { text, rubyReadings, handlerArgs }。
 function scan(paragraph, node, offset) {
-  const body = el('body', [paragraph]);
   const calls = [];
-  const document = {
-    body,
-    createRange: makeRange,
-    createTreeWalker: (root, _w, filter) => makeTreeWalker(root, filter),
-    caretPositionFromPoint: () => null,
-    caretRangeFromPoint: () => null,
-    elementFromPoint: () => null,
-  };
-  const window = {
-    getComputedStyle: () => ({ display: 'inline', content: 'none' }),
-    getSelection: () => ({ removeAllRanges() {} }),
-    flutter_inappwebview: { callHandler: (...args) => { calls.push(args); } },
-  };
-  const sandbox = {
-    window,
-    document,
-    Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
-    NodeFilter: { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
-    CSS: undefined,
-    Map,
-    console,
-  };
-  sandbox.globalThis = sandbox;
-  vm.createContext(sandbox);
-  vm.runInContext(src, sandbox);
-  const sel = sandbox.window.fushiSelection;
+  const sel = loadSelectionScript(src, paragraph, (...args) => { calls.push(args); });
   sel.selection = null;
   sel.selectFromPosition(node, offset, 16);
   assert.ok(sel.selection, 'selectFromPosition 必须产生选区');
   assert.strictEqual(calls.length, 1, 'textSelected 恰好发一次');
   return {
     text: sel.selection.text,
-    rubyReadings: JSON.parse(JSON.stringify(sel.selection.rubyReadings)),
-    handlerArgs: JSON.parse(JSON.stringify([calls[0][0], calls[0][3]])),
+    rubyReadings: structuredClone(sel.selection.rubyReadings),
+    handlerArgs: structuredClone([calls[0][0], calls[0][3]]),
   };
 }
 
