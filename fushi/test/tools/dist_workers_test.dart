@@ -296,6 +296,75 @@ void main() {
     );
   });
 
+  group('analyze / build go only where hello says they can', () {
+    Map<String, String> hello(String extra) =>
+        parseDistHello('os=windows\r\nflutter=3.47.6\npaused=no\n$extra');
+    const DistJob analyze = DistJob.analyze();
+    final DistJob apk = DistJob.build(
+      distBuildOf(<String>['flutter', 'build', 'apk'])!,
+    );
+    final DistJob mac = DistJob.build(
+      distBuildOf(<String>['flutter', 'build', 'macos', '--debug'])!,
+    );
+
+    test('a shim from before the verb is passed over', () {
+      expect(
+        distJobBlocker(hello(''), analyze, shim: true),
+        contains('analyze'),
+      );
+      expect(distJobBlocker(hello(''), analyze, shim: false), isNull);
+      expect(
+        distJobBlocker(hello('analyze=yes'), apk, shim: true),
+        contains('predates builds'),
+      );
+    });
+
+    test('a build needs its toolchain there and the owner\'s consent', () {
+      expect(
+        distJobBlocker(hello('build=android,windows'), apk, shim: true),
+        isNull,
+      );
+      expect(
+        distJobBlocker(hello('build=windows'), apk, shim: true),
+        'no android toolchain there (has: windows)',
+      );
+      expect(
+        distJobBlocker(hello('build='), mac, shim: false),
+        'no macos toolchain there',
+      );
+      expect(
+        distJobBlocker(hello('build=off'), apk, shim: true),
+        contains('ALLOW_BUILD=0'),
+      );
+    });
+
+    test('paused is paused for every job', () {
+      expect(
+        distJobBlocker(
+          parseDistHello('paused=yes\nanalyze=yes\nbuild=android'),
+          apk,
+          shim: true,
+        ),
+        'paused by the owner',
+      );
+    });
+  });
+
+  test('build requests reach the shim as plain words', () {
+    expect(
+      shimRequest('build', <String>[
+        '1',
+        ...distBuildOf(<String>[
+          'gradlew',
+          ':app:assembleRelease',
+          '-Ptarget-platform=android-arm64,android-x64',
+        ])!.request,
+      ]),
+      'build 1 gradle :app:assembleRelease '
+      '-Ptarget-platform=android-arm64,android-x64',
+    );
+  });
+
   test('shellQuote survives single quotes', () {
     expect(shellQuote("it's"), r"'it'\''s'");
     expect(shellQuote(r'$HOME'), r"'$HOME'");

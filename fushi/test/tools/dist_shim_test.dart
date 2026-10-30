@@ -216,6 +216,115 @@ void main() {
     expect('${low.stderr}', contains('low memory'));
   });
 
+  test('build needs the lock and takes only the compile-check words', () {
+    // The coordinator reads the toolchains from hello before preparing.
+    expect(
+      '${shim('hello').stdout}',
+      matches(RegExp(r'^build=', multiLine: true)),
+    );
+    refused('build 1 flutter apk');
+    expect(shim('lock 1 $_runA').exitCode, 0);
+    for (final String bad in <String>[
+      'build 1 flutter',
+      'build 1 make apk',
+      'build 1 flutter apk --dart-define=K=V',
+      'build 1 flutter ios',
+      'build 1 gradle clean',
+      'build 1 gradle :app:assembleRelease --init-script=x',
+      'build 1 gradle :app:assembleRelease -Pk=v',
+      'build 1 flutter apk --target-platform=ios',
+      'build 2 flutter apk',
+    ]) {
+      refused(bad);
+    }
+  });
+
+  test('build: off by the owner, busy when paused or short of memory', () {
+    expect(shim('lock 1 $_runA').exitCode, 0);
+    File(
+      '${home.path}/limits',
+    ).writeAsStringSync('MIN_FREE_DISK_GB=0\nALLOW_BUILD=0\n');
+    expect('${shim('hello').stdout}', contains('build=off'));
+    final ProcessResult off = shim('build 1 flutter apk');
+    expect(off.exitCode, 2);
+    expect('${off.stderr}', contains('ALLOW_BUILD=0'));
+
+    File('${home.path}/limits').writeAsStringSync('MIN_FREE_DISK_GB=0\n');
+    expect(shim(null, args: <String>['pause']).exitCode, 0);
+    final ProcessResult paused = shim('build 1 gradle :app:assembleDebug');
+    expect(paused.exitCode, 75);
+    expect('${paused.stderr}', contains('paused'));
+    expect(shim(null, args: <String>['resume']).exitCode, 0);
+    File(
+      '${home.path}/limits',
+    ).writeAsStringSync('MIN_FREE_DISK_GB=0\nMIN_FREE_MEM_MB=999999999\n');
+    final ProcessResult low = shim('build 1 flutter windows');
+    expect(low.exitCode, 75);
+    expect('${low.stderr}', contains('low memory'));
+  });
+
+  /// Runs a worker script of this checkout with [args] and [stdin]; the
+  /// cases below must all be refused before anything starts.
+  Future<ProcessResult> script(
+    String name,
+    List<String> args, {
+    String stdin = '',
+  }) async {
+    final Process p = await Process.start(bash, <String>[
+      'tool/dist_test/$name',
+      ...args,
+    ]);
+    p.stdin.write(stdin);
+    await p.stdin.close();
+    final Future<String> out = p.stdout
+        .transform(const SystemEncoding().decoder)
+        .join();
+    final Future<String> err = p.stderr
+        .transform(const SystemEncoding().decoder)
+        .join();
+    return ProcessResult(p.pid, await p.exitCode, await out, await err);
+  }
+
+  test('worker_build.sh refuses what distBuildOf would not produce', () async {
+    for (final List<String> bad in <List<String>>[
+      <String>[],
+      <String>['make'],
+      <String>['flutter', 'ios'],
+      <String>['flutter', 'apk', '--dart-define=K=V'],
+      <String>['flutter', 'apk', '--target-platform=ios'],
+      <String>['flutter', 'windows', '--split-per-abi'],
+      <String>['flutter', 'macos', '--release'],
+      <String>['flutter', 'macos'],
+      <String>['gradle'],
+      <String>['gradle', 'clean'],
+      <String>['gradle', ':app:assembleRelease', '-Ptarget-platform=x86'],
+    ]) {
+      final ProcessResult r = await script('worker_build.sh', bad);
+      expect(r.exitCode, 2, reason: '${bad.join(' ')}\n${r.stderr}');
+      expect('${r.stdout}', isEmpty, reason: bad.join(' '));
+    }
+  });
+
+  test(
+    'worker_run.sh takes only a real package, coverage only for flutter',
+    () async {
+      for (final List<String> bad in <List<String>>[
+        <String>['0', '--fushi-package=../fushi'],
+        <String>['0', '--fushi-package=no_such_package'],
+        <String>['0', '--fushi-package=Fushi_Engine'],
+        <String>['itest', '--fushi-package=fushi_engine'],
+        <String>['0', '--fushi-package=fushi_engine', '--coverage'],
+      ]) {
+        final ProcessResult r = await script(
+          'worker_run.sh',
+          bad,
+          stdin: 'test/a_test.dart\n',
+        );
+        expect(r.exitCode, 2, reason: '${bad.join(' ')}\n${r.stderr}');
+      }
+    },
+  );
+
   group('worker_analyze.sh', () {
     /// Runs it in this checkout with [paths] on stdin; it must refuse before
     /// flutter starts.
