@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../tool/test_flow/heavy_offload.dart';
 
 const String _flutter = r'D:\flutter_sdk\flutter_3.47.6\bin\flutter.bat';
+const String _dart = r'D:\flutter_sdk\flutter_3.47.6\bin\dart.bat';
 
 void main() {
   bool exists(String p) => <String>{
@@ -18,12 +19,20 @@ void main() {
     'tool',
   }.contains(p);
 
-  HeavyOffload? plan(List<String> args, {bool inAppDir = true}) =>
-      planHeavyOffload(
-        <String>[_flutter, ...args],
-        inAppDir: inAppDir,
-        exists: exists,
-      );
+  HeavyOffload? planIn(
+    String where,
+    List<String> command, {
+    bool checkOnly = false,
+  }) => planHeavyOffload(
+    command,
+    where: where,
+    cwd: 'D:/r/$where',
+    checkOnly: checkOnly,
+    exists: exists,
+  );
+
+  HeavyOffload? plan(List<String> args) =>
+      planIn('fushi', <String>[_flutter, ...args]);
 
   group('flutter test', () {
     test('suites go out; dist_test owns pub, concurrency and reporter', () {
@@ -77,7 +86,8 @@ void main() {
     test('stays here when it writes files here or cannot be shipped', () {
       for (final List<String> args in <List<String>>[
         <String>['test', '--update-goldens', 'test/b_test.dart'],
-        <String>['test', '--coverage'],
+        <String>['test', '--coverage', '--merge-coverage'],
+        <String>['test', '--coverage=x'],
         <String>['test', '--file-reporter=json:out.json'],
         <String>['test', '--total-shards=2', '--shard-index=0'],
         <String>['test', '--plain-name', 'has space'],
@@ -91,19 +101,184 @@ void main() {
       }
     });
 
-    test('only from fushi/ and only flutter', () {
-      expect(plan(<String>['test'], inAppDir: false), isNull);
+    test(
+      '--coverage goes out; the merged lcov lands where flutter puts it',
+      () {
+        expect(
+          plan(<String>['test', '--coverage', 'test/b_test.dart'])!.distArgs,
+          <String>[
+            '--offload',
+            '--busy-retries=$kHeavyOffloadBusyRetries',
+            '--coverage',
+            '--coverage-out=D:/r/fushi/coverage/lcov.info',
+            'test/b_test.dart',
+          ],
+        );
+        expect(
+          plan(<String>[
+            'test',
+            '--coverage',
+            '--coverage-path',
+            r'out\cov.info',
+          ])!.distArgs,
+          contains('--coverage-out=D:/r/fushi/out/cov.info'),
+        );
+        expect(
+          plan(<String>[
+            'test',
+            '--coverage',
+            '--coverage-path=E:/elsewhere/lcov.info',
+          ])!.distArgs,
+          contains('--coverage-out=E:/elsewhere/lcov.info'),
+        );
+      },
+    );
+
+    test('only from fushi/ (the app) and only flutter there', () {
+      expect(planIn('', <String>[_flutter, 'test']), isNull);
+      expect(planIn('fushi/lib', <String>[_flutter, 'test']), isNull);
       expect(
-        planHeavyOffload(
-          <String>['dart', 'test', 'test/b_test.dart'],
-          inAppDir: true,
-          exists: exists,
-        ),
+        planIn('fushi', <String>[_dart, 'test', 'test/b_test.dart']),
         isNull,
       );
-      expect(plan(<String>['build', 'windows']), isNull);
+      expect(
+        plan(<String>['build', 'windows']),
+        isNull,
+        reason: 'no --check-only',
+      );
       expect(plan(<String>['drive']), isNull);
     });
+  });
+
+  group('package tests', () {
+    test('flutter test / dart test from packages/<name> go out with it', () {
+      final HeavyOffload? o = planIn('packages/fushi_engine', <String>[
+        _dart,
+        'test',
+        '-j',
+        '2',
+        'test/reader',
+      ]);
+      expect(o?.kind, HeavyOffloadKind.test);
+      expect(o!.distArgs, <String>[
+        '--offload',
+        '--busy-retries=$kHeavyOffloadBusyRetries',
+        '--package=packages/fushi_engine',
+        'test/reader',
+      ]);
+      expect(
+        planIn('packages/fushi_dictionary', <String>[
+          _flutter,
+          'test',
+          '--coverage',
+        ])!.distArgs,
+        <String>[
+          '--offload',
+          '--busy-retries=$kHeavyOffloadBusyRetries',
+          '--package=packages/fushi_dictionary',
+          '--coverage',
+          '--coverage-out=D:/r/packages/fushi_dictionary/coverage/lcov.info',
+        ],
+      );
+    });
+
+    test('dart test coverage (VM json), other dirs and other verbs stay', () {
+      expect(
+        planIn('packages/fushi_engine', <String>[
+          _dart,
+          'test',
+          '--coverage=c',
+        ]),
+        isNull,
+      );
+      expect(
+        planIn('packages/fushi_engine', <String>[_dart, 'test', '--coverage']),
+        isNull,
+      );
+      expect(
+        planIn('packages/fushi_engine/test', <String>[_dart, 'test']),
+        isNull,
+      );
+      expect(planIn('packages/Bad', <String>[_dart, 'test']), isNull);
+      expect(
+        planIn('packages/fushi_engine', <String>[_dart, 'analyze']),
+        isNull,
+      );
+      expect(planIn('tools/x', <String>[_dart, 'test']), isNull);
+    });
+  });
+
+  group('compile checks (--check-only)', () {
+    test('flutter build from fushi/ and gradlew from fushi/android/', () {
+      final HeavyOffload? apk = planIn('fushi', <String>[
+        _flutter,
+        'build',
+        'apk',
+        '--release',
+        '--no-pub',
+        '--target-platform',
+        'android-arm64',
+      ], checkOnly: true);
+      expect(apk?.kind, HeavyOffloadKind.build);
+      expect(apk!.distArgs, <String>[
+        '--build',
+        '--',
+        'flutter',
+        'build',
+        'apk',
+        '--release',
+        '--target-platform=android-arm64',
+      ]);
+      expect(
+        planIn('fushi/android', <String>[
+          r'.\gradlew.bat',
+          ':app:assembleRelease',
+        ], checkOnly: true)!.distArgs,
+        <String>['--build', '--', 'gradlew', ':app:assembleRelease'],
+      );
+    });
+
+    test('without --check-only, or outside the list, a build stays here', () {
+      expect(
+        planIn('fushi/android', <String>['gradlew', ':app:assembleRelease']),
+        isNull,
+      );
+      for (final List<String> c in <List<String>>[
+        <String>[_flutter, 'build', 'ios'],
+        <String>[_flutter, 'build', 'macos'],
+        <String>[_flutter, 'build', 'apk', '--dart-define=K=V'],
+        <String>[_flutter, 'build', 'windows', '-t', 'lib/x.dart'],
+      ]) {
+        expect(
+          planIn('fushi', c, checkOnly: true),
+          isNull,
+          reason: c.join(' '),
+        );
+      }
+      expect(
+        planIn('fushi', <String>[
+          'gradlew',
+          'assembleRelease',
+        ], checkOnly: true),
+        isNull,
+        reason: 'gradlew runs from fushi/android/',
+      );
+      expect(
+        planIn('fushi/android', <String>['gradlew', 'clean'], checkOnly: true),
+        isNull,
+      );
+    });
+  });
+
+  test('where a directory sits in the checkout', () {
+    expect(heavyOffloadWhere(r'D:\R\fushi\android', 'd:/r'), 'fushi/android');
+    expect(heavyOffloadWhere('D:/r/', 'D:/r'), '');
+    expect(heavyOffloadWhere('D:/rx/fushi', 'D:/r'), isNull);
+    expect(
+      heavyOffloadWhere('/home/a/r/packages/x', '/home/a/r'),
+      'packages/x',
+    );
+    expect(heavyOffloadWhere('/home/a/R/fushi', '/home/a/r'), isNull);
   });
 
   group('flutter analyze', () {
