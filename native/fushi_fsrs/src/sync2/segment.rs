@@ -6,7 +6,8 @@
 //! 头（明文，参与签名，加密时作 AAD）
 //!   "FSG2" | ver u8 | flags u8 (bit0 加密) | collection Id | device Id | first uv | last uv
 //!   | prev_chain [32] | last_chain [32]
-//! 体  zstd(操作增量编码)，加密时再 XChaCha20-Poly1305(nonce || ct)
+//! 体  zstd(操作增量编码)，加密时再 XChaCha20-Poly1305(nonce || ct)：先压后加密（密文不可压）
+//!     压缩用官方 zstd 第 [SEGMENT_ZSTD_LEVEL] 档、不带字典（见该常量）；解压走 ruzstd 流式窗口，任何标准帧都读。
 //! 尾  Ed25519 签名 [64]，签 blake3(头 || 体)
 //! ```
 //!
@@ -30,9 +31,12 @@ use super::vv::{OpId, Vv};
 
 pub const MAGIC: &[u8; 4] = b"FSG2";
 pub const VERSION: u8 = 1;
-pub const PROTOCOL: u32 = 1;
-/// 能读本版本写出的数据所需的最低读者版本（设计 §8）。
-pub const MIN_READER: u32 = 1;
+/// 协议版本（head 的 `v`）。2 = 2026-10-30 断代：集合根挪到 `v3/`（Dart srs_location_store.dart）、媒体只剩内容寻址 +
+/// 分块封装；段与 head 的字节格式没变（v1 位置的段 / head 原样搬进新根，读者照读）。
+pub const PROTOCOL: u32 = 2;
+/// 能读本版本写出的数据所需的最低读者版本（设计 §8）。读者遇到 head 的 `minReader` 比自己的 [PROTOCOL] 新：不收这台
+/// 设备、报需要升级（store/sync2/transport.rs `plan`）。
+pub const MIN_READER: u32 = 2;
 
 /// 切段目标（设计 §6.2）：按**压缩后**的体积算，一段约 4 MB。哑存储上一次请求的固定开销远大于传几 MB 的
 /// 时间，段越少首次提交 / 新设备追赶越快；增量同步每轮只有几条操作，本来就只出一个小段，由小段合并（§7.1）收拢。
@@ -43,6 +47,17 @@ pub const SEGMENT_MAX_OPS: u64 = 250_000;
 /// 化字段）压缩比能到上百倍，一个 4 MB 的段解开就是几百 MB，读端解一段要同时拿着明文与解出来的操作。
 /// 普通内容压缩比几倍，这条上限碰不到；碰到的段在 [Splitter] 交回的体积里按满段记（见 [Splitter::finish]）。
 pub const SEGMENT_MAX_RAW_BYTES: u64 = 16 * 1024 * 1024;
+/// 段体的 zstd 档位。基准（10 万笔记 / 40 万复习 / 75 万条操作，段体解压后 123 MB）：ruzstd Fastest 26.7 MB；官方 zstd
+/// -1 17.8 MB、-3 17.5 MB（0.15 s）、-9 17.2 MB（0.7 s）、-19 14.5 MB（60 s）。-3 之后每多一档只省 1%、耗时翻倍，
+/// 手机上首次提交几十万条要按秒计，取 3。不用字典：首次提交 / 合并后的段是几 MB 的大帧，字典只对几百字节的小帧有用，
+/// 而小段的绝对体积本来就小；字典一旦用上就成了格式的一部分，永远要随包带着训练那天的那一份。
+pub const SEGMENT_ZSTD_LEVEL: i32 = 3;
+
+/// 压一个段体（[SEGMENT_ZSTD_LEVEL]）。只在分配失败这类不可能的情形出错。
+fn compress_body(raw: &[u8]) -> Result<Vec<u8>, String> {
+    zstd::bulk::compress(raw, SEGMENT_ZSTD_LEVEL).map_err(|e| format!("segment compress: {e}"))
+}
+
 /// 估算压缩体积的小块：块内一起压、块间各自压，求和是整段一起压的上界（块越大越准，也越费内存）。
 const CHUNK_OPS: usize = 4096;
 const CHUNK_RAW: usize = 256 * 1024;
@@ -320,7 +335,7 @@ pub fn pack(
     let mut hw = Writer::new();
     header.write(&mut hw);
     let head_bytes = hw.into_vec();
-    let compressed = ruzstd::encoding::compress_to_vec(&write_body(ops)[..], ruzstd::encoding::CompressionLevel::Fastest);
+    let compressed = compress_body(&write_body(ops))?;
     let body = match key {
         Some(k) => k.seal(&compressed, &head_bytes),
         None => compressed,
@@ -587,7 +602,9 @@ pub fn open(bytes: &[u8], public: &[u8; 32], key: Option<&CollectionKey>) -> Res
 
 /// 一组操作打成段体后压缩出来的字节数（不含段头、签名、加密开销，那些是每段几十字节的常数）。
 pub fn compressed_len(ops: &[Op]) -> u64 {
-    ruzstd::encoding::compress_to_vec(&write_body(ops)[..], ruzstd::encoding::CompressionLevel::Fastest).len() as u64
+    let raw = write_body(ops);
+    // 压不了（分配失败）就按原长算：只会切得更碎，不会超限。
+    compress_body(&raw).map_or(raw.len(), |c| c.len()) as u64
 }
 
 /// 按设计 §6.2 的目标把一台设备连续 seq 的操作流式切成段：逐条 [Splitter::push]，最后 [Splitter::finish] 得到
@@ -836,6 +853,18 @@ pub(crate) mod tests {
     use super::*;
     use crate::sync2::id::Key;
     use crate::sync2::op::{Body, SCHEMA};
+
+    /// 明文段解压后的段体（体积基准用）。
+    pub fn raw_body_of(bytes: &[u8]) -> Vec<u8> {
+        let mut r = Reader::new(bytes);
+        let header = SegmentHeader::read(&mut r).unwrap();
+        assert!(!header.encrypted);
+        let body = r.bytes().unwrap();
+        let mut out = Vec::new();
+        let mut d = ruzstd::decoding::StreamingDecoder::new(body).unwrap();
+        std::io::Read::read_to_end(&mut d, &mut out).unwrap();
+        out
+    }
 
     pub fn ops_for(device: Id, n: u64) -> Vec<Op> {
         let deps = Arc::new(Vv::new());
@@ -1117,6 +1146,58 @@ mod size_tests {
     use crate::sync2::op::{tests::sample_log, Body, KIND_LOG, SCHEMA};
 
     /// 设计 §3.3 / §7.1 的体积量级：一段 2000 条真实形状的复习，压缩后平均每条在 40 字节以内。
+    /// [n] 条真实形状的复习（300 张卡轮转）。
+    fn sample_reviews(dev: Id, n: u64) -> Vec<Op> {
+        let deps = Arc::new(Vv::new());
+        let cards: Vec<Id> = (0..300).map(|i| Id::new_v7(1_600_000_000_000 + i)).collect();
+        (1..=n)
+            .map(|seq| {
+                let at = 1_700_000_000_000 + seq as i64 * 9_000;
+                let log = crate::sync2::op::LogBody {
+                    id: Key::Uuid(Id::new_v7(at as u64)),
+                    card: Key::Uuid(cards[(seq * 7 % 300) as usize]),
+                    rating: Some(1 + (seq % 4) as i64),
+                    at,
+                    dur: 3_000 + (seq as i64 * 37) % 9_000,
+                    ..sample_log()
+                };
+                Op {
+                    id: OpId { device: dev, seq },
+                    hlc: Hlc { wall: at, logical: 0, device: dev },
+                    deps: deps.clone(),
+                    kind: KIND_LOG,
+                    schema: SCHEMA,
+                    payload: Body::Log(log).encode().into(),
+                    purged: false,
+                }
+            })
+            .collect()
+    }
+
+    /// 段压缩往返（2026-10-30 断代）：段体是官方 zstd [SEGMENT_ZSTD_LEVEL] 档的标准帧，读端的 ruzstd 流式窗口解得开、
+    /// 明文 / 加密都逐条原样回来；同一批复习比 ruzstd Fastest 小。
+    #[test]
+    fn segment_bodies_round_trip_through_level_three_zstd() {
+        let signer = DeviceKey::generate();
+        let ops = sample_reviews(Id::new_v7(1_700_000_000_000), 3000);
+        let key = CollectionKey([5u8; 32]);
+        for k in [None, Some(&key)] {
+            let (header, bytes) = pack(Id::random(), &ops, CHAIN_ZERO, &signer, k).unwrap();
+            let back = open(&bytes, &signer.public(), k).unwrap();
+            assert_eq!(back.header, header);
+            assert_eq!(back.ops, ops);
+        }
+        let raw = write_body(&ops);
+        let fastest = ruzstd::encoding::compress_to_vec(&raw[..], ruzstd::encoding::CompressionLevel::Fastest).len();
+        let now = compressed_len(&ops) as usize;
+        assert!(now < fastest, "level {SEGMENT_ZSTD_LEVEL}: {now} bytes vs ruzstd fastest {fastest}");
+        let mut plain = Vec::new();
+        let frame = compress_body(&raw).unwrap();
+        let mut d = ruzstd::decoding::StreamingDecoder::new(&frame[..]).unwrap();
+        std::io::Read::read_to_end(&mut d, &mut plain).unwrap();
+        assert_eq!(plain, raw);
+    }
+
     #[test]
     fn reviews_compress_to_tens_of_bytes_each() {
         let dev = Id::new_v7(1_700_000_000_000);

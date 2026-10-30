@@ -1,6 +1,6 @@
 /// 复习（SRS）同步的调度：什么时候、用哪个后端跑一轮同步 v2（`srsSync2Round`，
 /// docs/specs/2026-10-25-srs-sync-v2-design.md）。每条已认证的同步通道就是一个存储位置（同步 + 媒体用途，
-/// 设计 §6.5 的「已登录过的网盘账号直接复用」），布局 `fushi-srs/<profileUid>/v2/`。
+/// 设计 §6.5 的「已登录过的网盘账号直接复用」），布局 `fushi-srs/<profileUid>/v3/`（旧根 `v2/` 只剩围栏，见 srs_location_migration.dart）。
 ///
 /// 三个触发点，都只在复习模块开着时存在（由 `srs_app_runtime.dart` 装配）：
 /// 1. 常规同步每条通道成功后（`syncChannelPostRunHook`，与常规同步同一把互斥锁、同一个
@@ -46,6 +46,7 @@ import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -127,8 +128,12 @@ int? srsMaxConcurrentWritesOf(SyncAssetStore backend) {
   return inner is DropboxSyncBackend ? 1 : null;
 }
 
-/// 生产实现：现有同步后端上的 v2 集合根（`fushi-srs/<profileUid>/v2/`）跑一轮同步 v2。[directoryKey] 就是
-/// 这个位置的稳定身份（本机按它记每个位置传到了哪）。
+/// 本进程里已经确认旧集合根扫干净的位置（进程重启后的第一轮再扫一遍，接住围栏那一刻还在跑的旧版本晚到的写入）。
+final SrsLocationMigrationMemo _srsMigrationMemo = SrsLocationMigrationMemo();
+
+/// 生产实现：现有同步后端上的集合根（`fushi-srs/<profileUid>/v3/`）跑一轮同步 v2。先 [srsPrepareLocation]：立住
+/// 旧根 `v2/` 上让旧版本停下的围栏，旧根上有协议 1 的数据就迁过来。[directoryKey] 就是这个位置的稳定身份（本机按
+/// 它记每个位置传到了哪）。
 Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
@@ -139,13 +144,48 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
 }) async {
+  final SrsLocationStore location = SrsAssetLocationStore(
+    store: backend,
+    profileUid: store.profileUid,
+    maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+  );
+  final SrsLocationStore v1 = SrsAssetLocationStore(
+    store: backend,
+    profileUid: store.profileUid,
+    maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+    folder: kSrsSync2V1Folder,
+  );
+  final SrsV1Writers writers = SrsAssetV1Writers(backend, store.profileUid);
+  final SrsLocationPrepared prepared = await srsPrepareLocation(
+    host: store,
+    v1: v1,
+    current: location,
+    locationId: directoryKey,
+    key: locationKey,
+    nowMs: () => store.now().$1,
+    recordPresence: true,
+    writers: writers,
+    memo: _srsMigrationMemo,
+  );
+  if (prepared.needsUpgrade || prepared.error != null) {
+    final SrsSync2Report r = SrsSync2Report()
+      ..needsUpgrade = prepared.needsUpgrade
+      ..error = prepared.needsUpgrade ? kSrsSyncNeedsUpgrade : prepared.error
+      ..kdf = prepared.kdf;
+    return r;
+  }
+  final String? leftover = prepared.leftoverError;
+  if (leftover != null) {
+    // 旧根残留没处理成（读失败 / 解不开）：不挡新根，记一次、下一轮再试。
+    ErrorLogService.instance.log(
+      'srsPrepareLocation',
+      StateError('srs v1 leftovers on $directoryKey: $leftover'),
+      StackTrace.current,
+    );
+  }
   final SrsSync2Report r = await srsSync2Round(
     host: store,
-    location: SrsAssetLocationStore(
-      store: backend,
-      profileUid: store.profileUid,
-      maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
-    ),
+    location: location,
     locationId: directoryKey,
     nowMs: () => store.now().$1,
     key: locationKey,
@@ -155,6 +195,19 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     shouldStop: shouldStop,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
+  if (r.error == null) {
+    // 按名字存的旧媒体：这一轮把补上的绑定发布到这个位置之后才删。
+    await srsFinishLocationMigration(
+      host: store,
+      v1: v1,
+      prepared: prepared,
+      progressId: srsLocationProgressId(
+        directoryKey,
+        r.encrypted ? locationKey?.keyHex : null,
+      ),
+      writers: writers,
+    );
+  }
   return r;
 }
 
@@ -198,7 +251,6 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   ),
   store: store,
   mediaRoot: mediaRoot,
-  legacy: srsLegacyMediaReader(backend, store.profileUid),
 );
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
@@ -959,6 +1011,7 @@ class SrsSyncScheduler {
           store: store,
           mediaRoot: mediaRoot,
           key: _locationKey?.call(l.locationId),
+          migrationMemo: _srsMigrationMemo,
         );
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);

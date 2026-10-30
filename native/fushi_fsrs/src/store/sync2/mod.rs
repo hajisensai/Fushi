@@ -1565,6 +1565,8 @@ mod tests_causal;
 #[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
+mod tests_break;
+#[cfg(test)]
 mod tests_digest;
 #[cfg(test)]
 mod tests_replay_pending;

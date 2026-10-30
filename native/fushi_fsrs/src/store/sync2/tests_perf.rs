@@ -108,3 +108,42 @@ fn plan_answers_on_the_reader_when_nothing_needs_recording() {
     let rw = b.core.sync2_plan_at(P, &heads(&bucket), Some("loc")).unwrap();
     assert_eq!(rw["fetch"].as_array().unwrap().len(), 1, "{rw}");
 }
+
+/// 段体积基准（默认不跑）：`SRS_BENCH_DB` 指向一份可写的 srs.db 副本（会写进发件记录），把本机全部操作切段发件，
+/// 报段文件总字节数与段体解压后的总字节数；`SRS_BENCH_DUMP` 给出时把各段解压后的段体（u32 长度 + 字节）写进去。
+#[test]
+#[ignore]
+fn bench_segment_volume() {
+    use std::io::Write;
+    let path = std::env::var("SRS_BENCH_DB").expect("SRS_BENCH_DB");
+    let core = crate::store::SrsCore::open(std::path::Path::new(&path)).unwrap();
+    let profile = std::env::var("SRS_BENCH_PROFILE").expect("SRS_BENCH_PROFILE");
+    let location = std::env::var("SRS_BENCH_LOCATION").unwrap_or_else(|_| "bench".into());
+    let mut dump = std::env::var("SRS_BENCH_DUMP").ok().map(|p| std::fs::File::create(p).unwrap());
+    let (mut files, mut bytes, mut raw) = (0u64, 0u64, 0u64);
+    let started = std::time::Instant::now();
+    loop {
+        let batch = core
+            .sync2_outbox(&profile, &location, None, super::transport::OUTBOX_BATCH_BYTES, super::transport::OUTBOX_BATCH_SEGMENTS)
+            .unwrap();
+        if batch.files.is_empty() {
+            break;
+        }
+        for (_, b) in &batch.files {
+            files += 1;
+            bytes += b.len() as u64;
+            let body = crate::sync2::segment::tests::raw_body_of(b);
+            raw += body.len() as u64;
+            if let Some(f) = dump.as_mut() {
+                f.write_all(&(body.len() as u32).to_le_bytes()).unwrap();
+                f.write_all(&body).unwrap();
+            }
+        }
+        let (ok, _) = core.sync2_outbox_ack(&profile, &location, &batch.segments).unwrap();
+        assert!(ok);
+        if !batch.more {
+            break;
+        }
+    }
+    println!("BENCH segments={files} bytes={bytes} raw_body={raw} ms={}", started.elapsed().as_millis());
+}

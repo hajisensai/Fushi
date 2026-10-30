@@ -12,6 +12,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
@@ -81,14 +82,12 @@ void main() {
     SrsLocationStore loc,
     Directory dir, {
     bool archive = false,
-    SrsLegacyMediaReader? legacy,
     String? locationId,
   }) => srsSyncMedia(
     location: loc,
     store: s,
     mediaRoot: dir,
     archive: archive,
-    legacy: legacy,
     locationId: locationId,
   );
 
@@ -225,7 +224,8 @@ void main() {
     expect((await media(a, loc, mediaA)).deleted, 1);
   });
 
-  test('旧格式（按写入者分目录）的媒体只读兜底：下载到本机并补传进 v2 目录，旧目录不动', () async {
+  test('旧格式（按写入者分目录）的媒体由一次性迁移搬进内容目录、补上绑定，绑定发布后逐个删旧文件', () async {
+    // 2026-10-30 断代：媒体对账不再读写入者目录（没有兜底读者），只有 srsPrepareLocation 搬一次。
     final Directory remote = Directory(p.join(root.path, 'remote'))
       ..createSync();
     final LocalDirectoryAssetStore backend = LocalDirectoryAssetStore(remote);
@@ -252,22 +252,58 @@ void main() {
     final Directory mediaB = mediaDir('b');
     expect((await media(b, loc, mediaB)).missing, <String>{
       'old.png',
-    }, reason: '没给兜底就只是缺失');
-    final SrsMediaSyncReport r = await media(
-      b,
-      loc,
-      mediaB,
-      legacy: srsLegacyMediaReader(backend, kProfile),
+    }, reason: '媒体对账本身不读写入者目录');
+    final SrsV1Writers writers = SrsAssetV1Writers(backend, kProfile);
+    final Directory writerDir = Directory(
+      p.join(remote.path, kSrsSync2Namespace, kProfile, 'a#1'),
     );
-    expect(r.downloaded, 1);
-    expect(r.uploaded, 1);
-    expect(File(p.join(mediaB.path, 'old.png')).readAsBytesSync(), <int>[7, 7]);
+    final SrsLocationPrepared prepared = await srsPrepareLocation(
+      host: b,
+      v1: SrsAssetLocationStore(
+        store: backend,
+        profileUid: kProfile,
+        folder: kSrsSync2V1Folder,
+      ),
+      current: loc,
+      locationId: 'remote',
+      key: null,
+      nowMs: () => b.now().$1,
+      recordPresence: true,
+      writers: writers,
+    );
+    expect(prepared.error, isNull);
+    expect(prepared.bound, 1);
     expect(
       await loc.get(srsMediaContentPath(kSrsMediaFolder, sha(<int>[7, 7]))),
       <int>[7, 7],
     );
-    expect(legacyFile.existsSync(), isTrue, reason: '旧目录不自动删');
-    // 之后不需要兜底：B 绑上的内容随同步到第三台，它直接从内容目录拿。
+    expect(prepared.deferredWriters, <(String, String)>[('a#1', 'old.png')]);
+    expect(legacyFile.existsSync(), isTrue, reason: '绑定还没发布到位置：旧文件留着');
+    // 收尾之前写入者目录里又来了一个（列表之后才出现的）文件：收尾只删逐个确认搬好的那个。
+    final File lateFile = File(
+      p.join(writerDir.path, kSrsMediaFolder, 'late.png'),
+    )..writeAsBytesSync(<int>[8]);
+    expect(await srsSyncOnce(b, loc), isA<SrsSync2Report>());
+    expect(
+      await srsFinishLocationMigration(
+        host: b,
+        v1: SrsAssetLocationStore(
+          store: backend,
+          profileUid: kProfile,
+          folder: kSrsSync2V1Folder,
+        ),
+        prepared: prepared,
+        progressId: 'test',
+        writers: writers,
+      ),
+      1,
+    );
+    expect(legacyFile.existsSync(), isFalse, reason: '绑定发布后删');
+    expect(lateFile.readAsBytesSync(), <int>[8], reason: '不整目录删');
+    final SrsMediaSyncReport r = await media(b, loc, mediaB);
+    expect(r.downloaded, 1);
+    expect(File(p.join(mediaB.path, 'old.png')).readAsBytesSync(), <int>[7, 7]);
+    // B 补上的绑定随同步到第三台，它直接从内容目录拿。
     await srsSyncOnce(b, loc);
     final SrsDbStore c = await device('c');
     await srsSyncOnce(c, loc);
@@ -288,13 +324,21 @@ void main() {
       pictures.write('<img src="$name">');
     }
     writeMedia(mediaA, 'localonly.png', <int>[1, 1]);
-    // 老版本按名字放上去的（没有绑定）：只读兜底下载，再补传进内容目录。
-    loc.files['$kSrsMediaFolder/remoteonly.png'] = Uint8List.fromList(<int>[
-      2,
-      2,
-    ]);
+    // 别的设备传上去并绑定了的：按绑定从内容目录下载。
+    loc.files[at(<int>[2, 2])] = Uint8List.fromList(<int>[2, 2]);
     pictures.write('<img src="localonly.png"><img src="remoteonly.png">');
     await addNote(a, '多', pictures.toString());
+    await a.sync2Command(<String, Object?>{
+      'op': 'media_bind_unbound',
+      'items': <Map<String, Object?>>[
+        <String, Object?>{
+          'name': 'remoteonly.png',
+          'sha': sha(<int>[2, 2]),
+          'size': 2,
+        },
+      ],
+      'now': a.now().$1,
+    });
 
     final List<String> syncStats = <String>[];
     final SrsMediaSyncReport r = await IOOverrides.runZoned(
@@ -302,7 +346,7 @@ void main() {
       createFile: (String path) => _StatSpyFile(path, syncStats),
     );
     expect(syncStats, isEmpty, reason: '同步 stat 会把整轮对账钉在 UI isolate 的微任务里');
-    expect(r.uploaded, 2);
+    expect(r.uploaded, 1);
     expect(r.downloaded, 1);
     expect(r.missing, isEmpty);
     expect(File(p.join(mediaA.path, 'remoteonly.png')).readAsBytesSync(), <int>[

@@ -331,7 +331,8 @@ typedef SrsMediaOpened = ({String? sha256, SrsMediaOpenFailure? failure});
 /// 加密位置上媒体的封装 / 解封（内核 XChaCha20-Poly1305，AAD = 内容哈希 / 文件名）。
 ///
 /// 格式是分块流式 AEAD（native/fushi_fsrs/src/sync2/media_seal.rs，审查 S-9）：[sealFile] / [openFile] 文件到文件、
-/// 内存只占一个块；解封兼容 S-9 之前整份封装的旧格式。[seal] / [open] 是同一格式的内存版（小内容用）。
+/// 内存只占一个块；只认这一种格式（S-9 之前的整份封装只有 v1 位置迁移经内核 `open_v1` 读）。[seal] / [open] 是同一格式的
+/// 内存版（小内容用）。
 class SrsMediaCipher {
   const SrsMediaCipher(this.host, this.keyHex);
 

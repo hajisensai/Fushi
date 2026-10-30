@@ -145,6 +145,8 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
     final dir = Directory(dirFsPath);
     await for (final child in dir.list()) {
       final childName = p.basename(child.path);
+      // 写到一半的 PUT 临时文件（见 _handlePut）不列出去。
+      if (childName.contains(_kPutTempMarker)) continue;
       final isDir = child is Directory;
       final childHref = '$dirHref$childName${isDir ? '/' : ''}';
       // BUG-908(b)：文件长度用异步 stat（await for 循环里安全 await，不打乱 XML
@@ -178,6 +180,9 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
     );
   }
 
+  /// PUT 临时文件名里的标记（`.<名字>.fushi-put-<微秒>`）。
+  static const String _kPutTempMarker = '.fushi-put-';
+
   Future<shelf.Response> _handlePut(
     shelf.Request request,
     String fsPath,
@@ -186,22 +191,32 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
     if (!await parent.exists()) await parent.create(recursive: true);
     final file = File(fsPath);
     final existed = await file.exists();
-    final sink = file.openWrite();
+    // 先写同目录的临时文件、写完再改名（原子替换）：以前直接 openWrite 目标，请求体传到一半时别的客户端就能
+    // 列到 / 读到半截文件（SRS 迁移按名字判「新副本已在」，会因此删掉唯一的原件）。临时名不出现在 PROPFIND 里。
+    final File tmp = File(
+      p.join(
+        parent.path,
+        '.${p.basename(fsPath)}$_kPutTempMarker'
+        '${DateTime.now().microsecondsSinceEpoch}',
+      ),
+    );
+    final sink = tmp.openWrite();
     try {
       await request.read().forEach(sink.add);
       await sink.close();
+      await tmp.rename(fsPath);
     } catch (e) {
-      // The request stream errored mid-body. Close the sink and remove the
-      // truncated file rather than leaving a corrupt file behind a 201/204
-      // response — matching the download paths' cleanup (HBK-AUDIT-029).
+      // The request stream errored mid-body (or the rename failed). Close the
+      // sink and remove the temp file — the target is never left truncated
+      // (HBK-AUDIT-029).
       try {
         await sink.close();
       } catch (_) {
         /* best-effort: failure is non-critical here */
       }
-      if (await file.exists()) {
+      if (await tmp.exists()) {
         try {
-          await file.delete();
+          await tmp.delete();
         } catch (_) {
           /* best-effort: failure is non-critical here */
         }
