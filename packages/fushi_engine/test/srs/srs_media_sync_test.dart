@@ -224,7 +224,7 @@ void main() {
     expect((await media(a, loc, mediaA)).deleted, 1);
   });
 
-  test('旧格式（按写入者分目录）的媒体由一次性迁移搬进内容目录、补上绑定，写入者目录随后删掉', () async {
+  test('旧格式（按写入者分目录）的媒体由一次性迁移搬进内容目录、补上绑定，绑定发布后逐个删旧文件', () async {
     // 2026-10-30 断代：媒体对账不再读写入者目录（没有兜底读者），只有 srsPrepareLocation 搬一次。
     final Directory remote = Directory(p.join(root.path, 'remote'))
       ..createSync();
@@ -253,6 +253,10 @@ void main() {
     expect((await media(b, loc, mediaB)).missing, <String>{
       'old.png',
     }, reason: '媒体对账本身不读写入者目录');
+    final SrsV1Writers writers = SrsAssetV1Writers(backend, kProfile);
+    final Directory writerDir = Directory(
+      p.join(remote.path, kSrsSync2Namespace, kProfile, 'a#1'),
+    );
     final SrsLocationPrepared prepared = await srsPrepareLocation(
       host: b,
       v1: SrsAssetLocationStore(
@@ -265,7 +269,7 @@ void main() {
       key: null,
       nowMs: () => b.now().$1,
       recordPresence: true,
-      writers: SrsAssetV1Writers(backend, kProfile),
+      writers: writers,
     );
     expect(prepared.error, isNull);
     expect(prepared.bound, 1);
@@ -273,13 +277,29 @@ void main() {
       await loc.get(srsMediaContentPath(kSrsMediaFolder, sha(<int>[7, 7]))),
       <int>[7, 7],
     );
-    expect(legacyFile.existsSync(), isFalse, reason: '搬完删写入者目录');
+    expect(prepared.deferredWriters, <(String, String)>[('a#1', 'old.png')]);
+    expect(legacyFile.existsSync(), isTrue, reason: '绑定还没发布到位置：旧文件留着');
+    // 收尾之前写入者目录里又来了一个（列表之后才出现的）文件：收尾只删逐个确认搬好的那个。
+    final File lateFile = File(
+      p.join(writerDir.path, kSrsMediaFolder, 'late.png'),
+    )..writeAsBytesSync(<int>[8]);
+    expect(await srsSyncOnce(b, loc), isA<SrsSync2Report>());
     expect(
-      Directory(
-        p.join(remote.path, kSrsSync2Namespace, kProfile, 'a#1'),
-      ).existsSync(),
-      isFalse,
+      await srsFinishLocationMigration(
+        host: b,
+        v1: SrsAssetLocationStore(
+          store: backend,
+          profileUid: kProfile,
+          folder: kSrsSync2V1Folder,
+        ),
+        prepared: prepared,
+        progressId: 'test',
+        writers: writers,
+      ),
+      1,
     );
+    expect(legacyFile.existsSync(), isFalse, reason: '绑定发布后删');
+    expect(lateFile.readAsBytesSync(), <int>[8], reason: '不整目录删');
     final SrsMediaSyncReport r = await media(b, loc, mediaB);
     expect(r.downloaded, 1);
     expect(File(p.join(mediaB.path, 'old.png')).readAsBytesSync(), <int>[7, 7]);

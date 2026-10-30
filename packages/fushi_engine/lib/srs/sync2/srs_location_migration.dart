@@ -183,6 +183,11 @@ class SrsAssetV1Writers implements SrsV1Writers {
 
   @override
   Future<void> deleteMedia(String writer, String name) async {
+    // 收尾可能在另一个实例上跑（没列过目录）：先列，只删这一个名字现在对应的那个文件。
+    if (!_media.containsKey(writer)) {
+      if (!_writerIds.containsKey(writer)) await writers();
+      await _list(writer);
+    }
     final String? id = _media[writer]?[name];
     if (id != null) await store.deleteAsset(id);
   }
@@ -431,21 +436,39 @@ Future<int> srsFinishLocationMigration({
   }
   if (!published) return 0;
   int n = 0;
+  final List<String> kept = <String>[];
   await srsRunPooled(prepared.deferred, kSrsSync2Concurrency, (
     String path,
   ) async {
-    await v1.delete(path);
-    n++;
+    if (await _deleteOld(v1, path)) {
+      n++;
+    } else {
+      kept.add(path);
+    }
   });
   for (final (String, String) w in prepared.deferredWriters) {
     await writers!.deleteMedia(w.$1, w.$2);
     n++;
   }
-  prepared.deferred.clear();
+  // 没删掉的留在待删里：这一进程下一轮收尾再删；进程重启了就由下一次准备重新核对、重新排队。
+  prepared.deferred
+    ..clear()
+    ..addAll(kept);
   prepared.deferredWriters.clear();
   prepared.deleted += n;
   await removeEmptyDirs?.call();
   return n;
+}
+
+/// 删一个内容已经核对过的旧文件。删不掉（Windows 上别的设备此刻正开着它读——同时迁移的另一台新版本、同步工具）
+/// 交回 false，留着下次删；之后它还在就重新核对。已经不在（别人删了）算删掉。
+Future<bool> _deleteOld(SrsLocationStore v1, String path) async {
+  try {
+    await v1.delete(path);
+    return true;
+  } on PathAccessException {
+    return !await v1.exists(path);
+  }
 }
 
 /// 文件夹位置迁移收尾：删掉旧根下已经空了的目录（自底向上、只删空目录——同步工具这时带回来的文件不会被一起删掉）。
@@ -706,8 +729,11 @@ class _Migration {
     // 6. 删旧文件（归档位置一个不删）：核对过的立刻删；按名字存的等绑定发布（srsFinishLocationMigration）。
     if (!archive) {
       await srsRunPooled(doomed, kSrsSync2Concurrency, (String path) async {
-        await v1.delete(path);
-        out.deleted++;
+        if (await _deleteOld(v1, path)) {
+          out.deleted++;
+        } else {
+          out.skipped.add(path);
+        }
       });
       out.deferred.addAll(mover.byName);
       out.deferredWriters.addAll(mover.byWriter);
