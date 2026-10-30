@@ -247,6 +247,31 @@ class SrsTodayStats {
   int kind(SrsStatReviewKind k) => byKind[k] ?? 0;
 }
 
+/// RWKV 牌组的复习卡此刻的情况（[SrsStatsData.rwkvNow]）：全是测量，不是预测。
+/// RWKV 不知道一张卡哪天到期（每答一题模型状态都在变），所以这些卡不进 [SrsFutureDue]。
+class SrsRwkvNow {
+  const SrsRwkvNow({
+    required this.total,
+    required this.due,
+    required this.near,
+    required this.dailyAverage,
+  });
+
+  /// 按 R 排队的复习卡（[SrsStatCard.byRecall]，未暂停、归 Fushi 排程）。
+  final int total;
+
+  /// 此刻 R ≤ 所在牌组目标保留率：现在就会出（与出卡同一口径）。
+  final int due;
+
+  /// R 高出目标保留率不到 [nearMargin]：接下来最先出的卡。
+  final int near;
+
+  /// 过去 30 天（含今天）这些卡每天实际复习的张数。
+  final double dailyAverage;
+
+  static const double nearMargin = 0.05;
+}
+
 /// 未来到期预测。
 class SrsFutureDue {
   const SrsFutureDue({
@@ -615,6 +640,49 @@ class SrsStatsData {
       byRecall: byRecall,
     );
   }
+
+  /// RWKV 牌组复习卡此刻的情况；范围里没有按 R 排队的复习卡时为 null。
+  SrsRwkvNow? rwkvNow() {
+    final Set<String> ids = <String>{};
+    int due = 0;
+    int near = 0;
+    for (final SrsStatCard c in cards) {
+      if (!c.fushiScheduled || c.suspended || !c.byRecall || !c.isReview) {
+        continue;
+      }
+      ids.add(c.id);
+      final double? r = c.retrievability;
+      if (r == null || !r.isFinite) continue;
+      if (r <= c.desiredRetention) {
+        due++;
+      } else if (r <= c.desiredRetention + SrsRwkvNow.nearMargin) {
+        near++;
+      }
+    }
+    if (ids.isEmpty) return null;
+    int reviewed = 0;
+    for (final SrsStatReview r in reviews) {
+      if (r.day > today - 30 && r.day <= today && ids.contains(r.cardId)) {
+        reviewed++;
+      }
+    }
+    return SrsRwkvNow(
+      total: ids.length,
+      due: due,
+      near: near,
+      dailyAverage: reviewed / 30,
+    );
+  }
+
+  /// 有没有按到期日排队、会进 [futureDue] 的卡（学习中的卡、FSRS 牌组的复习卡）。
+  /// 范围里只有 RWKV 复习卡时未来到期图是空的，统计页不显示它。
+  bool get hasDueDateCards => cards.any(
+    (SrsStatCard c) =>
+        c.fushiScheduled &&
+        !c.suspended &&
+        c.state != SrsStatCardState.newCard &&
+        !(c.byRecall && c.isReview),
+  );
 
   /// 「全部」范围下未来到期看多远：最晚到期日（夹在 30..3650 天）。
   int furthestDueOffset() {

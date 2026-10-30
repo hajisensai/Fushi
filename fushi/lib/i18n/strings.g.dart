@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176562 (10386 per locale)
+/// Strings: 176630 (10390 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11181,8 +11181,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_stats_future_backlog => 'Include overdue';
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
   String get srs_stats_future_load => 'Daily load';
   String get srs_stats_future_overdue => 'Overdue';
   String get srs_stats_future_title => 'Future due';
@@ -11225,6 +11223,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'The scheduling engine is not available on this device, so retrievability cannot be computed.';
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   String get srs_stats_reviews_title => 'Reviews';
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  String get srs_stats_rwkv_now_due => 'Due now';
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   String srs_stats_seconds({required Object n}) => '${n}s';
   String get srs_stats_source_anki => 'Anki';
   String get srs_stats_source_audiobook => 'Audiobook';
@@ -33675,9 +33679,6 @@ class _StringsAr extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -33758,6 +33759,17 @@ class _StringsAr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -59146,9 +59158,6 @@ class _StringsDe extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -59229,6 +59238,17 @@ class _StringsDe extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -84739,9 +84759,6 @@ class _StringsEs extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -84822,6 +84839,17 @@ class _StringsEs extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -110420,9 +110448,6 @@ class _StringsFr extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -110503,6 +110528,17 @@ class _StringsFr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -135865,9 +135901,6 @@ class _StringsId extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -135948,6 +135981,17 @@ class _StringsId extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -161351,9 +161395,6 @@ class _StringsIt extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -161434,6 +161475,17 @@ class _StringsIt extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -186127,9 +186179,6 @@ class _StringsJa extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -186210,6 +186259,17 @@ class _StringsJa extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -210638,9 +210698,6 @@ class _StringsKo extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -210721,6 +210778,17 @@ class _StringsKo extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -235856,9 +235924,6 @@ class _StringsNl extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -235939,6 +236004,17 @@ class _StringsNl extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -261374,9 +261450,6 @@ class _StringsPtBr extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -261457,6 +261530,17 @@ class _StringsPtBr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -286869,9 +286953,6 @@ class _StringsRu extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -286952,6 +287033,17 @@ class _StringsRu extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -312116,9 +312208,6 @@ class _StringsTh extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -312199,6 +312288,17 @@ class _StringsTh extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -337428,9 +337528,6 @@ class _StringsTr extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -337511,6 +337608,17 @@ class _StringsTr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -362735,9 +362843,6 @@ class _StringsVi extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -362818,6 +362923,17 @@ class _StringsVi extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -386465,9 +386581,6 @@ class _StringsZhCn extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       'RWKV 牌组里的 ${n} 张复习卡不计在内：它们在估计回忆率降到目标保留率时出现，没有固定的到期日。';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      'RWKV 牌组里的 ${n} 张复习卡按模型预测的回忆率降到目标保留率的那天计入。';
-  @override
   String get srs_stats_future_load => '每日负担';
   @override
   String get srs_stats_future_overdue => '逾期';
@@ -386546,6 +386659,17 @@ class _StringsZhCn extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} 次复习';
   @override
   String get srs_stats_reviews_title => '复习量';
+  @override
+  String get srs_stats_rwkv_now_avg => '近 30 天日均复习';
+  @override
+  String get srs_stats_rwkv_now_due => '现在该复习';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV 不预测卡片哪天到期。「现在该复习」= 此刻估计回忆率已降到目标保留率的卡；「接近目标线」= 只比目标高不到 5 个百分点、接下来最先出的卡；「日均」= 过去 30 天你在这些牌组实际复习的张数。';
+  @override
+  String get srs_stats_rwkv_now_near => '接近目标线';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV 此刻';
   @override
   String srs_stats_seconds({required Object n}) => '${n} 秒';
   @override
@@ -410151,9 +410275,6 @@ class _StringsZhHk extends _StringsEn {
   String srs_stats_future_due_by_recall({required Object n}) =>
       '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
   @override
-  String srs_stats_future_due_rwkv_forecast({required Object n}) =>
-      '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
-  @override
   String get srs_stats_future_load => 'Daily load';
   @override
   String get srs_stats_future_overdue => 'Overdue';
@@ -410234,6 +410355,17 @@ class _StringsZhHk extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -432304,9 +432436,6 @@ extension on _StringsEn {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -432385,6 +432514,16 @@ extension on _StringsEn {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -453882,9 +454021,6 @@ extension on _StringsAr {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -453963,6 +454099,16 @@ extension on _StringsAr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -475516,9 +475662,6 @@ extension on _StringsDe {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -475597,6 +475740,16 @@ extension on _StringsDe {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -497154,9 +497307,6 @@ extension on _StringsEs {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -497235,6 +497385,16 @@ extension on _StringsEs {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -518803,9 +518963,6 @@ extension on _StringsFr {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -518884,6 +519041,16 @@ extension on _StringsFr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -540412,9 +540579,6 @@ extension on _StringsId {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -540493,6 +540657,16 @@ extension on _StringsId {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -562030,9 +562204,6 @@ extension on _StringsIt {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -562111,6 +562282,16 @@ extension on _StringsIt {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -583582,9 +583763,6 @@ extension on _StringsJa {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -583663,6 +583841,16 @@ extension on _StringsJa {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -605083,9 +605271,6 @@ extension on _StringsKo {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -605164,6 +605349,16 @@ extension on _StringsKo {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -626674,9 +626869,6 @@ extension on _StringsNl {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -626755,6 +626947,16 @@ extension on _StringsNl {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -648296,9 +648498,6 @@ extension on _StringsPtBr {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -648377,6 +648576,16 @@ extension on _StringsPtBr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -669922,9 +670131,6 @@ extension on _StringsRu {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -670003,6 +670209,16 @@ extension on _StringsRu {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -691508,9 +691724,6 @@ extension on _StringsTh {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -691589,6 +691802,16 @@ extension on _StringsTh {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -713112,9 +713335,6 @@ extension on _StringsTr {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -713193,6 +713413,16 @@ extension on _StringsTr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -734711,9 +734941,6 @@ extension on _StringsVi {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -734792,6 +735019,16 @@ extension on _StringsVi {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -756107,9 +756344,6 @@ extension on _StringsZhCn {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             'RWKV 牌组里的 ${n} 张复习卡不计在内：它们在估计回忆率降到目标保留率时出现，没有固定的到期日。';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            'RWKV 牌组里的 ${n} 张复习卡按模型预测的回忆率降到目标保留率的那天计入。';
       case 'srs_stats_future_load':
         return '每日负担';
       case 'srs_stats_future_overdue':
@@ -756188,6 +756422,16 @@ extension on _StringsZhCn {
         return ({required Object n}) => '${n} 次复习';
       case 'srs_stats_reviews_title':
         return '复习量';
+      case 'srs_stats_rwkv_now_avg':
+        return '近 30 天日均复习';
+      case 'srs_stats_rwkv_now_due':
+        return '现在该复习';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV 不预测卡片哪天到期。「现在该复习」= 此刻估计回忆率已降到目标保留率的卡；「接近目标线」= 只比目标高不到 5 个百分点、接下来最先出的卡；「日均」= 过去 30 天你在这些牌组实际复习的张数。';
+      case 'srs_stats_rwkv_now_near':
+        return '接近目标线';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV 此刻';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n} 秒';
       case 'srs_stats_source_anki':
@@ -777524,9 +777768,6 @@ extension on _StringsZhHk {
       case 'srs_stats_future_due_by_recall':
         return ({required Object n}) =>
             '${n} review cards in RWKV decks aren\'t counted: they come back when their estimated recall drops to the desired retention, not on a due date.';
-      case 'srs_stats_future_due_rwkv_forecast':
-        return ({required Object n}) =>
-            '${n} review cards in RWKV decks are counted on the day the model predicts their recall drops to the target retention.';
       case 'srs_stats_future_load':
         return 'Daily load';
       case 'srs_stats_future_overdue':
@@ -777605,6 +777846,16 @@ extension on _StringsZhHk {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
