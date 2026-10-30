@@ -324,13 +324,15 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     }
     final Widget navigation = _buildNavigation(views);
     final Widget sections = SectionSwipeNavigator<MediaLibraryViewKind>(
-      // 触屏横滑切到相邻视图，序即 [views] 声明序（与分段条同一份真相）。导入
-      // 不是页签，只在停在导入页时留在序里（从它滑回相邻视图）。
+      // 触屏横滑切到相邻视图，序即页签的视觉序：先「我的」组、再「在线」组，组内
+      // 按声明序（与两级页签同一份真相），跨组照样接着滑，首 / 末再往外交给外层
+      // 切模块。导入不是页签，只在停在导入页时排在最后（从它滑回相邻视图）。
       sections: <MediaLibraryViewKind>[
-        for (final MediaLibraryViewSpec spec in views)
-          if (spec.kind != MediaLibraryViewKind.sources ||
-              spec.kind == views[_currentIndex].kind)
+        for (final LibrarySectionGroup group in LibrarySectionGroup.values)
+          for (final MediaLibraryViewSpec spec in _membersOf(views, group))
             spec.kind,
+        if (views[_currentIndex].kind == MediaLibraryViewKind.sources)
+          MediaLibraryViewKind.sources,
       ],
       selected: views[_currentIndex].kind,
       onSelect: _select,
@@ -502,8 +504,6 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
       floating: true,
-      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序（书 / 漫画各一份）。
-      orderKey: widget.focusIdPrefix,
     );
   }
 
@@ -545,6 +545,9 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
           focusIdPrefix: '${widget.focusIdPrefix}-${group.name}',
           secondary: true,
           floating: true,
+          // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义页签顺序。一级恒为两组，排序
+          // 落在组内的二级胶囊上（书 / 漫画各组各一份）。
+          orderKey: '${widget.focusIdPrefix}-${group.name}',
         ),
       ),
     );

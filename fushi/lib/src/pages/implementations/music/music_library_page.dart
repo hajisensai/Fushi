@@ -608,6 +608,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           focusIdPrefix: 'music-library-subview',
           secondary: true,
           floating: true,
+          // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义曲库分区顺序。
+          orderKey: 'music-library',
         ),
       ),
     );
@@ -780,27 +782,42 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                         ),
                         if (_scanning) const FushiLinearProgressIndicator(),
                         Expanded(
-                          child: snap == null
-                              ? const FushiLoadingView()
-                              : AnimatedSwitcher(
-                                  duration: fushiMotionDuration(
-                                    context,
-                                    FushiMotion.medium,
-                                  ),
-                                  // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
-                                  // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
-                                  // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
-                                  // 「attached to more than one ScrollPosition」。与视频
-                                  // 库外壳的保活分区同一套做法。
-                                  child: KeyedSubtree(
-                                    key: ValueKey<MusicLibrarySection>(
-                                      _section,
+                          // 触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 →
+                          // 推荐），跨组照样接着滑；首 / 末再往外交给首页外壳切模块
+                          // （与书架 / 视频 / 游戏库同一层 [SectionSwipeNavigator]）。
+                          child: SectionSwipeNavigator<MusicLibrarySection>(
+                            sections: <MusicLibrarySection>[
+                              for (final MusicLibrarySection s
+                                  in MusicLibrarySection.values)
+                                if (musicLibrarySectionGroupOf(s) ==
+                                    LibrarySectionGroup.library)
+                                  s,
+                              if (_hasRecommend) MusicLibrarySection.recommend,
+                            ],
+                            selected: _section,
+                            onSelect: _selectSection,
+                            child: snap == null
+                                ? const FushiLoadingView()
+                                : AnimatedSwitcher(
+                                    duration: fushiMotionDuration(
+                                      context,
+                                      FushiMotion.medium,
                                     ),
-                                    child: SectionPrimaryScrollScope(
-                                      child: _buildSection(context, snap),
+                                    // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
+                                    // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
+                                    // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
+                                    // 「attached to more than one ScrollPosition」。与视频
+                                    // 库外壳的保活分区同一套做法。
+                                    child: KeyedSubtree(
+                                      key: ValueKey<MusicLibrarySection>(
+                                        _section,
+                                      ),
+                                      child: SectionPrimaryScrollScope(
+                                        child: _buildSection(context, snap),
+                                      ),
                                     ),
                                   ),
-                                ),
+                          ),
                         ),
                       ],
                     ),

@@ -306,6 +306,8 @@ class GameSectionTabs extends StatelessWidget {
         focusIdPrefix: focusIdPrefix,
         secondary: true,
         floating: floating,
+        // 反馈 ndQ5eXLcqp：自定义页签顺序落在二级胶囊上（一级恒为两组）。
+        orderKey: 'games-${group?.name}',
       );
     }
     // 一级只放分组（2026-10-30 用户拍板方案 D，与书 / 漫画 / 视频库同一分法）。
@@ -346,8 +348,6 @@ class GameSectionTabs extends StatelessWidget {
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
       floating: floating,
-      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序。
-      orderKey: 'games',
     );
   }
 }
