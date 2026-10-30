@@ -66,7 +66,7 @@ fn diverged_devices_locate_the_differing_bucket() {
     b.sync(&mut home, "loc", T0 + 1000);
     assert_eq!(incremental(&a), incremental(&b));
     // 只在 b 本地把一行改坏（模拟静默分歧，不经同步）。
-    b.core.writer().unwrap().execute("UPDATE srs_review_logs SET json = json_set(json, '$.rating', 1) WHERE id = 'r77'", []).unwrap();
+    b.core.writer().unwrap().execute("UPDATE srs_review_logs SET jslim = json_set(json, '$.rating', 1) WHERE id = 'r77'", []).unwrap();
     assert_ne!(incremental(&a), incremental(&b));
     assert_eq!(incremental(&b), scanned(&b), "the UPDATE trigger kept the bucket current");
     let (ba, bb) = (buckets(&a), buckets(&b));

@@ -787,8 +787,9 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
         t.dominated.push(id.clone());
     }
     conn.prepare_cached(
-        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-         VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, srs_id(?6), ?7, ?8)",
+        // `jslim`：去掉与列重复的键（store/slim.rs）；拼回用的参数与写进列的值逐个相同。
+        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+         VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, srs_id(?6), ?7, srs_edit_pack(?8, ?1, ?2, ?3, ?4, ?5, ?6, ?7))",
     )
     .map_err(sql)?
     .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
@@ -834,8 +835,8 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
     if !exists {
         let row = log_row(profile, op, l);
         conn.prepare_cached(
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-             VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim) \
+             VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, srs_log_pack(?10, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9))",
         )
         .map_err(sql)?
         .execute(params![lid, profile, card, l.kind, l.rating, l.at, l.rtype, l.origin, l.dur, canonical(&row)])
@@ -976,7 +977,8 @@ pub(crate) fn replay_cards(conn: &Connection, cards: &BTreeSet<String>) -> Resul
         let out = replay::replay(&input)?;
         for (k, new) in out.rows.iter().enumerate() {
             if let Some(json) = new {
-                conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = srs_id(?1)")
+                conn.prepare_cached("UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms) \
+                 WHERE id = srs_id(?1)")
                     .map_err(sql)?
                     .execute(params![rows[k].0, json])
                     .map_err(sql)?;
