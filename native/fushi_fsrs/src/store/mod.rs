@@ -800,6 +800,8 @@ pub(crate) fn logs_of(
 }
 
 #[cfg(test)]
+mod tests_v15_upgrade;
+#[cfg(test)]
 mod tests {
     use super::*;
 
