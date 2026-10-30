@@ -131,8 +131,6 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     locationId: location.locationId,
     key: key,
     nowMs: () => store.now().$1,
-    v1PlainMediaFolder: kSrsV1FolderMediaMoved,
-    fenceFolderMedia: () => srsFenceV1FolderMedia(v1Dir),
     removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
     memo: migrationMemo,
     archive: location.archive,
@@ -223,6 +221,20 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     );
   }
   media?.uploaded += uploadedEarly;
+  // 按名字存的旧文件：这一轮把补上的绑定发布出去之后才删（同步用途按本位置的上传水位，只做媒体的按任一位置）。
+  final bool roundOk = ops == null || (ops.error == null && !ops.needsUpgrade);
+  if (roundOk && !location.archive) {
+    final String? keyHex = (ops?.encrypted ?? false) ? key!.keyHex : null;
+    await srsFinishLocationMigration(
+      host: store,
+      v1: SrsDirectoryLocationStore(v1Dir),
+      prepared: prepared,
+      progressId: ops == null
+          ? null
+          : srsLocationProgressId(location.locationId, keyHex),
+      removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+    );
+  }
   return SrsFolderSyncReport(
     ops: ops,
     media: media,

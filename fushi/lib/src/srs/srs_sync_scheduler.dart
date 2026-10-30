@@ -149,20 +149,22 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     profileUid: store.profileUid,
     maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
   );
+  final SrsLocationStore v1 = SrsAssetLocationStore(
+    store: backend,
+    profileUid: store.profileUid,
+    maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+    folder: kSrsSync2V1Folder,
+  );
+  final SrsV1Writers writers = SrsAssetV1Writers(backend, store.profileUid);
   final SrsLocationPrepared prepared = await srsPrepareLocation(
     host: store,
-    v1: SrsAssetLocationStore(
-      store: backend,
-      profileUid: store.profileUid,
-      maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
-      folder: kSrsSync2V1Folder,
-    ),
+    v1: v1,
     current: location,
     locationId: directoryKey,
     key: locationKey,
     nowMs: () => store.now().$1,
     recordPresence: true,
-    writers: SrsAssetV1Writers(backend, store.profileUid),
+    writers: writers,
     memo: _srsMigrationMemo,
   );
   if (prepared.needsUpgrade || prepared.error != null) {
@@ -171,6 +173,15 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
       ..error = prepared.needsUpgrade ? kSrsSyncNeedsUpgrade : prepared.error
       ..kdf = prepared.kdf;
     return r;
+  }
+  final String? leftover = prepared.leftoverError;
+  if (leftover != null) {
+    // 旧根残留没处理成（读失败 / 解不开）：不挡新根，记一次、下一轮再试。
+    ErrorLogService.instance.log(
+      'srsPrepareLocation',
+      StateError('srs v1 leftovers on $directoryKey: $leftover'),
+      StackTrace.current,
+    );
   }
   final SrsSync2Report r = await srsSync2Round(
     host: store,
@@ -184,6 +195,19 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     shouldStop: shouldStop,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
+  if (r.error == null) {
+    // 按名字存的旧媒体：这一轮把补上的绑定发布到这个位置之后才删。
+    await srsFinishLocationMigration(
+      host: store,
+      v1: v1,
+      prepared: prepared,
+      progressId: srsLocationProgressId(
+        directoryKey,
+        r.encrypted ? locationKey?.keyHex : null,
+      ),
+      writers: writers,
+    );
+  }
   return r;
 }
 
