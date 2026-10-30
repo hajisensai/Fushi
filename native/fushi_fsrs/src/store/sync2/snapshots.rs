@@ -2,19 +2,16 @@
 //!
 //! 本机作答的每条派生日志都带「作答那一刻的生效排程配置」`sc`（设计 §4.6，[super::stamp_config]），一份几百字节，
 //! 而一个用户的配置只有几份。以前它在每条日志上存两遍原文：操作日志 `sync2_ops.payload` 一遍、日志投影
-//! `srs_review_logs.json` 一遍——一百万次复习就是约 600 MB 的同一段文字。现在原文只在 `sync2_snapshots` 存一份
-//! （键 = 原文的 BLAKE3 前 16 字节 hex），两处都按引用存：
+//! `srs_review_logs.json` 一遍。操作日志那一份现在只在 `sync2_snapshots` 存一次（键 = 原文的 BLAKE3 前 16 字节 hex）：
 //!
-//! - **操作日志**：载荷是作者签名的线格式字节，必须原样还原（段、链、`.fushisrs` 导出都用它）。存的时候把载荷里
-//!   `"sc":<原文>` 的原文那一段字节剪掉，记下 (哈希 `sc`, 位置 `sc_at`)；读的时候在同一位置拼回去。逐字节可逆，
-//!   与载荷怎么编码无关；找不到（外来的非规范 JSON 等）就原样存。只有 [super::insert_op] / [super::load_op] 与少数
-//!   按种类直读载荷的地方碰它。
-//! - **日志投影**：`json` 是规范 JSON（键有序、最短形），`sc` 的值换成哈希字符串 `"sc":"<hex>"`。读侧要配置的只有
-//!   重放 / 预览（`group_of`）与迁移队列，展开后与原文逐字相同；摘要触发器按展开后的原文算行哈希（[super::digest]），
-//!   所以升级前后、新旧版本设备的摘要不变。Dart 侧不解释 `sc`：本库里的日志再当作已盖戳事件并回来时由内核展开
-//!   （[expand_extra]）；跨库读（备份合并）由 SQL 展开（`srs_backup_merge.dart`）。
+//! - 载荷是作者签名的线格式字节，必须原样还原（段、链、`.fushisrs` 导出都用它）。存的时候把载荷里 `"sc":<原文>`
+//!   的原文那一段字节剪掉，记下 (哈希 `sc`, 位置 `sc_at`)；读的时候在同一位置拼回去。逐字节可逆，与载荷怎么编码
+//!   无关；找不到（外来的非规范 JSON 等）就原样存。只有 [super::insert_op] / [super::load_op] 碰它；按种类直读
+//!   载荷的地方（迁移闭包、时间线）只读修改 / 实体操作，从不被剪。`sync2_ops` 只有内核读，Dart 从不碰。
+//! - 日志投影 `srs_review_logs.json` **不**按引用存：它是 Dart 侧直接读的契约（导出、备份快照、主库备份跨库拷表、
+//!   profile 合并、旧库迁移都把这一列原样搬到别的库里），引用搬过去就悬空。摘要也按投影原文算，不受影响。
 //!
-//! 快照行从不删除（只增，几份）：投影行删掉时摘要触发器还要按它算旧行的哈希。
+//! 快照行从不删除（只增，几份）。
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
@@ -29,15 +26,8 @@ pub const V16: &str = "CREATE TABLE IF NOT EXISTS sync2_snapshots (hash TEXT NOT
 /// 比引用（32 字符 + 引号）还短的原文不值得去重。
 const MIN_BODY: usize = 64;
 
-/// 投影行里引用的标记（`"sc":"`）：整段 JSON 里没有它就一定没有引用，不必解析。
-const REF_MARK: &str = "\"sc\":\"";
-
 fn hash_of(body: &str) -> String {
     blake3::hash(body.as_bytes()).as_bytes()[..16].iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn is_ref(s: &str) -> bool {
-    s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// 存一份快照原文，返回它的哈希（已有就不写）。
@@ -106,79 +96,6 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
     find(hay, needle).is_some()
 }
 
-// ---------------------------------------------------------------- 日志投影
-
-/// 投影行（规范 JSON 的值）里的快照原文换成引用。
-pub(crate) fn compact_row(c: &Connection, row: &mut Value) -> Result<(), String> {
-    let Some(sc) = row.get(SNAPSHOT_KEY).filter(|x| x.is_object()) else { return Ok(()) };
-    let body = canonical(sc);
-    if body.len() < MIN_BODY {
-        return Ok(());
-    }
-    row[SNAPSHOT_KEY] = Value::String(intern(c, &body)?);
-    Ok(())
-}
-
-/// 投影行原文 [json] 的引用形态（`None` = 原样存：没有快照原文，或原文不是规范 JSON——那样展开后不能逐字还原）。
-pub(crate) fn compact_text(c: &Connection, json: &str) -> Result<Option<String>, String> {
-    if !json.contains("\"sc\":{") {
-        return Ok(None);
-    }
-    let Ok(mut v) = serde_json::from_str::<Value>(json) else { return Ok(None) };
-    if canonical(&v) != json {
-        return Ok(None);
-    }
-    compact_row(c, &mut v)?;
-    let out = canonical(&v);
-    Ok((out != json).then_some(out))
-}
-
-/// 投影行展开成原文（没有引用的原样返回；引用的快照不在 = 库坏了，报错）。
-pub(crate) fn expand_text(c: &Connection, json: String) -> Result<String, String> {
-    if !json.contains(REF_MARK) {
-        return Ok(json);
-    }
-    let Ok(mut v) = serde_json::from_str::<Value>(&json) else { return Ok(json) };
-    let Some(h) = v.get(SNAPSHOT_KEY).and_then(Value::as_str).filter(|h| is_ref(h)).map(str::to_owned) else { return Ok(json) };
-    let body = body_of(c, &h)?.ok_or_else(|| format!("config snapshot {h} missing"))?;
-    v[SNAPSHOT_KEY] = serde_json::from_str(&body).map_err(|e| format!("bad config snapshot {h}: {e}"))?;
-    Ok(canonical(&v))
-}
-
-/// 摘要触发器的展开（纯函数：快照原文由触发器里的子查询给）。
-pub fn expand_with(json: &str, body: Option<&str>) -> String {
-    let Some(body) = body else { return json.to_owned() };
-    let (Ok(mut v), Ok(b)) = (serde_json::from_str::<Value>(json), serde_json::from_str::<Value>(body)) else { return json.to_owned() };
-    if !v.get(SNAPSHOT_KEY).and_then(Value::as_str).is_some_and(is_ref) {
-        return json.to_owned();
-    }
-    v[SNAPSHOT_KEY] = b;
-    canonical(&v)
-}
-
-/// 触发器 / 全量重建里「这一行引用的快照原文」的 SQL 表达式（[side] = `NEW.` / `OLD.` / 空）。只对带引用标记的行
-/// 解析 JSON（别的行可能根本不是 JSON）。
-pub fn body_sql(side: &str) -> String {
-    format!(
-        "CASE WHEN instr({side}json, '{REF_MARK}') > 0 THEN \
-         (SELECT body FROM sync2_snapshots WHERE hash = json_extract({side}json, '$.{SNAPSHOT_KEY}')) END"
-    )
-}
-
-/// 已盖戳事件并回来（Dart 从投影读出的日志）时日志 `extra` 里的引用展开成原文；本库里没有这份快照就原样留着
-/// （重放把它当作没有快照，按作者结果照抄）。
-pub(crate) fn expand_extra(c: &Connection, extra: &mut String) -> Result<(), String> {
-    if !extra.contains(REF_MARK) {
-        return Ok(());
-    }
-    let Ok(Value::Object(mut m)) = serde_json::from_str::<Value>(extra) else { return Ok(()) };
-    let Some(h) = m.get(SNAPSHOT_KEY).and_then(Value::as_str).filter(|h| is_ref(h)).map(str::to_owned) else { return Ok(()) };
-    let Some(body) = body_of(c, &h)? else { return Ok(()) };
-    m.insert(SNAPSHOT_KEY.into(), serde_json::from_str(&body).map_err(|e| format!("bad config snapshot {h}: {e}"))?);
-    *extra = canonical(&Value::Object(m));
-    Ok(())
-}
-
 // ---------------------------------------------------------------- v16 升级
 
 /// 存量行改成引用形态（升级一次；可重放：已是引用的行不再动）。
@@ -216,21 +133,6 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
             up.execute(params![profile, device, seq, stored, sc, at]).map_err(sql)?;
         }
     }
-    // 日志投影（摘要触发器先换成展开后算的版本，见 [super::digest::install]；改写前后展开结果相同，触发器删旧加新的是同一个哈希，桶不变）。
-    let rows: Vec<(i64, String)> = {
-        let mut stmt = c.prepare("SELECT rowid, json FROM srs_review_logs WHERE instr(json, '\"sc\":{') > 0").map_err(sql)?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
-        rows.collect::<Result<_, _>>().map_err(sql)?
-    };
-    // 没有要改的行就不编译 UPDATE：编译会连带编译摘要触发器，要求连接上注册了它的 SQL 函数（只建表的空库连接没有）。
-    for (rowid, json) in rows {
-        if let Some(out) = compact_text(c, &json)? {
-            c.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE rowid = ?1")
-                .map_err(sql)?
-                .execute(params![rowid, out])
-                .map_err(sql)?;
-        }
-    }
     Ok(())
 }
 
@@ -252,26 +154,5 @@ mod tests {
         let stored = [&raw[..at], &raw[at + body.len()..]].concat();
         let h = intern(&c, &body).unwrap();
         assert_eq!(unpack_payload(&c, stored, Some(h), Some(at as i64)).unwrap(), raw);
-    }
-
-    #[test]
-    fn projection_rows_expand_to_the_original_text() {
-        let c = Connection::open_in_memory().unwrap();
-        c.execute_batch(V16).unwrap();
-        let row = serde_json::json!({
-            "id": "L", "res": {"queue": "review", "ivl": 3},
-            "sc": {"alg": "fsrs", "learn": [60000, 600000], "relearn": [600000], "ret": 0.9, "w": [0.4, 1.18, 3.1, 15.7]},
-        });
-        let text = canonical(&row);
-        let compact = compact_text(&c, &text).unwrap().expect("compacted");
-        assert!(compact.len() < text.len() / 2 + 40, "{compact}");
-        assert_eq!(expand_text(&c, compact.clone()).unwrap(), text);
-        let body: String = c.query_row("SELECT body FROM sync2_snapshots", [], |r| r.get(0)).unwrap();
-        assert_eq!(expand_with(&compact, Some(&body)), text);
-        // 非规范的原文不动（展开回不到逐字相同）；短快照不去重。
-        assert_eq!(compact_text(&c, &format!(" {text}")).unwrap(), None);
-        assert_eq!(compact_text(&c, "{\"id\":\"L\",\"sc\":{\"a\":1}}").unwrap(), None);
-        // 引用的快照不在：读侧报错，不悄悄当作没有。
-        assert!(expand_text(&c, "{\"sc\":\"00000000000000000000000000000000\"}".into()).is_err());
     }
 }

@@ -476,11 +476,9 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         tx.execute_batch(V15_INDEX).map_err(|e| e.to_string())?;
     }
     if current < 16 {
-        // V16：磁盘占用（[V16_DROP]、store/sync2/snapshots.rs）。先换摘要触发器（按快照引用展开后算），再把存量行改成
-        // 引用形态——改写前后展开结果逐字相同，触发器删旧加新的是同一个哈希，桶不变。每一步都可重放。
+        // V16：磁盘占用（[V16_DROP]、store/sync2/snapshots.rs）：操作日志里的配置快照原文挪进快照表。只改
+        // `sync2_ops`（投影与摘要不动），读回的载荷逐字节相同；每一步都可重放。
         tx.execute_batch(V16_DROP).map_err(|e| e.to_string())?;
-        tx.execute_batch(super::sync2::snapshots::V16).map_err(|e| e.to_string())?;
-        super::sync2::digest::install(&tx)?;
         super::sync2::snapshots::migrate(&tx)?;
     }
     tx.execute(
