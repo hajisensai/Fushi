@@ -56,6 +56,16 @@
 | `video_position_restore` | Windows 红；Mac 上因缺素材整文件 skip |
 | `video_player` | `skip: true`（要真机 + `fixtures/sample.mp4`），桌面上什么都不跑 |
 
+## heavy.dart 自动外包（`--offload` / `--analyze`，2026-10-30）
+
+用户：「我电脑上好卡，但是其他电脑上很闲」。`tool/heavy.dart` 在排本机租约前，把能外包的重活自动交给本工具：
+
+- `flutter test`（test/ 下）→ `dist_test.dart --offload`：worker 只用非 `local` 的机器；它们都没接（不可达 / 忙 / 暂停 / 平台不符）时退出码 75（`kDistOffloadDeclined`），heavy.dart 改在本机照原样跑；跑了一部分后剩下的（平台钉死、机器掉线）由 `local` worker 在租约下补跑。忙的机器只再问 `--busy-retries=2` 次。
+- `flutter analyze` → `dist_test.dart --analyze`：按 config 顺序，先问 `analyzeBlocker()`（shim 机器发 `hello`，看 `analyze=yes` / `paused`，不满足就不 lock / push / prepare），第一台 prepare 成功且接活的机器跑 `worker_analyze.sh`，输出与退出码原样带回；都不接 → 75。
+- shim 新动词 `analyze <slot> [--[no-]fatal-infos|warnings]`：选项白名单，路径走 stdin 由 `worker_analyze.sh` 校验（只许 `lib/ test/ tool/ integration_test/ test_driver/ bin/` 下已存在的路径，拒 `..`），与 `run` 同一套暂停 / 空闲内存门槛。信任面不变：同样是跑请求方仓库里的代码（analyzer），不回传任何文件。
+- 不外包：构建、gradle、集成测试、其它 package 的测试，以及写本机文件的参数（`--update-goldens` / `--coverage` / `--file-reporter`）。构建外包需要产物回传，且把朋友机器上的信任从「跑测试」扩大到「产出要在本机运行的二进制」，另立设计。
+- 判定纯函数 `tool/test_flow/heavy_offload.dart`，测试 `test/tools/heavy_offload_test.dart`；shim 契约 `test/tools/dist_shim_test.dart`。
+
 ## 第二期实现：朋友机器（`ssh-shim`）
 
 ### 形态
