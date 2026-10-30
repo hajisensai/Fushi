@@ -1,7 +1,8 @@
 // Runs one heavy command under the machine-wide lease (test_flow/heavy_lease.dart):
 //
 //   dart run tool/heavy.dart [--wait-max-min=0] [--max-minutes=120]
-//                            [--cap-mb=N] [--here] -- <command...>
+//                            [--cap-mb=N] [--here] [--check-only]
+//                            -- <command...>
 //   dart run tool/heavy.dart --status
 //
 //   e.g. dart run tool/heavy.dart -- flutter test test/foo_test.dart --no-pub
@@ -23,13 +24,19 @@
 // explicit --wait-max-min ran out before admission; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
 // run the command directly.
 //
-// Before queueing here, a `flutter test` of test/ suites or a `flutter
-// analyze` run from fushi/ goes to the other machines of the dist_test worker
-// config (FUSHI_DIST_CONFIG, else tool/dist_test/workers.local.json) through
-// tool/dist_test.dart (test_flow/heavy_offload.dart): its output and exit code
-// are then dist_test's (`DIST TEST VERDICT` / `DIST ANALYZE` last lines). When
-// no other machine takes it, it runs here as before. `--here` or
-// FUSHI_HEAVY_OFFLOAD=off keep it here.
+// Before queueing here, the work goes to the other machines of the dist_test
+// worker config (FUSHI_DIST_CONFIG, else fushi/tool/dist_test/
+// workers.local.json) through tool/dist_test.dart when it may
+// (test_flow/heavy_offload.dart): a `flutter test` (also `--coverage`, merged
+// back here) of the app from fushi/, a `flutter test` / `dart test` of a
+// package from packages/<name>/, a `flutter analyze` from fushi/, and with
+// --check-only a compile check (`flutter build apk|appbundle|windows|macos`
+// from fushi/, `gradlew :app:assemble*` from fushi/android/) whose output is
+// not wanted here. Its output and exit code are then dist_test's (`DIST TEST
+// VERDICT` / `DIST ANALYZE` / `DIST BUILD` last lines). When no other machine
+// takes it, it runs here as before; a compile check that was red elsewhere is
+// built here once more, since that machine's toolchain may be the cause.
+// `--here` or FUSHI_HEAVY_OFFLOAD=off keep it here.
 import 'dart:async';
 import 'dart:io';
 
@@ -74,8 +81,13 @@ Future<void> main(List<String> args) async {
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
 
-  if (!own.contains('--here')) {
-    final int? remote = await _offload(command, maxMinutes: maxMinutes);
+  if (!own.contains('--here') && checkout != null) {
+    final int? remote = await _offload(
+      command,
+      checkout: checkout,
+      checkOnly: own.contains('--check-only'),
+      maxMinutes: maxMinutes,
+    );
     if (remote != null) exit(remote);
   }
 
@@ -148,20 +160,30 @@ Future<void> main(List<String> args) async {
 /// may go there (test_flow/heavy_offload.dart); its exit code, or null when
 /// it is to run here (not offloadable, no worker config, or no other machine
 /// took it).
-Future<int?> _offload(List<String> command, {required int maxMinutes}) async {
+Future<int?> _offload(
+  List<String> command, {
+  required String checkout,
+  required bool checkOnly,
+  required int maxMinutes,
+}) async {
   final Map<String, String> env = Platform.environment;
   if (heavyLeaseSkipReason(env) != null || heavyOffloadDisabled(env)) {
     return null;
   }
-  final String appDir = Directory.current.absolute.path.replaceAll(r'\', '/');
+  final String cwd = Directory.current.absolute.path.replaceAll(r'\', '/');
+  final String? where = heavyOffloadWhere(cwd, checkout);
+  final String appDir =
+      '${Directory(checkout).absolute.path.replaceAll(r'\', '/')}/fushi';
+  if (where == null || !File('$appDir/tool/dist_test.dart').existsSync()) {
+    return null;
+  }
   final HeavyOffload? plan = planHeavyOffload(
     command,
-    inAppDir:
-        File('$appDir/tool/dist_test.dart').existsSync() &&
-        File('$appDir/pubspec.yaml').existsSync(),
+    where: where,
+    cwd: cwd,
+    checkOnly: checkOnly,
     exists: (String p) =>
-        FileSystemEntity.typeSync('$appDir/$p') !=
-        FileSystemEntityType.notFound,
+        FileSystemEntity.typeSync('$cwd/$p') != FileSystemEntityType.notFound,
   );
   if (plan == null) return null;
   final String? config = heavyOffloadConfig(env, appDir);
@@ -201,6 +223,15 @@ Future<int?> _offload(List<String> command, {required int maxMinutes}) async {
   if (cut) return 124;
   if (code == kDistOffloadDeclined) {
     stderr.writeln('heavy: no other machine took it; running it here');
+    return null;
+  }
+  if (plan.kind == HeavyOffloadKind.build && code != 0) {
+    // Another machine's SDK / NDK / Visual Studio is not this one's: a red
+    // compile check there is only taken as red once it is red here.
+    stderr.writeln(
+      'heavy: the compile check was red on another machine (exit $code); '
+      'building here to tell the code from that machine\'s toolchain',
+    );
     return null;
   }
   return code;

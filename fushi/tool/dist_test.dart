@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'test_flow/dist_console.dart';
+import 'test_flow/dist_coverage.dart';
 import 'test_flow/dist_plan.dart';
 import 'test_flow/dist_results.dart';
 import 'test_flow/dist_snapshot.dart';
@@ -25,11 +26,21 @@ import 'test_flow/suite_timings.dart';
 ///                                                # machine
 ///   dart tool/dist_test.dart --offload [paths]   # other machines first; this
 ///                                                # one only for the leftovers
+///   dart tool/dist_test.dart --package=packages/fushi_engine [paths]
+///                                                # a workspace package's tests
+///                                                # (pure Dart ones: dart test)
+///   dart tool/dist_test.dart --coverage [--coverage-out=lcov.info]
+///                                                # lcov merged from every batch
+///   dart tool/dist_test.dart --build -- flutter build apk --release
+///   dart tool/dist_test.dart --build -- gradlew :app:assembleRelease
+///                                                # compile check on another
+///                                                # machine; only its log and
+///                                                # exit code come back
 ///
-/// tool/heavy.dart runs `--offload` / `--analyze` by itself for the
-/// `flutter test` / `flutter analyze` it would otherwise run here
-/// (test_flow/heavy_offload.dart); exit code [kDistOffloadDeclined] then means
-/// no other machine took any of it.
+/// tool/heavy.dart runs `--offload` / `--analyze` / `--build` by itself for
+/// the `flutter test` / `dart test` / `flutter analyze` / compile checks it
+/// would otherwise run here (test_flow/heavy_offload.dart); exit code
+/// [kDistOffloadDeclined] then means no other machine took any of it.
 ///
 /// Any other `--flag` is passed to every `flutter test` (e.g.
 /// `--exclude-tags golden`). Workers: tool/dist_test/workers.local.json.
@@ -46,11 +57,35 @@ Future<void> main(List<String> args) async {
     );
     exit(64);
   }
+  if (<bool>[
+        options.itest,
+        options.analyze,
+        options.build != null,
+      ].where((bool b) => b).length >
+      1) {
+    stderr.writeln('--itest, --analyze and --build each run on their own');
+    exit(64);
+  }
+  if (options.buildCommand != null && options.build == null) {
+    stderr.writeln(
+      '--build takes `-- flutter build <apk|appbundle|windows|macos> '
+      '[--debug|--profile|--release] [--split-per-abi] '
+      '[--target-platform=android-...]` or `-- gradlew '
+      '<:app:assemble*|:app:bundle*>` (macos --debug only), not: '
+      '${options.buildCommand!.join(' ')}',
+    );
+    exit(64);
+  }
+  if (!isDistPackageDir(options.package) ||
+      (options.package != kDistAppPackage &&
+          (options.itest || options.analyze || options.build != null))) {
+    stderr.writeln(
+      '--package takes packages/<name> and goes with test runs only: '
+      '${options.package}',
+    );
+    exit(64);
+  }
   if (options.analyze) {
-    if (options.itest) {
-      stderr.writeln('--analyze and --itest do not go together');
-      exit(64);
-    }
     final List<String> bad = <String>[
       for (final String a in options.flutterArgs)
         if (!kDistAnalyzeOptions.contains(a)) a,
@@ -82,6 +117,22 @@ Future<void> main(List<String> args) async {
     r'\',
     '/',
   );
+  // The package whose test/ this run covers; suite paths stay relative to it.
+  final String packageDir = '$repoRoot/${options.package}';
+  if (!Directory('$packageDir/test').existsSync()) {
+    stderr.writeln('${options.package} has no test/ directory');
+    exit(64);
+  }
+  final String runner = distTestRunnerOf(
+    File('$packageDir/pubspec.yaml').readAsStringSync(),
+  );
+  if (options.coverage && (options.itest || runner == 'dart')) {
+    stderr.writeln(
+      '--coverage goes with flutter test runs only (not --itest, not a pure '
+      'Dart package)',
+    );
+    exit(64);
+  }
 
   final File configFile = File(options.configPath);
   if (!configFile.existsSync()) {
@@ -112,16 +163,20 @@ Future<void> main(List<String> args) async {
     ];
   }
   // Off this machine: the other machines are the workers; this one only
-  // picks up test suites they could not run (never analyze: heavy.dart then
-  // runs it here itself).
-  final bool offMachine = options.offload || options.analyze;
+  // picks up test suites they could not run (never analyze or a build:
+  // heavy.dart then runs it here itself).
+  final DistJob? job = options.analyze
+      ? const DistJob.analyze()
+      : (options.build == null ? null : DistJob.build(options.build!));
+  final bool offMachine = options.offload || job != null;
   final List<DistWorker> workers = <DistWorker>[
     for (final DistWorkerConfig c in configs)
-      if (!offMachine || c.kind != DistWorkerKind.local)
+      if ((!offMachine || c.kind != DistWorkerKind.local) &&
+          (options.build?.runsOn(c.platform) ?? true))
         ...createDistWorkers(c, repoRoot: repoRoot),
   ];
   final List<DistWorker> fallback = <DistWorker>[
-    if (options.offload && !options.analyze)
+    if (options.offload && job == null)
       for (final DistWorkerConfig c in configs)
         if (c.kind == DistWorkerKind.local)
           ...createDistWorkers(c, repoRoot: repoRoot),
@@ -143,14 +198,15 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  if (options.analyze) {
+  if (job != null) {
     final DistSnapshot snapshot = await _snapshot(repoRoot);
     final String runId = _runId();
     final Directory out = Directory(
       options.outputDir ?? '../.codex-test/dist/$runId',
     )..createSync(recursive: true);
     exit(
-      await _analyzeOffMachine(
+      await _jobOffMachine(
+        job,
         workers,
         snapshot: snapshot,
         runId: runId,
@@ -173,7 +229,7 @@ Future<void> main(List<String> args) async {
     };
     units = distItestUnits(manifest);
   } else {
-    final Map<String, int> bytes = _discoverSuites(options.paths);
+    final Map<String, int> bytes = _discoverSuites(packageDir, options.paths);
     if (bytes.isEmpty) {
       stderr.writeln('no *_test.dart under ${options.paths.join(', ')}');
       exit(64);
@@ -189,18 +245,21 @@ Future<void> main(List<String> args) async {
       );
       exit(64);
     }
+    // Measured timings and manual pins exist for the app's suites only; a
+    // package's weights come from file sizes.
+    final bool app = options.package == kDistAppPackage;
     weights = suiteShardWeights(
       bytes,
-      readSuiteTimings(File(kSuiteTimingsPath)),
+      app ? readSuiteTimings(File(kSuiteTimingsPath)) : <String, int>{},
     );
-    final Map<String, Set<DistPlatform>> pins = readDistAffinity(
-      File(kDistAffinityPath).readAsStringSync(),
-    );
+    final Map<String, Set<DistPlatform>> pins = app
+        ? readDistAffinity(File(kDistAffinityPath).readAsStringSync())
+        : <String, Set<DistPlatform>>{};
     final Map<String, SuiteRequirement> requirements =
         <String, SuiteRequirement>{
           for (final String p in bytes.keys)
             p: applyDistPin(
-              scanSuiteRequirement(File(p).readAsStringSync()),
+              scanSuiteRequirement(File('$packageDir/$p').readAsStringSync()),
               pins[p],
             ),
         };
@@ -245,6 +304,7 @@ Future<void> main(List<String> args) async {
   final _Scheduler scheduler = _Scheduler(
     queue: queue,
     workers: everyWorker,
+    package: options.package,
     flutterArgs: options.flutterArgs,
     out: out,
     runId: runId,
@@ -301,6 +361,13 @@ Future<void> main(List<String> args) async {
     ],
   );
   _writeTimings(out, scheduler.results, weights.keys.toSet());
+  if (options.coverage) {
+    _writeCoverage(
+      scheduler.coverage,
+      package: options.package,
+      to: File(options.coverageOut ?? '$packageDir/coverage/lcov.info'),
+    );
+  }
   final String summary =
       renderDistSummary(
         verdict: verdict,
@@ -349,6 +416,7 @@ class _Scheduler {
   _Scheduler({
     required this.queue,
     required List<DistWorker> workers,
+    required this.package,
     required this.flutterArgs,
     required this.out,
     required this.runId,
@@ -359,7 +427,13 @@ class _Scheduler {
        };
 
   final DistSuiteQueue queue;
+
+  /// Whose suites these are ([kDistAppPackage] or `packages/<name>`).
+  final String package;
   final List<String> flutterArgs;
+
+  /// lcov of every batch that ran to the end (`--coverage`), unchecked.
+  final List<String> coverage = <String>[];
   final Directory out;
   final String runId;
   final DistSnapshot snapshot;
@@ -465,6 +539,7 @@ class _Scheduler {
       try {
         run = await worker.run(
           batch,
+          package: package,
           flutterArgs: flutterArgs,
           stderrLog: errLog,
           // Three times what this machine's own speed predicts, plus slack.
@@ -545,6 +620,7 @@ class _Scheduler {
         infraError: run.infraError,
       );
       results.add(result);
+      coverage.addAll(run.coverage);
       _unitsByBatch[batch.id] = batch.units;
       final String? failure = result.failure;
       stdout.writeln(
@@ -693,6 +769,7 @@ class _Scheduler {
             try {
               run = await e.key.run(
                 batch,
+                package: package,
                 flutterArgs: flutterArgs,
                 stderrLog: errLog,
                 timeout:
@@ -764,10 +841,12 @@ Future<DistSnapshot> _snapshot(String repoRoot) async {
   return snapshot;
 }
 
-/// `flutter analyze` on the first of [workers] (config order) that prepares
-/// and takes it; its output goes to stdout and its exit code is returned.
+/// [job] (`flutter analyze` of [paths] with [options], or a compile check) on
+/// the first of [workers] (config order) that prepares and takes it; its
+/// output goes to stdout and its exit code is returned.
 /// [kDistOffloadDeclined] when none did.
-Future<int> _analyzeOffMachine(
+Future<int> _jobOffMachine(
+  DistJob job,
   List<DistWorker> workers, {
   required DistSnapshot snapshot,
   required String runId,
@@ -775,8 +854,10 @@ Future<int> _analyzeOffMachine(
   required List<String> paths,
   required List<String> options,
 }) async {
+  final DistBuild? build = job.build;
+  final String tag = build == null ? 'analyze' : 'build';
   for (final DistWorker w in workers) {
-    final String? blocker = await w.analyzeBlocker();
+    final String? blocker = await w.jobBlocker(job);
     if (blocker != null) {
       stdout.writeln('[${w.name}] skipped: $blocker');
       continue;
@@ -797,17 +878,20 @@ Future<int> _analyzeOffMachine(
     }
     await prepLog.close();
     final IOSink errLog = File(
-      '${out.path}/analyze.${w.name}.stderr.log',
+      '${out.path}/$tag.${w.name}.stderr.log',
     ).openWrite();
     final Stopwatch sw = Stopwatch()..start();
     DistBatchRun run;
     try {
-      run = await w.analyze(
-        paths,
-        options: options,
-        stderrLog: errLog,
-        timeout: kDistAnalyzeTimeout,
-      );
+      stdout.writeln('[${w.name}] ${job.label}');
+      run = build == null
+          ? await w.analyze(
+              paths,
+              options: options,
+              stderrLog: errLog,
+              timeout: kDistAnalyzeTimeout,
+            )
+          : await w.build(build, stderrLog: errLog, timeout: kDistBuildTimeout);
     } on Object catch (e) {
       run = DistBatchRun(
         exitCode: -1,
@@ -823,20 +907,42 @@ Future<int> _analyzeOffMachine(
       continue;
     }
     File(
-      '${out.path}/analyze.${w.name}.log',
+      '${out.path}/$tag.${w.name}.log',
     ).writeAsStringSync(run.lines.isEmpty ? '' : '${run.lines.join('\n')}\n');
     stdout
       ..writeAll(run.lines, '\n')
       ..writeln()
       ..writeln(
-        'DIST ANALYZE: ran on ${w.name} in ${sw.elapsed.inSeconds}s '
-        '-> exit ${run.exitCode}',
+        'DIST ${tag.toUpperCase()}: ${build?.label ?? ''}'
+        '${build == null ? '' : ' '}ran on ${w.name} in '
+        '${sw.elapsed.inSeconds}s -> exit ${run.exitCode}',
       );
     await stdout.flush();
     return run.exitCode;
   }
-  stdout.writeln('DIST OFFLOAD: no other machine took the analyze');
+  stdout.writeln('DIST OFFLOAD: no other machine took the $tag');
   return kDistOffloadDeclined;
+}
+
+/// Merges the batches' lcov into [to] (only `lib/` records of [package] are
+/// taken from the workers' data).
+void _writeCoverage(
+  List<String> lcov, {
+  required String package,
+  required File to,
+}) {
+  final DistCoverage merged = <String, Map<int, int>>{};
+  int dropped = 0;
+  for (final String text in lcov) {
+    dropped += mergeLcov(merged, text, package: package);
+  }
+  to.parent.createSync(recursive: true);
+  to.writeAsStringSync(renderLcov(merged));
+  stdout.writeln(
+    'DIST COVERAGE: ${to.absolute.path} (${merged.length} files from '
+    '${lcov.length} test processes'
+    '${dropped == 0 ? '' : '; $dropped records outside $package/lib dropped'})',
+  );
 }
 
 class _Options {
@@ -852,6 +958,9 @@ class _Options {
     required this.analyze,
     required this.offload,
     required this.busyRetries,
+    required this.package,
+    required this.coverageOut,
+    required this.buildCommand,
   });
 
   final List<String> paths;
@@ -877,6 +986,21 @@ class _Options {
   /// How often in a row a busy worker is asked again before it is dropped.
   final int busyRetries;
 
+  /// Whose test/ this run covers: [kDistAppPackage] or `packages/<name>`.
+  final String package;
+
+  /// `--coverage` (passed on to every `flutter test`): the merged lcov goes
+  /// to [coverageOut], by default the package's coverage/lcov.info.
+  bool get coverage => flutterArgs.contains('--coverage');
+  final String? coverageOut;
+
+  /// `--build -- <command>`: the command as given (null without `--build`).
+  final List<String>? buildCommand;
+
+  /// [buildCommand] as a compile check, or null when it is none.
+  DistBuild? get build =>
+      buildCommand == null ? null : distBuildOf(buildCommand!);
+
   static _Options parse(List<String> args) {
     final List<String> paths = <String>[];
     final List<String> flutterArgs = <String>[];
@@ -889,9 +1013,26 @@ class _Options {
     bool analyze = false;
     bool offload = false;
     int busyRetries = _Scheduler.kBusyRetries;
+    String package = kDistAppPackage;
+    String? coverageOut;
+    bool build = false;
+    List<String>? buildCommand;
     for (int i = 0; i < args.length; i++) {
       final String arg = args[i];
-      if (arg == '--status') {
+      if (arg == '--' && build) {
+        buildCommand = args.sublist(i + 1);
+        break;
+      }
+      if (arg == '--build') {
+        build = true;
+        buildCommand = const <String>[];
+      } else if (arg == '--coverage') {
+        flutterArgs.add(arg);
+      } else if (arg.startsWith('--coverage-out=')) {
+        coverageOut = arg.substring('--coverage-out='.length);
+      } else if (arg.startsWith('--package=')) {
+        package = arg.substring('--package='.length).replaceAll(r'\', '/');
+      } else if (arg == '--status') {
         status = true;
       } else if (arg == '--dry-run') {
         dryRun = true;
@@ -927,7 +1068,9 @@ class _Options {
       }
     }
     return _Options(
-      paths: paths.isEmpty && !itest && !analyze ? <String>['test'] : paths,
+      paths: paths.isEmpty && !itest && !analyze && !build
+          ? <String>['test']
+          : paths,
       flutterArgs: flutterArgs,
       configPath: configPath,
       workers: workers,
@@ -938,6 +1081,9 @@ class _Options {
       analyze: analyze,
       offload: offload,
       busyRetries: busyRetries,
+      package: package,
+      coverageOut: coverageOut,
+      buildCommand: buildCommand,
     );
   }
 }
@@ -969,30 +1115,35 @@ Map<String, Set<DistPlatform>> _selectItests(List<String> paths) {
   };
 }
 
-/// `*_test.dart` under [paths] (files or directories inside `test/`) → bytes.
-Map<String, int> _discoverSuites(List<String> paths) {
+/// `*_test.dart` under [paths] (files or directories inside `test/` of the
+/// package at [base]) → bytes, keyed by their path relative to [base].
+Map<String, int> _discoverSuites(String base, List<String> paths) {
   final Map<String, int> bytes = <String, int>{};
   for (final String raw in paths) {
     final String path = raw.endsWith('/')
         ? raw.substring(0, raw.length - 1)
         : raw;
-    if (!path.startsWith('test')) {
+    if (path != 'test' && !path.startsWith('test/')) {
       stderr.writeln('only paths under test/ can be distributed: $raw');
       exit(64);
     }
-    if (File(path).existsSync()) {
-      bytes[path] = File(path).lengthSync();
+    final File file = File('$base/$path');
+    if (file.existsSync()) {
+      bytes[path] = file.lengthSync();
       continue;
     }
-    if (!Directory(path).existsSync()) {
+    final Directory dir = Directory('$base/$path');
+    if (!dir.existsSync()) {
       stderr.writeln('no such test path: $raw');
       exit(64);
     }
-    for (final FileSystemEntity e in Directory(
-      path,
-    ).listSync(recursive: true, followLinks: false)) {
+    final int strip = dir.path.length - path.length;
+    for (final FileSystemEntity e in dir.listSync(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (e is File && e.path.endsWith('_test.dart')) {
-        bytes[e.path.replaceAll(r'\', '/')] = e.lengthSync();
+        bytes[e.path.substring(strip).replaceAll(r'\', '/')] = e.lengthSync();
       }
     }
   }
