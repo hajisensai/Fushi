@@ -85,19 +85,29 @@ Widget libraryImportChromeButton({
   required VoidCallback onTap,
   required String focusIdPrefix,
   GlobalKey? anchorKey,
-}) => KeyedSubtree(
-  key: anchorKey,
-  child: fushiFloatingLeading(
-    FushiIconButton(
-      key: ValueKey<String>('$focusIdPrefix-import'),
-      icon: FushiIcons.libraryAdd,
-      tooltip: t.library_view_import,
-      selected: selected,
-      alwaysVisible: true,
-      onTap: onTap,
+}) {
+  final Widget button = FushiIconButton(
+    key: ValueKey<String>('$focusIdPrefix-import'),
+    icon: FushiIcons.libraryAdd,
+    tooltip: t.library_view_import,
+    selected: selected,
+    alwaysVisible: true,
+    onTap: onTap,
+  );
+  return KeyedSubtree(
+    key: anchorKey,
+    child: Builder(
+      // Apple：与右侧动作组同一形态（无色玻璃胶囊，高 fushiAppleFloatingExtent），
+      // 不套 56 高的 MD3 圆，否则比动作组高一截；MD3 用页头圆。
+      builder: (BuildContext context) => isGlassDesign(context)
+          ? FushiShellHeaderActions(
+              actions: <Widget>[button],
+              appleFloating: true,
+            )
+          : fushiFloatingLeading(button)!,
     ),
-  )!,
-);
+  );
+}
 
 /// 一个视图的声明：显示名 + 内容构建器。
 ///
