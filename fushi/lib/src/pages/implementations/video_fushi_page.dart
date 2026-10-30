@@ -7336,7 +7336,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 默认窗口，否则制卡区间是 `0..0`、没有句子音频。图形字幕轨开着但此刻画面上没字幕
     // 的情形不动（frameOcrFallbackCue 在图形模式返回 null，仍走当前帧静图）。
     final AudioCue? anchor =
-        graphicAnchor ?? controller.frameOcrFallbackCue(text: sentence);
+        graphicAnchor ??
+        (appModel.videoPauseOcrAudioFallbackEnabled
+            ? controller.frameOcrFallbackCue(
+                text: sentence,
+                windowMs: appModel.videoPauseOcrAudioFallbackMs,
+              )
+            : null);
     _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, anchor);
   }
 

@@ -4905,12 +4905,15 @@ class VideoPlayerController extends ChangeNotifier
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
   /// 硬字幕（烧进画面、没有任何字幕轨）上暂停 OCR 点字查词的锚点 cue：窗口是「当前位置
-  /// 往前 [kFrameOcrFallbackWindowMs]」（[buildFrameOcrFallbackCue]），制卡由此得到句子
+  /// 往前 [windowMs]」（[buildFrameOcrFallbackCue]，设置里可调），制卡由此得到句子
   /// 音频区间，高级制卡的起止偏移再微调。登记为 [_graphicAnchorCue]，[delayMsForCue] /
   /// [cueStreamOwning] 按它的口径（[_delayMs]、自成单句流）处理。
   ///
   /// 有字幕轨在渲染（图形字幕模式）/ 未 [load] / 位置读不到 / 位置在片头 → null。
-  AudioCue? frameOcrFallbackCue({required String text}) {
+  AudioCue? frameOcrFallbackCue({
+    required String text,
+    int windowMs = kFrameOcrFallbackWindowMs,
+  }) {
     if (_graphicSubtitleActive) return null;
     final int? position = positionMs;
     if (_player == null || position == null) return null;
@@ -4918,6 +4921,7 @@ class VideoPlayerController extends ChangeNotifier
       text: text,
       positionMs: position,
       delayMs: _delayMs,
+      windowMs: windowMs,
     );
     if (cue != null) _graphicAnchorCue = cue;
     return cue;

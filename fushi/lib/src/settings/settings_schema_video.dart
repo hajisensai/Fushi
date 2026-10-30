@@ -20,6 +20,11 @@ import 'package:fushi/src/media/video/video_settings_cli.dart';
 import 'package:fushi/src/media/video/video_settings_cli_ops.dart'
     show videoSubtitlePositionForCli;
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart'
+    show
+        kFrameOcrFallbackMaxWindowMs,
+        kFrameOcrFallbackMinWindowMs,
+        kFrameOcrFallbackWindowMs;
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/subtitle_style_preview.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -1315,10 +1320,11 @@ SettingsDestination buildVideoDestination() {
             subtitle: t.video_setting_pause_ocr_scope_hint,
             icon: FushiIcons.ocr,
             // 接替被它取代的「无字幕轨也暂停 OCR」开关的位置（字幕行为小节、显形开关
-            // 之后的 58）；60 已是外观小节的「遵循 ASS 样式」。
+            // 之后的 57）；58 / 59 是它下面的硬字幕音频窗口两项，60 已是外观小节的
+            // 「遵循 ASS 样式」。
             video: VideoPlacement(
               group: VideoGroup.subtitle,
-              order: 58,
+              order: 57,
               section: t.section_video_subtitle_behavior,
             ),
             options: <SettingsSegmentOption<VideoPauseOcrScope>>[
@@ -1346,6 +1352,54 @@ SettingsDestination buildVideoDestination() {
                   settingsContext.refresh();
                 },
             defaultValue: VideoPauseOcrScope.defaultScope,
+          ),
+          // 硬字幕（没有字幕轨）上暂停 OCR 点字查词制卡：没有字幕时间窗，制卡区间会塌成
+          // `0..0`、没有句子音频。开着时给一个「暂停位置往前几秒」的默认窗口（高级制卡
+          // 再微调）；关掉则保持无音频。窗口长度见下一项。
+          SettingsSwitchItem(
+            id: 'video.subtitle.pause_ocr_audio_fallback',
+            title: t.video_setting_pause_ocr_audio_fallback,
+            subtitle: t.video_setting_pause_ocr_audio_fallback_hint,
+            icon: FushiIcons.audio,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 58,
+              section: t.section_video_subtitle_behavior,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPauseOcrAudioFallbackEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoPauseOcrAudioFallbackEnabled(value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          SettingsStepperItem(
+            id: 'video.subtitle.pause_ocr_audio_fallback_seconds',
+            title: t.video_setting_pause_ocr_audio_fallback_seconds,
+            subtitle: t.video_setting_pause_ocr_audio_fallback_seconds_hint,
+            icon: FushiIcons.timer,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 59,
+              section: t.section_video_subtitle_behavior,
+            ),
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPauseOcrAudioFallbackEnabled,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPauseOcrAudioFallbackMs / 1000,
+            step: 0.5,
+            min: kFrameOcrFallbackMinWindowMs / 1000,
+            max: kFrameOcrFallbackMaxWindowMs / 1000,
+            format: (double v) => '${v.toStringAsFixed(1)}s',
+            onChanged: (SettingsContext settingsContext, double v) async {
+              await settingsContext.appModel.setVideoPauseOcrAudioFallbackMs(
+                (v * 1000).round(),
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: kFrameOcrFallbackWindowMs / 1000,
           ),
           // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
           // 纯下载期行为，不进播放页面板（无 VideoPlacement）。

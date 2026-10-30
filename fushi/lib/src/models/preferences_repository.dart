@@ -83,6 +83,11 @@ import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart'
+    show
+        kFrameOcrFallbackMaxWindowMs,
+        kFrameOcrFallbackMinWindowMs,
+        kFrameOcrFallbackWindowMs;
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningHeadPadMs, kMiningPadMaxMs, kMiningTailPadMs;
@@ -3688,6 +3693,34 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoPauseOcrScope(VideoPauseOcrScope scope) async {
     await setPref('video_pause_ocr_scope', scope.wireName);
+    notifyListeners();
+  }
+
+  // 硬字幕（没有字幕轨）上暂停 OCR 点字查词制卡时，是否给句子音频一个默认窗口
+  // （暂停位置往前 [videoPauseOcrAudioFallbackMs]）。默认开；关掉则这类制卡没有句子音频。
+  bool get videoPauseOcrAudioFallbackEnabled =>
+      getPref('video_pause_ocr_audio_fallback', defaultValue: true) as bool;
+
+  Future<void> setVideoPauseOcrAudioFallbackEnabled(bool enabled) async {
+    await setPref('video_pause_ocr_audio_fallback', enabled);
+    notifyListeners();
+  }
+
+  // 上面那个默认窗口的长度（毫秒），夹到 [kFrameOcrFallbackMinWindowMs,
+  // kFrameOcrFallbackMaxWindowMs]。
+  int get videoPauseOcrAudioFallbackMs =>
+      (getPref(
+                'video_pause_ocr_audio_fallback_ms',
+                defaultValue: kFrameOcrFallbackWindowMs,
+              )
+              as int)
+          .clamp(kFrameOcrFallbackMinWindowMs, kFrameOcrFallbackMaxWindowMs);
+
+  Future<void> setVideoPauseOcrAudioFallbackMs(int ms) async {
+    await setPref(
+      'video_pause_ocr_audio_fallback_ms',
+      ms.clamp(kFrameOcrFallbackMinWindowMs, kFrameOcrFallbackMaxWindowMs),
+    );
     notifyListeners();
   }
 

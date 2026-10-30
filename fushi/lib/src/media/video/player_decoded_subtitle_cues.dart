@@ -73,8 +73,10 @@ AudioCue? buildGraphicSubtitleAnchorCue({
 }
 
 /// 暂停 OCR 在「没有字幕轨可锚」的画面（硬字幕 / 烧进画面的文字）上点字查词时，默认
-/// 句子音频窗口的长度：暂停位置往前这么久。
+/// 句子音频窗口的长度：暂停位置往前这么久（用户可在设置里改，夹在下面两个界限内）。
 const int kFrameOcrFallbackWindowMs = 4000;
+const int kFrameOcrFallbackMinWindowMs = 1000;
+const int kFrameOcrFallbackMaxWindowMs = 15000;
 
 /// 硬字幕画面上 OCR 点字查词的锚点 cue：没有任何字幕时间窗（硬字幕烧进画面，mpv 没有
 /// `sub-start`），制卡区间会塌成 `0..0`（无句子音频）。这里退而求其次，把窗口定成

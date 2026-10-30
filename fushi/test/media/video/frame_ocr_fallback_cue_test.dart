@@ -22,6 +22,36 @@ void main() {
     final String body = source.substring(start, start + 2500);
     expect(body, contains('currentGraphicSubtitleCue'));
     expect(body, contains('frameOcrFallbackCue'));
+    // 开关与窗口长度都来自设置，不能写死。
+    expect(body, contains('videoPauseOcrAudioFallbackEnabled'));
+    expect(body, contains('videoPauseOcrAudioFallbackMs'));
+  });
+
+  test('设置项：开关 + 秒数都登记在视频字幕设置里，键已登记', () {
+    final String schema = File(
+      'lib/src/settings/settings_schema_video.dart',
+    ).readAsStringSync();
+    expect(schema, contains("id: 'video.subtitle.pause_ocr_audio_fallback'"));
+    expect(
+      schema,
+      contains("id: 'video.subtitle.pause_ocr_audio_fallback_seconds'"),
+    );
+    final String keys = File(
+      'lib/src/models/preference_keys.dart',
+    ).readAsStringSync();
+    expect(keys, contains("'video_pause_ocr_audio_fallback',"));
+    expect(keys, contains("'video_pause_ocr_audio_fallback_ms',"));
+  });
+
+  test('自定义窗口长度：按 windowMs 往前取，而不是固定 4 秒', () {
+    final AudioCue cue = buildFrameOcrFallbackCue(
+      text: '走り出した。',
+      positionMs: 60000,
+      delayMs: 0,
+      windowMs: 9000,
+    )!;
+    expect(cue.startMs, 51000);
+    expect(cue.endMs, 60000);
   });
 
   group('buildFrameOcrFallbackCue', () {

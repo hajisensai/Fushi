@@ -10056,6 +10056,15 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoPauseOcrScope(VideoPauseOcrScope scope) =>
       prefsRepo.setVideoPauseOcrScope(scope);
 
+  // 硬字幕暂停 OCR 制卡的默认句子音频窗口（透传 prefsRepo）。
+  bool get videoPauseOcrAudioFallbackEnabled =>
+      prefsRepo.videoPauseOcrAudioFallbackEnabled;
+  Future<void> setVideoPauseOcrAudioFallbackEnabled(bool enabled) =>
+      prefsRepo.setVideoPauseOcrAudioFallbackEnabled(enabled);
+  int get videoPauseOcrAudioFallbackMs => prefsRepo.videoPauseOcrAudioFallbackMs;
+  Future<void> setVideoPauseOcrAudioFallbackMs(int ms) =>
+      prefsRepo.setVideoPauseOcrAudioFallbackMs(ms);
+
   VideoMiningImageMode get galMiningImageMode => prefsRepo.galMiningImageMode;
   void setGalMiningImageMode(VideoMiningImageMode mode) =>
       prefsRepo.setGalMiningImageMode(mode);
