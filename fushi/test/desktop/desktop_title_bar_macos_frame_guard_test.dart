@@ -165,17 +165,19 @@ void main() {
     );
   });
 
-  test('红绿灯显隐只有一个真值：内容全屏隐藏、否则显示', () {
+  test('红绿灯显隐只有一个真值：内容全屏（非原生全屏）或沉浸页顶栏隐去时隐藏', () {
     final String reassert = methodBody(
       titleBar,
       'static void reassertMacTrafficLights() {',
     );
     expect(
-      reassert.contains(
-        'setMacOSTrafficLightsHidden(_contentFullscreen.value)',
-      ),
+      reassert.contains('_contentFullscreen.value && !nativeFullscreen') &&
+          reassert.contains('_immersiveCaptionConcealed') &&
+          reassert.contains('MacosFullscreenState.instance.isFullscreen.value'),
       isTrue,
-      reason: '显隐必须取自内容全屏真值：顶栏收起时藏，顶栏在时显示。',
+      reason:
+          '显隐必须取自内容全屏真值（顶栏收起时藏）与沉浸页标题行显隐；原生全屏'
+          '例外——红绿灯在系统自动隐去的全屏标题栏里，藏了滑出来就是空的。',
     );
     expect(
       RegExp(r'setMacOSTrafficLightsHidden\(').allMatches(titleBar).length,
