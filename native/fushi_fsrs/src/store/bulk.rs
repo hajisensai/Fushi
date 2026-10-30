@@ -239,7 +239,7 @@ fn encode(rows: usize, names: &[&str], cols: &[Col]) -> Vec<u8> {
 }
 
 /// `card_columns`：本 profile 的卡片缓存行（含隐藏；`visibleOnly` 为真只要可见的）按列交回。`fields` 限定要哪几列
-/// （缺省全部，见 [CARD_COLUMNS]）。行序与 Drift 以前发的 `SELECT * FROM srs_cards_cache WHERE profile_uid = ?`
+/// （缺省全部，见 [CARD_COLUMNS]）。行序与 Drift 以前发的 `SELECT * FROM srs_cards_cache WHERE profile_uid = srs_id(?)`
 /// 相同（同一条件、同一张表的同一查询计划）。
 pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let wanted: Vec<&str> = match req.get("fields").and_then(Value::as_array) {
@@ -255,7 +255,7 @@ pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8
     }
     let visible = req["visibleOnly"] == Value::Bool(true);
     let q = format!(
-        "SELECT {} FROM srs_cards_cache WHERE profile_uid = ?1{}",
+        "SELECT {} FROM srs_cards_cache WHERE profile_uid = srs_id(?1){}",
         names.join(", "),
         if visible { " AND hidden = 0" } else { "" }
     );
@@ -286,7 +286,7 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
          c.due_day, c.due_at, c.stability, c.difficulty, c.last_reviewed_at, c.lapses, c.reps, \
          COALESCE(n.created_at, c.note_created_at), c.last_log_id, n.source_kind, n.source_title \
          FROM srs_cards_cache c LEFT JOIN srs_notes_cache n ON n.id = c.note_id \
-         WHERE c.profile_uid = ?1 AND c.hidden = 0",
+         WHERE c.profile_uid = srs_id(?1) AND c.hidden = 0",
         &[&profile],
         &CARD_KINDS,
     )?;
@@ -339,7 +339,7 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
     let mut stmt = c
         .prepare_cached(
             "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
-             FROM srs_stat_reviews WHERE profile_uid = ?1 ORDER BY occurred_at",
+             FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
         )
         .map_err(sql)?;
     let mut it = stmt.query([profile]).map_err(sql)?;
@@ -393,7 +393,7 @@ pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value,
         let Some(xs) = req.get(key).and_then(Value::as_array) else { continue };
         let mut stmt = c
             .prepare_cached(&format!(
-                "SELECT MIN(id) FROM {table} WHERE profile_uid = ?1 AND anki_id = ?2"
+                "SELECT MIN(id) FROM {table} WHERE profile_uid = srs_id(?1) AND anki_id = ?2"
             ))
             .map_err(sql)?;
         let mut ids = Vec::with_capacity(xs.len());
@@ -421,7 +421,7 @@ pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Val
     let nums: Vec<Option<i64>> =
         req.get("notes").and_then(Value::as_array).map(|a| a.iter().map(Value::as_i64).collect()).unwrap_or_default();
     let mut resolve =
-        c.prepare_cached("SELECT MIN(id) FROM srs_notes_cache WHERE profile_uid = ?1 AND anki_id = ?2").map_err(sql)?;
+        c.prepare_cached("SELECT MIN(id) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND anki_id = ?2").map_err(sql)?;
     let mut ids: Vec<Option<String>> = Vec::with_capacity(nums.len());
     for n in &nums {
         ids.push(match n {
@@ -437,7 +437,7 @@ pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Val
             views.insert(v.id.clone(), v);
         }
         let q = format!(
-            "SELECT note_id, anki_id, template_id, cloze_ord FROM srs_cards_cache              WHERE note_id IN ({}) AND +profile_uid = ?1 AND +hidden = 0",
+            "SELECT note_id, anki_id, template_id, cloze_ord FROM srs_cards_cache              WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
             (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;

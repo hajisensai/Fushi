@@ -37,7 +37,7 @@ pub(crate) fn index(conn: &Connection, profile: &str, kind: &str, entity: &str, 
 
 pub(crate) fn ops_of(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<Vec<(OpId, String)>, String> {
     let mut stmt = conn
-        .prepare_cached("SELECT device, seq, what FROM sync2_ent_ops WHERE profile_uid = ?1 AND kind = ?2 AND entity = ?3")
+        .prepare_cached("SELECT device, seq, what FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3)")
         .map_err(sql)?;
     let rows = stmt
         .query_map(params![profile, kind, entity], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))
@@ -57,7 +57,7 @@ pub(crate) fn ops_of(conn: &Connection, profile: &str, kind: &str, entity: &str)
 /// 提示里的按最早添加时刻。
 pub(crate) fn current_tags(conn: &Connection, profile: &str, note: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
-        .prepare_cached("SELECT tag, wall, logical, device FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2")
+        .prepare_cached("SELECT tag, wall, logical, device FROM sync2_tag_adds WHERE profile_uid = srs_id(?1) AND note = srs_id(?2)")
         .map_err(sql)?;
     let rows: Vec<(String, i64, i64, Vec<u8>)> = stmt
         .query_map(params![profile, note], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
@@ -75,7 +75,7 @@ pub(crate) fn current_tags(conn: &Connection, profile: &str, note: &str) -> Resu
         }
     }
     let hint: Vec<String> = conn
-        .prepare_cached("SELECT tags FROM sync2_tag_order WHERE profile_uid = ?1 AND note = ?2")
+        .prepare_cached("SELECT tags FROM sync2_tag_order WHERE profile_uid = srs_id(?1) AND note = srs_id(?2)")
         .map_err(sql)?
         .query_row(params![profile, note], |r| r.get::<_, String>(0))
         .optional()
@@ -114,7 +114,7 @@ fn tags_of_op(op: &Op) -> Option<Vec<String>> {
 /// 返回是否改了投影。
 pub(crate) fn land_tag_order(conn: &Connection, profile: &str, note: &str, win: &super::mvr::Write, tags: Option<Vec<String>>) -> Result<bool, String> {
     let cur: Option<(i64, i64, Vec<u8>)> = conn
-        .prepare_cached("SELECT wall, logical, device FROM sync2_tag_order WHERE profile_uid = ?1 AND note = ?2")
+        .prepare_cached("SELECT wall, logical, device FROM sync2_tag_order WHERE profile_uid = srs_id(?1) AND note = srs_id(?2)")
         .map_err(sql)?
         .query_row(params![profile, note], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
@@ -144,7 +144,7 @@ fn last_tag_hlc(conn: &Connection, profile: &str, note: &str) -> Result<String, 
         .prepare_cached(
             "SELECT o.wall, o.logical, o.device FROM sync2_ent_ops e JOIN sync2_ops o \
              ON o.profile_uid = e.profile_uid AND o.device = e.device AND o.seq = e.seq \
-             WHERE e.profile_uid = ?1 AND e.kind = 'note' AND e.entity = ?2 AND e.what IN ('#tag', 'tags') \
+             WHERE e.profile_uid = srs_id(?1) AND e.kind = 'note' AND e.entity = srs_id(?2) AND e.what IN ('#tag', 'tags') \
              ORDER BY o.wall DESC, o.logical DESC, o.device DESC LIMIT 1",
         )
         .map_err(sql)?
@@ -173,7 +173,7 @@ pub(crate) fn tag_add(conn: &Connection, profile: &str, note: &str, tag: &str, o
 /// 观察删除：只抹掉 [op] 的作者见过的添加点（并发的添加保留 = 加胜）。
 pub(crate) fn tag_remove(conn: &Connection, profile: &str, note: &str, tag: &str, op: &Op) -> Result<(), String> {
     let adds: Vec<(Vec<u8>, i64)> = conn
-        .prepare_cached("SELECT device, seq FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2 AND tag = ?3")
+        .prepare_cached("SELECT device, seq FROM sync2_tag_adds WHERE profile_uid = srs_id(?1) AND note = srs_id(?2) AND tag = ?3")
         .map_err(sql)?
         .query_map(params![profile, note, tag], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(sql)?
@@ -182,7 +182,7 @@ pub(crate) fn tag_remove(conn: &Connection, profile: &str, note: &str, tag: &str
     for (d, s) in adds {
         let device = Id(d.clone().try_into().map_err(|_| "bad device".to_string())?);
         if op.saw(&OpId { device, seq: s as u64 }) {
-            conn.prepare_cached("DELETE FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2 AND tag = ?3 AND device = ?4 AND seq = ?5")
+            conn.prepare_cached("DELETE FROM sync2_tag_adds WHERE profile_uid = srs_id(?1) AND note = srs_id(?2) AND tag = ?3 AND device = ?4 AND seq = ?5")
                 .map_err(sql)?
                 .execute(params![profile, note, tag, d, s])
                 .map_err(sql)?;
@@ -214,7 +214,7 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
         .optional()
         .map_err(sql)?;
     let others: Vec<String> = conn
-        .prepare_cached("SELECT id FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = ?1 AND field_key = 'tags' AND id != ?2")
+        .prepare_cached("SELECT id FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'tags' AND id != ?2")
         .map_err(sql)?
         .query_map(params![note, id], |r| r.get(0))
         .map_err(sql)?
@@ -275,7 +275,7 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
     // 每条碰到实体的写入都会走这里；绝大多数实体从没被删过。先走 (实体, 键) 索引问一句「有没有删除」，
     // 没有就返回——否则每条写入都要把这个实体的全部操作读一遍，同一实体上的操作越多越慢（平方级）。
     let any_delete: bool = conn
-        .prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = ?1 AND kind = ?2 AND entity = ?3 AND what = 'deleted' LIMIT 1")
+        .prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = 'deleted' LIMIT 1")
         .map_err(sql)?
         .exists(params![profile, kind, entity])
         .map_err(sql)?;
@@ -312,7 +312,7 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
         let dominated = writes.iter().any(|w| w.id != d.id && w.saw(&d.id));
         let conflicting: Vec<&(Op, String)> = if dominated { Vec::new() } else { others.iter().filter(|(x, _)| concurrent(d, x)).collect() };
         let held: bool = conn
-            .prepare_cached("SELECT 1 FROM sync2_held WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+            .prepare_cached("SELECT 1 FROM sync2_held WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
             .map_err(sql)?
             .exists(params![profile, d.id.device.0.to_vec(), d.id.seq as i64])
             .map_err(sql)?;
@@ -346,11 +346,11 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
                 t.entities_changed.insert((kind.to_owned(), entity.to_owned()));
             }
         } else if held {
-            conn.prepare_cached("DELETE FROM sync2_held WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+            conn.prepare_cached("DELETE FROM sync2_held WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
                 .map_err(sql)?
                 .execute(params![profile, d.id.device.0.to_vec(), d.id.seq as i64])
                 .map_err(sql)?;
-            conn.prepare_cached("DELETE FROM sync2_conflicts WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+            conn.prepare_cached("DELETE FROM sync2_conflicts WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
                 .map_err(sql)?
                 .execute(params![profile, d.id.device.0.to_vec(), d.id.seq as i64])
                 .map_err(sql)?;
@@ -393,7 +393,7 @@ pub(crate) fn should_hold(conn: &Connection, profile: &str, kind: &str, entity: 
 // ---------------------------------------------------------------- 彻底清除
 
 fn is_purged(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
-    conn.prepare_cached("SELECT 1 FROM sync2_purged WHERE profile_uid = ?1 AND kind = ?2 AND entity = ?3")
+    conn.prepare_cached("SELECT 1 FROM sync2_purged WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3)")
         .map_err(sql)?
         .exists(params![profile, kind, entity])
         .map_err(sql)
@@ -423,7 +423,7 @@ fn purges_of(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Resu
 /// 把日志里的 `Purge` 操作补进实体 → 操作索引（见 [purges_of]）。可重放（INSERT OR IGNORE）。
 fn backfill_purge_index(conn: &Connection, profile: &str) -> Result<(), String> {
     let ids: Vec<(Vec<u8>, i64)> = conn
-        .prepare_cached("SELECT device, seq FROM sync2_ops WHERE profile_uid = ?1 AND kind = ?2 AND purged = 0")
+        .prepare_cached("SELECT device, seq FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND purged = 0")
         .map_err(sql)?
         .query_map(params![profile, i64::from(crate::sync2::op::KIND_PURGE)], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(sql)?
@@ -456,7 +456,7 @@ pub(crate) fn purge_op(conn: &Connection, profile: &str, id: &OpId, own: Option<
     }
     let skel = op.purge();
     conn.prepare_cached(
-        "UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
+        "UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3",
     )
         .map_err(sql)?
         .execute(params![profile, id.device.0.to_vec(), id.seq as i64, &skel.payload[..]])
@@ -466,7 +466,7 @@ pub(crate) fn purge_op(conn: &Connection, profile: &str, id: &OpId, own: Option<
             "INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) \
              SELECT l.profile_uid, l.location, s.first FROM sync2_locations l \
              JOIN sync2_segments s ON s.profile_uid = l.profile_uid AND s.device = ?2 AND s.first <= ?3 AND s.last >= ?3 \
-             WHERE l.profile_uid = ?1",
+             WHERE l.profile_uid = srs_id(?1)",
         )
         .map_err(sql)?
         .execute(params![profile, id.device.0.to_vec(), id.seq as i64])
@@ -503,7 +503,7 @@ pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, enti
     let gone: Vec<(String, Option<Vec<u8>>, Option<i64>)> = conn
         .prepare_cached(
             "SELECT f.id, m.device, m.seq FROM srs_field_edits f LEFT JOIN sync2_edit_ops m ON m.edit_id = f.id \
-             WHERE f.entity_kind = ?1 AND f.entity_id = ?2 AND f.field_key != 'deleted'",
+             WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2) AND f.field_key != 'deleted'",
         )
         .map_err(sql)?
         .query_map(params![kind.wire(), entity], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
@@ -521,7 +521,7 @@ pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, enti
     }
     if kind == EntKind::Note {
         let adds: Vec<(Vec<u8>, i64)> = conn
-            .prepare_cached("SELECT DISTINCT device, seq FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2")
+            .prepare_cached("SELECT DISTINCT device, seq FROM sync2_tag_adds WHERE profile_uid = srs_id(?1) AND note = srs_id(?2)")
             .map_err(sql)?
             .query_map(params![profile, entity], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(sql)?
@@ -533,7 +533,7 @@ pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, enti
                 kept = true;
                 continue;
             }
-            conn.prepare_cached("DELETE FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2 AND device = ?3 AND seq = ?4")
+            conn.prepare_cached("DELETE FROM sync2_tag_adds WHERE profile_uid = srs_id(?1) AND note = srs_id(?2) AND device = ?3 AND seq = ?4")
                 .map_err(sql)?
                 .execute(params![profile, entity, d, s])
                 .map_err(sql)?;

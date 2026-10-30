@@ -915,7 +915,7 @@ impl Session {
             results: Vec::new(),
         };
         {
-            let q = format!("SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = ?1 AND deleted_at IS NULL");
+            let q = format!("SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL");
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let mut rows = stmt.query([profile]).map_err(sql)?;
             while let Some(r) = rows.next().map_err(sql)? {
@@ -924,7 +924,7 @@ impl Session {
                 s.notes.push(Some(n));
             }
         }
-        let q = format!("SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE profile_uid = ?1 AND hidden = 0");
+        let q = format!("SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE profile_uid = srs_id(?1) AND hidden = 0");
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut rows = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = rows.next().map_err(sql)? {
@@ -946,7 +946,7 @@ impl Session {
         let ids: Vec<&String> = d.cards.iter().collect();
         for chunk in ids.chunks(CHUNK) {
             let q = format!(
-                "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = ?1 AND +hidden = 0",
+                "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
                 (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
             );
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
@@ -986,7 +986,7 @@ impl Session {
         let mut present: Vec<String> = Vec::new();
         for chunk in ids.chunks(CHUNK) {
             let q = format!(
-                "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE id IN ({}) AND +profile_uid = ?1 AND deleted_at IS NULL",
+                "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND deleted_at IS NULL",
                 (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
             );
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
@@ -1100,7 +1100,7 @@ impl Session {
                 // 整列：按 (entity_kind, entity_id) 顺序读（实测 5 万笔记库比走 (profile_uid, entity_kind, entity_id,
                 // field_key) 索引快一倍多：那条按笔记顺序逐行回表是随机读；两种走法摸到的表页一样多——一列的记录
                 // 散在全部笔记的记录之间）。
-                let q = format!("{SELECT} AND +f.profile_uid = ?1{} ORDER BY f.entity_id", key_filter(2, key_args.len()));
+                let q = format!("{SELECT} AND +f.profile_uid = srs_id(?1){} ORDER BY f.entity_id", key_filter(2, key_args.len()));
                 let args: Vec<Sql> =
                     std::iter::once(Sql::Text(profile.to_owned())).chain(key_args.iter().map(|k| Sql::Text(k.clone()))).collect();
                 run(c, &q, args, self)?;
@@ -1108,7 +1108,7 @@ impl Session {
             Some(ids) => {
                 for chunk in ids.chunks(CHUNK) {
                     let q = format!(
-                        "{SELECT} AND f.entity_id IN ({}) AND +f.profile_uid = ?1{} ORDER BY f.entity_id",
+                        "{SELECT} AND f.entity_id IN ({}) AND +f.profile_uid = srs_id(?1){} ORDER BY f.entity_id",
                         (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", "),
                         key_filter(chunk.len() + 2, key_args.len())
                     );
@@ -1651,7 +1651,7 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     for chunk in wanted.chunks(CHUNK) {
         let q = format!(
             "SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
-             WHERE profile_uid = ?1 AND deleted_at IS NULL AND dupe_norm IN ({})",
+             WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN ({})",
             (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
@@ -1688,7 +1688,7 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     let deck_notes: Vec<&str> = deck_notes.into_iter().collect();
     for chunk in deck_notes.chunks(CHUNK) {
         let q = format!(
-            "SELECT note_id, deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = ?1 AND +hidden = 0",
+            "SELECT note_id, deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
             (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
@@ -2079,7 +2079,7 @@ mod tests {
         let plan: Vec<String> = w
             .prepare(
                 "EXPLAIN QUERY PLAN SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
-                 WHERE profile_uid = ?1 AND deleted_at IS NULL AND dupe_norm IN (?2, ?3)",
+                 WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN (?2, ?3)",
             )
             .unwrap()
             .query_map(rusqlite::params![P, "a", "b"], |r| r.get::<_, String>(3))

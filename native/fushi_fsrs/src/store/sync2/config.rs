@@ -70,7 +70,7 @@ impl DeckTree {
         let mut payloads: BTreeMap<String, Value> = BTreeMap::new();
         {
             let mut stmt = conn
-                .prepare_cached("SELECT id, payload_json FROM srs_entities WHERE profile_uid = ?1 AND kind = 'deck'")
+                .prepare_cached("SELECT id, payload_json FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'deck'")
                 .map_err(|e| e.to_string())?;
             let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
             while let Some(r) = q.next().map_err(|e| e.to_string())? {

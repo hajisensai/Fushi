@@ -114,7 +114,7 @@ impl Written {
 /// 丢掉本 profile 的全部缓存行，由事件重建（Dart `rebuildCaches`）。
 pub(crate) fn rebuild(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<Written, String> {
     for t in ["srs_cards_cache", "srs_notes_cache", "srs_stat_reviews"] {
-        c.execute(&format!("DELETE FROM {t} WHERE profile_uid = ?1"), [profile]).map_err(sql)?;
+        c.execute(&format!("DELETE FROM {t} WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)?;
     }
     refresh(c, profile, cfg, Dirty { all_notes: true, all_stats: true, ..Dirty::default() })
 }
@@ -131,7 +131,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
         let types: Vec<&String> = dirty.note_types.iter().collect();
         for chunk in types.chunks(500) {
             let q = format!(
-                "SELECT id FROM srs_notes_cache WHERE profile_uid = ? AND note_type_id IN ({})",
+                "SELECT id FROM srs_notes_cache WHERE profile_uid = srs_id(?) AND note_type_id IN ({})",
                 marks(chunk.len())
             );
             let mut args: Vec<&str> = vec![profile];
@@ -140,7 +140,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
         }
     }
     if dirty.all_notes {
-        notes.extend(strings(c, "SELECT id FROM srs_entities WHERE profile_uid = ?1 AND kind = 'note'", &[profile])?);
+        notes.extend(strings(c, "SELECT id FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'note'", &[profile])?);
     }
     let now = wall_now();
     let mut stat_seeds: BTreeSet<String> = BTreeSet::new();
@@ -165,7 +165,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
     stat_seeds.extend(out.cards.iter().cloned());
     stat_seeds.extend(out.removed.iter().cloned());
     if dirty.all_stats {
-        stat_seeds.extend(strings(c, "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = ?1", &[profile])?);
+        stat_seeds.extend(strings(c, "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)", &[profile])?);
     }
     if !stat_seeds.is_empty() {
         refresh_stats(c, profile, cfg, &mut links, &stat_seeds)?;
@@ -347,7 +347,7 @@ fn dupe_norm_of(n: &NoteInfo, t: Option<&TypeInfo>) -> String {
 /// 它们的笔记类型、只改这一列，不重算整行与卡片（整行重算要读每张卡的血统与日志，十万卡库慢一个量级）。与
 /// [flush_notes] 写的值同一个函数（[dupe_norm_of]）。身份记录已不在的行（缓存孤行）写空串。幂等。返回补了几行。
 pub(crate) fn backfill_dupe_norms(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<usize, String> {
-    let ids = strings(c, "SELECT id FROM srs_notes_cache WHERE profile_uid = ?1 AND dupe_norm IS NULL", &[profile])?;
+    let ids = strings(c, "SELECT id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND dupe_norm IS NULL", &[profile])?;
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
     let mut up = c.prepare_cached("UPDATE srs_notes_cache SET dupe_norm = ?1 WHERE id = ?2").map_err(sql)?;
     for chunk in ids.chunks(CHUNK) {

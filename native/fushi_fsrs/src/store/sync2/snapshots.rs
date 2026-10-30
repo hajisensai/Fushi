@@ -136,7 +136,7 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
         out
     };
     let mut up = c
-        .prepare("UPDATE sync2_ops SET payload = ?4, sc = ?5, sc_at = ?6 WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+        .prepare("UPDATE sync2_ops SET payload = ?4, sc = ?5, sc_at = ?6 WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
         .map_err(sql)?;
     for (profile, device, seq, payload) in ops {
         let (stored, sc, at) = pack_payload(c, op::KIND_LOG, &payload)?;

@@ -300,13 +300,13 @@ pub(crate) struct LogState {
 /// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
 pub(crate) const LOGS_SQL: &str = "SELECT card_id, occurred_at, review_type, \
      CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, id \
-     FROM srs_review_logs WHERE profile_uid = ?1 AND kind = 'review' AND occurred_at >= ?2";
+     FROM srs_review_logs WHERE profile_uid = srs_id(?1) AND kind = 'review' AND occurred_at >= ?2";
 
 /// 按 id 重读几条日志（参数同 [LOGS_SQL]，其后是 id）：走主键，profile / 种类 / 时刻只当过滤（`+`），不让 SQLite 改走
 /// 区间索引把 30 天日志扫一遍。
 pub(crate) fn logs_by_id_sql(n: usize) -> String {
     format!(
-        "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, id          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = ?1 AND +kind = 'review' AND +occurred_at >= ?2",
+        "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, id          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
         marks(n)
     )
 }
@@ -581,7 +581,7 @@ impl Session {
             logs: LogState::scan(c, profile, day, today)?,
         };
         // `+profile_uid`：整表顺扫比按 profile 前缀索引逐行回表快（一个 profile 通常就是全表）。
-        let mut stmt = c.prepare_cached(&format!("{ROW_COLUMNS} WHERE +profile_uid = ?1")).map_err(sql)?;
+        let mut stmt = c.prepare_cached(&format!("{ROW_COLUMNS} WHERE +profile_uid = srs_id(?1)")).map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         let mut due: Vec<Vec<(u32, Option<i64>, Option<f64>)>> = Vec::new();
         while let Some(r) = q.next().map_err(sql)? {
@@ -639,7 +639,7 @@ impl Session {
         for chunk in all.chunks(CHUNK) {
             let mut fetched: HashMap<u32, Row> = HashMap::new();
             {
-                let text = format!("{ROW_COLUMNS} WHERE id IN ({}) AND +profile_uid = ?", marks(chunk.len()));
+                let text = format!("{ROW_COLUMNS} WHERE id IN ({}) AND +profile_uid = srs_id(?)", marks(chunk.len()));
                 let mut stmt = c.prepare_cached(&text).map_err(sql)?;
                 let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
                 args.push(Sql::Text(profile.to_owned()));

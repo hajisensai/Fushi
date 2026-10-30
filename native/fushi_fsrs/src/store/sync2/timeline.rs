@@ -20,7 +20,7 @@ use crate::sync2::vv::{OpId, Vv};
 pub(crate) fn vv_at(conn: &Connection, profile: &str, t: i64) -> Result<Vv, String> {
     let mut vv = Vv::new();
     let mut stmt = conn
-        .prepare("SELECT device, MAX(seq) FROM sync2_ops WHERE profile_uid = ?1 AND wall <= ?2 GROUP BY device")
+        .prepare("SELECT device, MAX(seq) FROM sync2_ops WHERE profile_uid = srs_id(?1) AND wall <= ?2 GROUP BY device")
         .map_err(sql)?;
     let rows = stmt.query_map(params![profile, t], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?))).map_err(sql)?;
     for r in rows {
@@ -68,7 +68,7 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Vv, retract_review
     let mut touched: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
     let mut later_logs: Vec<OpId> = Vec::new();
     {
-        let mut stmt = conn.prepare("SELECT kind, entity, device, seq, what FROM sync2_ent_ops WHERE profile_uid = ?1").map_err(sql)?;
+        let mut stmt = conn.prepare("SELECT kind, entity, device, seq, what FROM sync2_ent_ops WHERE profile_uid = srs_id(?1)").map_err(sql)?;
         let rows = stmt
             .query_map([profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?, r.get::<_, String>(4)?)))
             .map_err(sql)?;
@@ -96,7 +96,7 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Vv, retract_review
     let mut created_after: BTreeSet<(String, String)> = BTreeSet::new();
     {
         let mut stmt = conn
-            .prepare("SELECT device, seq, payload, purged FROM sync2_ops WHERE profile_uid = ?1 AND kind = ?2")
+            .prepare("SELECT device, seq, payload, purged FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2")
             .map_err(sql)?;
         let rows = stmt
             .query_map(params![profile, i64::from(crate::sync2::op::KIND_ENTITY)], |r| {
@@ -216,7 +216,7 @@ fn edit_body(kind: EntKind, entity: &str, key: &str, v: Value) -> Body {
 fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: &str, target: Option<&Vv>) -> Result<Value, String> {
     let mut rows: Vec<String> = Vec::new();
     let mut stmt = conn
-        .prepare_cached("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = ?1 AND kind = ?2 AND entity = ?3 AND what = ?4 ORDER BY device, seq")
+        .prepare_cached("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = ?4 ORDER BY device, seq")
         .map_err(sql)?;
     let ids: Vec<(Vec<u8>, i64)> = stmt
         .query_map(params![profile, kind.wire(), entity, key], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -252,7 +252,7 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
 /// 某笔记在 [target] 时的标签（OR-Set 按那时已有的添加 / 观察删除重算）。
 fn tags_at(conn: &Connection, profile: &str, note: &str, target: &Vv) -> Result<Vec<String>, String> {
     let mut stmt = conn
-        .prepare_cached("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = ?1 AND kind = 'note' AND entity = ?2 AND what IN ('#tag', 'tags')")
+        .prepare_cached("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = 'note' AND entity = srs_id(?2) AND what IN ('#tag', 'tags')")
         .map_err(sql)?;
     let ids: Vec<(Vec<u8>, i64)> = stmt
         .query_map(params![profile, note], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -331,7 +331,7 @@ impl SrsCore {
     pub fn sync2_checkpoints(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut stmt = r
-            .prepare("SELECT wall, name, reason, device, seq FROM sync2_checkpoints WHERE profile_uid = ?1 ORDER BY wall DESC, seq DESC")
+            .prepare("SELECT wall, name, reason, device, seq FROM sync2_checkpoints WHERE profile_uid = srs_id(?1) ORDER BY wall DESC, seq DESC")
             .map_err(sql)?;
         let rows = stmt
             .query_map([profile], |x| {

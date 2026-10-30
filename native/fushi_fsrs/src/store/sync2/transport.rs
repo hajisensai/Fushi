@@ -24,7 +24,7 @@ fn chain_at(conn: &Connection, profile: &str, device: &Id, seq: u64) -> Result<O
     if seq == 0 {
         return Ok(Some(CHAIN_ZERO));
     }
-    conn.prepare_cached("SELECT chain FROM sync2_ops WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+    conn.prepare_cached("SELECT chain FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec(), seq as i64], |r| r.get::<_, Vec<u8>>(0))
         .optional()
@@ -44,7 +44,7 @@ fn split_seq_range(conn: &Connection, local: &Local, first: u64, last: u64) -> R
 
 /// 本机的切段点 `(first, last, 压缩后体积估计；0 = 未知)`，按 seq 升序。
 fn segments_of(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64, u64)>, String> {
-    conn.prepare_cached("SELECT first, last, bytes FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 ORDER BY first")
+    conn.prepare_cached("SELECT first, last, bytes FROM sync2_segments WHERE profile_uid = srs_id(?1) AND device = ?2 ORDER BY first")
         .map_err(sql)?
         .query_map(params![local.profile, local.device.0.to_vec()], |r| {
             Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64, r.get::<_, i64>(2)? as u64))
@@ -58,7 +58,7 @@ fn segments_of(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64, u64)>,
 fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, String> {
     let last_cut: u64 = conn
         .query_row(
-            "SELECT COALESCE(MAX(last), 0) FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2",
+            "SELECT COALESCE(MAX(last), 0) FROM sync2_segments WHERE profile_uid = srs_id(?1) AND device = ?2",
             params![local.profile, local.device.0.to_vec()],
             |r| r.get::<_, i64>(0),
         )
@@ -147,13 +147,13 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
         let est: u64 = split_seq_range(conn, local, s.0, s.1)?.iter().map(|x| x.2).sum();
         s.2 = est.max(1);
         conn.execute(
-            "UPDATE sync2_segments SET bytes = ?4 WHERE profile_uid = ?1 AND device = ?2 AND first = ?3",
+            "UPDATE sync2_segments SET bytes = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2 AND first = ?3",
             params![local.profile, local.device.0.to_vec(), s.0 as i64, s.2 as i64],
         )
         .map_err(sql)?;
     }
     let locations: Vec<(String, u64)> = conn
-        .prepare_cached("SELECT location, uploaded FROM sync2_locations WHERE profile_uid = ?1")
+        .prepare_cached("SELECT location, uploaded FROM sync2_locations WHERE profile_uid = srs_id(?1)")
         .map_err(sql)?
         .query_map([&local.profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))
         .map_err(sql)?
@@ -180,7 +180,7 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
             }
         }
         conn.execute(
-            "DELETE FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 AND first >= ?3 AND last <= ?4",
+            "DELETE FROM sync2_segments WHERE profile_uid = srs_id(?1) AND device = ?2 AND first >= ?3 AND last <= ?4",
             params![local.profile, local.device.0.to_vec(), first as i64, last as i64],
         )
         .map_err(sql)?;
@@ -226,7 +226,7 @@ pub(crate) const OBSOLETE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
 /// （[SrsCore::sync2_obsolete_ack]）才移除；没 ack 的下一轮照样再给（删除对已不在的文件幂等）。
 fn stamp_obsolete(conn: &Connection, local: &Local, location: &str, gen: u64, now: i64) -> Result<(), String> {
     conn.prepare_cached(
-        "UPDATE sync2_obsolete SET since_gen = ?3, since_at = ?4 WHERE profile_uid = ?1 AND location = ?2 AND since_gen IS NULL",
+        "UPDATE sync2_obsolete SET since_gen = ?3, since_at = ?4 WHERE profile_uid = srs_id(?1) AND location = ?2 AND since_gen IS NULL",
     )
     .map_err(sql)?
     .execute(params![local.profile, location, gen as i64, now])
@@ -239,8 +239,8 @@ fn stamp_obsolete(conn: &Connection, local: &Local, location: &str, gen: u64, no
 pub(crate) fn pending_deletes(conn: &Connection, profile: &str, location: &str, gen: u64, now: i64) -> Result<Vec<String>, String> {
     let mut names: Vec<String> = conn
         .prepare_cached(
-            "SELECT name FROM sync2_obsolete WHERE profile_uid = ?1 AND location = ?2 AND since_gen + ?3 <= ?4 AND since_at + ?5 <= ?6 \
-             UNION SELECT path FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 ORDER BY 1",
+            "SELECT name FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND location = ?2 AND since_gen + ?3 <= ?4 AND since_at + ?5 <= ?6 \
+             UNION SELECT path FROM sync2_relay_gone WHERE profile_uid = srs_id(?1) AND location = ?2 ORDER BY 1",
         )
         .map_err(sql)?
         .query_map(params![profile, location, OBSOLETE_KEEP_GENS as i64, gen as i64, OBSOLETE_GRACE_MS, now], |r| r.get(0))
@@ -259,7 +259,7 @@ fn hex(b: &[u8]) -> String {
 /// （信任首次使用；界面的设备管理可以把它标为不可信 = 冻结）。返回 false = 拒绝这份 head。
 fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String> {
     let known: Option<(Option<Vec<u8>>, i64)> = conn
-        .prepare_cached("SELECT public, frozen FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2")
+        .prepare_cached("SELECT public, frozen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .query_row(params![profile, h.device.0.to_vec()], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()
@@ -268,7 +268,7 @@ fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String
         Some((Some(p), _)) if p != h.public.to_vec() => Ok(false),
         Some((None, _)) => {
             conn.execute(
-                "UPDATE sync2_devices SET public = ?3 WHERE profile_uid = ?1 AND device = ?2",
+                "UPDATE sync2_devices SET public = ?3 WHERE profile_uid = srs_id(?1) AND device = ?2",
                 params![profile, h.device.0.to_vec(), h.public.to_vec()],
             )
             .map_err(sql)?;
@@ -289,7 +289,7 @@ fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String
 fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String> {
     conn.execute(
         "UPDATE sync2_devices SET head_gen = ?3, head_seq = ?4, head_at = ?5, ack = ?6, digest = ?7, name = ?8 \
-         WHERE profile_uid = ?1 AND device = ?2 AND head_gen <= ?3",
+         WHERE profile_uid = srs_id(?1) AND device = ?2 AND head_gen <= ?3",
         params![profile, h.device.0.to_vec(), h.gen as i64, h.seq as i64, h.at_ms, h.ack.encode(), h.digest, h.name],
     )
     .map_err(sql)?;
@@ -299,7 +299,7 @@ fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String>
 /// 一台设备的 head 是否已记下（[record_head] 这一次是空操作）。
 fn head_recorded(c: &Connection, profile: &str, h: &Head) -> Result<bool, String> {
     let gen: Option<i64> = c
-        .prepare_cached("SELECT head_gen FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2")
+        .prepare_cached("SELECT head_gen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .query_row(params![profile, h.device.0.to_vec()], |r| r.get(0))
         .optional()
@@ -310,7 +310,7 @@ fn head_recorded(c: &Connection, profile: &str, h: &Head) -> Result<bool, String
 /// 这台设备在 `seq` 闭区间 [a, b] 的操作是否全在因果缓冲里（按主键区间数，不把整台设备的缓冲读进内存，审查 S-6）。
 fn pending_covers(c: &Connection, profile: &str, device: &Id, a: u64, b: u64) -> Result<bool, String> {
     let n: i64 = c
-        .prepare_cached("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq BETWEEN ?3 AND ?4")
+        .prepare_cached("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq BETWEEN ?3 AND ?4")
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec(), a as i64, b as i64], |r| r.get(0))
         .map_err(sql)?;
@@ -426,7 +426,7 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
         trusted.push((h, *bytes));
         let applied: u64 = c
             .query_row(
-                "SELECT applied FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
+                "SELECT applied FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2",
                 params![profile, h.device.0.to_vec()],
                 |r| r.get::<_, i64>(0),
             )
@@ -490,7 +490,7 @@ impl Held {
     fn op(&mut self, c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<&Op, String> {
         if self.op.is_none() {
             let raw: Vec<u8> = c
-                .prepare_cached("SELECT op FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+                .prepare_cached("SELECT op FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
                 .map_err(sql)?
                 .query_row(params![profile, device.0.to_vec(), seq as i64], |r| r.get(0))
                 .map_err(sql)?;
@@ -509,7 +509,7 @@ const DELIVERY_HELD_BYTES: usize = 16 * 1024 * 1024;
 const DELIVERY_HELD_BYTES: usize = 2 * 1024;
 
 fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
-    c.prepare_cached("UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2")
+    c.prepare_cached("UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec()])
         .map_err(sql)?;
@@ -517,7 +517,7 @@ fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
 }
 
 fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<(), String> {
-    c.prepare_cached("DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+    c.prepare_cached("DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64])
         .map_err(sql)?;
@@ -581,7 +581,7 @@ impl Delivery {
     fn load(c: &Connection, profile: &str) -> Result<Delivery, String> {
         let vv = applied_vv(c, profile)?;
         let mut queues: BTreeMap<Id, BTreeMap<u64, Held>> = BTreeMap::new();
-        let mut stmt = c.prepare_cached("SELECT device, seq, chain FROM sync2_pending WHERE profile_uid = ?1").map_err(sql)?;
+        let mut stmt = c.prepare_cached("SELECT device, seq, chain FROM sync2_pending WHERE profile_uid = srs_id(?1)").map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let device = Id(r.get::<_, Vec<u8>>(0).map_err(sql)?.try_into().map_err(|_| "bad device")?);
@@ -682,7 +682,7 @@ impl Delivery {
                         // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
                         mark_fork(c, profile, device)?;
                         c.execute(
-                            "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq >= ?3",
+                            "DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq >= ?3",
                             params![profile, device.0.to_vec(), seq as i64],
                         )
                         .map_err(sql)?;
@@ -735,7 +735,7 @@ impl Delivery {
     fn checkpoint(&mut self, c: &Connection, profile: &str, now: i64) -> Result<usize, String> {
         observe_remote(c, profile, self.seen.take(), &std::mem::take(&mut self.ahead), now)?;
         for (device, chain) in std::mem::take(&mut self.chains) {
-            c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2")
+            c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2")
                 .map_err(sql)?
                 .execute(params![profile, device.0.to_vec(), self.vv.get(&device) as i64, chain.to_vec()])
                 .map_err(sql)?;
@@ -943,7 +943,7 @@ fn prepare_ingest<'a>(
 fn device_public(c: &Connection, profile: &str, device: &Id) -> Result<Option<[u8; 32]>, String> {
     let public: Option<Vec<u8>> = c
         .query_row(
-            "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
+            "SELECT public FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2",
             params![profile, device.0.to_vec()],
             |r| r.get(0),
         )
@@ -1179,7 +1179,7 @@ fn ingest_result(
     let pending: i64 = match pending {
         Some(n) => n,
         None => c
-            .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |r| r.get(0))
             .map_err(sql)?,
     };
     Ok(json!({
@@ -1248,7 +1248,7 @@ pub(crate) fn replay_pending(c: &Connection, profile: &str, budget: &mut CommitB
     let mut changed = BTreeSet::new();
     loop {
         let ids: Vec<String> = c
-            .prepare_cached("SELECT card_id FROM sync2_replay_pending WHERE profile_uid = ?1 ORDER BY card_id LIMIT ?2")
+            .prepare_cached("SELECT card_id FROM sync2_replay_pending WHERE profile_uid = srs_id(?1) ORDER BY card_id LIMIT ?2")
             .map_err(sql)?
             .query_map(params![profile, REPLAY_PENDING_CHUNK as i64], |r| r.get(0))
             .map_err(sql)?
@@ -1268,7 +1268,7 @@ pub(crate) fn replay_pending(c: &Connection, profile: &str, budget: &mut CommitB
             return Ok((changed, true));
         }
         changed.extend(replay_cards(c, &take)?);
-        let mut del = c.prepare_cached("DELETE FROM sync2_replay_pending WHERE profile_uid = ?1 AND card_id = ?2").map_err(sql)?;
+        let mut del = c.prepare_cached("DELETE FROM sync2_replay_pending WHERE profile_uid = srs_id(?1) AND card_id = srs_id(?2)").map_err(sql)?;
         for id in &take {
             del.execute(params![profile, id]).map_err(sql)?;
         }
@@ -1280,7 +1280,7 @@ pub(crate) fn replay_pending(c: &Connection, profile: &str, budget: &mut CommitB
 
 /// 待重放集合非空（收段会话没收尾就被打断过）。
 pub(crate) fn replay_is_pending(c: &Connection, profile: &str) -> Result<bool, String> {
-    c.query_row("SELECT EXISTS(SELECT 1 FROM sync2_replay_pending WHERE profile_uid = ?1)", [profile], |r| r.get(0)).map_err(sql)
+    c.query_row("SELECT EXISTS(SELECT 1 FROM sync2_replay_pending WHERE profile_uid = srs_id(?1))", [profile], |r| r.get(0)).map_err(sql)
 }
 
 // 本机身份分叉（设计 §7.3）：换新身份，把旧身份 seq > [keep] 的本机操作撤出投影、以新身份重签发
@@ -1298,44 +1298,44 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     }
     // 撤出：ops 行、切段点、修改记录投影（日志与身份记录按内容 ID 去重，重签发后照旧在）。
     conn.execute(
-        "DELETE FROM sync2_ops WHERE profile_uid = ?1 AND device = ?2 AND seq > ?3",
+        "DELETE FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq > ?3",
         params![profile, old.device.0.to_vec(), keep as i64],
     )
     .map_err(sql)?;
     conn.execute(
-        "DELETE FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 AND last > ?3",
+        "DELETE FROM sync2_segments WHERE profile_uid = srs_id(?1) AND device = ?2 AND last > ?3",
         params![profile, old.device.0.to_vec(), keep as i64],
     )
     .map_err(sql)?;
     let old_text = old.device.text();
     conn.execute(
-        "DELETE FROM srs_field_edits WHERE profile_uid = ?1 AND writer_id = ?2 AND seq > ?3",
+        "DELETE FROM srs_field_edits WHERE profile_uid = srs_id(?1) AND writer_id = srs_id(?2) AND seq > ?3",
         params![profile, old_text, keep as i64],
     )
     .map_err(sql)?;
     conn.execute(
-        "DELETE FROM sync2_edit_ops WHERE profile_uid = ?1 AND device = ?2 AND seq > ?3",
+        "DELETE FROM sync2_edit_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq > ?3",
         params![profile, old.device.0.to_vec(), keep as i64],
     )
     .map_err(sql)?;
     // 寄存器反链里撤出的写入（重签发时按新 OpId 重新并入）。
     conn.execute(
-        "DELETE FROM sync2_mvr WHERE profile_uid = ?1 AND device = ?2 AND seq > ?3",
+        "DELETE FROM sync2_mvr WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq > ?3",
         params![profile, old.device.0.to_vec(), keep as i64],
     )
     .map_err(sql)?;
     conn.execute(
-        "UPDATE sync2_devices SET applied = ?3, chain = ?4, frozen = 1 WHERE profile_uid = ?1 AND device = ?2",
+        "UPDATE sync2_devices SET applied = ?3, chain = ?4, frozen = 1 WHERE profile_uid = srs_id(?1) AND device = ?2",
         params![profile, old.device.0.to_vec(), keep as i64, chain_at(conn, profile, &old.device, keep)?.unwrap_or(CHAIN_ZERO).to_vec()],
     )
     .map_err(sql)?;
     // 各位置的上传进度记的是本机身份的 seq：新身份从 1 开始，进度归零（否则新段会被当成已传过）。
-    conn.execute("UPDATE sync2_locations SET uploaded = 0 WHERE profile_uid = ?1", [profile]).map_err(sql)?;
+    conn.execute("UPDATE sync2_locations SET uploaded = 0 WHERE profile_uid = srs_id(?1)", [profile]).map_err(sql)?;
     let migrated = old.migrated;
     let mut fresh = Local::create(conn, profile, now)?;
     fresh.clock.last = old.clock.last;
     if migrated {
-        conn.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = ?1", params![profile, now]).map_err(sql)?;
+        conn.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = srs_id(?1)", params![profile, now]).map_err(sql)?;
         fresh.migrated = true;
     }
     let mut applied = applied_vv(conn, profile)?;
@@ -1367,7 +1367,7 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
         // 日志的元数据挂到新 OpId 上。
         if let Ok(Body::Log(l)) = re.body() {
             conn.execute(
-                "UPDATE sync2_log_meta SET device = ?2, seq = ?3 WHERE log_id = ?1",
+                "UPDATE sync2_log_meta SET device = ?2, seq = ?3 WHERE log_id = srs_id(?1)",
                 params![l.id.text(), fresh.device.0.to_vec(), seq as i64],
             )
             .map_err(sql)?;
@@ -1421,7 +1421,7 @@ pub struct OutboxBatch {
 /// [location] 上已确认上传到的水位：本机 seq ≤ 它的段都已在该位置上（head 写出时、或每批确认时前进）。
 fn uploaded_of(c: &Connection, profile: &str, location: &str) -> Result<u64, String> {
     Ok(c.query_row(
-        "SELECT uploaded FROM sync2_locations WHERE profile_uid = ?1 AND location = ?2",
+        "SELECT uploaded FROM sync2_locations WHERE profile_uid = srs_id(?1) AND location = ?2",
         params![profile, location],
         |r| r.get::<_, i64>(0),
     )
@@ -1457,7 +1457,7 @@ impl SrsCore {
             let mut bytes_total: u64 = 0;
             // 清除（§10.5）改写过的本机段：已经传过也要重传（同名覆盖；链值不变，名字不变）。
             let rewrites: BTreeSet<u64> = c
-                .prepare_cached("SELECT first FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2")
+                .prepare_cached("SELECT first FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2")
                 .map_err(sql)?
                 .query_map(params![profile, location], |r| Ok(r.get::<_, i64>(0)? as u64))
                 .map_err(sql)?
@@ -1503,7 +1503,7 @@ impl SrsCore {
             let live: BTreeSet<(u64, u64)> = current.iter().map(|&(a, b, _)| (a, b)).collect();
             let acked: BTreeSet<(u64, u64)> = segments.iter().copied().filter(|s| live.contains(s)).collect();
             for (first, _) in &acked {
-                c.prepare_cached("DELETE FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2 AND first = ?3")
+                c.prepare_cached("DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first = ?3")
                     .map_err(sql)?
                     .execute(params![profile, location, *first as i64])
                     .map_err(sql)?;
@@ -1595,7 +1595,7 @@ impl SrsCore {
             // 清除改写过的段还等着这次 head 收账（下面删 sync2_rewrites）：照写，否则发件每轮都重传它们。
             let rewrites_pending: bool = c
                 .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2 AND first <= ?3)",
+                    "SELECT EXISTS(SELECT 1 FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first <= ?3)",
                     params![profile, location, seq as i64],
                     |r| r.get(0),
                 )
@@ -1618,7 +1618,7 @@ impl SrsCore {
                         if (s == sig && fresh) || ack_only_fresh {
                             let gen: i64 = c
                                 .query_row(
-                                    "SELECT head_gen FROM sync2_locations WHERE profile_uid = ?1 AND location = ?2",
+                                    "SELECT head_gen FROM sync2_locations WHERE profile_uid = srs_id(?1) AND location = ?2",
                                     params![profile, location],
                                     |r| r.get(0),
                                 )
@@ -1642,7 +1642,7 @@ impl SrsCore {
             .map_err(sql)?;
             local.save(c)?;
             c.execute(
-                "DELETE FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2 AND first <= ?3",
+                "DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first <= ?3",
                 params![profile, location, seq as i64],
             )
             .map_err(sql)?;
@@ -1669,12 +1669,12 @@ impl SrsCore {
             let mut n = 0;
             for path in deleted {
                 n += c
-                    .prepare_cached("DELETE FROM sync2_obsolete WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
+                    .prepare_cached("DELETE FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND location = ?2 AND name = ?3")
                     .map_err(sql)?
                     .execute(params![profile, location, path])
                     .map_err(sql)?;
                 n += c
-                    .prepare_cached("DELETE FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 AND path = ?3")
+                    .prepare_cached("DELETE FROM sync2_relay_gone WHERE profile_uid = srs_id(?1) AND location = ?2 AND path = ?3")
                     .map_err(sql)?
                     .execute(params![profile, location, path])
                     .map_err(sql)?;
@@ -2071,7 +2071,7 @@ impl SrsCore {
         let mut devices = Vec::new();
         let mut stmt = r
             .prepare(
-                "SELECT device, applied, head_seq, head_at, digest, name, frozen, warning FROM sync2_devices WHERE profile_uid = ?1",
+                "SELECT device, applied, head_seq, head_at, digest, name, frozen, warning FROM sync2_devices WHERE profile_uid = srs_id(?1)",
             )
             .map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
@@ -2101,13 +2101,13 @@ impl SrsCore {
             }));
         }
         let pending: i64 = r
-            .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |x| x.get(0))
+            .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |x| x.get(0))
             .map_err(sql)?;
         let ops: i64 = r
-            .query_row("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = ?1", [profile], |x| x.get(0))
+            .query_row("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id(?1)", [profile], |x| x.get(0))
             .map_err(sql)?;
         let locations: Vec<Value> = r
-            .prepare("SELECT location, uploaded, head_gen, last_ok FROM sync2_locations WHERE profile_uid = ?1")
+            .prepare("SELECT location, uploaded, head_gen, last_ok FROM sync2_locations WHERE profile_uid = srs_id(?1)")
             .map_err(sql)?
             .query_map([profile], |x| {
                 Ok(json!({"location": x.get::<_, String>(0)?, "uploaded": x.get::<_, i64>(1)?, "headGen": x.get::<_, i64>(2)?, "lastOk": x.get::<_, Option<i64>>(3)?}))
@@ -2276,7 +2276,7 @@ impl SrsCore {
             head.u8(1);
             local.collection.write(&mut head);
             let devices: Vec<(Vec<u8>, Option<Vec<u8>>, i64)> = c
-                .prepare("SELECT device, public, applied FROM sync2_devices WHERE profile_uid = ?1 ORDER BY device")
+                .prepare("SELECT device, public, applied FROM sync2_devices WHERE profile_uid = srs_id(?1) ORDER BY device")
                 .map_err(sql)?
                 .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
                 .map_err(sql)?
@@ -2393,7 +2393,7 @@ impl SrsCore {
             let applied = delivery.finish(c, profile, now)?;
             let replayed = replay_touched(c, &t)?;
             let pending: i64 = c
-                .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
+                .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |r| r.get(0))
                 .map_err(sql)?;
             Ok(json!({
                 "marks": t.marks.to_json(),

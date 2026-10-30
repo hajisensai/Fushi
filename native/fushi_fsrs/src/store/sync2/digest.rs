@@ -63,12 +63,13 @@ pub fn bucket_of(id: &str) -> i64 {
 pub fn register(conn: &Connection) -> rusqlite::Result<()> {
     let flags = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_INNOCUOUS;
     conn.create_scalar_function("sync2_dg_bucket", 1, flags, |ctx| {
-        let id: String = ctx.get(0)?;
+        // ID 列存的是编码后的值（store/ids.rs）：按 ID 文本求桶，摘要与旧版本逐位相同。
+        let id = crate::store::ids::text(ctx.get_raw(0)).unwrap_or_default();
         Ok(bucket_of(&id))
     })?;
     conn.create_scalar_function("sync2_dg_row", 3, flags, |ctx| {
         let tag: String = ctx.get(0)?;
-        let id: String = ctx.get(1)?;
+        let id = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
         let body: Option<String> = ctx.get(2)?;
         Ok(bytes_of(&row_hash(tag.as_bytes().first().copied().unwrap_or(0), &id, body.as_deref().unwrap_or(""))))
     })?;
@@ -170,7 +171,7 @@ pub fn rebuild(c: &Connection) -> Result<(), String> {
 
 /// 各桶的值（只列非空桶）：`(桶号, 值 hex, 行数)`。
 pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>, String> {
-    c.prepare_cached("SELECT bucket, sum, n FROM sync2_digest_buckets WHERE profile_uid = ?1 AND n != 0 ORDER BY bucket")
+    c.prepare_cached("SELECT bucket, sum, n FROM sync2_digest_buckets WHERE profile_uid = srs_id(?1) AND n != 0 ORDER BY bucket")
         .map_err(sql)?
         .query_map([profile], |r| {
             let b: Vec<u8> = r.get(1)?;
@@ -184,7 +185,7 @@ pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>,
 /// 根：全部桶值按桶号顺序（空桶 = 0）接起来 BLAKE3。
 pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
-    let mut stmt = c.prepare_cached("SELECT bucket, sum FROM sync2_digest_buckets WHERE profile_uid = ?1").map_err(sql)?;
+    let mut stmt = c.prepare_cached("SELECT bucket, sum FROM sync2_digest_buckets WHERE profile_uid = srs_id(?1)").map_err(sql)?;
     let mut q = stmt.query([profile]).map_err(sql)?;
     while let Some(r) = q.next().map_err(sql)? {
         let b: i64 = r.get(0).map_err(sql)?;
@@ -206,7 +207,7 @@ pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
 pub fn root_by_scan(c: &Connection, profile: &str) -> Result<String, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
     for (table, tag, body) in TABLES {
-        let mut stmt = c.prepare(&format!("SELECT id, {body} FROM {table} WHERE profile_uid = ?1")).map_err(sql)?;
+        let mut stmt = c.prepare(&format!("SELECT id, {body} FROM {table} WHERE profile_uid = srs_id(?1)")).map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;

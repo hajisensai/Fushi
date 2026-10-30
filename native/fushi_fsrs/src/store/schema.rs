@@ -352,6 +352,9 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
+    // 升级步骤与触发器用的 SQL 函数：只建表的裸连接（测试）也要有。
+    super::ids::register(conn).map_err(|e| e.to_string())?;
+    super::sync2::digest::register(conn).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS srs_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);",
@@ -712,7 +715,7 @@ mod tests {
             args.extend(order_vars);
             (
                 format!(
-                    "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} AND deck_id IN ({deck_in}) \
+                    "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({deck_in}) \
                      AND {cond} ORDER BY {order} LIMIT 1"
                 ),
                 args,
@@ -748,7 +751,7 @@ mod tests {
             );
             let today_logs = (
                 "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = ? THEN json END AS j FROM srs_review_logs \
-                 WHERE profile_uid = ? AND kind = ? AND occurred_at >= ? ORDER BY occurred_at"
+                 WHERE profile_uid = srs_id(?) AND kind = ? AND occurred_at >= ? ORDER BY occurred_at"
                     .to_owned(),
                 vec![
                     Value::Text("learn".into()),

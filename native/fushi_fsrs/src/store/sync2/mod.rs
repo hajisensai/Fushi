@@ -93,7 +93,7 @@ impl Local {
     pub fn load(conn: &Connection, profile: &str) -> Result<Option<Local>, String> {
         conn.query_row(
             "SELECT collection, device, key_seed, next_seq, chain, hlc_wall, hlc_logical, head_gen, migrated_at, name \
-             FROM sync2_self WHERE profile_uid = ?1",
+             FROM sync2_self WHERE profile_uid = srs_id(?1)",
             [profile],
             |r| {
                 Ok((
@@ -166,7 +166,7 @@ impl Local {
 
     pub fn save(&self, conn: &Connection) -> Result<(), String> {
         conn.execute(
-            "UPDATE sync2_self SET next_seq = ?2, chain = ?3, hlc_wall = ?4, hlc_logical = ?5, head_gen = ?6 WHERE profile_uid = ?1",
+            "UPDATE sync2_self SET next_seq = ?2, chain = ?3, hlc_wall = ?4, hlc_logical = ?5, head_gen = ?6 WHERE profile_uid = srs_id(?1)",
             params![
                 self.profile,
                 self.next_seq as i64,
@@ -178,7 +178,7 @@ impl Local {
         )
         .map_err(sql)?;
         conn.execute(
-            "UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2",
+            "UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2",
             params![self.profile, self.device.0.to_vec(), (self.next_seq - 1) as i64, self.chain.to_vec()],
         )
         .map_err(sql)?;
@@ -188,7 +188,7 @@ impl Local {
 
 /// 本机已应用的版本向量（含本设备）。
 pub(crate) fn applied_vv(conn: &Connection, profile: &str) -> Result<Vv, String> {
-    let mut stmt = conn.prepare_cached("SELECT device, applied FROM sync2_devices WHERE profile_uid = ?1").map_err(sql)?;
+    let mut stmt = conn.prepare_cached("SELECT device, applied FROM sync2_devices WHERE profile_uid = srs_id(?1)").map_err(sql)?;
     let mut q = stmt.query([profile]).map_err(sql)?;
     let mut vv = Vv::new();
     while let Some(r) = q.next().map_err(sql)? {
@@ -236,7 +236,7 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
 pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Option<Op>, String> {
     conn.prepare_cached(
         "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at FROM sync2_ops o \
-         JOIN sync2_deps d ON d.id = o.deps WHERE o.profile_uid = ?1 AND o.device = ?2 AND o.seq = ?3",
+         JOIN sync2_deps d ON d.id = o.deps WHERE o.profile_uid = srs_id(?1) AND o.device = ?2 AND o.seq = ?3",
     )
     .map_err(sql)?
     .query_row(params![profile, id.device.0.to_vec(), id.seq as i64], |r| {
@@ -277,7 +277,7 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
     let mut out = Dvv::default();
     for (d, &s) in &vv.0 {
         let row: Option<(i64, String)> = conn
-            .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = ?1 AND device = ?2")
+            .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
             .map_err(sql)?
             .query_row(params![profile, d.0.to_vec()], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()
@@ -290,7 +290,7 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
         // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不按引用存（snapshots.rs 只剪日志），
         // 直读即原文。
         let mut stmt = conn
-            .prepare_cached("SELECT payload FROM sync2_ops WHERE profile_uid = ?1 AND device = ?2 AND seq <= ?3 AND kind = ?4")
+            .prepare_cached("SELECT payload FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
             .map_err(sql)?;
         let mut q = stmt.query(params![profile, d.0.to_vec(), s as i64, i64::from(op::KIND_EDIT)]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
@@ -306,7 +306,7 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
 
 fn note_legacy(conn: &Connection, profile: &str, device: &Id, seq: u64, l: &LegacyStamp) -> Result<(), String> {
     let cur: Option<String> = conn
-        .prepare_cached("SELECT ctx FROM sync2_legacy WHERE profile_uid = ?1 AND device = ?2")
+        .prepare_cached("SELECT ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec()], |r| r.get(0))
         .optional()
@@ -611,7 +611,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
 /// 媒体绑定投影 `sync2_media` 落到寄存器的当前值 [win]（与投影已有的相同就不写）。
 pub(crate) fn land_media_binding(conn: &Connection, profile: &str, name: &str, win: &mvr::Write) -> Result<(), String> {
     let cur: Option<(i64, i64, Vec<u8>)> = conn
-        .prepare_cached("SELECT wall, logical, device FROM sync2_media WHERE profile_uid = ?1 AND name = ?2")
+        .prepare_cached("SELECT wall, logical, device FROM sync2_media WHERE profile_uid = srs_id(?1) AND name = ?2")
         .map_err(sql)?
         .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
@@ -637,7 +637,7 @@ pub(crate) fn land_media_binding(conn: &Connection, profile: &str, name: &str, w
 pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>, ahead: &BTreeSet<Id>, now: i64) -> Result<(), String> {
     for d in ahead {
         conn.prepare_cached(
-            "UPDATE sync2_devices SET warning = 'clock_ahead' WHERE profile_uid = ?1 AND device = ?2 AND warning IS NULL",
+            "UPDATE sync2_devices SET warning = 'clock_ahead' WHERE profile_uid = srs_id(?1) AND device = ?2 AND warning IS NULL",
         )
         .map_err(sql)?
         .execute(params![profile, d.0.to_vec()])
@@ -645,7 +645,7 @@ pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>
     }
     let Some(remote) = seen else { return Ok(()) };
     let row: Option<(Vec<u8>, i64, i64)> = conn
-        .prepare_cached("SELECT device, hlc_wall, hlc_logical FROM sync2_self WHERE profile_uid = ?1")
+        .prepare_cached("SELECT device, hlc_wall, hlc_logical FROM sync2_self WHERE profile_uid = srs_id(?1)")
         .map_err(sql)?
         .query_row([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
@@ -657,7 +657,7 @@ pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>
     // 吸收（取最大）而不是 `observe` 的 +1：收段按任意边界切批时结果相同（下一次 tick 自然更大）。
     clock.absorb(remote, now);
     if (clock.last.wall, i64::from(clock.last.logical)) != (w, l) {
-        conn.prepare_cached("UPDATE sync2_self SET hlc_wall = ?2, hlc_logical = ?3 WHERE profile_uid = ?1")
+        conn.prepare_cached("UPDATE sync2_self SET hlc_wall = ?2, hlc_logical = ?3 WHERE profile_uid = srs_id(?1)")
             .map_err(sql)?
             .execute(params![profile, clock.last.wall, i64::from(clock.last.logical)])
             .map_err(sql)?;
@@ -666,7 +666,7 @@ pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>
 }
 
 fn self_device(conn: &Connection, profile: &str) -> Result<Id, String> {
-    conn.prepare_cached("SELECT device FROM sync2_self WHERE profile_uid = ?1")
+    conn.prepare_cached("SELECT device FROM sync2_self WHERE profile_uid = srs_id(?1)")
         .map_err(sql)?
         .query_row([profile], |r| r.get::<_, Vec<u8>>(0))
         .map_err(sql)
@@ -767,7 +767,7 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     let existing: Vec<(String, String, Option<i64>)> = conn
         .prepare_cached(
             "SELECT f.id, f.json, l.server_time FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
-             WHERE f.entity_kind = ?1 AND f.entity_id = ?2",
+             WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2)",
         )
         .map_err(sql)?
         .query_map(params![e.kind.wire(), ent], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
@@ -930,7 +930,7 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
             .prepare_cached(
                 "SELECT l.id, l.json, e.server_time, m.intent, m.arg, m.note_id FROM srs_review_logs l \
                  LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN sync2_log_meta m ON m.log_id = l.id \
-                 WHERE l.card_id = ?1",
+                 WHERE l.card_id = srs_id(?1)",
             )
             .map_err(sql)?;
         let mut q = stmt.query([c]).map_err(sql)?;
@@ -1065,7 +1065,7 @@ fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
             .execute(
                 &format!(
                     "INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) \
-                     SELECT ?1, ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, id FROM {table} WHERE profile_uid = ?1"
+                     SELECT ?1, ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, id FROM {table} WHERE profile_uid = srs_id(?1)"
                 ),
                 params![profile, base, phase],
             )
@@ -1153,7 +1153,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
 fn finish_migration(c: &Connection, local: &mut Local, profile: &str, now: i64, ops: u64) -> Result<Value, String> {
     local.migrated = true;
     local.save(c)?;
-    c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = ?1", params![profile, now]).map_err(sql)?;
+    c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = srs_id(?1)", params![profile, now]).map_err(sql)?;
     Ok(json!({"done": true, "ops": ops, "remaining": 0}))
 }
 
@@ -1378,7 +1378,7 @@ impl SrsCore {
                 // 已经有操作了（v2 之后的备份恢复出来的库：本机身份被快照剥掉、迁移标记随之没了，但投影行全是操作
                 // 投影出来的）：只补标记，绝不再把投影行包一遍（那会造出一条重复的操作流）。
                 let has_ops: bool = c
-                    .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = ?1 AND device != ?2 LIMIT 1")
+                    .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device != ?2 LIMIT 1")
                     .map_err(sql)?
                     .exists(params![profile, local.device.0.to_vec()])
                     .map_err(sql)?;
@@ -1392,7 +1392,7 @@ impl SrsCore {
             let mut t = Touched::default();
             let mut n = 0u64;
             let batch: Vec<(i64, i64, String)> = c
-                .prepare_cached("SELECT pos, phase, src FROM sync2_migrate_queue WHERE profile_uid = ?1 ORDER BY pos LIMIT ?2")
+                .prepare_cached("SELECT pos, phase, src FROM sync2_migrate_queue WHERE profile_uid = srs_id(?1) ORDER BY pos LIMIT ?2")
                 .map_err(sql)?
                 .query_map(params![profile, limit.map_or(-1, |l| l.max(1) as i64)], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
                 .map_err(sql)?
@@ -1407,13 +1407,13 @@ impl SrsCore {
                 n += 1;
             }
             if let Some((last, _, _)) = batch.last() {
-                c.prepare_cached("DELETE FROM sync2_migrate_queue WHERE profile_uid = ?1 AND pos <= ?2")
+                c.prepare_cached("DELETE FROM sync2_migrate_queue WHERE profile_uid = srs_id(?1) AND pos <= ?2")
                     .map_err(sql)?
                     .execute(params![profile, last])
                     .map_err(sql)?;
             }
             let remaining: i64 = c
-                .prepare_cached("SELECT COUNT(*) FROM sync2_migrate_queue WHERE profile_uid = ?1")
+                .prepare_cached("SELECT COUNT(*) FROM sync2_migrate_queue WHERE profile_uid = srs_id(?1)")
                 .map_err(sql)?
                 .query_row([profile], |r| r.get(0))
                 .map_err(sql)?;
@@ -1458,7 +1458,7 @@ impl SrsCore {
         let mut stmt = r
             .prepare(
                 "SELECT id, kind, entity_kind, entity, device, other_count, at FROM sync2_conflicts \
-                 WHERE profile_uid = ?1 ORDER BY at, id",
+                 WHERE profile_uid = srs_id(?1) ORDER BY at, id",
             )
             .map_err(sql)?;
         let rows = stmt
@@ -1485,7 +1485,7 @@ impl SrsCore {
         let (kind, entity): (String, String) = {
             let r = self.reader()?;
             r.query_row(
-                "SELECT entity_kind, entity FROM sync2_conflicts WHERE profile_uid = ?1 AND id = ?2",
+                "SELECT entity_kind, entity FROM sync2_conflicts WHERE profile_uid = srs_id(?1) AND id = ?2",
                 params![profile, conflict],
                 |x| Ok((x.get(0)?, x.get(1)?)),
             )
@@ -1539,7 +1539,7 @@ impl SrsCore {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let cards: BTreeSet<String> = c
-                .prepare("SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = ?1")
+                .prepare("SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)")
                 .map_err(sql)?
                 .query_map([profile], |r| r.get(0))
                 .map_err(sql)?
