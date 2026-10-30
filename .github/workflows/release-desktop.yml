@@ -2777,7 +2777,7 @@ jobs:
           bash native/fushi_compute/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_web_core/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_rwkv/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
-          bash native/fushi_music/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+          bash native/fushi_music/verify_abi.sh --no-plugin fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_corpus/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
       - name: Save iOS umbrella staticlib to native artifact store
@@ -3063,7 +3063,7 @@ jobs:
           bash native/fushi_compute/verify_abi.sh "$runner" nm
           bash native/fushi_web_core/verify_abi.sh "$runner" nm
           bash native/fushi_rwkv/verify_abi.sh "$runner" nm
-          bash native/fushi_music/verify_abi.sh "$runner" nm
+          bash native/fushi_music/verify_abi.sh --no-plugin "$runner" nm
           bash native/fushi_corpus/verify_abi.sh "$runner" nm
       # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
       # dispatch 在那里等审批，这里只把签名 IPA 交给它。artifact 名刻意不叫

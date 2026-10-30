@@ -8,6 +8,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
   flutter_inappwebview_windows
   flutter_onnxruntime
+  flutter_secure_storage_windows
   flutter_webrtc
   gal
   gamepads_windows

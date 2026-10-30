@@ -41,8 +41,12 @@ class _SceneEntry {
   bool get isCurrent {
     if (!state.mounted || !state._active) return false;
     final ModalRoute<Object?>? route = ModalRoute.of(state.context);
-    // 不在任何路由里（直接挂在根上）视为当前。
-    return route == null || route.isCurrent;
+    // 不在任何路由里（直接挂在根上）视为当前。页面上只盖了对话框 / 弹层（非整页
+    // 路由）时它仍是最上层整页，场景照旧生效——否则一开弹窗球就换回根主题、按钮
+    // 也跟着变。
+    return route == null ||
+        route.isCurrent ||
+        identical(route, FloatingBallSceneRegistry.instance._topPage);
   }
 
   /// 场景所在的页面（路由）；不在路由里时用场景本身。

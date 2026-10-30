@@ -892,7 +892,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 138;
+  int get schemaVersion => 139;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2671,6 +2671,35 @@ class FushiDatabase extends _$FushiDatabase
               ]) {
                 if (!await _columnExists('remote_audio_bindings', column.name)) {
                   await m.addColumn(remoteAudioBindings, column);
+                }
+              }
+            }
+          }
+          if (from < 139) {
+            // v139：music_play_events 加播放项快照（path / cue 起止 / 标题 / 艺人 / 专辑 /
+            // 时长 / 封面）与播放来源（source_kind / source_id / source_title /
+            // source_cover）。在线插件 / 服务器曲目不进 music_tracks，最近播放从此靠快照
+            // 显示与重播；来源驱动「最近播放的歌单 / 专辑」。存量行全部 NULL（无快照、
+            // 来源未知）。幂等：v130 步按当前定义建表时已带这些列，跳过。
+            if (await _tableExists('music_play_events')) {
+              for (final GeneratedColumn<Object> column
+                  in <GeneratedColumn<Object>>[
+                musicPlayEvents.path,
+                musicPlayEvents.cueStartMs,
+                musicPlayEvents.cueEndMs,
+                musicPlayEvents.title,
+                musicPlayEvents.artist,
+                musicPlayEvents.album,
+                musicPlayEvents.albumUid,
+                musicPlayEvents.durationMs,
+                musicPlayEvents.coverPath,
+                musicPlayEvents.sourceKind,
+                musicPlayEvents.sourceId,
+                musicPlayEvents.sourceTitle,
+                musicPlayEvents.sourceCover,
+              ]) {
+                if (!await _columnExists('music_play_events', column.name)) {
+                  await m.addColumn(musicPlayEvents, column);
                 }
               }
             }

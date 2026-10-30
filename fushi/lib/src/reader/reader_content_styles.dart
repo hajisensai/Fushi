@@ -1401,13 +1401,14 @@ ruby.fushi-hl-$color-ruby-active {
   /// - 高亮全部从「半透明色块背景」改为**线式标记**——色块在墨水屏上是一大片
   ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
   ///   查词选区=粗实线、有声书跟随=细实线、搜索命中=双线、收藏句=保留原下划线但
-  ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。
+  ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。查词 / 跟读 / 搜索的线
+  ///   由窄条层画在窄条外侧（BUG-3886），不经 text-decoration——Blink 上 CSS Highlight
+  ///   一生效就裁字形墨迹，还会在注音、着重号处断线。
   /// - 跟读线用**实线**而非虚线：上游 HSA 的墨水屏跟读高亮是 overlay 层画的
   ///   1.5px 实心直线条（reader-popup-host.js `renderSasayakiHighlight`），
   ///   虚线在慢刷新屏上每段短划都是独立的黑白跳变，既更脏也更难一眼定位当前句。
   /// - `--fushi-reader-eink-mode: 1` 供 JS 侧读：连续模式跟随滚动短路成瞬时
-  ///   （reader_pagination_scripts）。VN 侧不再据此分流——跟读高亮在所有模式
-  ///   下都走同一条 inline wrapper 路径，正是本文件这些线式规则的作用对象。
+  ///   （reader_pagination_scripts）。
   /// - 关掉书籍自带的 transition/animation，慢刷新屏上任何补间都是残影。
   static String _einkOverrideCss({required bool einkDark}) {
     final String fg = einkDark ? '#fff' : '#000';
@@ -1423,81 +1424,57 @@ ruby.fushi-hl-$color-ruby-active {
   transition: none !important;
   animation: none !important;
 }
-::highlight(fushi-selection) {
-  background-color: transparent;
-  color: inherit;
-  text-decoration-line: underline;
-  text-decoration-color: $fg;
-  text-decoration-thickness: 0.14em;
-  text-underline-offset: 0.18em;
+/* BUG-3886：查词 / 有声书当前句 / 搜索的线由窄条层画，不用 text-decoration。这三类的
+   ::highlight、ruby 分流 class、wrapper 在普通规则里本来就只是「透明底 + 继承字色」，这里不再给
+   它们加下划线：Blink 把任何生效的 CSS Highlight 覆盖的文字裁进文字片段盒重画（BUG-3776，字形
+   墨迹被切），窄条层的注册表钩子还把带着重号的文字剔出引擎绘制件——下划线到着重号处就断开；
+   ruby 基字所在的行也会整段丢线。保持空操作后钩子整份不交给引擎，线跟彩色模式的底色窄条一样
+   逐文本节点量出来、跨注音并成一条。线画在窄条的块末端外侧（竖排在列左、横排在行下），与原下划线
+   同位：查词=粗实线、跟读=细实线、搜索=双线。 */
+fushi-hl-lane[data-hl="fushi-selection"],
+fushi-hl-lane[data-hl="fushi-sentence-audio"],
+fushi-hl-lane[data-hl="fushi-search"] {
+  background-color: transparent !important;
+  border-radius: 0 !important;
 }
-/* 墨水屏不画底色窄条：窄条层整层不显示，元素背景窄条清掉（各规则里的 background-image: none）。 */
-fushi-hl-lanes {
+fushi-hl-lane[data-hl="fushi-selection"]::after,
+fushi-hl-lane[data-hl="fushi-sentence-audio"]::after,
+fushi-hl-lane[data-hl="fushi-search"]::after {
+  content: '' !important;
+  position: absolute !important;
+  inset-inline: 0 !important;
+  block-size: 0 !important;
+  inset-block-end: calc(-0.18em - var(--fushi-eink-mark-thickness)) !important;
+  border-block-end: var(--fushi-eink-mark-thickness) var(--fushi-eink-mark-style) $fg !important;
+}
+fushi-hl-lane[data-hl="fushi-selection"] {
+  --fushi-eink-mark-thickness: 0.14em;
+  --fushi-eink-mark-style: solid;
+}
+fushi-hl-lane[data-hl="fushi-sentence-audio"] {
+  --fushi-eink-mark-thickness: 0.10em;
+  --fushi-eink-mark-style: solid;
+}
+fushi-hl-lane[data-hl="fushi-search"] {
+  --fushi-eink-mark-thickness: 0.24em;
+  --fushi-eink-mark-style: double;
+}
+/* 收藏句保留原下划线（见下），不画底色窄条。 */
+fushi-hl-lane[data-hl^="fushi-hl-"] {
   display: none !important;
 }
-ruby.fushi-selection-ruby-active {
-  background-color: transparent !important;
-  background-image: none !important;
-  color: inherit !important;
-  text-decoration-line: underline !important;
-  text-decoration-color: $fg !important;
-  text-decoration-thickness: 0.14em !important;
-  text-underline-offset: 0.18em !important;
-}
-.fushi-dict-highlight {
-  background-color: transparent !important;
-  background-image: none !important;
-  color: inherit !important;
-  text-decoration-line: underline !important;
-  text-decoration-color: $fg !important;
-  text-decoration-thickness: 0.14em !important;
-  text-underline-offset: 0.18em !important;
-}
-::highlight(fushi-sentence-audio) {
-  background-color: transparent;
-  color: inherit;
-  text-decoration-line: underline;
-  text-decoration-style: solid;
-  text-decoration-color: $fg;
-  text-decoration-thickness: 0.10em;
-  text-underline-offset: 0.18em;
-}
-ruby.fushi-sentence-audio-ruby-active {
-  background-color: transparent !important;
-  background-image: none !important;
-  color: inherit !important;
-  text-decoration-line: underline !important;
-  text-decoration-style: solid !important;
-  text-decoration-color: $fg !important;
-  text-decoration-thickness: 0.10em !important;
-  text-underline-offset: 0.18em !important;
-}
+ruby.fushi-selection-ruby-active,
+.fushi-dict-highlight,
+ruby.fushi-sentence-audio-ruby-active,
 .fushi-sentence-audio-cue.fushi-sentence-audio-active {
   background-color: transparent !important;
   background-image: none !important;
   color: inherit !important;
-  text-decoration-line: underline !important;
-  text-decoration-style: solid !important;
-  text-decoration-color: $fg !important;
-  text-decoration-thickness: 0.10em !important;
-  text-underline-offset: 0.18em !important;
 }
-/* 查词+有声书重叠：查词的粗实线优先（双类特异性高于单类，语义同 BUG-125）。 */
-ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
-  background-image: none !important;
-  text-decoration-style: solid !important;
-  text-decoration-thickness: 0.14em !important;
-}
-/* 基字 wrapper 在查词 ruby 里（BUG-2806）：只留查词的粗实线。 */
+/* 基字 wrapper 在查词 ruby 里（BUG-2806）：不另画装饰。 */
 ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-active {
   text-decoration-line: none !important;
   box-shadow: none !important;
-}
-::highlight(fushi-search) {
-  background-color: transparent;
-  text-decoration-line: underline;
-  text-decoration-style: double;
-  text-decoration-color: $fg;
 }
 ::highlight(fushi-hl-yellow), .fushi-hl-yellow, ruby.fushi-hl-yellow-ruby-active,
 ::highlight(fushi-hl-green), .fushi-hl-green, ruby.fushi-hl-green-ruby-active,

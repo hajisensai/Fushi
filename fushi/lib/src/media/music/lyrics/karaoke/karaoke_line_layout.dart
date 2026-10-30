@@ -8,6 +8,7 @@
 ///   音节单独处理：硬边 / 羽化渐变 / 描边、上浮、辉光、长音呼吸。
 library;
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:fushi_music/fushi_music.dart';
@@ -60,9 +61,11 @@ class KaraokeLineLayout {
     required TextPainter? outline,
     required TextPainter? glow,
     required List<(TextPainter, Offset)> subs,
+    required List<(double, double)> lineBands,
     required this.feather,
     required this.lineLevel,
   }) : _base = base,
+       _lineBands = lineBands,
        _active = active,
        _outline = outline,
        _glow = glow,
@@ -82,6 +85,11 @@ class KaraokeLineLayout {
   final TextPainter? _outline;
   final TextPainter? _glow;
   final List<(TextPainter, Offset)> _subs;
+
+  /// 主文本每一视觉行（折行后）独占的纵向带 (top, bottom)，行布局坐标。相邻两行以两者
+  /// 行框间隙的中线为界，首行向上、末行向下不设界。逐字裁剪 / 辉光只在字形所在的带内画，
+  /// 不越到同一句折出来的另一视觉行上（否则正在唱的字会把上下行的字也染成已唱色）。
+  final List<(double, double)> _lineBands;
 
   /// 羽化边宽度。
   final double feather;
@@ -165,6 +173,10 @@ class KaraokeLineLayout {
           )
         : null;
     final double textTop = anyRuby ? rubyHeight / 2 : 0;
+    final List<(double, double)> lineBands = karaokeLineBands(
+      base.computeLineMetrics(),
+      textTop: textTop,
+    );
 
     final List<KaraokeSyllableGeometry> geoms = <KaraokeSyllableGeometry>[];
     int at = 0;
@@ -221,13 +233,16 @@ class KaraokeLineLayout {
         textDirection: TextDirection.ltr,
         textScaler: scaler,
       )..layout(minWidth: width, maxWidth: width);
-      y += 4;
+      // 副行紧贴主行（用户 2026-10-29 参考图：罗马音 / 翻译贴着主歌词，行与行
+      // 之间才留空）。
+      y += subs.isEmpty ? 2 : 0;
       subs.add((p, Offset(0, y)));
       y += p.height;
     }
 
-    if (resolved.showTranslation) addSub(line.primaryTranslation);
+    // 罗马音在上、翻译在下（读音紧挨着原文）。
     if (resolved.showRomanization) addSub(line.romanization);
+    if (resolved.showTranslation) addSub(line.primaryTranslation);
 
     return KaraokeLineLayout._(
       line: line,
@@ -239,6 +254,7 @@ class KaraokeLineLayout {
       outline: outline,
       glow: glow,
       subs: subs,
+      lineBands: lineBands,
       feather: scaledFont * 0.6,
       lineLevel: lineLevel,
     );
@@ -300,13 +316,44 @@ class KaraokeLineLayout {
     _futurePath = future;
   }
 
-  /// 字形框上下各放出一点，容纳超出 tight 框的笔画；左右不放（相邻音节共边，放了会叠画）。
-  Rect _glyphClip(Rect r) => Rect.fromLTRB(
-    r.left,
-    r.top - r.height * 0.3,
-    r.right,
-    r.bottom + r.height * 0.3,
-  );
+  /// [box] 所在视觉行的纵向带。
+  (double, double) _bandOf(Rect box) {
+    final double y = box.center.dy;
+    for (final (double top, double bottom) in _lineBands) {
+      if (y < bottom) return (top, bottom);
+    }
+    return _lineBands.isEmpty
+        ? (double.negativeInfinity, double.infinity)
+        : _lineBands.last;
+  }
+
+  /// 字形框上下各放出一点，容纳超出 tight 框的笔画，但不越出本视觉行的带（折行时不碰
+  /// 上下行的字）；左右不放（相邻音节共边，放了会叠画）。
+  Rect _glyphClip(Rect r) {
+    final (double top, double bottom) = _bandOf(r);
+    return Rect.fromLTRB(
+      r.left,
+      math.max(r.top - r.height * 0.3, top),
+      r.right,
+      math.min(r.bottom + r.height * 0.3, bottom),
+    );
+  }
+
+  /// 测试用：音节字形框 [box] 实际参与绘制的裁剪区（含辉光的纵向外扩）。
+  @visibleForTesting
+  Rect debugPaintClipOf(Rect box) => _glowClip(box, box.width);
+
+  /// 辉光裁剪：横向只到已擦过的宽度，纵向给阴影留一个字高，但同样不越出本视觉行的带。
+  Rect _glowClip(Rect box, double fillW) {
+    final (double top, double bottom) = _bandOf(box);
+    final Rect clip = _glyphClip(box);
+    return Rect.fromLTRB(
+      box.left,
+      math.max(clip.top - box.height, top),
+      box.left + fillW,
+      math.min(clip.bottom + box.height, bottom),
+    );
+  }
 
   /// 静态（非当前行）绘制：整行未唱色 + 注音 + 副行。
   void paintStatic(Canvas canvas, {bool sung = false}) {
@@ -468,9 +515,19 @@ class KaraokeLineLayout {
     final Rect bounds = g.bounds;
     for (final Rect box in g.boxes) {
       final Rect clip = _glyphClip(box);
+      final (double bandTop, double bandBottom) = _bandOf(box);
+      final Rect outer = clip
+          .shift(Offset(0, -lift))
+          .inflate(scale > 1 ? box.height * 0.1 : 0);
       canvas.save();
+      // 呼吸放大只往左右多给，纵向仍不出本视觉行的带（随上浮一起上移）。
       canvas.clipRect(
-        clip.shift(Offset(0, -lift)).inflate(scale > 1 ? box.height * 0.1 : 0),
+        Rect.fromLTRB(
+          outer.left,
+          math.max(outer.top, bandTop - lift),
+          outer.right,
+          math.min(outer.bottom, bandBottom - lift),
+        ),
       );
       if (lift != 0) canvas.translate(0, -lift);
       if (scale != 1) {
@@ -534,14 +591,7 @@ class KaraokeLineLayout {
       }
       final TextPainter? glowPainter = _glow;
       if (glow && glowPainter != null && fillW > 0) {
-        canvas.clipRect(
-          Rect.fromLTRB(
-            box.left,
-            clip.top - box.height,
-            box.left + fillW,
-            clip.bottom + box.height,
-          ),
-        );
+        canvas.clipRect(_glowClip(box, fillW));
         glowPainter.paint(canvas, textOrigin);
       }
       canvas
@@ -563,4 +613,38 @@ class KaraokeLineLayout {
       g.rubyActive?.dispose();
     }
   }
+}
+
+/// 主文本各视觉行的纵向带（见 [KaraokeLineLayout] 的 `_lineBands`）：相邻两行以「上一行
+/// 行框底与下一行行框顶」的中线为界，首行顶为 -∞、末行底为 +∞。[textTop] 是主文本相对
+/// 行顶的偏移（注音预留）。
+List<(double, double)> karaokeLineBands(
+  List<ui.LineMetrics> metrics, {
+  required double textTop,
+}) {
+  final List<ui.LineMetrics> lines = List<ui.LineMetrics>.of(metrics)
+    ..sort(
+      (ui.LineMetrics a, ui.LineMetrics b) => a.baseline.compareTo(b.baseline),
+    );
+  final List<(double, double)> out = <(double, double)>[];
+  for (int i = 0; i < lines.length; i++) {
+    final double top = i == 0
+        ? double.negativeInfinity
+        : textTop +
+              (lines[i - 1].baseline +
+                      lines[i - 1].descent +
+                      lines[i].baseline -
+                      lines[i].ascent) /
+                  2;
+    final double bottom = i == lines.length - 1
+        ? double.infinity
+        : textTop +
+              (lines[i].baseline +
+                      lines[i].descent +
+                      lines[i + 1].baseline -
+                      lines[i + 1].ascent) /
+                  2;
+    out.add((top, bottom));
+  }
+  return out;
 }

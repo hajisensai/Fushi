@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
@@ -39,8 +40,16 @@ bool _isOldSeamBand(Widget w, Color edge) {
 
 void main() {
   const Color paper = Color(0xFFE3F0D8); // 阅读器的浅绿纸色
-  setUp(() => FushiDesktopTitleBar.debugIsEnabled = true);
-  tearDown(() => FushiDesktopTitleBar.debugIsEnabled = false);
+  // 接缝只存在于沉浸页仍从顶栏下沿开始排的宿主（macOS）；Windows / Linux
+  // 沉浸页铺满整窗、没有顶栏那一截，见文件末尾。
+  setUp(() {
+    FushiDesktopTitleBar.debugIsEnabled = true;
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.macOS;
+  });
+  tearDown(() {
+    FushiDesktopTitleBar.debugIsEnabled = false;
+    FushiDesktopTitleBar.debugHostPlatform = () => defaultTargetPlatform;
+  });
 
   for (final bool apple in <bool>[false, true]) {
     for (final Brightness brightness in Brightness.values) {
@@ -216,4 +225,13 @@ void main() {
       });
     }
   }
+
+  testWidgets('Windows：沉浸页铺满整窗，顶栏不让位、也就没有要延伸的那一截', (WidgetTester tester) async {
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.windows;
+    expect(FushiDesktopTitleBar.visibleHeight, 0);
+    expect(
+      FushiDesktopTitleBar.immersiveCaptionInset,
+      FushiDesktopTitleBar.height,
+    );
+  });
 }

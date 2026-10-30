@@ -40,14 +40,25 @@ void main() {
       // 关过渡：书籍自带动画一并压掉。
       expect(css, contains('transition: none !important'));
       expect(css, contains('animation: none !important'));
-      // 线式高亮：查词=粗实线、sasayaki=细实线、搜索=双线。
-      expect(css, contains('text-decoration-style: solid'));
-      expect(css, contains('text-decoration-style: double'));
-      expect(css, contains('text-decoration-line: underline'));
+      // 线式高亮：查词=粗实线、sasayaki=细实线、搜索=双线。BUG-3886 起这三类的线由
+      // 窄条层画（窄条外侧的一条边），不经 text-decoration——Blink 上 CSS Highlight
+      // 会裁字形、在注音 / 着重号处断线（真 Chrome 测试见
+      // reader_eink_highlight_line_bug3874_test）。
+      String laneMark(String group) {
+        final int at = css.indexOf('fushi-hl-lane[data-hl="$group"] {\n  --');
+        expect(at, greaterThan(0), reason: 'e-ink line for $group');
+        return css.substring(at, css.indexOf('}', at));
+      }
+
+      expect(laneMark('fushi-selection'), contains('style: solid'));
+      expect(laneMark('fushi-sentence-audio'), contains('style: solid'));
+      expect(laneMark('fushi-search'), contains('style: double'));
       // sasayaki 跟读线必须是直线条，不得回退成虚线：上游 HSA 的墨水屏跟读高亮
       // 是 overlay 画的 1.5px 实心线，虚线的每段短划在慢刷新屏上都是独立黑白
       // 跳变，既更脏也更难一眼定位当前句。
-      expect(css, isNot(contains('text-decoration-style: dashed')));
+      expect(css, isNot(contains('dashed')));
+      // 收藏句保留原下划线。
+      expect(css, contains('text-decoration-line: underline'));
     });
 
     test('einkMode=true honours einkDark (white-on-black)', () async {

@@ -456,6 +456,17 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_listening_counts_as_study',
   // bool（默认 true）：缺 ReplayGain 标签时后台 EBU R128 测响度写曲库（设计 §7.3）。
   'music_loudness_scan',
+  // bool（默认 true）：歌词页流体背景动态流动；false = 静态（只渲染一次，更省电）。
+  // 设备本地观感偏好（MusicLyricsBackdrop）。
+  'music_lyrics_backdrop_animate',
+  // double（默认 1.0，0.5–2.0）：歌词页流体背景饱和度倍数。
+  'music_lyrics_backdrop_saturation',
+  // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
+  // （MusicLyricsBackdropStyle.prefValue）。
+  'music_lyrics_backdrop_style',
+  // String（默认 'split'）：歌词页布局 split（左封面右歌词）/ stage（歌词居中 +
+  // 底部停靠条）/ disc（唱片 + 一行歌词）。设备本地观感偏好。
+  'music_lyrics_layout',
   // bool（默认 true）：查歌词时自动暂停（音乐 P1 歌词页）。
   'music_lyrics_lookup_pause',
   // bool（默认 true）：锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。
