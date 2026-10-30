@@ -13,108 +13,10 @@
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-
-function selectorTags(selector) {
-  return selector
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.length > 0 && !s.startsWith('.') && !s.startsWith('['));
-}
-
-function link(parent, children) {
-  parent.childNodes = children;
-  for (let i = 0; i < children.length; i++) {
-    children[i].parentElement = parent;
-    children[i].nextSibling = children[i + 1] || null;
-  }
-  parent.firstChild = children[0] || null;
-  return parent;
-}
-
-function text(content) {
-  return { nodeType: 3, textContent: content, nodeValue: content, parentElement: null, nextSibling: null };
-}
-
-function el(tagName, children) {
-  const node = {
-    nodeType: 1,
-    tagName: tagName.toUpperCase(),
-    className: '',
-    parentElement: null,
-    nextSibling: null,
-    firstChild: null,
-    childNodes: [],
-    get textContent() {
-      return this.childNodes.map((c) => c.textContent).join('');
-    },
-    closest(selector) {
-      const tags = selectorTags(selector);
-      let cur = this;
-      while (cur && cur.nodeType === 1) {
-        if (tags.includes((cur.tagName || '').toLowerCase())) return cur;
-        cur = cur.parentElement;
-      }
-      return null;
-    },
-  };
-  return link(node, (children || []).map((c) => (typeof c === 'string' ? text(c) : c)));
-}
-
-function makeTreeWalker(root, filter) {
-  const out = [];
-  (function walk(node) {
-    for (const child of node.childNodes || []) {
-      if (child.nodeType === 3) {
-        if (!filter || filter.acceptNode(child) === 1) out.push(child);
-      } else if (child.nodeType === 1) {
-        walk(child);
-      }
-    }
-  })(root);
-  return {
-    currentNode: root,
-    nextNode() {
-      const next = out[out.indexOf(this.currentNode) + 1] || null;
-      if (next) this.currentNode = next;
-      return next;
-    },
-    previousNode() {
-      const from = out.indexOf(this.currentNode);
-      const prev = from > 0 ? out[from - 1] : null;
-      if (prev) this.currentNode = prev;
-      return prev;
-    },
-  };
-}
+const { el, text, loadSelectionScript } = require('./selection_fake_dom.js');
 
 function load(src, paragraph) {
-  const body = el('body', [paragraph]);
-  const document = {
-    body,
-    createTreeWalker: (root, _whatToShow, filter) => makeTreeWalker(root, filter),
-    caretPositionFromPoint: () => null,
-    caretRangeFromPoint: () => null,
-    elementFromPoint: () => null,
-  };
-  const window = {
-    getComputedStyle: () => ({ display: 'inline', content: 'none' }),
-    getSelection: () => ({ removeAllRanges() {} }),
-    flutter_inappwebview: { callHandler: () => {} },
-  };
-  const sandbox = {
-    window,
-    document,
-    Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
-    NodeFilter: { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
-    CSS: undefined,
-    Map,
-    console,
-  };
-  sandbox.globalThis = sandbox;
-  vm.createContext(sandbox);
-  vm.runInContext(src, sandbox);
-  const sel = sandbox.window.fushiSelection;
+  const sel = loadSelectionScript(src, paragraph);
   sel.fireTextSelected = function () {
     return this.selection ? this.selection.text : null;
   };
@@ -129,7 +31,7 @@ function scan(src, paragraph, node, offset) {
   assert.ok(sel.selection, 'selectFromPosition 必须产生选区');
   return {
     text: sel.selection.text,
-    spans: JSON.parse(JSON.stringify(sel.rubyReadingSpans(sel.selection.ranges, sel.selection.text))),
+    spans: structuredClone(sel.rubyReadingSpans(sel.selection.ranges, sel.selection.text)),
   };
 }
 
@@ -206,7 +108,7 @@ const src = fs.readFileSync(readerPath, 'utf8');
   sel.selectFromPosition(base, 0, 16);
   sel.getSelectionRect = () => null;
   const payload = sel.buildSelectionPayload(0, 0);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(payload.rubyReadings)), [{ s: 0, e: 1, r: 'せわ' }]);
+  assert.deepStrictEqual(structuredClone(payload.rubyReadings), [{ s: 0, e: 1, r: 'せわ' }]);
 }
 
 console.log('all assertions passed');

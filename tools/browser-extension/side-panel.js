@@ -746,7 +746,8 @@
       return false;
     }
     activeScanKey = scanKey;
-    lookupTerm(term, pointer.cue, anchorForHit(hit, pointer.x, pointer.y), termRuby);
+    // 扫词即发即忘：lookupTerm 自己收尾（在途闸 / 错误态），这里不等它。
+    void lookupTerm(term, pointer.cue, anchorForHit(hit, pointer.x, pointer.y), termRuby);
     return true;
   }
 
