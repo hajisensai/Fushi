@@ -305,7 +305,8 @@ class GameSectionTabs extends StatelessWidget {
         onChanged: select,
         focusIdPrefix: focusIdPrefix,
         secondary: true,
-        floating: floating,
+        // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+        // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
         // 反馈 ndQ5eXLcqp：自定义页签顺序落在二级胶囊上（一级恒为两组）。
         orderKey: 'games-${group?.name}',
       );
