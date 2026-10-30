@@ -625,8 +625,7 @@ void main() {
   // 从当前页开始跑，右上角浮标显示进度（对齐 Mangatan / Chimahon）。
   testWidgets('已识别的卷：右上角平铺「重新识别本卷」（换引擎重跑的唯一入口），不给「识别本卷」',
       (WidgetTester tester) async {
-    // 宽到能放下全部右上角动作（含最低优先级的「问 AI」；窄时它最先收进「⋯」，
-    // 见 test/widgets/ai_agent_ask_top_bar_action_test.dart）。
+    // 宽到能放下全部右上角动作（窄时低优先级动作收进「⋯」）。
     tester.view.physicalSize = const Size(800, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);

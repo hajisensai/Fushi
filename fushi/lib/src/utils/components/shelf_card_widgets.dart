@@ -433,6 +433,7 @@ class ShelfCoverFrame extends StatelessWidget {
                 ),
               ),
             ),
+            if (!compact) const Positioned.fill(child: FushiTiltGlare()),
             if (selection != null && selection.selected)
               const Positioned.fill(child: ShelfSelectedOverlay()),
             if (!compact && selection != null && selection.selectionMode)
@@ -446,7 +447,7 @@ class ShelfCoverFrame extends StatelessWidget {
       ),
     );
     final Widget? behind = compact ? null : stackedBehind;
-    if (behind == null) return cover;
+    if (behind == null) return FushiTilt(enabled: !compact, child: cover);
     const double step = kShelfCoverStackLift / 2;
     Widget layer(int depth) {
       final Color layerFill = eink
@@ -482,14 +483,16 @@ class ShelfCoverFrame extends StatelessWidget {
       );
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      clipBehavior: Clip.none,
-      children: <Widget>[
-        layer(2),
-        layer(1),
-        Positioned.fill(top: kShelfCoverStackLift, child: cover),
-      ],
+    return FushiTilt(
+      child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          layer(2),
+          layer(1),
+          Positioned.fill(top: kShelfCoverStackLift, child: cover),
+        ],
+      ),
     );
   }
 

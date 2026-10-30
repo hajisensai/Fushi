@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/scheduler.dart';
@@ -156,6 +157,9 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
 
   /// 流动相位（0–1，一周 [_kMeshPeriod]）。只驱动画家重绘，不重建。
   final ValueNotifier<double> _phase = ValueNotifier<double>(0);
+
+  /// 低分辨率渐变图缓存（见 [_MeshImageCache]）。
+  final _MeshImageCache _cache = _MeshImageCache();
   int _lastFrame = -1;
 
   @override
@@ -200,6 +204,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
   void dispose() {
     _driver.stop();
     _phase.dispose();
+    _cache.dispose();
     super.dispose();
   }
 
@@ -224,6 +229,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
             isComplex: true,
             painter: _MeshPainter(
               phase: _phase,
+              cache: _cache,
               base: cs.surface,
               blobs: <Color>[
                 cs.primaryContainer.withValues(alpha: dark ? 0.85 : 0.9),
@@ -248,6 +254,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
 class _MeshPainter extends CustomPainter {
   _MeshPainter({
     required this.phase,
+    required this.cache,
     required this.base,
     required this.blobs,
     required this.plate,
@@ -255,6 +262,7 @@ class _MeshPainter extends CustomPainter {
   }) : super(repaint: phase);
 
   final ValueListenable<double> phase;
+  final _MeshImageCache cache;
   final Color base;
   final List<Color> blobs;
   final Rect? plate;
@@ -278,8 +286,44 @@ class _MeshPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Rect bounds = Offset.zero & size;
+    // 整屏四团径向渐变按 1/[_kMeshDownscale] 分辨率画成一张小图，这里只贴图
+    // （Impeller 没有栅格缓存：直接整屏画渐变的话，页面上任何一处每帧变化——
+    // 歌词逐帧擦色、进度条——都会让四个整屏 shader 跟着重新栅格化，宽屏高刷下
+    // 就是音乐歌词页的卡顿）。渐变本身是低频内容，放大后看不出差别。
+    final ui.Image? image = cache.resolve(
+      size,
+      phase.value,
+      (Canvas c, Size s) => _paintMesh(c, s, phase.value, base, blobs),
+    );
+    if (image == null) {
+      _paintMesh(canvas, size, phase.value, base, blobs);
+    } else {
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        bounds,
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+    }
+    final Rect? plate = this.plate;
+    if (plate != null && plate.width > 1 && plate.height > 1) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(plate, const Radius.circular(_kPlateRadius)),
+        Paint()..color = plateColor,
+      );
+    }
+  }
+
+  static void _paintMesh(
+    Canvas canvas,
+    Size size,
+    double phase,
+    Color base,
+    List<Color> blobs,
+  ) {
+    final Rect bounds = Offset.zero & size;
     canvas.drawRect(bounds, Paint()..color = base);
-    final double t = phase.value * 2 * math.pi;
+    final double t = phase * 2 * math.pi;
     final double diag = math.sqrt(
       size.width * size.width + size.height * size.height,
     );
@@ -308,22 +352,18 @@ class _MeshPainter extends CustomPainter {
           ).createShader(circle),
       );
     }
-    final Rect? plate = this.plate;
-    if (plate != null && plate.width > 1 && plate.height > 1) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(plate, const Radius.circular(_kPlateRadius)),
-        Paint()..color = plateColor,
-      );
-    }
   }
 
   @override
-  bool shouldRepaint(covariant _MeshPainter old) =>
-      old.phase != phase ||
-      old.base != base ||
-      old.plate != plate ||
-      old.plateColor != plateColor ||
-      !_sameColors(old.blobs, blobs);
+  bool shouldRepaint(covariant _MeshPainter old) {
+    // 配色变了小图要重画（相位变化由 [_MeshImageCache] 自己按相位值判断）。
+    final bool colors = old.base != base || !_sameColors(old.blobs, blobs);
+    if (colors) cache.invalidate();
+    return colors ||
+        old.phase != phase ||
+        old.plate != plate ||
+        old.plateColor != plateColor;
+  }
 
   static bool _sameColors(List<Color> a, List<Color> b) {
     if (a.length != b.length) return false;
@@ -1127,5 +1167,46 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
         ),
       ),
     );
+  }
+}
+
+/// mesh 背景画成小图时的缩小倍数。
+const int _kMeshDownscale = 8;
+
+/// [FushiMeshBackdrop] 的渐变小图缓存：同一尺寸、同一相位只画一次。
+class _MeshImageCache {
+  ui.Image? _image;
+  Size? _size;
+  double? _phase;
+
+  void invalidate() {
+    _phase = null;
+  }
+
+  ui.Image? resolve(
+    Size size,
+    double phase,
+    void Function(Canvas canvas, Size size) paint,
+  ) {
+    if (size.isEmpty) return null;
+    if (_image != null && _size == size && _phase == phase) return _image;
+    final int w = math.max(1, (size.width / _kMeshDownscale).ceil());
+    final int h = math.max(1, (size.height / _kMeshDownscale).ceil());
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Canvas c = Canvas(recorder);
+    paint(c, Size(w.toDouble(), h.toDouble()));
+    final ui.Picture picture = recorder.endRecording();
+    final ui.Image image = picture.toImageSync(w, h);
+    picture.dispose();
+    _image?.dispose();
+    _image = image;
+    _size = size;
+    _phase = phase;
+    return image;
+  }
+
+  void dispose() {
+    _image?.dispose();
+    _image = null;
   }
 }

@@ -189,6 +189,35 @@ void main() {
       expect(await db.countMediaBySourceId(id, 'video'), 2);
     });
 
+    test('counts live music_tracks for music kind, excluding soft-deleted',
+        () async {
+      final db = await _openDb();
+      final id = await db.insertMediaSource(_source(mediaKind: 'music'));
+      final other = await db.insertMediaSource(
+        _source(mediaKind: 'music', rootPath: '/srv/other'),
+      );
+      Future<void> track(String uid, int? sourceId, {int? deletedAt}) =>
+          db.into(db.musicTracks).insert(
+                MusicTracksCompanion.insert(
+                  trackUid: uid,
+                  sourceId: Value(sourceId),
+                  path: '/srv/media/$uid.flac',
+                  title: uid,
+                  fileMtimeAt: 1,
+                  fileSize: 1,
+                  addedAt: 1,
+                  deletedAt: Value(deletedAt),
+                ),
+              );
+      await track('t1', id);
+      await track('t2', id);
+      await track('t3', id, deletedAt: 5);
+      await track('t4', other);
+
+      expect(await db.countMediaBySourceId(id, 'music'), 2);
+      expect(await db.countMediaBySourceId(other, 'music'), 1);
+    });
+
     test('returns 0 for a source with no media', () async {
       final db = await _openDb();
       final id = await db.insertMediaSource(_source());

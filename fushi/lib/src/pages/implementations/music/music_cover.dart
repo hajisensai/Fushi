@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -39,7 +40,48 @@ class MusicEmbeddedCoverCache {
   }
 }
 
+/// 音乐页的悬停不放大（用户 2026-10-29：「音乐这鼠标悬浮上去会放大，砍掉」），
+/// 只留 3D 倾斜、扫光与投影。音乐里所有 [FushiHoverLift] 一律传它。
+const double kMusicHoverLiftScale = 1;
+
+/// 音乐封面统一套专辑「唱片」材质（[ShelfCoverMaterial.glossyAlbum]；用户
+/// 2026-10-29：「音乐所有地方也得做材质」）。网格卡由卡壳自己包材质与
+/// [FushiHoverLift]，这里管其余单独摆放的封面：
+/// - [compact]：列表行 / 播放条的小缩略图，只留圆角、光泽与内描边；
+/// - [tilt]：大图（详情页 / 歌词页）自带悬停抬升与 3D 倾斜视差。
+Widget musicMaterialCover(
+  Widget cover, {
+  double? size,
+  bool compact = false,
+  bool tilt = false,
+}) {
+  final Widget frame = ShelfCoverMaterialScope(
+    material: ShelfCoverMaterial.glossyAlbum,
+    child: SizedBox(
+      width: size,
+      height: size,
+      child: AspectRatio(
+        aspectRatio: kShelfAlbumAspectRatio,
+        child: ShelfCoverFrame(
+          density: compact
+              ? ShelfCoverDensity.compact
+              : ShelfCoverDensity.regular,
+          child: cover,
+        ),
+      ),
+    ),
+  );
+  if (!tilt || compact) return frame;
+  return FushiHoverLift(scale: kMusicHoverLiftScale, builder: (_, _) => frame);
+}
+
 /// 专辑 / 曲目封面：目录封面文件优先，其次曲目内嵌封面，都没有画音符占位。
+/// 在线封面请求头：部分音乐 CDN 对 `Dart/x (dart:io)` 这个默认 UA 一律回 403，
+/// 浏览器形态的 UA 才放行（2026-10-29 实测）。
+const Map<String, String> kMusicCoverRequestHeaders = <String, String>{
+  'User-Agent': 'Mozilla/5.0',
+};
+
 class MusicCover extends StatelessWidget {
   const MusicCover({
     super.key,
@@ -83,7 +125,7 @@ class MusicCover extends StatelessWidget {
         image: ResizeImage.resizeIfNeeded(
           size == null ? 512 : (size! * 2).round(),
           null,
-          AppHttpImage(file),
+          AppHttpImage(file, headers: kMusicCoverRequestHeaders),
         ),
         fit: BoxFit.cover,
         gaplessPlayback: true,

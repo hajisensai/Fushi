@@ -74,6 +74,7 @@ void main() {
             StoreRestrictedCapability.onlineMangaSource,
             StoreRestrictedCapability.onlineVideoSource,
             StoreRestrictedCapability.onlineNovelSource,
+            StoreRestrictedCapability.onlineMusicSource,
             StoreRestrictedCapability.downloads,
           ]) {
         expect(
@@ -950,6 +951,84 @@ void main() {
           'returnnull;',
         ),
         reason: '阅读器开在线书时取 lnReaderManager 必须先过在线小说门。',
+      );
+    });
+  });
+
+  group('音乐在线音源插件（onlineMusicSource）', () {
+    test('门只写在 music_plugin_gate.dart，消费端都只问它', () {
+      final String gate = compactCode(
+        read('lib/src/media/music/plugin/music_plugin_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisMusicPluginSourcesAvailable=>'
+          'StoreRestrictedCapability.onlineMusicSource.isAvailable&&'
+          'MusicPluginManager.isSupported;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      // 设置 › 音乐 › 插件音源：整节 visible 走门（分类正文 / 主从详情 / 搜索索引三条路径共用）。
+      expect(
+        compactCode(read('lib/src/settings/settings_schema_music.dart')),
+        contains(
+          'title:t.music_plugins_title,visible:(_)=>isMusicPluginSourcesAvailable,',
+        ),
+      );
+      // 服务器曲库页的插件管理入口：门没过时不出现。
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_server_pages.dart'),
+        ),
+        contains(
+          // compactCode 去掉了全部空白，期望串也不能带空格。
+          'boolget_showPlugins=>'
+          'widget.loader==null&&isMusicPluginSourcesAvailable;',
+        ),
+      );
+      // 音乐页的推荐 / 合并搜索 / 我的歌单：插件列表只在门后读取。
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_library_page.dart'),
+        ),
+        contains(
+          'if(widget.snapshotLoader!=null||!isMusicPluginSourcesAvailable){'
+          'return;}',
+        ),
+      );
+      // 插件曲目的播放项会随队列 / 历史恢复到 iOS：取流装配点与歌词来源都挂在门后，没装配时
+      // resolveMusicPluginStream 按不可播放处理。
+      final String app = compactCode(read('lib/src/models/app_model.dart'));
+      expect(
+        app,
+        contains('if(isMusicPluginSourcesAvailable){musicPluginPlaybackHost='),
+      );
+      expect(app, contains('pluginLyrics:isMusicPluginSourcesAvailable?'));
+      expect(
+        compactCode(read('lib/src/media/music/plugin/music_plugins.dart')),
+        contains(
+          'if(ref==null||host==null){throwconstMusicPluginStreamUnavailable(',
+        ),
+      );
+    });
+
+    test('iOS 伞形静态库不编入插件运行时（JS 引擎）', () {
+      expect(
+        read('../native/fushi_ios_umbrella/Cargo.toml'),
+        contains(
+          'fushi_music = { path = "../fushi_music", default-features = false }',
+        ),
+      );
+      final String crate = read('../native/fushi_music/Cargo.toml');
+      expect(crate, contains('default = ["plugin"]'));
+      expect(
+        crate,
+        contains(
+          'rquickjs = { version = "0.14", default-features = false, '
+          'features = ["parallel"], optional = true }',
+        ),
+        reason: 'JS 引擎只能经 plugin 特性带入。',
       );
     });
   });

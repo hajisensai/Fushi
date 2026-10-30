@@ -281,6 +281,9 @@ class ShelfMaterialSurface extends StatelessWidget {
                 child: ShelfCoverSheen(active: raised, glint: pressGlint),
               ),
             ),
+          // 3D 倾斜时跟着指针走的镜面高光（只画最前那本）。
+          if (!compact && pressGlint)
+            ClipRRect(borderRadius: radius, child: const FushiTiltGlare()),
         ],
       ),
     );
@@ -790,7 +793,12 @@ class ShelfCoverPile extends StatelessWidget {
                   widthFactor: back.isEmpty ? 1.07 : 1.15,
                 ),
               ),
-            ...layers,
+            // 整摞一起随指针 3D 倾斜（接触阴影留在桌面上不动）。
+            Positioned.fill(
+              child: FushiTilt(
+                child: Stack(clipBehavior: Clip.none, children: layers),
+              ),
+            ),
           ],
         );
       },

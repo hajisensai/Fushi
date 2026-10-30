@@ -56,12 +56,6 @@ final List<_EntrySite> _sites = <_EntrySite>[
     RegExp(r'if \(isAiModuleEnabled\([^\n]*\)\)\s*FushiIconButton\('),
   ),
   _EntrySite(
-    '各页顶栏的「问 AI」（阅读器 / 漫画 / 视频 / 三个库页，D4 ③）',
-    RegExp(r'openAiAgentForPage\('),
-    RegExp(r'isAiModuleEnabled\('),
-    definitionFile: 'ai_agent_entry.dart',
-  ),
-  _EntrySite(
     '漫画 OCR 的 AI 档位面板',
     RegExp(r'aiModeGetter:'),
     RegExp(r'aiModeGetter:\s*isAiModuleEnabled\('),
