@@ -192,7 +192,8 @@ class FloatingLyricWindow {
   // being replayed, and whether a recapture window is open. Drives the two
   // leading toolbar glyphs' active highlight — the overlay is a separate
   // window, so this is the only place the user can see either state.
-  void SetVoiceState(bool replaying, bool recapturing);
+  void SetVoiceState(bool replaying, bool recapturing, bool speaking,
+                     bool auto_speak);
   void SetClickLookupEnabled(bool enabled);
   // 查词触发方式（Dart 偏好 `gal_hook_lookup_trigger`）：
   // 0 = 左键单击（默认，历史行为）/ 1 = 鼠标中键 / 2 = 鼠标侧键（XButton1/2）。
@@ -490,6 +491,9 @@ class FloatingLyricWindow {
   bool playing_ = false;
   // Hook-text voice control state (see SetVoiceState).
   bool replaying_ = false;
+  // TTS reading / auto-read state, pushed with the voice state by Dart.
+  bool speaking_ = false;
+  bool auto_speak_ = false;
   bool recapturing_ = false;
   bool click_lookup_enabled_ = true;
   // 查词触发方式镜像（见 SetLookupTrigger）。

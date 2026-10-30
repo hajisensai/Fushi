@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176341 (10373 per locale)
+/// Strings: 178228 (10484 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2155,14 +2155,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audiobook_tts_param_caption => 'Voice description';
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+  String get audiobook_tts_param_emotion => 'Emotion';
   String get audiobook_tts_param_endpoint => 'Server URL';
   String get audiobook_tts_param_engine => 'Speech engine';
   String get audiobook_tts_param_engine_default => 'System default engine';
+  String get audiobook_tts_param_executable => 'Program path';
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  String get audiobook_tts_param_intonation => 'Intonation';
   String get audiobook_tts_param_invalid => 'This value is not valid';
   String get audiobook_tts_param_irodori_endpoint_hint =>
       'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  String get audiobook_tts_param_narrator => 'Narrator';
+  String get audiobook_tts_param_pitch => 'Pitch';
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   String get audiobook_tts_param_prompt_text => 'Reference audio transcript';
   String get audiobook_tts_param_ref_audio => 'Reference audio path';
@@ -2176,11 +2182,27 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       '3-10 seconds of clean speech; the file is copied into Fushi\'s data folder';
   String get audiobook_tts_param_ref_audio_pick => 'Choose an audio file';
   String get audiobook_tts_param_region => 'Region';
+  String get audiobook_tts_param_speaker => 'Character / style';
+  String get audiobook_tts_param_speed => 'Speed';
   String get audiobook_tts_param_text_lang => 'Text language';
   String get audiobook_tts_param_voice => 'Voice';
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  String get audiobook_tts_param_volume => 'Volume';
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   String get audiobook_tts_provider_edge => 'Microsoft Edge';
   String get audiobook_tts_provider_google_cloud => 'Google Cloud';
@@ -2190,7 +2212,14 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audiobook_tts_provider_irodori_server =>
       'Irodori-TTS (official server)';
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
   String get audiobook_tts_provider_system => 'System voice';
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   String get audiobook_tts_resume => 'Continue reading aloud';
   String get audiobook_tts_retry_hint =>
@@ -2229,7 +2258,56 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audiobook_tts_voice_test_playing => 'Playing the test';
   String get audiobook_tts_voice_test_text => 'Test sentence';
   String get audiobook_tts_voice_use => 'Use for reading aloud';
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
   String get audiobook_tts_voices_section => 'Voices';
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   String get audiobook_tts_waiting => 'Synthesizing…';
   String get audiobookshelf_browse_choose_library => 'Choose library';
   String get audiobookshelf_browse_continue => 'Continue listening';
@@ -4595,6 +4673,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get gal_hook_toolbar_auto_hide => 'Auto-hide the toolbar';
   String get gal_hook_toolbar_auto_hide_hint =>
       'Hide the toolbar until the pointer reaches the caption box, LunaHook style. Hidden means really hidden — those pixels go back to the game.';
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
   String get gal_hook_toolbar_label_close => 'Close';
   String get gal_hook_toolbar_label_copy => 'Copy';
   String get gal_hook_toolbar_label_follow => 'Follow';
@@ -4602,12 +4681,90 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get gal_hook_toolbar_label_passthrough => 'Click-thru';
   String get gal_hook_toolbar_label_recapture => 'Re-record';
   String get gal_hook_toolbar_label_replay => 'Replay';
+  String get gal_hook_toolbar_label_speak => 'Read';
   String get gal_hook_toolbar_label_topmost => 'On top';
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
   String get gal_hook_toolbar_label_workbench => 'Workbench';
   String get gal_hook_toolbar_labels => 'Show button labels';
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  String get gal_line_tts_action_read => 'Read with default voice';
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  String get gal_line_tts_auto => 'Auto-read lines';
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  String get gal_line_tts_delete => 'Delete';
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  String get gal_line_tts_match_contains => 'Line contains';
+  String get gal_line_tts_match_regex => 'Regular expression';
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  String get gal_line_tts_move_down => 'Move down';
+  String get gal_line_tts_move_up => 'Move up';
+  String get gal_line_tts_names => 'Names';
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  String get gal_line_tts_presets => 'Add rules';
+  String get gal_line_tts_rule_action => 'Then';
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  String get gal_line_tts_rule_match => 'Match';
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  String get gal_line_tts_scope => 'What to read';
+  String get gal_line_tts_scope_all => 'All lines';
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  String get gal_line_tts_test_input => 'Sample line';
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  String get gal_line_tts_test_play => 'Preview';
+  String get gal_line_tts_test_read => 'Read';
+  String get gal_line_tts_test_section => 'Try it';
+  String get gal_line_tts_test_skip => 'Skip';
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  String get gal_line_tts_voice => 'Voice';
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  String get gal_line_tts_volume => 'TTS volume';
   String get gal_mining_animated_format => 'Game card animation format';
   String get gal_mining_clip_format => 'Game clip format';
   String get gal_mining_image_mode => 'Galgame card image';
@@ -4748,6 +4905,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Fushi refuses to install unverified injector code.';
   String get game_home_subtitle => 'Game library and capture monitoring';
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
   String get game_hook_btn_close => 'Close the overlay';
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
   String get game_hook_btn_follow => 'Follow new lines';
@@ -4755,6 +4913,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_hook_btn_passthrough => 'Click through to the game';
   String get game_hook_btn_recapture => 'Recapture the voice';
   String get game_hook_btn_replay => 'Replay this line\'s voice';
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   String get game_hook_btn_topmost => 'Keep on top';
   String get game_hook_btn_transparency => 'Toggle the background';
   String get game_hook_btn_workbench => 'Open the capture workbench';
@@ -18194,11 +18353,19 @@ class _StringsAr extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -18207,6 +18374,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -18230,6 +18401,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -18237,7 +18412,29 @@ class _StringsAr extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -18256,7 +18453,19 @@ class _StringsAr extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -18325,7 +18534,80 @@ class _StringsAr extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -22368,6 +22650,8 @@ class _StringsAr extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'يخفي شريط الأدوات حتى يصل المؤشر إلى صندوق النص، بأسلوب LunaHook. مخفي يعني مخفي فعلًا — تعود تلك البكسلات إلى اللعبة.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -22382,6 +22666,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -22392,6 +22678,145 @@ class _StringsAr extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'صيغة الرسوم المتحركة لبطاقة اللعبة';
   @override
@@ -22651,6 +23076,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get game_home_subtitle => 'مكتبة الألعاب ومراقبة الالتقاط';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'إغلاق النافذة العائمة';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -22664,6 +23091,8 @@ class _StringsAr extends _StringsEn {
   String get game_hook_btn_recapture => 'إعادة التقاط الصوت';
   @override
   String get game_hook_btn_replay => 'إعادة تشغيل صوت هذه الجملة';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'إبقاء في المقدمة';
   @override
@@ -43370,11 +43799,19 @@ class _StringsDe extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -43383,6 +43820,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -43406,6 +43847,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -43413,7 +43858,29 @@ class _StringsDe extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -43432,7 +43899,19 @@ class _StringsDe extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -43501,7 +43980,80 @@ class _StringsDe extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -47625,6 +48177,8 @@ class _StringsDe extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Blendet die Leiste aus, bis der Zeiger den Textkasten erreicht – wie bei LunaHook. Ausgeblendet heißt wirklich weg: Diese Pixel gehören wieder dem Spiel.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -47639,6 +48193,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -47649,6 +48205,145 @@ class _StringsDe extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'Animationsformat für Spielkarten';
   @override
@@ -47913,6 +48608,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get game_home_subtitle => 'Spielebibliothek und Aufnahmeüberwachung';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Overlay schließen';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -47926,6 +48623,8 @@ class _StringsDe extends _StringsEn {
   String get game_hook_btn_recapture => 'Stimme neu aufnehmen';
   @override
   String get game_hook_btn_replay => 'Stimme dieser Zeile erneut abspielen';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Immer im Vordergrund';
   @override
@@ -68912,11 +69611,19 @@ class _StringsEs extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -68925,6 +69632,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -68948,6 +69659,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -68955,7 +69670,29 @@ class _StringsEs extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -68974,7 +69711,19 @@ class _StringsEs extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -69043,7 +69792,80 @@ class _StringsEs extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -73170,6 +73992,8 @@ class _StringsEs extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Oculta la barra hasta que el puntero llega al cuadro de texto, al estilo de LunaHook. Oculta significa oculta de verdad: esos píxeles vuelven al juego.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -73184,6 +74008,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -73194,6 +74020,145 @@ class _StringsEs extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format =>
       'Formato de animación de tarjeta de juego';
@@ -73459,6 +74424,8 @@ class _StringsEs extends _StringsEn {
   String get game_home_subtitle =>
       'Biblioteca de juegos y monitoreo de captura';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Cerrar la ventana flotante';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -73472,6 +74439,8 @@ class _StringsEs extends _StringsEn {
   String get game_hook_btn_recapture => 'Volver a capturar la voz';
   @override
   String get game_hook_btn_replay => 'Reproducir de nuevo la voz de esta línea';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Mantener encima';
   @override
@@ -94508,11 +95477,19 @@ class _StringsFr extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -94521,6 +95498,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -94544,6 +95525,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -94551,7 +95536,29 @@ class _StringsFr extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -94570,7 +95577,19 @@ class _StringsFr extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -94639,7 +95658,80 @@ class _StringsFr extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -98781,6 +99873,8 @@ class _StringsFr extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Masque la barre jusqu\'à ce que le pointeur atteigne la zone de texte, à la manière de LunaHook. Masqué veut dire vraiment masqué : ces pixels reviennent au jeu.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -98795,6 +99889,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -98805,6 +99901,145 @@ class _StringsFr extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format =>
       'Format d\'animation de carte de jeu';
@@ -99067,6 +100302,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get game_home_subtitle => 'Ludothèque et surveillance de capture';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Fermer la superposition';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -99081,6 +100318,8 @@ class _StringsFr extends _StringsEn {
   String get game_hook_btn_recapture => 'Réenregistrer la voix';
   @override
   String get game_hook_btn_replay => 'Rejouer la voix de cette ligne';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Garder au premier plan';
   @override
@@ -120133,11 +121372,19 @@ class _StringsId extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -120146,6 +121393,10 @@ class _StringsId extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -120169,6 +121420,10 @@ class _StringsId extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -120176,7 +121431,29 @@ class _StringsId extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -120195,7 +121472,19 @@ class _StringsId extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -120264,7 +121553,80 @@ class _StringsId extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -124334,6 +125696,8 @@ class _StringsId extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Sembunyikan bilah sampai penunjuk mencapai kotak teks, ala LunaHook. Tersembunyi artinya benar-benar hilang — piksel itu kembali ke game.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -124348,6 +125712,8 @@ class _StringsId extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -124358,6 +125724,145 @@ class _StringsId extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'Format animasi kartu game';
   @override
@@ -124618,6 +126123,8 @@ class _StringsId extends _StringsEn {
   @override
   String get game_home_subtitle => 'Pustaka game dan pemantauan tangkapan';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Tutup overlay';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -124631,6 +126138,8 @@ class _StringsId extends _StringsEn {
   String get game_hook_btn_recapture => 'Rekam ulang suaranya';
   @override
   String get game_hook_btn_replay => 'Putar ulang suara baris ini';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Selalu di atas';
   @override
@@ -145470,11 +146979,19 @@ class _StringsIt extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -145483,6 +147000,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -145506,6 +147027,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -145513,7 +147038,29 @@ class _StringsIt extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -145532,7 +147079,19 @@ class _StringsIt extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -145601,7 +147160,80 @@ class _StringsIt extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -149704,6 +151336,8 @@ class _StringsIt extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Nasconde la barra finché il puntatore non raggiunge il riquadro del testo, in stile LunaHook. Nascosto significa davvero nascosto: quei pixel tornano al gioco.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -149718,6 +151352,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -149728,6 +151364,145 @@ class _StringsIt extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'Formato animazione carta gioco';
   @override
@@ -149987,6 +151762,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get game_home_subtitle => 'Libreria giochi e monitoraggio cattura';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Chiudi la finestra mobile';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -150000,6 +151777,8 @@ class _StringsIt extends _StringsEn {
   String get game_hook_btn_recapture => 'Ricattura la voce';
   @override
   String get game_hook_btn_replay => 'Riascolta la voce di questa battuta';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Mantieni in primo piano';
   @override
@@ -170847,11 +172626,19 @@ class _StringsJa extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -170860,6 +172647,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -170883,6 +172674,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -170890,7 +172685,29 @@ class _StringsJa extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -170909,7 +172726,19 @@ class _StringsJa extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -170978,7 +172807,80 @@ class _StringsJa extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -174881,6 +176783,8 @@ class _StringsJa extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'ポインタが字幕枠に来るまでツールバーを隠します（LunaHook 方式）。隠すときは本当に消します——その分のピクセルはゲームに返ります。';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'コピー';
@@ -174895,6 +176799,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -174905,6 +176811,145 @@ class _StringsJa extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'ゲームカードのアニメーション形式';
   @override
@@ -175157,6 +177202,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get game_home_subtitle => 'ゲームライブラリとキャプチャ監視';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'オーバーレイを閉じる';
   @override
   String get game_hook_btn_copy => 'このセリフをクリップボードにコピー';
@@ -175170,6 +177217,8 @@ class _StringsJa extends _StringsEn {
   String get game_hook_btn_recapture => '音声を録り直す';
   @override
   String get game_hook_btn_replay => 'この台詞の音声を再生';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => '常に最前面に表示';
   @override
@@ -195289,11 +197338,19 @@ class _StringsKo extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -195302,6 +197359,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -195325,6 +197386,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -195332,7 +197397,29 @@ class _StringsKo extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -195351,7 +197438,19 @@ class _StringsKo extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -195420,7 +197519,80 @@ class _StringsKo extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -199340,6 +201512,8 @@ class _StringsKo extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       '포인터가 자막 상자에 닿을 때까지 도구 모음을 숨깁니다(LunaHook 방식). 숨긴다는 건 정말로 사라진다는 뜻이라, 그 픽셀은 게임으로 돌아갑니다.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -199354,6 +201528,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -199364,6 +201540,145 @@ class _StringsKo extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => '게임 카드 애니메이션 형식';
   @override
@@ -199615,6 +201930,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get game_home_subtitle => '게임 라이브러리 및 캡처 모니터링';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => '오버레이 닫기';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -199628,6 +201945,8 @@ class _StringsKo extends _StringsEn {
   String get game_hook_btn_recapture => '음성 다시 녹음';
   @override
   String get game_hook_btn_replay => '이 대사 음성 다시 재생';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => '항상 위에 표시';
   @override
@@ -219911,11 +222230,19 @@ class _StringsNl extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -219924,6 +222251,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -219947,6 +222278,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -219954,7 +222289,29 @@ class _StringsNl extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -219973,7 +222330,19 @@ class _StringsNl extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -220042,7 +222411,80 @@ class _StringsNl extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -224137,6 +226579,8 @@ class _StringsNl extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Verbergt de werkbalk tot de aanwijzer het tekstvak bereikt, zoals LunaHook. Verborgen is echt verborgen — die pixels gaan terug naar het spel.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -224151,6 +226595,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -224161,6 +226607,145 @@ class _StringsNl extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'Gamekaart-animatieformaat';
   @override
@@ -224420,6 +227005,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get game_home_subtitle => 'Spelbibliotheek en opnamemonitoring';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Overlay sluiten';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -224433,6 +227020,8 @@ class _StringsNl extends _StringsEn {
   String get game_hook_btn_recapture => 'Stem opnieuw opnemen';
   @override
   String get game_hook_btn_replay => 'Stem van deze regel opnieuw afspelen';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Altijd op voorgrond';
   @override
@@ -245355,11 +247944,19 @@ class _StringsPtBr extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -245368,6 +247965,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -245391,6 +247992,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -245398,7 +248003,29 @@ class _StringsPtBr extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -245417,7 +248044,19 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -245486,7 +248125,80 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -249594,6 +252306,8 @@ class _StringsPtBr extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Oculta a barra até o ponteiro chegar à caixa de legenda, no estilo do LunaHook. Oculto significa oculto de verdade — aqueles pixels voltam para o jogo.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -249608,6 +252322,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -249618,6 +252334,145 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format =>
       'Formato de animação do cartão de jogo';
@@ -249881,6 +252736,8 @@ class _StringsPtBr extends _StringsEn {
   String get game_home_subtitle =>
       'Biblioteca de jogos e monitoramento de captura';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Fechar a janela flutuante';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -249894,6 +252751,8 @@ class _StringsPtBr extends _StringsEn {
   String get game_hook_btn_recapture => 'Capturar a voz novamente';
   @override
   String get game_hook_btn_replay => 'Reproduzir novamente a voz desta fala';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Manter no topo';
   @override
@@ -270845,11 +273704,19 @@ class _StringsRu extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -270858,6 +273725,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -270881,6 +273752,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -270888,7 +273763,29 @@ class _StringsRu extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -270907,7 +273804,19 @@ class _StringsRu extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -270976,7 +273885,80 @@ class _StringsRu extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -275066,6 +278048,8 @@ class _StringsRu extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Скрывает панель, пока указатель не дойдёт до блока субтитров — как в LunaHook. Скрыто значит скрыто по-настоящему: эти пиксели возвращаются игре.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -275080,6 +278064,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -275090,6 +278076,145 @@ class _StringsRu extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'Формат анимации игровых карточек';
   @override
@@ -275349,6 +278474,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get game_home_subtitle => 'Библиотека игр и мониторинг захвата';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Закрыть оверлей';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -275362,6 +278489,8 @@ class _StringsRu extends _StringsEn {
   String get game_hook_btn_recapture => 'Перезаписать озвучку';
   @override
   String get game_hook_btn_replay => 'Воспроизвести озвучку этой реплики';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Поверх всех окон';
   @override
@@ -296252,11 +299381,19 @@ class _StringsTh extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -296265,6 +299402,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -296288,6 +299429,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -296295,7 +299440,29 @@ class _StringsTh extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -296314,7 +299481,19 @@ class _StringsTh extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -296383,7 +299562,80 @@ class _StringsTh extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -300421,6 +303673,8 @@ class _StringsTh extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'ซ่อนแถบเครื่องมือจนกว่าตัวชี้จะถึงกล่องคำบรรยาย แบบ LunaHook ซ่อนคือซ่อนจริง ๆ พิกเซลเหล่านั้นคืนให้เกม';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -300435,6 +303689,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -300445,6 +303701,145 @@ class _StringsTh extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'รูปแบบภาพเคลื่อนไหวการ์ดเกม';
   @override
@@ -300702,6 +304097,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get game_home_subtitle => 'คลังเกมและการติดตามการจับข้อมูล';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'ปิดหน้าต่างลอย';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -300715,6 +304112,8 @@ class _StringsTh extends _StringsEn {
   String get game_hook_btn_recapture => 'บันทึกเสียงใหม่';
   @override
   String get game_hook_btn_replay => 'เล่นเสียงประโยคนี้ซ้ำ';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'ปักไว้บนสุด';
   @override
@@ -321401,11 +324800,19 @@ class _StringsTr extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -321414,6 +324821,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -321437,6 +324848,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -321444,7 +324859,29 @@ class _StringsTr extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -321463,7 +324900,19 @@ class _StringsTr extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -321532,7 +324981,80 @@ class _StringsTr extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -325614,6 +329136,8 @@ class _StringsTr extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'İmleç altyazı kutusuna gelene kadar araç çubuğunu gizler, LunaHook tarzı. Gizli gerçekten gizli demek — o pikseller oyuna geri döner.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -325628,6 +329152,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -325638,6 +329164,145 @@ class _StringsTr extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'Oyun kartı animasyon formatı';
   @override
@@ -325898,6 +329563,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get game_home_subtitle => 'Oyun kütüphanesi ve yakalama izleme';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Yer paylaşımını kapat';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -325911,6 +329578,8 @@ class _StringsTr extends _StringsEn {
   String get game_hook_btn_recapture => 'Sesi yeniden yakala';
   @override
   String get game_hook_btn_replay => 'Bu satırın sesini yeniden oynat';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Üstte tut';
   @override
@@ -346722,11 +350391,19 @@ class _StringsVi extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -346735,6 +350412,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -346758,6 +350439,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -346765,7 +350450,29 @@ class _StringsVi extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -346784,7 +350491,19 @@ class _StringsVi extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -346853,7 +350572,80 @@ class _StringsVi extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -350925,6 +354717,8 @@ class _StringsVi extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       'Ẩn thanh công cụ cho tới khi con trỏ chạm vào khung phụ đề, kiểu LunaHook. Ẩn là ẩn thật — số điểm ảnh đó trả lại cho game.';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => 'Copy';
@@ -350939,6 +354733,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -350949,6 +354745,145 @@ class _StringsVi extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => 'Định dạng hoạt ảnh thẻ trò chơi';
   @override
@@ -351210,6 +355145,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get game_home_subtitle => 'Thư viện trò chơi và giám sát thu thập';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => 'Đóng cửa sổ nổi';
   @override
   String get game_hook_btn_copy => 'Copy this line to the clipboard';
@@ -351223,6 +355160,8 @@ class _StringsVi extends _StringsEn {
   String get game_hook_btn_recapture => 'Thu lại giọng nói';
   @override
   String get game_hook_btn_replay => 'Phát lại giọng của câu này';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => 'Luôn nổi trên cùng';
   @override
@@ -371691,11 +375630,19 @@ class _StringsZhCn extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       '可选。描述音色与语气，例如「落ち着いた低めの女性の声」。声音选 none 时就是凭描述设计一个新声音。';
   @override
+  String get audiobook_tts_param_emotion => '情感';
+  @override
   String get audiobook_tts_param_endpoint => '服务地址';
   @override
   String get audiobook_tts_param_engine => '语音引擎';
   @override
   String get audiobook_tts_param_engine_default => '系统默认引擎';
+  @override
+  String get audiobook_tts_param_executable => '程序路径';
+  @override
+  String get audiobook_tts_param_executable_pick => '选择程序';
+  @override
+  String get audiobook_tts_param_intonation => '抑扬';
   @override
   String get audiobook_tts_param_invalid => '填写的值无效';
   @override
@@ -371704,6 +375651,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       '官方 Irodori-TTS 服务默认端口 8088';
+  @override
+  String get audiobook_tts_param_narrator => '旁白角色';
+  @override
+  String get audiobook_tts_param_pitch => '音高';
   @override
   String get audiobook_tts_param_prompt_lang => '参考音频语言';
   @override
@@ -371726,13 +375677,37 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get audiobook_tts_param_region => '区域';
   @override
+  String get audiobook_tts_param_speaker => '角色 / 风格';
+  @override
+  String get audiobook_tts_param_speed => '语速';
+  @override
   String get audiobook_tts_param_text_lang => '文本语言';
   @override
   String get audiobook_tts_param_voice => '声音';
   @override
   String get audiobook_tts_param_voice_auto => '自动（按文字语言挑选）';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      '可选，例如 happy=50,sad=0（各 0-100）。情感名随旁白角色不同。';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'voicepeak.exe 的路径（macOS 是 voicepeak.app/Contents/MacOS/voicepeak）';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint => '可选，-300 到 300（默认 0）';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint => '可选，50-200（默认 100）';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      '默认端口：VOICEVOX 50021、AivisSpeech 10101、SHAREVOX 50025。其它 VOICEVOX 兼容引擎（LMROID、ITVOICE 等）也能用，把地址改成它的即可。';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      '可选。留空用引擎默认值（语速、抑扬、音量 1.0，音高 0.0）';
+  @override
+  String get audiobook_tts_param_volume => '音量';
+  @override
   String get audiobook_tts_preparing => '正在准备朗读…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => '微软 Azure';
   @override
@@ -371750,7 +375725,18 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => '微软翻译';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => '系统语音';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      '付费软件；调用本机已安装的 VOICEPEAK 命令行';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint => '免费的本机引擎（VOICEVOX 兼容接口）';
   @override
   String get audiobook_tts_read_from_here => '从当前位置朗读';
   @override
@@ -371812,7 +375798,75 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => '用于朗读';
   @override
+  String get audiobook_tts_voicepeak_detect => '查找已安装的 VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      '已找到 VOICEPEAK：${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      '本机没有找到 VOICEPEAK。它是付费软件，Fushi 不能代为下载：请在官网（voicepeak.jp）购买安装后回来点「查找已安装的 VOICEPEAK」，或手动选择 voicepeak.exe。';
+  @override
   String get audiobook_tts_voices_section => '声音';
+  @override
+  String get audiobook_tts_voicevox_local_accel => '加速方式';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml => 'DirectML（任意显卡）';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia => 'NVIDIA 显卡（CUDA）';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      '在本机一键部署 ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      '免费日语声音；从官方发布页下载约 ${size}';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint => '接着选择角色与风格并试听';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      '删除本机 ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      '这会停止服务并删除 ${path}。';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => '本机还没有服务？一键在本机部署 ${engine}';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout => '解压出的文件里没有可运行的引擎';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      '找不到能解开安装包的工具。Linux 请安装 unzip（VOICEVOX）或 p7zip（AivisSpeech）；Windows 请更新系统。';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      '官方没有提供本平台的安装包';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      '从 GitHub 下载官方 ${engine} 引擎 ${version}（约 ${size}）。朗读时自动启动，Fushi 退出时随之停止。';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      '请使用 1024-65535 之间的端口（7870、7871、8088、9880 除外）';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => '正在解压…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining => '正在合并下载的分卷…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'AivisSpeech 的每个声音模型都有各自的许可。公开生成的音频前请先确认。';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'VOICEVOX 的每个角色都有各自的使用条款。公开生成的音频时，须标注「VOICEVOX:角色名」（例如 VOICEVOX:ずんだもん）。';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      '本机 ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine}（本机）';
   @override
   String get audiobook_tts_waiting => '正在合成…';
   @override
@@ -375538,6 +379592,8 @@ class _StringsZhCn extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       '平时把功能栏整条隐藏，鼠标移到台词框附近才现身（LunaHook 那样）。隐藏就是真隐藏，那块像素还给游戏。';
   @override
+  String get gal_hook_toolbar_label_auto_speak => '自动读';
+  @override
   String get gal_hook_toolbar_label_close => '关闭';
   @override
   String get gal_hook_toolbar_label_copy => '复制';
@@ -375552,6 +379608,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => '重播';
   @override
+  String get gal_hook_toolbar_label_speak => '朗读';
+  @override
   String get gal_hook_toolbar_label_topmost => '置顶';
   @override
   String get gal_hook_toolbar_label_transparency => '底板';
@@ -375562,6 +379620,136 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       '在浮窗工具条每个按钮下方显示简短文字；浮窗太窄时只显示图标，悬停仍有提示';
+  @override
+  String get gal_line_tts_action_read => '用默认声音读';
+  @override
+  String get gal_line_tts_action_skip => '不读（跳过）';
+  @override
+  String get gal_line_tts_action_voice => '换一个声音读';
+  @override
+  String get gal_line_tts_add_fix => '添加语音修正';
+  @override
+  String get gal_line_tts_add_rule => '添加空白规则';
+  @override
+  String get gal_line_tts_auto => '自动朗读台词';
+  @override
+  String get gal_line_tts_auto_hint =>
+      '用 TTS 读出新台词，给没有配音的旁白 / 主角补声音；浮窗工具条上也能开关';
+  @override
+  String get gal_line_tts_auto_off => '已关闭自动朗读';
+  @override
+  String get gal_line_tts_auto_on => '已开启自动朗读';
+  @override
+  String get gal_line_tts_delete => '删除';
+  @override
+  String get gal_line_tts_fix_replacement => '替换为（可引用捕获组）';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => '语音修正 ${index}';
+  @override
+  String get gal_line_tts_match_contains => '台词包含';
+  @override
+  String get gal_line_tts_match_regex => '正则表达式';
+  @override
+  String get gal_line_tts_match_speaker => '人名是';
+  @override
+  String get gal_line_tts_match_starts_with => '台词以…开头';
+  @override
+  String get gal_line_tts_move_down => '下移';
+  @override
+  String get gal_line_tts_move_up => '上移';
+  @override
+  String get gal_line_tts_names => '名字';
+  @override
+  String get gal_line_tts_names_hint => '每行一个，或用逗号分隔';
+  @override
+  String get gal_line_tts_no_voice => '还没有可用的 TTS 声音，请先在「朗读声音」里添加';
+  @override
+  String get gal_line_tts_preset_protagonist => '照读主角台词';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      '主角通常没配音，但台词同样带括号。以这些名字开头的句子照读，自动排在跳过规则前面';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => '跳过带「」『』的台词';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint => '多数游戏里有配音的对白带括号，旁白不带';
+  @override
+  String get gal_line_tts_preset_strip_brackets => '读之前去掉括号';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint => '语音修正：去掉台词两端的「」『』（）';
+  @override
+  String get gal_line_tts_preset_voiced_cast => '有配音的角色';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      '人名是这些的句子不读。适合台词不带括号、但 Hook 文本里带人名的游戏';
+  @override
+  String get gal_line_tts_presets => '添加规则';
+  @override
+  String get gal_line_tts_rule_action => '命中后';
+  @override
+  String get gal_line_tts_rule_enabled => '启用';
+  @override
+  String get gal_line_tts_rule_match => '匹配方式';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => '规则 ${index}';
+  @override
+  String get gal_line_tts_rules => '朗读规则';
+  @override
+  String get gal_line_tts_rules_hint => '按人名 / 文本决定读不读、用哪个声音，以及读之前怎么修文本';
+  @override
+  String get gal_line_tts_rules_intro =>
+      '规则从上到下匹配，第一条命中的生效；命中规则时不再看是否抓到原声。浮窗上手动点「朗读」不受「跳过」规则限制。';
+  @override
+  String get gal_line_tts_scope => '朗读范围';
+  @override
+  String get gal_line_tts_scope_all => '全部句子';
+  @override
+  String get gal_line_tts_scope_hint =>
+      '仅无原声：抓到游戏原声的句子不读，不和角色抢话；抓不到语音的游戏会被当成无配音，用规则来区分';
+  @override
+  String get gal_line_tts_scope_unvoiced => '仅无原声的句子';
+  @override
+  String get gal_line_tts_section => '台词朗读（TTS）';
+  @override
+  String get gal_line_tts_speaker_pattern => '自定义人名正则';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      '可选。必须含命名组 (?<name>…)，可用 (?<text>…) 标出台词部分；填了就只用它，不再用内置格式';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid => '正则表达式无效';
+  @override
+  String get gal_line_tts_speaker_section => '人名';
+  @override
+  String get gal_line_tts_strip_speaker => '不读人名';
+  @override
+  String get gal_line_tts_strip_speaker_hint => '识别【名】台词、名「台词」、名＋换行＋台词、名：台词';
+  @override
+  String get gal_line_tts_test_has_voice => '抓到游戏原声时';
+  @override
+  String get gal_line_tts_test_input => '示例台词';
+  @override
+  String get gal_line_tts_test_no_voice => '这句没有游戏原声时';
+  @override
+  String get gal_line_tts_test_play => '试听';
+  @override
+  String get gal_line_tts_test_read => '读';
+  @override
+  String get gal_line_tts_test_section => '试算';
+  @override
+  String get gal_line_tts_test_skip => '不读';
+  @override
+  String get gal_line_tts_test_speaker => '认出的人名';
+  @override
+  String get gal_line_tts_test_text => '送进 TTS 的文本';
+  @override
+  String get gal_line_tts_test_wait => '等待语音配对';
+  @override
+  String get gal_line_tts_voice => '声音';
+  @override
+  String get gal_line_tts_voice_follow => '跟随朗读声音';
+  @override
+  String get gal_line_tts_voice_follow_hint => '使用「朗读声音」里当前选中的声音';
+  @override
+  String get gal_line_tts_volume => 'TTS 音量';
   @override
   String get gal_mining_animated_format => '游戏制卡动图格式';
   @override
@@ -375805,6 +379993,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get game_home_subtitle => '游戏库与捕获监控';
   @override
+  String get game_hook_btn_auto_speak => '自动朗读新台词（TTS）';
+  @override
   String get game_hook_btn_close => '关闭浮窗';
   @override
   String get game_hook_btn_copy => '复制这句台词';
@@ -375818,6 +380008,8 @@ class _StringsZhCn extends _StringsEn {
   String get game_hook_btn_recapture => '重新录制语音';
   @override
   String get game_hook_btn_replay => '重播本句语音';
+  @override
+  String get game_hook_btn_speak => '朗读这句（TTS）';
   @override
   String get game_hook_btn_topmost => '保持置顶';
   @override
@@ -394911,11 +399103,19 @@ class _StringsZhHk extends _StringsEn {
   String get audiobook_tts_param_caption_hint =>
       'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
   @override
+  String get audiobook_tts_param_emotion => 'Emotion';
+  @override
   String get audiobook_tts_param_endpoint => 'Server URL';
   @override
   String get audiobook_tts_param_engine => 'Speech engine';
   @override
   String get audiobook_tts_param_engine_default => 'System default engine';
+  @override
+  String get audiobook_tts_param_executable => 'Program path';
+  @override
+  String get audiobook_tts_param_executable_pick => 'Choose the program';
+  @override
+  String get audiobook_tts_param_intonation => 'Intonation';
   @override
   String get audiobook_tts_param_invalid => 'This value is not valid';
   @override
@@ -394924,6 +399124,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get audiobook_tts_param_irodori_server_endpoint_hint =>
       'The official Irodori-TTS server uses port 8088';
+  @override
+  String get audiobook_tts_param_narrator => 'Narrator';
+  @override
+  String get audiobook_tts_param_pitch => 'Pitch';
   @override
   String get audiobook_tts_param_prompt_lang => 'Reference audio language';
   @override
@@ -394947,6 +399151,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get audiobook_tts_param_region => 'Region';
   @override
+  String get audiobook_tts_param_speaker => 'Character / style';
+  @override
+  String get audiobook_tts_param_speed => 'Speed';
+  @override
   String get audiobook_tts_param_text_lang => 'Text language';
   @override
   String get audiobook_tts_param_voice => 'Voice';
@@ -394954,7 +399162,29 @@ class _StringsZhHk extends _StringsEn {
   String get audiobook_tts_param_voice_auto =>
       'Automatic (by the text\'s language)';
   @override
+  String get audiobook_tts_param_voicepeak_emotion_hint =>
+      'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+  @override
+  String get audiobook_tts_param_voicepeak_executable_hint =>
+      'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+  @override
+  String get audiobook_tts_param_voicepeak_pitch_hint =>
+      'Optional, -300 to 300 (default 0)';
+  @override
+  String get audiobook_tts_param_voicepeak_speed_hint =>
+      'Optional, 50-200 (default 100)';
+  @override
+  String get audiobook_tts_param_voicevox_endpoint_hint =>
+      'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+  @override
+  String get audiobook_tts_param_voicevox_scale_hint =>
+      'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+  @override
+  String get audiobook_tts_param_volume => 'Volume';
+  @override
   String get audiobook_tts_preparing => 'Preparing to read aloud…';
+  @override
+  String get audiobook_tts_provider_aivis_speech => 'AivisSpeech';
   @override
   String get audiobook_tts_provider_azure => 'Microsoft Azure';
   @override
@@ -394973,7 +399203,19 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get audiobook_tts_provider_ms_translator => 'Microsoft Translator';
   @override
+  String get audiobook_tts_provider_sharevox => 'SHAREVOX';
+  @override
   String get audiobook_tts_provider_system => 'System voice';
+  @override
+  String get audiobook_tts_provider_voicepeak => 'VOICEPEAK';
+  @override
+  String get audiobook_tts_provider_voicepeak_hint =>
+      'Paid software; uses the installed VOICEPEAK command line';
+  @override
+  String get audiobook_tts_provider_voicevox => 'VOICEVOX';
+  @override
+  String get audiobook_tts_provider_voicevox_hint =>
+      'Free local engine with a VOICEVOX-compatible API';
   @override
   String get audiobook_tts_read_from_here => 'Read aloud from here';
   @override
@@ -395042,7 +399284,80 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get audiobook_tts_voice_use => 'Use for reading aloud';
   @override
+  String get audiobook_tts_voicepeak_detect => 'Find installed VOICEPEAK';
+  @override
+  String audiobook_tts_voicepeak_found({required Object path}) =>
+      'Found VOICEPEAK: ${path}';
+  @override
+  String get audiobook_tts_voicepeak_not_found =>
+      'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
+  @override
   String get audiobook_tts_voices_section => 'Voices';
+  @override
+  String get audiobook_tts_voicevox_local_accel => 'Acceleration';
+  @override
+  String get audiobook_tts_voicevox_local_accel_cpu => 'CPU';
+  @override
+  String get audiobook_tts_voicevox_local_accel_directml =>
+      'DirectML (any graphics card)';
+  @override
+  String get audiobook_tts_voicevox_local_accel_nvidia =>
+      'NVIDIA graphics card (CUDA)';
+  @override
+  String audiobook_tts_voicevox_local_add({required Object engine}) =>
+      'Set up ${engine} on this computer';
+  @override
+  String audiobook_tts_voicevox_local_add_hint({required Object size}) =>
+      'Free Japanese voices; downloads about ${size} from the official release';
+  @override
+  String get audiobook_tts_voicevox_local_create_voice_hint =>
+      'Then pick a character and style and play a test';
+  @override
+  String audiobook_tts_voicevox_local_delete({required Object engine}) =>
+      'Delete local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_delete_confirm({required Object path}) =>
+      'This stops the service and deletes ${path}.';
+  @override
+  String audiobook_tts_voicevox_local_editor_not_installed({
+    required Object engine,
+  }) => 'No local service yet? Set up ${engine} on this computer in one step';
+  @override
+  String get audiobook_tts_voicevox_local_failure_layout =>
+      'The extracted files do not contain a runnable engine';
+  @override
+  String get audiobook_tts_voicevox_local_failure_no_extractor =>
+      'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+  @override
+  String get audiobook_tts_voicevox_local_failure_unsupported =>
+      'There is no official package for this platform';
+  @override
+  String audiobook_tts_voicevox_local_intro({
+    required Object engine,
+    required Object version,
+    required Object size,
+  }) =>
+      'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+  @override
+  String get audiobook_tts_voicevox_local_port_invalid =>
+      'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+  @override
+  String get audiobook_tts_voicevox_local_step_extracting => 'Extracting…';
+  @override
+  String get audiobook_tts_voicevox_local_step_joining =>
+      'Joining the downloaded parts…';
+  @override
+  String get audiobook_tts_voicevox_local_terms_aivis =>
+      'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+  @override
+  String get audiobook_tts_voicevox_local_terms_voicevox =>
+      'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+  @override
+  String audiobook_tts_voicevox_local_title({required Object engine}) =>
+      'Local ${engine}';
+  @override
+  String audiobook_tts_voicevox_local_voice_name({required Object engine}) =>
+      '${engine} (this computer)';
   @override
   String get audiobook_tts_waiting => 'Synthesizing…';
   @override
@@ -398840,6 +403155,8 @@ class _StringsZhHk extends _StringsEn {
   String get gal_hook_toolbar_auto_hide_hint =>
       '指標移到字幕框才顯示功能欄（LunaHook 那種）。隱藏就是真的隱藏——那塊像素還給遊戲。';
   @override
+  String get gal_hook_toolbar_label_auto_speak => 'Auto';
+  @override
   String get gal_hook_toolbar_label_close => 'Close';
   @override
   String get gal_hook_toolbar_label_copy => '複製';
@@ -398854,6 +403171,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get gal_hook_toolbar_label_replay => 'Replay';
   @override
+  String get gal_hook_toolbar_label_speak => 'Read';
+  @override
   String get gal_hook_toolbar_label_topmost => 'On top';
   @override
   String get gal_hook_toolbar_label_transparency => 'Backdrop';
@@ -398864,6 +403183,145 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get gal_hook_toolbar_labels_hint =>
       'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+  @override
+  String get gal_line_tts_action_read => 'Read with default voice';
+  @override
+  String get gal_line_tts_action_skip => 'Don\'t read';
+  @override
+  String get gal_line_tts_action_voice => 'Read with another voice';
+  @override
+  String get gal_line_tts_add_fix => 'Add a text fix';
+  @override
+  String get gal_line_tts_add_rule => 'Add an empty rule';
+  @override
+  String get gal_line_tts_auto => 'Auto-read lines';
+  @override
+  String get gal_line_tts_auto_hint =>
+      'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+  @override
+  String get gal_line_tts_auto_off => 'Auto-read off';
+  @override
+  String get gal_line_tts_auto_on => 'Auto-read on';
+  @override
+  String get gal_line_tts_delete => 'Delete';
+  @override
+  String get gal_line_tts_fix_replacement =>
+      'Replace with (capture groups can be referenced)';
+  @override
+  String gal_line_tts_fix_title({required Object index}) => 'Text fix ${index}';
+  @override
+  String get gal_line_tts_match_contains => 'Line contains';
+  @override
+  String get gal_line_tts_match_regex => 'Regular expression';
+  @override
+  String get gal_line_tts_match_speaker => 'Speaker is';
+  @override
+  String get gal_line_tts_match_starts_with => 'Line starts with';
+  @override
+  String get gal_line_tts_move_down => 'Move down';
+  @override
+  String get gal_line_tts_move_up => 'Move up';
+  @override
+  String get gal_line_tts_names => 'Names';
+  @override
+  String get gal_line_tts_names_hint => 'One per line, or separated by commas';
+  @override
+  String get gal_line_tts_no_voice =>
+      'No TTS voice is set up. Add one in Read-aloud voices.';
+  @override
+  String get gal_line_tts_preset_protagonist => 'Read the protagonist\'s lines';
+  @override
+  String get gal_line_tts_preset_protagonist_hint =>
+      'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+  @override
+  String get gal_line_tts_preset_skip_bracketed => 'Skip lines in 「」/『』';
+  @override
+  String get gal_line_tts_preset_skip_bracketed_hint =>
+      'In most games voiced dialogue is in brackets and narration isn\'t';
+  @override
+  String get gal_line_tts_preset_strip_brackets =>
+      'Remove brackets before reading';
+  @override
+  String get gal_line_tts_preset_strip_brackets_hint =>
+      'Text fix: removes the outer 「」『』() so they aren\'t read';
+  @override
+  String get gal_line_tts_preset_voiced_cast => 'Voiced characters';
+  @override
+  String get gal_line_tts_preset_voiced_cast_hint =>
+      'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+  @override
+  String get gal_line_tts_presets => 'Add rules';
+  @override
+  String get gal_line_tts_rule_action => 'Then';
+  @override
+  String get gal_line_tts_rule_enabled => 'Enabled';
+  @override
+  String get gal_line_tts_rule_match => 'Match';
+  @override
+  String gal_line_tts_rule_title({required Object index}) => 'Rule ${index}';
+  @override
+  String get gal_line_tts_rules => 'Read-aloud rules';
+  @override
+  String get gal_line_tts_rules_hint =>
+      'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+  @override
+  String get gal_line_tts_rules_intro =>
+      'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+  @override
+  String get gal_line_tts_scope => 'What to read';
+  @override
+  String get gal_line_tts_scope_all => 'All lines';
+  @override
+  String get gal_line_tts_scope_hint =>
+      'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+  @override
+  String get gal_line_tts_scope_unvoiced => 'Lines without game voice';
+  @override
+  String get gal_line_tts_section => 'Line read-aloud (TTS)';
+  @override
+  String get gal_line_tts_speaker_pattern => 'Custom speaker regex';
+  @override
+  String get gal_line_tts_speaker_pattern_hint =>
+      'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+  @override
+  String get gal_line_tts_speaker_pattern_invalid =>
+      'Invalid regular expression';
+  @override
+  String get gal_line_tts_speaker_section => 'Speaker name';
+  @override
+  String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
+  @override
+  String get gal_line_tts_strip_speaker_hint =>
+      'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+  @override
+  String get gal_line_tts_test_has_voice => 'If the game voice was captured';
+  @override
+  String get gal_line_tts_test_input => 'Sample line';
+  @override
+  String get gal_line_tts_test_no_voice => 'If the game has no voice for it';
+  @override
+  String get gal_line_tts_test_play => 'Preview';
+  @override
+  String get gal_line_tts_test_read => 'Read';
+  @override
+  String get gal_line_tts_test_section => 'Try it';
+  @override
+  String get gal_line_tts_test_skip => 'Skip';
+  @override
+  String get gal_line_tts_test_speaker => 'Recognized speaker';
+  @override
+  String get gal_line_tts_test_text => 'Text sent to TTS';
+  @override
+  String get gal_line_tts_test_wait => 'Wait for voice capture';
+  @override
+  String get gal_line_tts_voice => 'Voice';
+  @override
+  String get gal_line_tts_voice_follow => 'Same as read-aloud voice';
+  @override
+  String get gal_line_tts_voice_follow_hint =>
+      'Use the voice currently selected in Read-aloud voices';
+  @override
+  String get gal_line_tts_volume => 'TTS volume';
   @override
   String get gal_mining_animated_format => '遊戲製卡動圖格式';
   @override
@@ -399107,6 +403565,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get game_home_subtitle => '遊戲庫與捕獲監控';
   @override
+  String get game_hook_btn_auto_speak => 'Auto-read new lines (TTS)';
+  @override
   String get game_hook_btn_close => '關閉浮窗';
   @override
   String get game_hook_btn_copy => '複製這句台詞';
@@ -399120,6 +403580,8 @@ class _StringsZhHk extends _StringsEn {
   String get game_hook_btn_recapture => '重新錄製語音';
   @override
   String get game_hook_btn_replay => '重播本句語音';
+  @override
+  String get game_hook_btn_speak => 'Read this line aloud (TTS)';
   @override
   String get game_hook_btn_topmost => '保持置頂';
   @override
@@ -418334,18 +422796,30 @@ extension on _StringsEn {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -418365,14 +422839,34 @@ extension on _StringsEn {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -418389,8 +422883,18 @@ extension on _StringsEn {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -418451,8 +422955,65 @@ extension on _StringsEn {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -421952,6 +426513,8 @@ extension on _StringsEn {
         return 'Auto-hide the toolbar';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Hide the toolbar until the pointer reaches the caption box, LunaHook style. Hidden means really hidden — those pixels go back to the game.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -421966,6 +426529,8 @@ extension on _StringsEn {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -421976,6 +426541,130 @@ extension on _StringsEn {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
       case 'gal_mining_clip_format':
@@ -422210,6 +426899,8 @@ extension on _StringsEn {
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Fushi refuses to install unverified injector code.';
       case 'game_home_subtitle':
         return 'Game library and capture monitoring';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Close the overlay';
       case 'game_hook_btn_copy':
@@ -422224,6 +426915,8 @@ extension on _StringsEn {
         return 'Recapture the voice';
       case 'game_hook_btn_replay':
         return 'Replay this line\'s voice';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Keep on top';
       case 'game_hook_btn_transparency':
@@ -439888,18 +444581,30 @@ extension on _StringsAr {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -439919,14 +444624,34 @@ extension on _StringsAr {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -439943,8 +444668,18 @@ extension on _StringsAr {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -440005,8 +444740,65 @@ extension on _StringsAr {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -443506,6 +448298,8 @@ extension on _StringsAr {
         return 'إخفاء شريط الأدوات تلقائيًا';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'يخفي شريط الأدوات حتى يصل المؤشر إلى صندوق النص، بأسلوب LunaHook. مخفي يعني مخفي فعلًا — تعود تلك البكسلات إلى اللعبة.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -443520,6 +448314,8 @@ extension on _StringsAr {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -443530,6 +448326,130 @@ extension on _StringsAr {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'صيغة الرسوم المتحركة لبطاقة اللعبة';
       case 'gal_mining_clip_format':
@@ -443763,6 +448683,8 @@ extension on _StringsAr {
         return 'تم حظر مكون المحرك: لا يمكن التحقق من المجموع الاختباري (ملف .sha256 من GitHub غير قابل للوصول أو مفقود أو غير مطابق). يرفض Fushi تثبيت كود حاقن غير موثق.';
       case 'game_home_subtitle':
         return 'مكتبة الألعاب ومراقبة الالتقاط';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'إغلاق النافذة العائمة';
       case 'game_hook_btn_copy':
@@ -443777,6 +448699,8 @@ extension on _StringsAr {
         return 'إعادة التقاط الصوت';
       case 'game_hook_btn_replay':
         return 'إعادة تشغيل صوت هذه الجملة';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'إبقاء في المقدمة';
       case 'game_hook_btn_transparency':
@@ -461456,18 +466380,30 @@ extension on _StringsDe {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -461487,14 +466423,34 @@ extension on _StringsDe {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -461511,8 +466467,18 @@ extension on _StringsDe {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -461573,8 +466539,65 @@ extension on _StringsDe {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -465086,6 +470109,8 @@ extension on _StringsDe {
         return 'Werkzeugleiste automatisch ausblenden';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Blendet die Leiste aus, bis der Zeiger den Textkasten erreicht – wie bei LunaHook. Ausgeblendet heißt wirklich weg: Diese Pixel gehören wieder dem Spiel.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -465100,6 +470125,8 @@ extension on _StringsDe {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -465110,6 +470137,130 @@ extension on _StringsDe {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Animationsformat für Spielkarten';
       case 'gal_mining_clip_format':
@@ -465344,6 +470495,8 @@ extension on _StringsDe {
         return 'Engine-Komponente blockiert: Die Prüfsumme konnte nicht verifiziert werden (die .sha256-Datei von GitHub ist nicht erreichbar, fehlt oder stimmt nicht überein). Fushi verweigert die Installation von nicht verifiziertem Injektorcode.';
       case 'game_home_subtitle':
         return 'Spielebibliothek und Aufnahmeüberwachung';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Overlay schließen';
       case 'game_hook_btn_copy':
@@ -465358,6 +470511,8 @@ extension on _StringsDe {
         return 'Stimme neu aufnehmen';
       case 'game_hook_btn_replay':
         return 'Stimme dieser Zeile erneut abspielen';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Immer im Vordergrund';
       case 'game_hook_btn_transparency':
@@ -483075,18 +488230,30 @@ extension on _StringsEs {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -483106,14 +488273,34 @@ extension on _StringsEs {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -483130,8 +488317,18 @@ extension on _StringsEs {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -483192,8 +488389,65 @@ extension on _StringsEs {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -486700,6 +491954,8 @@ extension on _StringsEs {
         return 'Ocultar la barra automáticamente';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Oculta la barra hasta que el puntero llega al cuadro de texto, al estilo de LunaHook. Oculta significa oculta de verdad: esos píxeles vuelven al juego.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -486714,6 +491970,8 @@ extension on _StringsEs {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -486724,6 +491982,130 @@ extension on _StringsEs {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Formato de animación de tarjeta de juego';
       case 'gal_mining_clip_format':
@@ -486958,6 +492340,8 @@ extension on _StringsEs {
         return 'Componente del motor bloqueado: no se pudo verificar su checksum (el archivo .sha256 de GitHub es inaccesible, falta, o no coincide). Fushi rechaza instalar código inyector sin verificar.';
       case 'game_home_subtitle':
         return 'Biblioteca de juegos y monitoreo de captura';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Cerrar la ventana flotante';
       case 'game_hook_btn_copy':
@@ -486972,6 +492356,8 @@ extension on _StringsEs {
         return 'Volver a capturar la voz';
       case 'game_hook_btn_replay':
         return 'Reproducir de nuevo la voz de esta línea';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Mantener encima';
       case 'game_hook_btn_transparency':
@@ -504686,18 +510072,30 @@ extension on _StringsFr {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -504717,14 +510115,34 @@ extension on _StringsFr {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -504741,8 +510159,18 @@ extension on _StringsFr {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -504803,8 +510231,65 @@ extension on _StringsFr {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -508319,6 +513804,8 @@ extension on _StringsFr {
         return 'Masquer la barre automatiquement';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Masque la barre jusqu\'à ce que le pointeur atteigne la zone de texte, à la manière de LunaHook. Masqué veut dire vraiment masqué : ces pixels reviennent au jeu.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -508333,6 +513820,8 @@ extension on _StringsFr {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -508343,6 +513832,130 @@ extension on _StringsFr {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Format d\'animation de carte de jeu';
       case 'gal_mining_clip_format':
@@ -508577,6 +514190,8 @@ extension on _StringsFr {
         return 'Composant moteur bloqué : sa somme de contrôle n\'a pas pu être vérifiée (le fichier .sha256 de GitHub est inaccessible, manquant ou ne correspond pas). Fushi refuse d\'installer du code d\'injection non vérifié.';
       case 'game_home_subtitle':
         return 'Ludothèque et surveillance de capture';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Fermer la superposition';
       case 'game_hook_btn_copy':
@@ -508591,6 +514206,8 @@ extension on _StringsFr {
         return 'Réenregistrer la voix';
       case 'game_hook_btn_replay':
         return 'Rejouer la voix de cette ligne';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Garder au premier plan';
       case 'game_hook_btn_transparency':
@@ -526297,18 +531914,30 @@ extension on _StringsId {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -526328,14 +531957,34 @@ extension on _StringsId {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -526352,8 +532001,18 @@ extension on _StringsId {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -526414,8 +532073,65 @@ extension on _StringsId {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -529919,6 +535635,8 @@ extension on _StringsId {
         return 'Sembunyikan bilah otomatis';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Sembunyikan bilah sampai penunjuk mencapai kotak teks, ala LunaHook. Tersembunyi artinya benar-benar hilang — piksel itu kembali ke game.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -529933,6 +535651,8 @@ extension on _StringsId {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -529943,6 +535663,130 @@ extension on _StringsId {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Format animasi kartu game';
       case 'gal_mining_clip_format':
@@ -530177,6 +536021,8 @@ extension on _StringsId {
         return 'Komponen mesin diblokir: checksum-nya tidak bisa diverifikasi (file .sha256 dari GitHub tidak bisa dijangkau, tidak ada, atau tidak cocok). Fushi menolak menginstal kode injektor yang tidak terverifikasi.';
       case 'game_home_subtitle':
         return 'Pustaka game dan pemantauan tangkapan';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Tutup overlay';
       case 'game_hook_btn_copy':
@@ -530191,6 +536037,8 @@ extension on _StringsId {
         return 'Rekam ulang suaranya';
       case 'game_hook_btn_replay':
         return 'Putar ulang suara baris ini';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Selalu di atas';
       case 'game_hook_btn_transparency':
@@ -547870,18 +553718,30 @@ extension on _StringsIt {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -547901,14 +553761,34 @@ extension on _StringsIt {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -547925,8 +553805,18 @@ extension on _StringsIt {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -547987,8 +553877,65 @@ extension on _StringsIt {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -551497,6 +557444,8 @@ extension on _StringsIt {
         return 'Nascondi la barra automaticamente';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Nasconde la barra finché il puntatore non raggiunge il riquadro del testo, in stile LunaHook. Nascosto significa davvero nascosto: quei pixel tornano al gioco.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -551511,6 +557460,8 @@ extension on _StringsIt {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -551521,6 +557472,130 @@ extension on _StringsIt {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Formato animazione carta gioco';
       case 'gal_mining_clip_format':
@@ -551755,6 +557830,8 @@ extension on _StringsIt {
         return 'Componente motore bloccato: il checksum non è stato verificato (il file .sha256 da GitHub è irraggiungibile, mancante o non corrisponde). Fushi rifiuta di installare codice iniettore non verificato.';
       case 'game_home_subtitle':
         return 'Libreria giochi e monitoraggio cattura';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Chiudi la finestra mobile';
       case 'game_hook_btn_copy':
@@ -551769,6 +557846,8 @@ extension on _StringsIt {
         return 'Ricattura la voce';
       case 'game_hook_btn_replay':
         return 'Riascolta la voce di questa battuta';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Mantieni in primo piano';
       case 'game_hook_btn_transparency':
@@ -569451,18 +575530,30 @@ extension on _StringsJa {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -569482,14 +575573,34 @@ extension on _StringsJa {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -569506,8 +575617,18 @@ extension on _StringsJa {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -569568,8 +575689,65 @@ extension on _StringsJa {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -573056,6 +579234,8 @@ extension on _StringsJa {
         return 'ツールバーを自動で隠す';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'ポインタが字幕枠に来るまでツールバーを隠します（LunaHook 方式）。隠すときは本当に消します——その分のピクセルはゲームに返ります。';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -573070,6 +579250,8 @@ extension on _StringsJa {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -573080,6 +579262,130 @@ extension on _StringsJa {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'ゲームカードのアニメーション形式';
       case 'gal_mining_clip_format':
@@ -573314,6 +579620,8 @@ extension on _StringsJa {
         return 'エンジンコンポーネントがブロックされました: チェックサムを検証できませんでした（GitHub の .sha256 ファイルにアクセスできない、存在しない、または一致しません）。Fushi は未検証のインジェクターコードのインストールを拒否します。';
       case 'game_home_subtitle':
         return 'ゲームライブラリとキャプチャ監視';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'オーバーレイを閉じる';
       case 'game_hook_btn_copy':
@@ -573328,6 +579636,8 @@ extension on _StringsJa {
         return '音声を録り直す';
       case 'game_hook_btn_replay':
         return 'この台詞の音声を再生';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return '常に最前面に表示';
       case 'game_hook_btn_transparency':
@@ -590918,18 +597228,30 @@ extension on _StringsKo {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -590949,14 +597271,34 @@ extension on _StringsKo {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -590973,8 +597315,18 @@ extension on _StringsKo {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -591035,8 +597387,65 @@ extension on _StringsKo {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -594529,6 +600938,8 @@ extension on _StringsKo {
         return '도구 모음 자동 숨김';
       case 'gal_hook_toolbar_auto_hide_hint':
         return '포인터가 자막 상자에 닿을 때까지 도구 모음을 숨깁니다(LunaHook 방식). 숨긴다는 건 정말로 사라진다는 뜻이라, 그 픽셀은 게임으로 돌아갑니다.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -594543,6 +600954,8 @@ extension on _StringsKo {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -594553,6 +600966,130 @@ extension on _StringsKo {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return '게임 카드 애니메이션 형식';
       case 'gal_mining_clip_format':
@@ -594786,6 +601323,8 @@ extension on _StringsKo {
         return '엔진 구성 요소 차단됨: 체크섬을 확인할 수 없습니다(GitHub의 .sha256 파일에 접근할 수 없거나, 누락되었거나, 일치하지 않습니다). Fushi는 확인되지 않은 인젝터 코드를 설치하지 않습니다.';
       case 'game_home_subtitle':
         return '게임 라이브러리 및 캡처 모니터링';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return '오버레이 닫기';
       case 'game_hook_btn_copy':
@@ -594800,6 +601339,8 @@ extension on _StringsKo {
         return '음성 다시 녹음';
       case 'game_hook_btn_replay':
         return '이 대사 음성 다시 재생';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return '항상 위에 표시';
       case 'game_hook_btn_transparency':
@@ -612426,18 +618967,30 @@ extension on _StringsNl {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -612457,14 +619010,34 @@ extension on _StringsNl {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -612481,8 +619054,18 @@ extension on _StringsNl {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -612543,8 +619126,65 @@ extension on _StringsNl {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -616053,6 +622693,8 @@ extension on _StringsNl {
         return 'Werkbalk automatisch verbergen';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Verbergt de werkbalk tot de aanwijzer het tekstvak bereikt, zoals LunaHook. Verborgen is echt verborgen — die pixels gaan terug naar het spel.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -616067,6 +622709,8 @@ extension on _StringsNl {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -616077,6 +622721,130 @@ extension on _StringsNl {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Gamekaart-animatieformaat';
       case 'gal_mining_clip_format':
@@ -616311,6 +623079,8 @@ extension on _StringsNl {
         return 'Enginecomponent geblokkeerd: de checksum kon niet worden geverifieerd (het .sha256-bestand van GitHub is onbereikbaar, ontbreekt of komt niet overeen). Fushi weigert niet-geverifieerde injectorcode te installeren.';
       case 'game_home_subtitle':
         return 'Spelbibliotheek en opnamemonitoring';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Overlay sluiten';
       case 'game_hook_btn_copy':
@@ -616325,6 +623095,8 @@ extension on _StringsNl {
         return 'Stem opnieuw opnemen';
       case 'game_hook_btn_replay':
         return 'Stem van deze regel opnieuw afspelen';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Altijd op voorgrond';
       case 'game_hook_btn_transparency':
@@ -634027,18 +640799,30 @@ extension on _StringsPtBr {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -634058,14 +640842,34 @@ extension on _StringsPtBr {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -634082,8 +640886,18 @@ extension on _StringsPtBr {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -634144,8 +640958,65 @@ extension on _StringsPtBr {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -637651,6 +644522,8 @@ extension on _StringsPtBr {
         return 'Ocultar a barra automaticamente';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Oculta a barra até o ponteiro chegar à caixa de legenda, no estilo do LunaHook. Oculto significa oculto de verdade — aqueles pixels voltam para o jogo.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -637665,6 +644538,8 @@ extension on _StringsPtBr {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -637675,6 +644550,130 @@ extension on _StringsPtBr {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Formato de animação do cartão de jogo';
       case 'gal_mining_clip_format':
@@ -637909,6 +644908,8 @@ extension on _StringsPtBr {
         return 'Componente do motor bloqueado: a verificação de checksum falhou (o arquivo .sha256 do GitHub está inacessível, ausente ou não corresponde). O Fushi se recusa a instalar código injetor não verificado.';
       case 'game_home_subtitle':
         return 'Biblioteca de jogos e monitoramento de captura';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Fechar a janela flutuante';
       case 'game_hook_btn_copy':
@@ -637923,6 +644924,8 @@ extension on _StringsPtBr {
         return 'Capturar a voz novamente';
       case 'game_hook_btn_replay':
         return 'Reproduzir novamente a voz desta fala';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Manter no topo';
       case 'game_hook_btn_transparency':
@@ -655621,18 +662624,30 @@ extension on _StringsRu {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -655652,14 +662667,34 @@ extension on _StringsRu {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -655676,8 +662711,18 @@ extension on _StringsRu {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -655738,8 +662783,65 @@ extension on _StringsRu {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -659249,6 +666351,8 @@ extension on _StringsRu {
         return 'Автоматически скрывать панель';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Скрывает панель, пока указатель не дойдёт до блока субтитров — как в LunaHook. Скрыто значит скрыто по-настоящему: эти пиксели возвращаются игре.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -659263,6 +666367,8 @@ extension on _StringsRu {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -659273,6 +666379,130 @@ extension on _StringsRu {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Формат анимации игровых карточек';
       case 'gal_mining_clip_format':
@@ -659507,6 +666737,8 @@ extension on _StringsRu {
         return 'Компонент движка заблокирован: не удалось проверить контрольную сумму (файл .sha256 с GitHub недоступен, отсутствует или не совпадает). Fushi не устанавливает непроверенный код инжектора.';
       case 'game_home_subtitle':
         return 'Библиотека игр и мониторинг захвата';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Закрыть оверлей';
       case 'game_hook_btn_copy':
@@ -659521,6 +666753,8 @@ extension on _StringsRu {
         return 'Перезаписать озвучку';
       case 'game_hook_btn_replay':
         return 'Воспроизвести озвучку этой реплики';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Поверх всех окон';
       case 'game_hook_btn_transparency':
@@ -677202,18 +684436,30 @@ extension on _StringsTh {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -677233,14 +684479,34 @@ extension on _StringsTh {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -677257,8 +684523,18 @@ extension on _StringsTh {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -677319,8 +684595,65 @@ extension on _StringsTh {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -680821,6 +688154,8 @@ extension on _StringsTh {
         return 'ซ่อนแถบเครื่องมืออัตโนมัติ';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'ซ่อนแถบเครื่องมือจนกว่าตัวชี้จะถึงกล่องคำบรรยาย แบบ LunaHook ซ่อนคือซ่อนจริง ๆ พิกเซลเหล่านั้นคืนให้เกม';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -680835,6 +688170,8 @@ extension on _StringsTh {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -680845,6 +688182,130 @@ extension on _StringsTh {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'รูปแบบภาพเคลื่อนไหวการ์ดเกม';
       case 'gal_mining_clip_format':
@@ -681079,6 +688540,8 @@ extension on _StringsTh {
         return 'ส่วนประกอบเอนจินถูกบล็อก: ไม่สามารถตรวจสอบ checksum ได้ (ไฟล์ .sha256 จาก GitHub ไม่สามารถเข้าถึงได้ ไม่พบ หรือไม่ตรงกัน) Fushi ปฏิเสธที่จะติดตั้งโค้ดตัวฉีดที่ไม่ผ่านการตรวจสอบ';
       case 'game_home_subtitle':
         return 'คลังเกมและการติดตามการจับข้อมูล';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'ปิดหน้าต่างลอย';
       case 'game_hook_btn_copy':
@@ -681093,6 +688556,8 @@ extension on _StringsTh {
         return 'บันทึกเสียงใหม่';
       case 'game_hook_btn_replay':
         return 'เล่นเสียงประโยคนี้ซ้ำ';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'ปักไว้บนสุด';
       case 'game_hook_btn_transparency':
@@ -698766,18 +706231,30 @@ extension on _StringsTr {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -698797,14 +706274,34 @@ extension on _StringsTr {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -698821,8 +706318,18 @@ extension on _StringsTr {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -698883,8 +706390,65 @@ extension on _StringsTr {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -702390,6 +709954,8 @@ extension on _StringsTr {
         return 'Araç çubuğunu otomatik gizle';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'İmleç altyazı kutusuna gelene kadar araç çubuğunu gizler, LunaHook tarzı. Gizli gerçekten gizli demek — o pikseller oyuna geri döner.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -702404,6 +709970,8 @@ extension on _StringsTr {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -702414,6 +709982,130 @@ extension on _StringsTr {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Oyun kartı animasyon formatı';
       case 'gal_mining_clip_format':
@@ -702648,6 +710340,8 @@ extension on _StringsTr {
         return 'Motor bileşeni engellendi: sağlama toplamı doğrulanamadı (GitHub\'daki .sha256 dosyası erişilemez, eksik veya eşleşmiyor). Fushi doğrulanmamış enjektör kodu yüklemeyi reddediyor.';
       case 'game_home_subtitle':
         return 'Oyun kütüphanesi ve yakalama izleme';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Yer paylaşımını kapat';
       case 'game_hook_btn_copy':
@@ -702662,6 +710356,8 @@ extension on _StringsTr {
         return 'Sesi yeniden yakala';
       case 'game_hook_btn_replay':
         return 'Bu satırın sesini yeniden oynat';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Üstte tut';
       case 'game_hook_btn_transparency':
@@ -720343,18 +728039,30 @@ extension on _StringsVi {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -720374,14 +728082,34 @@ extension on _StringsVi {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -720398,8 +728126,18 @@ extension on _StringsVi {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -720460,8 +728198,65 @@ extension on _StringsVi {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -723966,6 +731761,8 @@ extension on _StringsVi {
         return 'Tự ẩn thanh công cụ';
       case 'gal_hook_toolbar_auto_hide_hint':
         return 'Ẩn thanh công cụ cho tới khi con trỏ chạm vào khung phụ đề, kiểu LunaHook. Ẩn là ẩn thật — số điểm ảnh đó trả lại cho game.';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -723980,6 +731777,8 @@ extension on _StringsVi {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -723990,6 +731789,130 @@ extension on _StringsVi {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return 'Định dạng hoạt ảnh thẻ trò chơi';
       case 'gal_mining_clip_format':
@@ -724224,6 +732147,8 @@ extension on _StringsVi {
         return 'Thành phần engine bị chặn: không thể xác minh checksum (tệp .sha256 từ GitHub không thể truy cập, bị thiếu hoặc không khớp). Fushi từ chối cài đặt mã tiêm chưa được xác minh.';
       case 'game_home_subtitle':
         return 'Thư viện trò chơi và giám sát thu thập';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return 'Đóng cửa sổ nổi';
       case 'game_hook_btn_copy':
@@ -724238,6 +732163,8 @@ extension on _StringsVi {
         return 'Thu lại giọng nói';
       case 'game_hook_btn_replay':
         return 'Phát lại giọng của câu này';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return 'Luôn nổi trên cùng';
       case 'game_hook_btn_transparency':
@@ -741859,18 +749786,30 @@ extension on _StringsZhCn {
         return '声音描述';
       case 'audiobook_tts_param_caption_hint':
         return '可选。描述音色与语气，例如「落ち着いた低めの女性の声」。声音选 none 时就是凭描述设计一个新声音。';
+      case 'audiobook_tts_param_emotion':
+        return '情感';
       case 'audiobook_tts_param_endpoint':
         return '服务地址';
       case 'audiobook_tts_param_engine':
         return '语音引擎';
       case 'audiobook_tts_param_engine_default':
         return '系统默认引擎';
+      case 'audiobook_tts_param_executable':
+        return '程序路径';
+      case 'audiobook_tts_param_executable_pick':
+        return '选择程序';
+      case 'audiobook_tts_param_intonation':
+        return '抑扬';
       case 'audiobook_tts_param_invalid':
         return '填写的值无效';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori 工作台端口 7870，GPT-SoVITS 工作台 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return '官方 Irodori-TTS 服务默认端口 8088';
+      case 'audiobook_tts_param_narrator':
+        return '旁白角色';
+      case 'audiobook_tts_param_pitch':
+        return '音高';
       case 'audiobook_tts_param_prompt_lang':
         return '参考音频语言';
       case 'audiobook_tts_param_prompt_text':
@@ -741890,14 +749829,34 @@ extension on _StringsZhCn {
         return '选择音频文件';
       case 'audiobook_tts_param_region':
         return '区域';
+      case 'audiobook_tts_param_speaker':
+        return '角色 / 风格';
+      case 'audiobook_tts_param_speed':
+        return '语速';
       case 'audiobook_tts_param_text_lang':
         return '文本语言';
       case 'audiobook_tts_param_voice':
         return '声音';
       case 'audiobook_tts_param_voice_auto':
         return '自动（按文字语言挑选）';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return '可选，例如 happy=50,sad=0（各 0-100）。情感名随旁白角色不同。';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'voicepeak.exe 的路径（macOS 是 voicepeak.app/Contents/MacOS/voicepeak）';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return '可选，-300 到 300（默认 0）';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return '可选，50-200（默认 100）';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return '默认端口：VOICEVOX 50021、AivisSpeech 10101、SHAREVOX 50025。其它 VOICEVOX 兼容引擎（LMROID、ITVOICE 等）也能用，把地址改成它的即可。';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return '可选。留空用引擎默认值（语速、抑扬、音量 1.0，音高 0.0）';
+      case 'audiobook_tts_param_volume':
+        return '音量';
       case 'audiobook_tts_preparing':
         return '正在准备朗读…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return '微软 Azure';
       case 'audiobook_tts_provider_edge':
@@ -741914,8 +749873,18 @@ extension on _StringsZhCn {
         return 'Irodori-TTS（官方服务）';
       case 'audiobook_tts_provider_ms_translator':
         return '微软翻译';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return '系统语音';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return '付费软件；调用本机已安装的 VOICEPEAK 命令行';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return '免费的本机引擎（VOICEVOX 兼容接口）';
       case 'audiobook_tts_read_from_here':
         return '从当前位置朗读';
       case 'audiobook_tts_resume':
@@ -741976,8 +749945,61 @@ extension on _StringsZhCn {
         return '试听文本';
       case 'audiobook_tts_voice_use':
         return '用于朗读';
+      case 'audiobook_tts_voicepeak_detect':
+        return '查找已安装的 VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => '已找到 VOICEPEAK：${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return '本机没有找到 VOICEPEAK。它是付费软件，Fushi 不能代为下载：请在官网（voicepeak.jp）购买安装后回来点「查找已安装的 VOICEPEAK」，或手动选择 voicepeak.exe。';
       case 'audiobook_tts_voices_section':
         return '声音';
+      case 'audiobook_tts_voicevox_local_accel':
+        return '加速方式';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML（任意显卡）';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA 显卡（CUDA）';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) => '在本机一键部署 ${engine}';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) => '免费日语声音；从官方发布页下载约 ${size}';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return '接着选择角色与风格并试听';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => '删除本机 ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) => '这会停止服务并删除 ${path}。';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) => '本机还没有服务？一键在本机部署 ${engine}';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return '解压出的文件里没有可运行的引擎';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return '找不到能解开安装包的工具。Linux 请安装 unzip（VOICEVOX）或 p7zip（AivisSpeech）；Windows 请更新系统。';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return '官方没有提供本平台的安装包';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            '从 GitHub 下载官方 ${engine} 引擎 ${version}（约 ${size}）。朗读时自动启动，Fushi 退出时随之停止。';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return '请使用 1024-65535 之间的端口（7870、7871、8088、9880 除外）';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return '正在解压…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return '正在合并下载的分卷…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'AivisSpeech 的每个声音模型都有各自的许可。公开生成的音频前请先确认。';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'VOICEVOX 的每个角色都有各自的使用条款。公开生成的音频时，须标注「VOICEVOX:角色名」（例如 VOICEVOX:ずんだもん）。';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => '本机 ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine}（本机）';
       case 'audiobook_tts_waiting':
         return '正在合成…';
       case 'audiobookshelf_browse_choose_library':
@@ -745429,6 +753451,8 @@ extension on _StringsZhCn {
         return '自动隐藏功能栏';
       case 'gal_hook_toolbar_auto_hide_hint':
         return '平时把功能栏整条隐藏，鼠标移到台词框附近才现身（LunaHook 那样）。隐藏就是真隐藏，那块像素还给游戏。';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return '自动读';
       case 'gal_hook_toolbar_label_close':
         return '关闭';
       case 'gal_hook_toolbar_label_copy':
@@ -745443,6 +753467,8 @@ extension on _StringsZhCn {
         return '重录';
       case 'gal_hook_toolbar_label_replay':
         return '重播';
+      case 'gal_hook_toolbar_label_speak':
+        return '朗读';
       case 'gal_hook_toolbar_label_topmost':
         return '置顶';
       case 'gal_hook_toolbar_label_transparency':
@@ -745453,6 +753479,130 @@ extension on _StringsZhCn {
         return '工具条显示文字';
       case 'gal_hook_toolbar_labels_hint':
         return '在浮窗工具条每个按钮下方显示简短文字；浮窗太窄时只显示图标，悬停仍有提示';
+      case 'gal_line_tts_action_read':
+        return '用默认声音读';
+      case 'gal_line_tts_action_skip':
+        return '不读（跳过）';
+      case 'gal_line_tts_action_voice':
+        return '换一个声音读';
+      case 'gal_line_tts_add_fix':
+        return '添加语音修正';
+      case 'gal_line_tts_add_rule':
+        return '添加空白规则';
+      case 'gal_line_tts_auto':
+        return '自动朗读台词';
+      case 'gal_line_tts_auto_hint':
+        return '用 TTS 读出新台词，给没有配音的旁白 / 主角补声音；浮窗工具条上也能开关';
+      case 'gal_line_tts_auto_off':
+        return '已关闭自动朗读';
+      case 'gal_line_tts_auto_on':
+        return '已开启自动朗读';
+      case 'gal_line_tts_delete':
+        return '删除';
+      case 'gal_line_tts_fix_replacement':
+        return '替换为（可引用捕获组）';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => '语音修正 ${index}';
+      case 'gal_line_tts_match_contains':
+        return '台词包含';
+      case 'gal_line_tts_match_regex':
+        return '正则表达式';
+      case 'gal_line_tts_match_speaker':
+        return '人名是';
+      case 'gal_line_tts_match_starts_with':
+        return '台词以…开头';
+      case 'gal_line_tts_move_down':
+        return '下移';
+      case 'gal_line_tts_move_up':
+        return '上移';
+      case 'gal_line_tts_names':
+        return '名字';
+      case 'gal_line_tts_names_hint':
+        return '每行一个，或用逗号分隔';
+      case 'gal_line_tts_no_voice':
+        return '还没有可用的 TTS 声音，请先在「朗读声音」里添加';
+      case 'gal_line_tts_preset_protagonist':
+        return '照读主角台词';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return '主角通常没配音，但台词同样带括号。以这些名字开头的句子照读，自动排在跳过规则前面';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return '跳过带「」『』的台词';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return '多数游戏里有配音的对白带括号，旁白不带';
+      case 'gal_line_tts_preset_strip_brackets':
+        return '读之前去掉括号';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return '语音修正：去掉台词两端的「」『』（）';
+      case 'gal_line_tts_preset_voiced_cast':
+        return '有配音的角色';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return '人名是这些的句子不读。适合台词不带括号、但 Hook 文本里带人名的游戏';
+      case 'gal_line_tts_presets':
+        return '添加规则';
+      case 'gal_line_tts_rule_action':
+        return '命中后';
+      case 'gal_line_tts_rule_enabled':
+        return '启用';
+      case 'gal_line_tts_rule_match':
+        return '匹配方式';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => '规则 ${index}';
+      case 'gal_line_tts_rules':
+        return '朗读规则';
+      case 'gal_line_tts_rules_hint':
+        return '按人名 / 文本决定读不读、用哪个声音，以及读之前怎么修文本';
+      case 'gal_line_tts_rules_intro':
+        return '规则从上到下匹配，第一条命中的生效；命中规则时不再看是否抓到原声。浮窗上手动点「朗读」不受「跳过」规则限制。';
+      case 'gal_line_tts_scope':
+        return '朗读范围';
+      case 'gal_line_tts_scope_all':
+        return '全部句子';
+      case 'gal_line_tts_scope_hint':
+        return '仅无原声：抓到游戏原声的句子不读，不和角色抢话；抓不到语音的游戏会被当成无配音，用规则来区分';
+      case 'gal_line_tts_scope_unvoiced':
+        return '仅无原声的句子';
+      case 'gal_line_tts_section':
+        return '台词朗读（TTS）';
+      case 'gal_line_tts_speaker_pattern':
+        return '自定义人名正则';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return '可选。必须含命名组 (?<name>…)，可用 (?<text>…) 标出台词部分；填了就只用它，不再用内置格式';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return '正则表达式无效';
+      case 'gal_line_tts_speaker_section':
+        return '人名';
+      case 'gal_line_tts_strip_speaker':
+        return '不读人名';
+      case 'gal_line_tts_strip_speaker_hint':
+        return '识别【名】台词、名「台词」、名＋换行＋台词、名：台词';
+      case 'gal_line_tts_test_has_voice':
+        return '抓到游戏原声时';
+      case 'gal_line_tts_test_input':
+        return '示例台词';
+      case 'gal_line_tts_test_no_voice':
+        return '这句没有游戏原声时';
+      case 'gal_line_tts_test_play':
+        return '试听';
+      case 'gal_line_tts_test_read':
+        return '读';
+      case 'gal_line_tts_test_section':
+        return '试算';
+      case 'gal_line_tts_test_skip':
+        return '不读';
+      case 'gal_line_tts_test_speaker':
+        return '认出的人名';
+      case 'gal_line_tts_test_text':
+        return '送进 TTS 的文本';
+      case 'gal_line_tts_test_wait':
+        return '等待语音配对';
+      case 'gal_line_tts_voice':
+        return '声音';
+      case 'gal_line_tts_voice_follow':
+        return '跟随朗读声音';
+      case 'gal_line_tts_voice_follow_hint':
+        return '使用「朗读声音」里当前选中的声音';
+      case 'gal_line_tts_volume':
+        return 'TTS 音量';
       case 'gal_mining_animated_format':
         return '游戏制卡动图格式';
       case 'gal_mining_clip_format':
@@ -745686,6 +753836,8 @@ extension on _StringsZhCn {
         return '引擎组件已被拒绝安装：无法校验其完整性（GitHub 上的 .sha256 校验文件不可达、缺失或与下载内容不符）。为避免装入被篡改的注入器代码，本次安装已终止。';
       case 'game_home_subtitle':
         return '游戏库与捕获监控';
+      case 'game_hook_btn_auto_speak':
+        return '自动朗读新台词（TTS）';
       case 'game_hook_btn_close':
         return '关闭浮窗';
       case 'game_hook_btn_copy':
@@ -745700,6 +753852,8 @@ extension on _StringsZhCn {
         return '重新录制语音';
       case 'game_hook_btn_replay':
         return '重播本句语音';
+      case 'game_hook_btn_speak':
+        return '朗读这句（TTS）';
       case 'game_hook_btn_topmost':
         return '保持置顶';
       case 'game_hook_btn_transparency':
@@ -763168,18 +771322,30 @@ extension on _StringsZhHk {
         return 'Voice description';
       case 'audiobook_tts_param_caption_hint':
         return 'Optional. Describe the voice and delivery, e.g. a calm, low female voice. With the voice "none" this designs a new voice from the description.';
+      case 'audiobook_tts_param_emotion':
+        return 'Emotion';
       case 'audiobook_tts_param_endpoint':
         return 'Server URL';
       case 'audiobook_tts_param_engine':
         return 'Speech engine';
       case 'audiobook_tts_param_engine_default':
         return 'System default engine';
+      case 'audiobook_tts_param_executable':
+        return 'Program path';
+      case 'audiobook_tts_param_executable_pick':
+        return 'Choose the program';
+      case 'audiobook_tts_param_intonation':
+        return 'Intonation';
       case 'audiobook_tts_param_invalid':
         return 'This value is not valid';
       case 'audiobook_tts_param_irodori_endpoint_hint':
         return 'Irodori studio uses port 7870, the GPT-SoVITS studio 7871';
       case 'audiobook_tts_param_irodori_server_endpoint_hint':
         return 'The official Irodori-TTS server uses port 8088';
+      case 'audiobook_tts_param_narrator':
+        return 'Narrator';
+      case 'audiobook_tts_param_pitch':
+        return 'Pitch';
       case 'audiobook_tts_param_prompt_lang':
         return 'Reference audio language';
       case 'audiobook_tts_param_prompt_text':
@@ -763199,14 +771365,34 @@ extension on _StringsZhHk {
         return 'Choose an audio file';
       case 'audiobook_tts_param_region':
         return 'Region';
+      case 'audiobook_tts_param_speaker':
+        return 'Character / style';
+      case 'audiobook_tts_param_speed':
+        return 'Speed';
       case 'audiobook_tts_param_text_lang':
         return 'Text language';
       case 'audiobook_tts_param_voice':
         return 'Voice';
       case 'audiobook_tts_param_voice_auto':
         return 'Automatic (by the text\'s language)';
+      case 'audiobook_tts_param_voicepeak_emotion_hint':
+        return 'Optional, e.g. happy=50,sad=0 (each 0-100). The names depend on the narrator.';
+      case 'audiobook_tts_param_voicepeak_executable_hint':
+        return 'Path to voicepeak.exe (on macOS: voicepeak.app/Contents/MacOS/voicepeak)';
+      case 'audiobook_tts_param_voicepeak_pitch_hint':
+        return 'Optional, -300 to 300 (default 0)';
+      case 'audiobook_tts_param_voicepeak_speed_hint':
+        return 'Optional, 50-200 (default 100)';
+      case 'audiobook_tts_param_voicevox_endpoint_hint':
+        return 'Default ports: VOICEVOX 50021, AivisSpeech 10101, SHAREVOX 50025. Other VOICEVOX-compatible engines (LMROID, ITVOICE and so on) also work: enter their address here.';
+      case 'audiobook_tts_param_voicevox_scale_hint':
+        return 'Optional. Leave empty for the engine default (speed, intonation and volume 1.0, pitch 0.0)';
+      case 'audiobook_tts_param_volume':
+        return 'Volume';
       case 'audiobook_tts_preparing':
         return 'Preparing to read aloud…';
+      case 'audiobook_tts_provider_aivis_speech':
+        return 'AivisSpeech';
       case 'audiobook_tts_provider_azure':
         return 'Microsoft Azure';
       case 'audiobook_tts_provider_edge':
@@ -763223,8 +771409,18 @@ extension on _StringsZhHk {
         return 'Irodori-TTS (official server)';
       case 'audiobook_tts_provider_ms_translator':
         return 'Microsoft Translator';
+      case 'audiobook_tts_provider_sharevox':
+        return 'SHAREVOX';
       case 'audiobook_tts_provider_system':
         return 'System voice';
+      case 'audiobook_tts_provider_voicepeak':
+        return 'VOICEPEAK';
+      case 'audiobook_tts_provider_voicepeak_hint':
+        return 'Paid software; uses the installed VOICEPEAK command line';
+      case 'audiobook_tts_provider_voicevox':
+        return 'VOICEVOX';
+      case 'audiobook_tts_provider_voicevox_hint':
+        return 'Free local engine with a VOICEVOX-compatible API';
       case 'audiobook_tts_read_from_here':
         return 'Read aloud from here';
       case 'audiobook_tts_resume':
@@ -763285,8 +771481,65 @@ extension on _StringsZhHk {
         return 'Test sentence';
       case 'audiobook_tts_voice_use':
         return 'Use for reading aloud';
+      case 'audiobook_tts_voicepeak_detect':
+        return 'Find installed VOICEPEAK';
+      case 'audiobook_tts_voicepeak_found':
+        return ({required Object path}) => 'Found VOICEPEAK: ${path}';
+      case 'audiobook_tts_voicepeak_not_found':
+        return 'VOICEPEAK was not found on this computer. It is paid software that Fushi cannot download for you: buy and install it from the official site (voicepeak.jp), then come back and tap "Find installed VOICEPEAK", or choose voicepeak.exe yourself.';
       case 'audiobook_tts_voices_section':
         return 'Voices';
+      case 'audiobook_tts_voicevox_local_accel':
+        return 'Acceleration';
+      case 'audiobook_tts_voicevox_local_accel_cpu':
+        return 'CPU';
+      case 'audiobook_tts_voicevox_local_accel_directml':
+        return 'DirectML (any graphics card)';
+      case 'audiobook_tts_voicevox_local_accel_nvidia':
+        return 'NVIDIA graphics card (CUDA)';
+      case 'audiobook_tts_voicevox_local_add':
+        return ({required Object engine}) =>
+            'Set up ${engine} on this computer';
+      case 'audiobook_tts_voicevox_local_add_hint':
+        return ({required Object size}) =>
+            'Free Japanese voices; downloads about ${size} from the official release';
+      case 'audiobook_tts_voicevox_local_create_voice_hint':
+        return 'Then pick a character and style and play a test';
+      case 'audiobook_tts_voicevox_local_delete':
+        return ({required Object engine}) => 'Delete local ${engine}';
+      case 'audiobook_tts_voicevox_local_delete_confirm':
+        return ({required Object path}) =>
+            'This stops the service and deletes ${path}.';
+      case 'audiobook_tts_voicevox_local_editor_not_installed':
+        return ({required Object engine}) =>
+            'No local service yet? Set up ${engine} on this computer in one step';
+      case 'audiobook_tts_voicevox_local_failure_layout':
+        return 'The extracted files do not contain a runnable engine';
+      case 'audiobook_tts_voicevox_local_failure_no_extractor':
+        return 'No tool to unpack the package was found. On Linux install unzip (VOICEVOX) or p7zip (AivisSpeech); on Windows, update the system.';
+      case 'audiobook_tts_voicevox_local_failure_unsupported':
+        return 'There is no official package for this platform';
+      case 'audiobook_tts_voicevox_local_intro':
+        return ({
+          required Object engine,
+          required Object version,
+          required Object size,
+        }) =>
+            'Downloads the official ${engine} engine ${version} (about ${size}) from GitHub. It starts automatically when reading aloud and stops when Fushi exits.';
+      case 'audiobook_tts_voicevox_local_port_invalid':
+        return 'Use a port from 1024 to 65535, other than 7870, 7871, 8088 and 9880';
+      case 'audiobook_tts_voicevox_local_step_extracting':
+        return 'Extracting…';
+      case 'audiobook_tts_voicevox_local_step_joining':
+        return 'Joining the downloaded parts…';
+      case 'audiobook_tts_voicevox_local_terms_aivis':
+        return 'Each AivisSpeech voice model has its own license. Check it before publishing generated audio.';
+      case 'audiobook_tts_voicevox_local_terms_voicevox':
+        return 'Each VOICEVOX character has its own terms of use. When you publish generated audio, credit it as "VOICEVOX:character name" (for example VOICEVOX:ずんだもん).';
+      case 'audiobook_tts_voicevox_local_title':
+        return ({required Object engine}) => 'Local ${engine}';
+      case 'audiobook_tts_voicevox_local_voice_name':
+        return ({required Object engine}) => '${engine} (this computer)';
       case 'audiobook_tts_waiting':
         return 'Synthesizing…';
       case 'audiobookshelf_browse_choose_library':
@@ -766758,6 +775011,8 @@ extension on _StringsZhHk {
         return '自動隱藏功能欄';
       case 'gal_hook_toolbar_auto_hide_hint':
         return '指標移到字幕框才顯示功能欄（LunaHook 那種）。隱藏就是真的隱藏——那塊像素還給遊戲。';
+      case 'gal_hook_toolbar_label_auto_speak':
+        return 'Auto';
       case 'gal_hook_toolbar_label_close':
         return 'Close';
       case 'gal_hook_toolbar_label_copy':
@@ -766772,6 +775027,8 @@ extension on _StringsZhHk {
         return 'Re-record';
       case 'gal_hook_toolbar_label_replay':
         return 'Replay';
+      case 'gal_hook_toolbar_label_speak':
+        return 'Read';
       case 'gal_hook_toolbar_label_topmost':
         return 'On top';
       case 'gal_hook_toolbar_label_transparency':
@@ -766782,6 +775039,130 @@ extension on _StringsZhHk {
         return 'Show button labels';
       case 'gal_hook_toolbar_labels_hint':
         return 'Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow';
+      case 'gal_line_tts_action_read':
+        return 'Read with default voice';
+      case 'gal_line_tts_action_skip':
+        return 'Don\'t read';
+      case 'gal_line_tts_action_voice':
+        return 'Read with another voice';
+      case 'gal_line_tts_add_fix':
+        return 'Add a text fix';
+      case 'gal_line_tts_add_rule':
+        return 'Add an empty rule';
+      case 'gal_line_tts_auto':
+        return 'Auto-read lines';
+      case 'gal_line_tts_auto_hint':
+        return 'Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.';
+      case 'gal_line_tts_auto_off':
+        return 'Auto-read off';
+      case 'gal_line_tts_auto_on':
+        return 'Auto-read on';
+      case 'gal_line_tts_delete':
+        return 'Delete';
+      case 'gal_line_tts_fix_replacement':
+        return 'Replace with (capture groups can be referenced)';
+      case 'gal_line_tts_fix_title':
+        return ({required Object index}) => 'Text fix ${index}';
+      case 'gal_line_tts_match_contains':
+        return 'Line contains';
+      case 'gal_line_tts_match_regex':
+        return 'Regular expression';
+      case 'gal_line_tts_match_speaker':
+        return 'Speaker is';
+      case 'gal_line_tts_match_starts_with':
+        return 'Line starts with';
+      case 'gal_line_tts_move_down':
+        return 'Move down';
+      case 'gal_line_tts_move_up':
+        return 'Move up';
+      case 'gal_line_tts_names':
+        return 'Names';
+      case 'gal_line_tts_names_hint':
+        return 'One per line, or separated by commas';
+      case 'gal_line_tts_no_voice':
+        return 'No TTS voice is set up. Add one in Read-aloud voices.';
+      case 'gal_line_tts_preset_protagonist':
+        return 'Read the protagonist\'s lines';
+      case 'gal_line_tts_preset_protagonist_hint':
+        return 'The protagonist usually has no voice but still speaks in brackets. Lines starting with these names are read; added above the skip rules.';
+      case 'gal_line_tts_preset_skip_bracketed':
+        return 'Skip lines in 「」/『』';
+      case 'gal_line_tts_preset_skip_bracketed_hint':
+        return 'In most games voiced dialogue is in brackets and narration isn\'t';
+      case 'gal_line_tts_preset_strip_brackets':
+        return 'Remove brackets before reading';
+      case 'gal_line_tts_preset_strip_brackets_hint':
+        return 'Text fix: removes the outer 「」『』() so they aren\'t read';
+      case 'gal_line_tts_preset_voiced_cast':
+        return 'Voiced characters';
+      case 'gal_line_tts_preset_voiced_cast_hint':
+        return 'Skip lines whose speaker is one of these names. Useful when lines have no brackets but the hooked text includes the name.';
+      case 'gal_line_tts_presets':
+        return 'Add rules';
+      case 'gal_line_tts_rule_action':
+        return 'Then';
+      case 'gal_line_tts_rule_enabled':
+        return 'Enabled';
+      case 'gal_line_tts_rule_match':
+        return 'Match';
+      case 'gal_line_tts_rule_title':
+        return ({required Object index}) => 'Rule ${index}';
+      case 'gal_line_tts_rules':
+        return 'Read-aloud rules';
+      case 'gal_line_tts_rules_hint':
+        return 'Decide by speaker name or text whether to read a line and with which voice; clean up the text before reading';
+      case 'gal_line_tts_rules_intro':
+        return 'Rules are checked top to bottom and the first match wins. A matching rule overrides the voice-capture check. The read button on the overlay always reads, even lines a rule skips.';
+      case 'gal_line_tts_scope':
+        return 'What to read';
+      case 'gal_line_tts_scope_all':
+        return 'All lines';
+      case 'gal_line_tts_scope_hint':
+        return 'Lines without game voice: lines whose original voice Fushi captured are skipped, so TTS never talks over a character. Games whose voice can\'t be captured are treated as unvoiced; use rules for those.';
+      case 'gal_line_tts_scope_unvoiced':
+        return 'Lines without game voice';
+      case 'gal_line_tts_section':
+        return 'Line read-aloud (TTS)';
+      case 'gal_line_tts_speaker_pattern':
+        return 'Custom speaker regex';
+      case 'gal_line_tts_speaker_pattern_hint':
+        return 'Optional. Must contain a named group (?<name>…); (?<text>…) marks the spoken part. When set, it replaces the built-in formats.';
+      case 'gal_line_tts_speaker_pattern_invalid':
+        return 'Invalid regular expression';
+      case 'gal_line_tts_speaker_section':
+        return 'Speaker name';
+      case 'gal_line_tts_strip_speaker':
+        return 'Don\'t read the speaker name';
+      case 'gal_line_tts_strip_speaker_hint':
+        return 'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
+      case 'gal_line_tts_test_has_voice':
+        return 'If the game voice was captured';
+      case 'gal_line_tts_test_input':
+        return 'Sample line';
+      case 'gal_line_tts_test_no_voice':
+        return 'If the game has no voice for it';
+      case 'gal_line_tts_test_play':
+        return 'Preview';
+      case 'gal_line_tts_test_read':
+        return 'Read';
+      case 'gal_line_tts_test_section':
+        return 'Try it';
+      case 'gal_line_tts_test_skip':
+        return 'Skip';
+      case 'gal_line_tts_test_speaker':
+        return 'Recognized speaker';
+      case 'gal_line_tts_test_text':
+        return 'Text sent to TTS';
+      case 'gal_line_tts_test_wait':
+        return 'Wait for voice capture';
+      case 'gal_line_tts_voice':
+        return 'Voice';
+      case 'gal_line_tts_voice_follow':
+        return 'Same as read-aloud voice';
+      case 'gal_line_tts_voice_follow_hint':
+        return 'Use the voice currently selected in Read-aloud voices';
+      case 'gal_line_tts_volume':
+        return 'TTS volume';
       case 'gal_mining_animated_format':
         return '遊戲製卡動圖格式';
       case 'gal_mining_clip_format':
@@ -767015,6 +775396,8 @@ extension on _StringsZhHk {
         return '引擎組件已被拒絕安裝：無法校驗其完整性（GitHub 上的 .sha256 校驗檔案不可達、缺失或與下載內容不符）。為避免裝入被篡改的注入器代碼，本次安裝已終止。';
       case 'game_home_subtitle':
         return '遊戲庫與捕獲監控';
+      case 'game_hook_btn_auto_speak':
+        return 'Auto-read new lines (TTS)';
       case 'game_hook_btn_close':
         return '關閉浮窗';
       case 'game_hook_btn_copy':
@@ -767029,6 +775412,8 @@ extension on _StringsZhHk {
         return '重新錄製語音';
       case 'game_hook_btn_replay':
         return '重播本句語音';
+      case 'game_hook_btn_speak':
+        return 'Read this line aloud (TTS)';
       case 'game_hook_btn_topmost':
         return '保持置頂';
       case 'game_hook_btn_transparency':
