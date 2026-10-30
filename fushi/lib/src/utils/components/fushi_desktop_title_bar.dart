@@ -815,10 +815,12 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
 }
 
 /// 沉浸页（[FushiTitleBarColorScope] 上报了配色的阅读 / 播放页）的标题行：平时
-/// 透明且不吃指针，页面内容照常铺到窗口顶端、顶端那一截照常可点；指针碰到窗口
-/// 最顶边（[_kImmersiveRevealEdge]）才淡入，之后在整条标题行高度的带子里都保持
-/// 显示，离开带子淡出——从下面移到带子里的正文上不浮出，顶部几行字照常点击查词
-/// （用户 2026-10-31「这样小说又不能点击查词了」）。键盘焦点走进窗口按钮（Tab 遍历）时也
+/// 透明且不吃指针，页面内容照常铺到窗口顶端、顶端那一截照常可点；指针在窗口
+/// 最顶边（[_kImmersiveRevealEdge]）**停留** [_kImmersiveRevealDwell] 才淡入，之后
+/// 在整条标题行高度的带子里都保持显示，离开带子淡出。从下面移到带子里的正文上、
+/// 手滑划出窗口顶边再划回来都只是路过，不浮出——浮出的标题行会盖住顶部几行字的
+/// 点击查词（用户 2026-10-31「这样小说又不能点击查词了」「手滑划出去再回来就有
+/// 交通灯然后导致点不到了」）。键盘焦点走进窗口按钮（Tab 遍历）时也
 /// 保持显示，看不见的按钮不能被聚焦后还看不见。触摸 / 触控笔没有悬停：在带子里
 /// 按下即浮出，下一次在带子外按下才隐去（纯触屏的 Windows 用户也要够得着窗口按钮）。
 ///
@@ -840,14 +842,34 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   bool _focused = false;
   bool _touchRevealed = false;
 
+  /// 指针停在最顶边时的浮出倒计时；离开顶边即取消。
+  Timer? _revealDwell;
+
   void _setHovered(bool value) {
     if (_hovered != value) setState(() => _hovered = value);
   }
 
-  /// 进入 / 移动：只有碰到最顶边才算悬停浮出；已浮出时在带子里移动保持显示。
+  void _cancelRevealDwell() {
+    _revealDwell?.cancel();
+    _revealDwell = null;
+  }
+
+  /// 进入 / 移动：在最顶边停留够久才算悬停浮出；已浮出时在带子里移动保持显示。
   void _onHover(PointerEvent event) {
     if (_hovered) return;
-    if (event.localPosition.dy <= _kImmersiveRevealEdge) _setHovered(true);
+    if (event.localPosition.dy > _kImmersiveRevealEdge) {
+      _cancelRevealDwell();
+      return;
+    }
+    _revealDwell ??= Timer(_kImmersiveRevealDwell, () {
+      _revealDwell = null;
+      if (mounted) _setHovered(true);
+    });
+  }
+
+  void _onExit(PointerExitEvent event) {
+    _cancelRevealDwell();
+    _setHovered(false);
   }
 
   static bool _isHoverless(PointerDeviceKind kind) =>
@@ -895,6 +917,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
 
   @override
   void dispose() {
+    _cancelRevealDwell();
     FushiDesktopTitleBar._setImmersiveCaptionConcealed(false);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onGlobalPointer);
     WindowCaptionChannel.captionMaxButtonHovered.removeListener(
@@ -911,6 +934,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     super.didUpdateWidget(oldWidget);
     // 换页（离开沉浸页再回来）从隐藏态开始，不沿用上一页残留的悬停。
     if (!widget.enabled && oldWidget.enabled) {
+      _cancelRevealDwell();
       _hovered = false;
       _touchRevealed = false;
     }
@@ -943,7 +967,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
       hitTestBehavior: HitTestBehavior.translucent,
       onEnter: _onHover,
       onHover: _onHover,
-      onExit: (_) => _setHovered(false),
+      onExit: _onExit,
       child: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: _onBandPointerDown,
@@ -971,6 +995,9 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
 
 /// 沉浸页标题行的悬停触发边：指针离窗口顶端不超过这么多逻辑像素才浮出。
 const double _kImmersiveRevealEdge = 8;
+
+/// 沉浸页标题行的悬停意图时长：指针要在顶边停这么久才浮出（划过不算）。
+const Duration _kImmersiveRevealDwell = Duration(milliseconds: 400);
 
 /// 窗口按钮的字形（自绘，笔画粗细与圆角统一；最大化 / 还原之间做形变）。
 enum _CaptionGlyph { minimize, maximize, close }
