@@ -94,6 +94,39 @@ void main() {
     });
   });
 
+  group('alignServerRubySpans（请求方原文振假名对齐到清洗后的查询串）', () {
+    const FushiRubySpan busy = FushiRubySpan(start: 1, end: 2, reading: 'せわ');
+
+    test('句首标点剥掉 ⇒ 区间平移', () {
+      expect(
+        alignServerRubySpans(raw: '「忙しい」', normalized: normalizeServerSearchTerm('「忙しい」'), spans: <FushiRubySpan>[busy]),
+        <FushiRubySpan>[const FushiRubySpan(start: 0, end: 1, reading: 'せわ')],
+      );
+    });
+
+    test('无清洗 ⇒ 原样；越界 / 基字对不上 ⇒ 丢弃', () {
+      const FushiRubySpan same = FushiRubySpan(start: 0, end: 1, reading: 'せわ');
+      expect(alignServerRubySpans(raw: '忙しい', normalized: '忙しい', spans: <FushiRubySpan>[same]), <FushiRubySpan>[same]);
+      expect(
+        alignServerRubySpans(
+          raw: '忙しい',
+          normalized: '忙しい',
+          spans: <FushiRubySpan>[const FushiRubySpan(start: 2, end: 9, reading: 'x')],
+        ),
+        isEmpty,
+      );
+      // emoji（代理对）换成一个空格后长度变了，后面的基字对不上 ⇒ 宁可不用。
+      expect(
+        alignServerRubySpans(
+          raw: '😀忙',
+          normalized: normalizeServerSearchTerm('😀忙'),
+          spans: <FushiRubySpan>[const FushiRubySpan(start: 2, end: 3, reading: 'せわ')],
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('原生库 / 变形表定位', () {
     test('FUSHI_DICTS_LIB 优先于 bundle 布局', () {
       expect(

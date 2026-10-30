@@ -420,7 +420,14 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 消除泛白。默认 false = 原 in-app 行为，桌面 global-lookup 走独立 `.global-lookup` 路径，
   /// 二者均不受影响（零回归）。
   final bool transparentDocumentBackground;
-  final void Function(String text, Rect localRect)? onTextSelected;
+  /// [rubySpans]：被点文本上来源自带的振假名（释义里的 ruby，`textSelected` 第 3 参），
+  /// 以 [text] 为坐标系；右键菜单「查词」等没有 ruby 的路径传空表。
+  final void Function(
+    String text,
+    Rect localRect,
+    List<FushiRubySpan> rubySpans,
+  )?
+  onTextSelected;
   final void Function(String query, Rect localRect)? onLinkClick;
   final VoidCallback? onTapOutside;
   final Future<MinePopupResult> Function(Map<String, String> fields)?
@@ -2449,7 +2456,11 @@ JSON.stringify((function(){
               // 改用穿透 iframe 的 [_selectedTextAcrossFrames]（否则「查词」项无效）。
               final String text = await _selectedTextAcrossFrames();
               if (text.isNotEmpty) {
-                widget.onTextSelected?.call(text, Rect.zero);
+                widget.onTextSelected?.call(
+                  text,
+                  Rect.zero,
+                  const <FushiRubySpan>[],
+                );
               }
             },
           ),
@@ -3459,7 +3470,13 @@ JSON.stringify((function(){
                         (r['height'] as num?)?.toDouble() ?? 1,
                       );
                     }
-                    widget.onTextSelected?.call(text, localRect);
+                    widget.onTextSelected?.call(
+                      text,
+                      localRect,
+                      FushiRubySpan.listFromWire(
+                        args.length > 2 ? args[2] : null,
+                      ),
+                    );
                   }
                 }
                 return null;
@@ -3890,7 +3907,7 @@ JSON.stringify((function(){
     }
     switch (action) {
       case _PopupContextMenuAction.search:
-        widget.onTextSelected?.call(text, Rect.zero);
+        widget.onTextSelected?.call(text, Rect.zero, const <FushiRubySpan>[]);
       case _PopupContextMenuAction.copy:
         // BUG-402 范式：桌面 WebView2 合成模式下原生复制键转发受限，自己把选区文本写
         // 系统剪贴板。

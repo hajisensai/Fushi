@@ -260,7 +260,7 @@ class _ResizeTestHostState extends State<_ResizeTestHost> {
           result: null,
           webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
           onDismiss: () {},
-          onTextSelected: (String text, Rect localRect) {},
+          onTextSelected: (String text, Rect localRect, List<Object?> _) {},
           onLinkClick: (String query, Rect localRect) {},
           onMineEntry: (Map<String, String> fields) async =>
               const MinePopupResult(),

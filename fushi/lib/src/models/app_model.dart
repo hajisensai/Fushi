@@ -554,6 +554,31 @@ String buildSearchCacheKey({
   return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
 }
 
+/// 把阅读器传来的原文振假名区间（以清洗前的 [raw] 为坐标系）对齐到 [normalizeSearchTerm]
+/// 之后的 [normalized]：减去句首被剥掉的标点长度，丢掉越界 / 被截断 / 清洗后基字对不上
+/// 的段（emoji 换空格等改变长度的清洗会让后续坐标失真，宁可不用也不错配）。
+@visibleForTesting
+List<FushiRubySpan> alignRubySpansToSearchTerm({
+  required String raw,
+  required String normalized,
+  required List<FushiRubySpan> spans,
+  required RegExp punctuationRegex,
+}) {
+  if (spans.isEmpty) return spans;
+  final int lead = leadingPunctuationStripUnits(raw, punctuationRegex);
+  return <FushiRubySpan>[
+    for (final FushiRubySpan span in shiftRubySpans(
+      spans,
+      leadingStrip: lead,
+      length: normalized.length,
+    ))
+      if (span.end + lead <= raw.length &&
+          raw.substring(span.start + lead, span.end + lead) ==
+              normalized.substring(span.start, span.end))
+        span,
+  ];
+}
+
 /// [AppModel.searchDictionary] 本机部分的结局。
 class _LocalDictionaryLookup {
   const _LocalDictionaryLookup(DictionarySearchResult this.result)
@@ -8455,6 +8480,31 @@ class AppModel with ChangeNotifier {
     allowRemoteLookup: allowRemoteLookup,
   );
 
+  /// [searchDictionary] 加上原文自带的振假名（[rubySpans]，以 [searchTerm] 为坐标系）：
+  /// 同匹配长度的候选里，读音与原文 ruby 吻合的排前面（`<ruby>忙<rt>せわ</rt></ruby>しい`
+  /// 先出「せわしい」而不是高频的「いそがしい」）。只用来源自带的读音，不推断读音。
+  ///
+  /// 单独一个入口而不是给 [searchDictionary] 加参数：后者是测试替身普遍覆写的面。
+  /// [rubySpans] 为空时与 [searchDictionary] 完全等价。远端查词（remote-first）把对齐后的
+  /// 区间随请求带给对端（`ruby` 字段），认识它的对端同样按读音排序。
+  Future<DictionarySearchResult> searchDictionaryWithRuby({
+    required String searchTerm,
+    required List<FushiRubySpan> rubySpans,
+    bool searchWithWildcards = false,
+    int? overrideMaximumTerms,
+  }) => rubySpans.isEmpty
+      ? searchDictionary(
+          searchTerm: searchTerm,
+          searchWithWildcards: searchWithWildcards,
+          overrideMaximumTerms: overrideMaximumTerms,
+        )
+      : _searchDictionaryInLanguage(
+          searchTerm: searchTerm,
+          searchWithWildcards: searchWithWildcards,
+          overrideMaximumTerms: overrideMaximumTerms,
+          rubySpans: rubySpans,
+        );
+
   /// [searchDictionary] 的本体，多一个 [lookupLanguage]：替对端查词时传对端声明的查词
   /// 语言（见 [effectiveLookupLanguage]）；本机查词为 null，按本机当前查词语言。
   ///
@@ -8467,12 +8517,20 @@ class AppModel with ChangeNotifier {
     bool useCache = true,
     bool allowRemoteLookup = true,
     String? lookupLanguage,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
+    final String rawSearchTerm = searchTerm;
     searchTerm = normalizeSearchTerm(
       searchTerm,
       emojiRegex: _emojiRegex,
       punctuationRegex: _punctuationRegex,
       loneSurrogateRegex: _loneSurrogateRegex,
+    );
+    rubySpans = alignRubySpansToSearchTerm(
+      raw: rawSearchTerm,
+      normalized: searchTerm,
+      spans: rubySpans,
+      punctuationRegex: _punctuationRegex,
     );
 
     if (searchTerm.trim().isEmpty) {
@@ -8490,6 +8548,7 @@ class AppModel with ChangeNotifier {
             searchWithWildcards: searchWithWildcards,
             maximumTerms: effectiveMaxTerms,
             lookupLanguage: lookupLanguage,
+            rubySpans: rubySpans,
           )
         : null;
     final Future<_LocalDictionaryLookup> local = _searchLocalDictionary(
@@ -8497,6 +8556,7 @@ class AppModel with ChangeNotifier {
       effectiveMaxTerms: effectiveMaxTerms,
       useCache: useCache,
       lookupLanguage: lookupLanguage,
+      rubySpans: rubySpans,
     );
     if (remote != null) {
       final DictionarySearchResult? remoteResult = await remote;
@@ -8522,6 +8582,7 @@ class AppModel with ChangeNotifier {
             searchWithWildcards: searchWithWildcards,
             maximumTerms: effectiveMaxTerms,
             lookupLanguage: lookupLanguage,
+            rubySpans: rubySpans,
           );
       if (remoteResult != null) {
         return remoteResult;
@@ -8550,16 +8611,21 @@ class AppModel with ChangeNotifier {
     required int effectiveMaxTerms,
     required bool useCache,
     String? lookupLanguage,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
     // 旧键格式守卫漂移。
     final bool simpToTrad = lookupChineseSimpToTradFor(lookupLanguage);
-    final String cacheKey = buildSearchCacheKey(
-      term: searchTerm,
-      maxTerms: effectiveMaxTerms,
-      maxResults: effectiveMaxTerms,
-      chineseSimpToTrad: simpToTrad,
-    );
+    // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
+    // 键与此前逐字相同）。
+    final String cacheKey =
+        buildSearchCacheKey(
+          term: searchTerm,
+          maxTerms: effectiveMaxTerms,
+          maxResults: effectiveMaxTerms,
+          chineseSimpToTrad: simpToTrad,
+        ) +
+        rubySpansCacheSuffix(rubySpans);
     final DictionarySearchResult? cached = dictRepo.getCachedSearch(cacheKey);
     if (useCache && cached != null) {
       return _LocalDictionaryLookup(cached);
@@ -8582,6 +8648,7 @@ class AppModel with ChangeNotifier {
             dictionaryOrder: filters.termDictionaryOrder,
             ffiCacheMaxBytes: dictRepo.ffiLookupCacheBudgetBytes,
             chineseSimpToTrad: simpToTrad,
+            rubySpans: rubySpans,
           ),
         );
     // 后台关停（disposeInstance）时还没开始的请求以 superseded 结束：没有结果，也
@@ -8638,6 +8705,7 @@ class AppModel with ChangeNotifier {
     required bool searchWithWildcards,
     required int maximumTerms,
     String? lookupLanguage,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     if (!remoteLookupEnabled) return null;
     // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
@@ -8663,6 +8731,8 @@ class AppModel with ChangeNotifier {
             wildcards: searchWithWildcards,
             maximumTerms: maximumTerms,
             language: effectiveLookupLanguage(requested: lookupLanguage),
+            // 原文振假名（已对齐到清洗后的 searchTerm）；空时不发字段。
+            rubySpans: rubySpans,
           );
       // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
       _remoteDictionaryUnreachableUntil = null;
@@ -11780,6 +11850,7 @@ class _AppModelRemoteLookupService
         FushiRemoteAudioListService,
         FushiRemoteTimedPopupLookupService,
         FushiRemoteLanguageLookupService,
+        FushiRemoteRubyLookupService,
         FushiRemoteMiningService,
         FushiRemoteSourceNoteService,
         FushiRemoteHistoryService {
@@ -12337,18 +12408,36 @@ class _AppModelRemoteLookupService
     language: language,
   );
 
+  @override
+  Future<DictionarySearchResult?> searchDictionaryWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+  }) => _searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    language: language,
+    rubySpans: rubySpans,
+  );
+
   /// [language]：请求方声明的查词语言；null = 旧请求，按本机当前查词语言。
+  /// [rubySpans]：请求方原文自带的振假名（以 [term] 为坐标系）；对齐与 ruby 缓存键由
+  /// [AppModel._searchDictionaryInLanguage] 负责。
   Future<DictionarySearchResult?> _searchDictionary({
     required String term,
     required bool wildcards,
     required int maximumTerms,
     String? language,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
     // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
     // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
     // 不带语言的旧请求仍走公开的 [AppModel.searchDictionary]（行为与此前逐字相同）。
-    final DictionarySearchResult source = language == null
+    final DictionarySearchResult source = language == null && rubySpans.isEmpty
         ? await _appModel.searchDictionary(
             searchTerm: term,
             searchWithWildcards: wildcards,
@@ -12363,6 +12452,7 @@ class _AppModelRemoteLookupService
             useCache: true,
             allowRemoteLookup: false,
             lookupLanguage: language,
+            rubySpans: rubySpans,
           );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
@@ -12419,13 +12509,31 @@ class _AppModelRemoteLookupService
     language: language,
   );
 
-  /// [language] 同 [_searchDictionary]。
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+    RemoteDictionaryPopupTiming? timing,
+  }) => _searchDictionaryPopup(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    timing: timing,
+    language: language,
+    rubySpans: rubySpans,
+  );
+
+  /// [language] / [rubySpans] 同 [_searchDictionary]。
   Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
     required String term,
     required bool wildcards,
     required int maximumTerms,
     RemoteDictionaryPopupTiming? timing,
     String? language,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     timing?.reset();
     final Stopwatch? serviceWatch = timing == null
@@ -12447,18 +12555,29 @@ class _AppModelRemoteLookupService
         punctuationRegex: AppModel._punctuationRegex,
         loneSurrogateRegex: AppModel._loneSurrogateRegex,
       );
+      // 原文振假名与 AppModel._searchDictionaryInLanguage 同一套对齐（剥句首标点平移、
+      // 清洗后基字对不上的段丢弃）。
+      final List<FushiRubySpan> alignedRuby = alignRubySpansToSearchTerm(
+        raw: term,
+        normalized: searchTerm,
+        spans: rubySpans,
+        punctuationRegex: AppModel._punctuationRegex,
+      );
       if (timing != null) {
         timing.normalizeMicros = finishPhase(normalizeWatch);
       }
       if (searchTerm.trim().isEmpty) return null;
 
       final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(language);
-      final String searchCacheKey = buildSearchCacheKey(
-        term: searchTerm,
-        maxTerms: maximumTerms,
-        maxResults: maximumTerms,
-        chineseSimpToTrad: simpToTrad,
-      );
+      // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）。
+      final String searchCacheKey =
+          buildSearchCacheKey(
+            term: searchTerm,
+            maxTerms: maximumTerms,
+            maxResults: maximumTerms,
+            chineseSimpToTrad: simpToTrad,
+          ) +
+          rubySpansCacheSuffix(alignedRuby);
       final Stopwatch? popupCacheWatch = startPhase();
       final DictionaryPopupCacheEntry? cachedPopup = _appModel.dictRepo
           .getCachedPopupSearch(searchCacheKey);
@@ -12511,6 +12630,7 @@ class _AppModelRemoteLookupService
               dictionaryOrder: filters.termDictionaryOrder,
               ffiCacheMaxBytes: _appModel.dictRepo.ffiLookupCacheBudgetBytes,
               chineseSimpToTrad: simpToTrad,
+              rubySpans: alignedRuby,
             ),
           );
       if (timing != null && outcome != null) {

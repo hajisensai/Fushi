@@ -1033,6 +1033,7 @@ class GlobalLookupController {
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final GlobalLookupRoute inherited = GlobalLookupChannel.currentRoute;
     final GlobalLookupRoute route = inherited.source == 'galCard'
@@ -1048,6 +1049,7 @@ class GlobalLookupController {
         autoRead: autoRead,
         miningHandler: miningHandler,
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
+        rubySpans: rubySpans,
       ),
     );
   }
@@ -1060,6 +1062,7 @@ class GlobalLookupController {
     required bool autoRead,
     required OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -1090,6 +1093,12 @@ class GlobalLookupController {
       autoRead: autoRead,
       miningHandler: miningHandler,
       consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
+      // [rubySpans] 以 [text] 为坐标系：跟着 trim 掉的句首空白平移到 [term]。
+      rubySpans: shiftRubySpans(
+        rubySpans,
+        leadingStrip: text.length - text.trimLeft().length,
+        length: term.length,
+      ),
     );
   }
 
@@ -1157,6 +1166,7 @@ class GlobalLookupController {
     required bool autoRead,
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1193,9 +1203,11 @@ class GlobalLookupController {
       // is host-global and is intentionally NOT reset here.
       _resetGeometryHandshakeForLookup();
 
-      final DictionarySearchResult result = await model.searchDictionary(
+      // 原文自带振假名（texthooker 行的 ruby 等）随查词带进引擎；查询串是 [text] 原样，
+      // AppModel 清洗查询串时会把区间对齐（alignRubySpansToSearchTerm）。
+      final DictionarySearchResult result = await model.searchDictionaryWithRuby(
         searchTerm: text,
-        searchWithWildcards: false,
+        rubySpans: rubySpans,
       );
       if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');

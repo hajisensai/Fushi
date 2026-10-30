@@ -174,7 +174,8 @@ var fetch = function (input, init) {
 // ── content.js 的宿主适配口 ─────────────────────────────────────────────────
 var __fushiExtLookupMatched = {};
 var __fushiHostAdapter = {
-  // req: {term, sentence, rect:{x,y,width,height}|null, fromHover, fromSidePanel}
+  // req: {term, sentence, rect:{x,y,width,height}|null, fromHover, fromSidePanel,
+  //       ruby:[{s,e,r}]|null（term 上的原文振假名）}
   lookup: function (req, onMatched) {
     var id = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
     __fushiExtLookupMatched = {};
@@ -185,6 +186,7 @@ var __fushiHostAdapter = {
       sentence: String(req && req.sentence || ''),
       rect: req && req.rect ? req.rect : null,
       fromHover: !!(req && req.fromHover),
+      ruby: req && Array.isArray(req.ruby) && req.ruby.length ? req.ruby : null,
     });
     return id;
   },

@@ -509,12 +509,17 @@ mixin DictionaryPageMixin {
   /// [AppModel.searchDictionary]（含它自己的远端优先分支），行为与从前一致；手机字幕
   /// 遥控器覆写成「只问钉住的那台电脑」，嵌套查词 / 原地跳转 / 加载更多随之同源。
   @protected
+  ///
+  /// [rubySpans]：[term] 上来源自带的振假名（取词处的 `<ruby>` / 结构化 ruby），引擎据此
+  /// 让读音吻合的同长度候选排前；空 = 与不带 ruby 的查词完全等价。
   Future<DictionarySearchResult> searchPopupDictionary({
     required String term,
     required int maximumTerms,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) =>
-      mixinAppModel.searchDictionary(
+      mixinAppModel.searchDictionaryWithRuby(
         searchTerm: term,
+        rubySpans: rubySpans,
         searchWithWildcards: true,
         overrideMaximumTerms: maximumTerms,
       );
@@ -980,7 +985,12 @@ mixin DictionaryPageMixin {
     required int index,
     required Size screen,
     required DictionaryPopupController controller,
-    required Future<int> Function(String text, Rect selectionRect) onPush,
+    required Future<int> Function(
+      String text,
+      Rect selectionRect,
+      List<FushiRubySpan> rubySpans,
+    )
+    onPush,
     required void Function(int index) onPop,
     // 词头 / 链接 / 汉字点击原地跳转时是否自动朗读首词条（视频页传 true，与其嵌套
     // 查词的 autoRead 同口径；其余宿主默认 false）。
@@ -1015,7 +1025,12 @@ mixin DictionaryPageMixin {
     required int index,
     required Size screen,
     required DictionaryPopupController controller,
-    required Future<int> Function(String text, Rect selectionRect) onPush,
+    required Future<int> Function(
+      String text,
+      Rect selectionRect,
+      List<FushiRubySpan> rubySpans,
+    )
+    onPush,
     required void Function(int index) onPop,
     required bool autoReadOnNavigate,
     required Widget Function(Widget child)? wrapContent,
@@ -1202,7 +1217,7 @@ mixin DictionaryPageMixin {
             onScrolledToBottom: entry.allLoaded
                 ? null
                 : () => loadMoreForEntry(entry: entry, controller: controller),
-            onTextSelected: (text, localRect) async {
+            onTextSelected: (text, localRect, rubySpans) async {
               final Rect childRect = localRect == Rect.zero
                   ? entry.selectionRect
                   : popupWordScreenRect(
@@ -1216,7 +1231,7 @@ mixin DictionaryPageMixin {
               // — the mixin family video/首页/texthooker only truncate+onPush before,
               // so the source word was left unmarked). onPush returns the matched
               // char count (0 = no entries -> no highlight, preserving prior look).
-              final int count = await onPush(text, childRect);
+              final int count = await onPush(text, childRect, rubySpans);
               if (count > 0) {
                 final Rect? wordRect = await entry.webViewKey.currentState
                     ?.highlightSelection(count);
@@ -1370,9 +1385,16 @@ mixin DictionaryPageMixin {
     bool autoRead = false,
     bool reuseWarmSlot = false,
     bool revealWhileSearching = false,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return 0;
+    // [rubySpans] 以 [query] 为坐标系：跟着去掉的句首空白平移。
+    final List<FushiRubySpan> trimmedRuby = shiftRubySpans(
+      rubySpans,
+      leadingStrip: query.length - query.trimLeft().length,
+      length: trimmed.length,
+    );
     // 诊断（2026-09-22，用户：查词为什么卡）：一次查词从这里开始计时，直到弹窗真翻
     // 可见（或被兜底强制翻可见）为止。各阶段的毫秒数是区分「FFI 慢 / WebView 冷建慢
     // / 注入慢 / JS 渲染慢」的唯一依据——此前整条链路一个时间戳都没有。诊断关闭时
@@ -1424,6 +1446,7 @@ mixin DictionaryPageMixin {
       result = await searchPopupDictionary(
         term: trimmed,
         maximumTerms: maxTerms,
+        rubySpans: trimmedRuby,
       );
       // 词典查询（三级缓存 → FFI）到此为止。小内存模式把 popupJson 缓存砍到 2MB、
       // ffiLookup 砍到 8MB，重复查词的命中率随之下降、这一段会更常真跑 FFI——所以条目

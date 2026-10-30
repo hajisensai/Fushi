@@ -391,6 +391,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     int? overrideMaximumTerms,
     bool deferDisplay = false,
     LookupOrigin origin = LookupOrigin.explicit,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
@@ -414,11 +415,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         _isSearchingNotifier.value = true;
       }
 
-      final dictionaryResult = await appModel.searchDictionary(
-        searchTerm: searchTerm,
-        searchWithWildcards: false,
-        overrideMaximumTerms: overrideMaximumTerms,
-      );
+      // 原文自带振假名（取词处的 ruby）时让读音吻合的同长度候选排前；没有就走原入口。
+      final dictionaryResult = rubySpans.isEmpty
+          ? await appModel.searchDictionary(
+              searchTerm: searchTerm,
+              searchWithWildcards: false,
+              overrideMaximumTerms: overrideMaximumTerms,
+            )
+          : await appModel.searchDictionaryWithRuby(
+              searchTerm: searchTerm,
+              rubySpans: rubySpans,
+              overrideMaximumTerms: overrideMaximumTerms,
+            );
       trace?.mark(
         'search',
         detail: 'entries=${dictionaryResult.entries.length} '
@@ -1166,7 +1174,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           dictionaryFontSize: appModel.dictionaryFontSize,
         ),
         overlayWidget: isTop ? buildDictionaryLoading() : null,
-        onTextSelected: (text, localRect) async {
+        onTextSelected: (text, localRect, rubySpans) async {
           final childRect = localRect == Rect.zero
               ? item.selectionRect
               : popupWordScreenRect(
@@ -1180,6 +1188,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             searchTerm: text,
             selectionRect: childRect,
             origin: LookupOrigin.nested,
+            rubySpans: rubySpans,
           );
           if (count > 0) {
             final int generation = activeLookupGeneration;

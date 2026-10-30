@@ -2074,6 +2074,9 @@ updateLive: function(patch) {
                     await searchDictionaryResult(
                       searchTerm: text,
                       selectionRect: rect,
+                      rubySpans: sel != null && sel.text == text
+                          ? sel.rubySpans
+                          : const <FushiRubySpan>[],
                     );
                     if (mounted) _checkFavoriteStatus();
                   },

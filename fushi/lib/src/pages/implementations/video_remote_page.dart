@@ -1266,6 +1266,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<DictionarySearchResult> searchPopupDictionary({
     required String term,
     required int maximumTerms,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final DictionarySearchResult? found;
     try {
@@ -1273,6 +1274,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         term: term,
         wildcards: true,
         maximumTerms: maximumTerms,
+        // 字幕原文自带的振假名（以 term 为坐标系）一并交给电脑，电脑按读音排同长度候选。
+        rubySpans: rubySpans,
         // 不带 `language`：被查的字幕在电脑上播放，查词语言归电脑（电脑视频页按字幕
         // 语言登记查词来源语言）。遥控端本机的查词语言与这次查词无关。
       );
@@ -1702,11 +1705,13 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         screen: screen,
         controller: _popup,
         // 嵌套查词共用同一个电脑端上下文：只压子层，不再 lookupBegin。
-        onPush: (String text, Rect rect) => pushNestedPopup(
-          query: text,
-          selectionRect: rect,
-          controller: _popup,
-        ),
+        onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
+            pushNestedPopup(
+              query: text,
+              selectionRect: rect,
+              controller: _popup,
+              rubySpans: rubySpans,
+            ),
         onPop: _popAt,
         autoReadOnNavigate: true,
       );
