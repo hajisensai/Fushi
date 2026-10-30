@@ -191,6 +191,8 @@ void main() {
   });
 
   test('analyze needs the lock and takes only the fatal-* switches', () {
+    // The coordinator asks hello before preparing anything for analyze.
+    expect('${shim('hello').stdout}', contains('analyze=yes'));
     refused('analyze 1');
     expect(shim('lock 1 $_runA').exitCode, 0);
     refused('analyze 1 --write=lib/x.dart');

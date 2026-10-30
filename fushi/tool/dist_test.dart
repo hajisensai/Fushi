@@ -731,6 +731,11 @@ Future<int> _analyzeOffMachine(
   required List<String> options,
 }) async {
   for (final DistWorker w in workers) {
+    final String? blocker = await w.analyzeBlocker();
+    if (blocker != null) {
+      stdout.writeln('[${w.name}] skipped: $blocker');
+      continue;
+    }
     final IOSink prepLog = File(
       '${out.path}/prepare.${w.name}.log',
     ).openWrite();
