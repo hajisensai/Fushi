@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176341 (10373 per locale)
+/// Strings: 176358 (10374 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -10235,6 +10235,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       '${n} cards were already reviewed on another device and could not be undone';
   String get srs_browse_undone => 'Undone';
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   String get srs_card_appearance_color_app => 'Follow app theme';
   String get srs_card_appearance_color_custom => 'Custom accent';
   String get srs_card_appearance_compact_phone =>
@@ -32059,6 +32061,9 @@ class _StringsAr extends _StringsEn {
   String get srs_browse_undone => 'Undone';
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -57495,6 +57500,9 @@ class _StringsDe extends _StringsEn {
   String get srs_browse_undone => 'Undone';
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -83053,6 +83061,9 @@ class _StringsEs extends _StringsEn {
   String get srs_browse_undone => 'Undone';
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -108700,6 +108711,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -134109,6 +134123,9 @@ class _StringsId extends _StringsEn {
   String get srs_browse_undone => 'Undone';
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -159561,6 +159578,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -184302,6 +184322,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -208777,6 +208800,9 @@ class _StringsKo extends _StringsEn {
   String get srs_browse_undone => 'Undone';
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -233960,6 +233986,9 @@ class _StringsNl extends _StringsEn {
   String get srs_browse_undone => 'Undone';
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -259444,6 +259473,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -284904,6 +284936,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -310115,6 +310150,9 @@ class _StringsTh extends _StringsEn {
   String get srs_browse_undone => 'Undone';
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -335393,6 +335431,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -360665,6 +360706,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -384491,6 +384535,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_browse_unsuspended => '已取消暂停';
   @override
+  String get srs_card_appearance_blur_translation => '翻译模糊，点按显示';
+  @override
   String get srs_card_appearance_color_app => '跟随 app 主题';
   @override
   String get srs_card_appearance_color_custom => '自定义强调色';
@@ -408015,6 +408061,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -430354,6 +430403,8 @@ extension on _StringsEn {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -451904,6 +451955,8 @@ extension on _StringsAr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -473510,6 +473563,8 @@ extension on _StringsDe {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -495120,6 +495175,8 @@ extension on _StringsEs {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -516741,6 +516798,8 @@ extension on _StringsFr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -538322,6 +538381,8 @@ extension on _StringsId {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -559912,6 +559973,8 @@ extension on _StringsIt {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -581436,6 +581499,8 @@ extension on _StringsJa {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -602909,6 +602974,8 @@ extension on _StringsKo {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -624472,6 +624539,8 @@ extension on _StringsNl {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -646066,6 +646135,8 @@ extension on _StringsPtBr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -667664,6 +667735,8 @@ extension on _StringsRu {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -689222,6 +689295,8 @@ extension on _StringsTh {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -710798,6 +710873,8 @@ extension on _StringsTr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -732369,6 +732446,8 @@ extension on _StringsVi {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -753764,6 +753843,8 @@ extension on _StringsZhCn {
         return '已撤销';
       case 'srs_browse_unsuspended':
         return '已取消暂停';
+      case 'srs_card_appearance_blur_translation':
+        return '翻译模糊，点按显示';
       case 'srs_card_appearance_color_app':
         return '跟随 app 主题';
       case 'srs_card_appearance_color_custom':
@@ -775128,6 +775209,8 @@ extension on _StringsZhHk {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
