@@ -205,9 +205,9 @@ pub(crate) fn review(id: &str, card: &str, at: i64, rating: i64, rtype: &str) ->
 }
 
 const T0: i64 = 1_700_000_000_000;
-const DAY: i64 = 86_400_000;
+pub(crate) const DAY: i64 = 86_400_000;
 
-fn projection(d: &Device) -> Vec<Vec<String>> {
+pub(crate) fn projection(d: &Device) -> Vec<Vec<String>> {
     let mut out = d.rows("SELECT id, json FROM srs_field_edits ORDER BY id");
     out.extend(d.rows("SELECT id, json FROM srs_review_logs ORDER BY id"));
     out.extend(d.rows("SELECT id, payload_json FROM srs_entities ORDER BY id"));
@@ -1455,8 +1455,11 @@ fn digest_is_recomputed_only_when_due() {
     assert!(a.core.sync2_digest_due(P, T0 + ten_min + 3, Some(ten_min)).unwrap().get("digest").is_some());
 }
 
-fn log_json(d: &Device, id: &str) -> Value {
-    serde_json::from_str(&d.rows(&format!("SELECT json FROM srs_review_logs WHERE id = '{id}'"))[1][0]).unwrap()
+/// 日志投影行的原文（配置快照引用展开后，snapshots.rs）。
+pub(crate) fn log_json(d: &Device, id: &str) -> Value {
+    let raw = d.rows(&format!("SELECT json FROM srs_review_logs WHERE id = '{id}'"))[1][0].clone();
+    let w = d.core.writer().unwrap();
+    serde_json::from_str(&super::snapshots::expand_text(&w, raw).unwrap()).unwrap()
 }
 
 /// 改牌组配置只影响之后的复习（设计 §4.6）：已发生的复习按它自己记下的配置快照重放，结果一字不变，也不触发

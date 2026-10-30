@@ -157,6 +157,35 @@ void main() {
     expect(await profileCount(local), 1);
   });
 
+  test('备份里作答日志的配置快照是引用（srs.db v16）：并回本机后原文仍在', () async {
+    final (String uid, String noteId) = await seedBackup('日语', '雪');
+    final SrsDbStore b = await store(backupSrs, uid, 'devB');
+    final String cardId = (await b.cardsOfNote(noteId)).single.id;
+    await b.answer(cardId, 3);
+    Future<String> rawLog(SrsStorage st) async => (await st.db
+            .customSelect(
+              "SELECT json FROM srs_review_logs WHERE card_id = ? AND kind = 'review'",
+              variables: <Variable<Object>>[Variable<String>(cardId)],
+            )
+            .getSingle())
+        .read<String>('json');
+    // 备份库里存的是引用，不是几百字节的原文。
+    expect(rawLog(backupSrs), completion(matches(RegExp(r'"sc":"[0-9a-f]{32}"'))));
+    final int localId = await insertProfile(local, '另一个名字');
+    await local.adoptProfileUid(localId, uid);
+    await merge();
+    // 本机也按引用存，且引用的原文在本机快照表里（内核展开得到，评分预览照常）。
+    final String raw = await rawLog(localSrs);
+    final String hash = RegExp(r'"sc":"([0-9a-f]{32})"').firstMatch(raw)!.group(1)!;
+    final QueryRow body = await localSrs.db
+        .customSelect(
+          'SELECT body FROM sync2_snapshots WHERE hash = ?',
+          variables: <Variable<Object>>[Variable<String>(hash)],
+        )
+        .getSingle();
+    expect(body.read<String>('body'), contains('"ret"'));
+  });
+
   test('同名、无用户笔记、未发布 → 采用备份 uid，旧 uid 的 SRS 行清掉', () async {
     final (String uid, String noteId) = await seedBackup('日语', '雪');
     final int localId = await insertProfile(local, '日语');

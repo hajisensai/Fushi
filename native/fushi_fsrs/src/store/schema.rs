@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 16;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -182,7 +182,6 @@ CREATE TABLE IF NOT EXISTS srs_cards_cache (
 CREATE INDEX IF NOT EXISTS idx_srs_entities_profile_kind ON srs_entities (profile_uid, kind);
 CREATE INDEX IF NOT EXISTS idx_srs_field_edits_entity ON srs_field_edits (entity_kind, entity_id);
 CREATE INDEX IF NOT EXISTS idx_srs_review_logs_card ON srs_review_logs (card_id);
-CREATE INDEX IF NOT EXISTS idx_srs_review_logs_profile_time ON srs_review_logs (profile_uid, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_srs_event_local_outbox ON srs_event_local (profile_uid, outbox_seq);
 CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_term ON srs_notes_cache (profile_uid, term_key);
 CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_note ON srs_cards_cache (note_id);
@@ -294,6 +293,15 @@ CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_anki_id ON srs_cards_cache (profi
 /// 按「列在不在」判断，可重放。
 const V15_NOTES: (&str, &str) = ("dupe_norm", "ALTER TABLE srs_notes_cache ADD COLUMN dupe_norm TEXT NULL;");
 const V15_INDEX: &str = "CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_dupe ON srs_notes_cache (profile_uid, dupe_norm)      WHERE deleted_at IS NULL;";
+
+/// V16：去掉两条整表复制级的冗余索引（2026-10-30 磁盘占用，10 万卡库合计约 120 MB）。
+/// - `idx_sync2_ent_ops_what (profile, kind, entity, what)`：表是 WITHOUT ROWID、主键 (profile, kind, entity, device, seq)，
+///   这条索引的每一行就是整行换个序——体积与表本身相同。所有查询都带 (profile, kind, entity) 主键前缀，`what` 在
+///   一个实体的十几行里过滤；按 `what` 跨实体扫的（标签寄存器重建、时间线）本来就是整个 profile 扫一遍。
+/// - `idx_srs_review_logs_profile_time (profile, occurred_at)`：`idx_srs_review_logs_profile_kind_time (profile, kind,
+///   occurred_at, card_id, review_type)` 以它为前缀之外只多一个低基数的 `kind`；读日志的查询都按种类取（计数上下文、
+///   统计走 `srs_stat_reviews`），按 profile 的全扫用另一条索引的 profile 前缀同样能走。
+const V16_DROP: &str = "DROP INDEX IF EXISTS idx_sync2_ent_ops_what; DROP INDEX IF EXISTS idx_srs_review_logs_profile_time;";
 
 fn has_column(tx: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
     tx.query_row(
@@ -466,6 +474,14 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             tx.execute_batch(V15_NOTES.1).map_err(|e| e.to_string())?;
         }
         tx.execute_batch(V15_INDEX).map_err(|e| e.to_string())?;
+    }
+    if current < 16 {
+        // V16：磁盘占用（[V16_DROP]、store/sync2/snapshots.rs）。先换摘要触发器（按快照引用展开后算），再把存量行改成
+        // 引用形态——改写前后展开结果逐字相同，触发器的 WHEN 不成立，桶不动。每一步都可重放。
+        tx.execute_batch(V16_DROP).map_err(|e| e.to_string())?;
+        tx.execute_batch(super::sync2::snapshots::V16).map_err(|e| e.to_string())?;
+        super::sync2::digest::install(&tx)?;
+        super::sync2::snapshots::migrate(&tx)?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
