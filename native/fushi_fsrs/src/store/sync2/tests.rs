@@ -1455,11 +1455,8 @@ fn digest_is_recomputed_only_when_due() {
     assert!(a.core.sync2_digest_due(P, T0 + ten_min + 3, Some(ten_min)).unwrap().get("digest").is_some());
 }
 
-/// 日志投影行的原文（配置快照引用展开后，snapshots.rs）。
 pub(crate) fn log_json(d: &Device, id: &str) -> Value {
-    let raw = d.rows(&format!("SELECT json FROM srs_review_logs WHERE id = '{id}'"))[1][0].clone();
-    let w = d.core.writer().unwrap();
-    serde_json::from_str(&super::snapshots::expand_text(&w, raw).unwrap()).unwrap()
+    serde_json::from_str(&d.rows(&format!("SELECT json FROM srs_review_logs WHERE id = '{id}'"))[1][0]).unwrap()
 }
 
 /// 改牌组配置只影响之后的复习（设计 §4.6）：已发生的复习按它自己记下的配置快照重放，结果一字不变，也不触发

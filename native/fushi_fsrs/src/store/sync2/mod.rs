@@ -832,8 +832,7 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         .exists([&lid])
         .map_err(sql)?;
     if !exists {
-        let mut row = log_row(profile, op, l);
-        snapshots::compact_row(conn, &mut row)?;
+        let row = log_row(profile, op, l);
         conn.prepare_cached(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -937,7 +936,7 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
         let mut q = stmt.query([c]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;
-            let json: String = snapshots::expand_text(conn, r.get(1).map_err(sql)?)?;
+            let json: String = r.get(1).map_err(sql)?;
             let st: Option<i64> = r.get(2).map_err(sql)?;
             let code: Option<i64> = r.get(3).map_err(sql)?;
             let arg: Option<i64> = r.get(4).map_err(sql)?;
@@ -977,10 +976,9 @@ pub(crate) fn replay_cards(conn: &Connection, cards: &BTreeSet<String>) -> Resul
         let out = replay::replay(&input)?;
         for (k, new) in out.rows.iter().enumerate() {
             if let Some(json) = new {
-                let stored = snapshots::compact_text(conn, json)?;
                 conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = ?1")
                     .map_err(sql)?
-                    .execute(params![rows[k].0, stored.as_deref().unwrap_or(json)])
+                    .execute(params![rows[k].0, json])
                     .map_err(sql)?;
                 changed.insert(rows[k].4.clone());
             }
@@ -1136,7 +1134,6 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
                 .optional()
                 .map_err(sql)?;
             let Some((json, st, note)) = row else { return Ok(None) };
-            let json = snapshots::expand_text(c, json)?;
             let x: Value = serde_json::from_str(&json).map_err(|e| format!("bad review log: {e}"))?;
             let hlc = x["hlc"].as_str().map(str::to_owned);
             // 旧日志不带配置快照（`sc`）：重放按作者结果照抄，迁移不改任何卡的到期日。
@@ -1290,11 +1287,6 @@ impl SrsCore {
                             tree = Some(config::DeckTree::load(c, profile)?);
                         }
                         stamp_config(c, tree.as_ref().expect("tree just loaded"), &mut l)?;
-                        Body::Log(l)
-                    }
-                    // 外来日志是从投影读出来的（Dart 备份 / profile 合并）：快照引用换回原文。
-                    Body::Log(mut l) if stamped => {
-                        snapshots::expand_extra(c, &mut l.extra)?;
                         Body::Log(l)
                     }
                     other => {
