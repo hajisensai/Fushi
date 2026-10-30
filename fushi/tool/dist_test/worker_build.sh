@@ -117,12 +117,13 @@ case "$need" in
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
         -property installationPath 2>/dev/null)" ] ||
       lack "Visual Studio with the C++ desktop workload"
-    # CMake reaches each plugin through ephemeral/.plugin_symlinks. The
-    # Flutter tool makes directory symlinks there, which on wight-win
-    # (2026-10-30) no native program on the worker account could follow, so
-    # every build died in CMake (Git Bash could: it resolves links itself).
-    # plugin_junctions.dart puts junctions there instead; make one here and
-    # go through it with cmd, as CMake would.
+    # CMake reaches each plugin through a link in ephemeral/.plugin_symlinks
+    # (junctions, see plugin_junctions.dart). On wight-win (2026-10-30) no
+    # native program in the worker's ssh session could go through a symlink
+    # or a junction; Git Bash could, since it resolves links itself. Every
+    # build then died in CMake with 18 "not an existing directory" errors.
+    # Make a junction here and go through it with cmd, as CMake would: a
+    # machine that cannot is missing a capability, not building red.
     probe="$state/junction-probe"
     cmd.exe //c rmdir "$(cygpath -w "$probe")" > /dev/null 2>&1
     mkdir -p "$state/junction-probe-target" &&

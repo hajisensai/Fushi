@@ -245,6 +245,7 @@ worker 必须跑**和本机完全一致**的代码，包括没提交的改动。
 3. 推送：每台 worker 有一个裸仓 `~/fushi-dist.git`，`git push <worker> <sha>:refs/dist/<runId>`。增量推送，平时只传几十 KB；首次用 `git bundle` 离线带过去或让 worker 直接从 GitHub clone（Mac 经代理拉大增量会断，见 CLAUDE.local.md，首次走局域网推）。
 4. worker 常驻 checkout `~/fushi-dist/work`：`git checkout --detach --force <sha>` + `git clean -fdx -e .dart_tool -e build -e native/*/prebuilt`，保留缓存。跑完删 `refs/dist/<runId>`，裸仓定期 `gc`。
    - **每次 push 同时强推 HEAD 到常驻的 `refs/dist/base`**（`distPushRefspecs`，2026-10-30）：receive-pack 只公布 ref、不公布 batch 用的 detached HEAD，跑完又删了 `refs/dist/<runId>`，于是下一次 push 找不到共同历史、把整个仓库历史重发一遍——实测 wight-win 一次 push 596 秒，比 analyze 本身还慢。`refs/dist/base` 跨运行保留，push 只传增量；`finish` 只删运行自己的 ref，旧 shim 不用重装。测试 `dist_snapshot_test.dart` 按发送端 `Total N` 计数（接收端会把小包解包并静默丢掉已有对象，数对象数看不出来）。prepare 日志每步带耗时（`== push (exit 0, 596s)`），慢在哪一步直接可见。
+   - **Windows 编译检查的插件链接**（2026-10-30）：CMake 经 `windows/flutter/ephemeral/.plugin_symlinks` 下的链接找每个插件。wight-win 上 worker 的 ssh 会话里，**原生程序穿不过任何重解析点**——flutter 建的目录符号链接、手建的 junction 都不行（Git Bash 自己解析链接所以看得到；`cmd dir` 报找不到；CMake 报 18 个插件目录不存在）。这是机器环境问题，远端查不到更深，需机器主人在该账户下排查（安全软件过滤驱动、sshd 登录令牌等）。处理：`worker_build.sh` 构建前建一个 junction 再用 cmd 穿过它，不通就以 78（`toolchain:`）退出——换机或回本机，不当红构建，也不白编一遍再本机复核。探测通过后跑 `plugin_junctions.dart`，按 `.flutter-plugins-dependencies` 把每个 Windows 插件重建成 junction：flutter 只在依赖文件变化时才重建链接，指向别的 pub cache 的旧链接会一直留着；目录符号链接还要开发者模式 / 特权，junction 不要。旧链接用 `rmdir` 删（只删链接、不碰目标）。测试 `dist_plugin_junctions_test.dart`（仅 Windows）。prepare 的 `ready` 行带脚本自身耗时：wight-win 上脚本 5 秒，其余约 60 秒是 shim 端 checkout / clean。
 
 ## 2. worker 环境
 

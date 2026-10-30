@@ -3,12 +3,14 @@
 // `flutter build windows` makes directory symlinks there.
 //   dart fushi/tool/dist_test/plugin_junctions.dart <app dir>
 //
-// Why (wight-win, 2026-10-30): the worker account could make directory
-// symlinks but no native program could follow them, so CMake found none of
-// the plugins. The symlink evaluation policy does not apply to junctions,
-// and making one needs no privilege. The Flutter tool keeps a link that is
-// already there, so the build goes on with these. Plain dart:io and
-// dart:convert: this runs before anything else is set up.
+// Why: the Flutter tool only remakes these links when
+// .flutter-plugins-dependencies changes, so a link left pointing at another
+// pub cache stays; and a directory symlink needs Developer Mode or the
+// symlink privilege on the worker account, a junction nothing. The Flutter
+// tool keeps a link that is already there, so the build goes on with these.
+// worker_build.sh first checks that native programs can go through a
+// junction at all (on wight-win, 2026-10-30, they could not). Plain dart:io
+// and dart:convert: this runs before anything else is set up.
 import 'dart:convert';
 import 'dart:io';
 
