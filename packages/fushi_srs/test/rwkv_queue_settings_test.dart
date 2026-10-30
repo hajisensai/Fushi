@@ -3,13 +3,13 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('缺省 / 非 Map：上游默认（最少 0、间隔 5 次 / 30 秒）', () {
+  test('缺省 / 非 Map：上游默认（最少 0、间隔 5 次 / 30 秒、忽略每日复习上限）', () {
     for (final Object? v in <Object?>[null, 'x', 3]) {
       final SrsRwkvQueueSettings s = SrsRwkvQueueSettings.fromValue(v);
       expect(s.minReviewsPerDay, 0);
       expect(s.repeatMinReviews, 5);
       expect(s.repeatMinSeconds, 30);
-      expect(s.ignoreReviewLimit, isFalse);
+      expect(s.ignoreReviewLimit, isTrue);
     }
   });
 
