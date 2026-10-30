@@ -214,7 +214,7 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
         .optional()
         .map_err(sql)?;
     let others: Vec<String> = conn
-        .prepare_cached("SELECT id FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'tags' AND id != ?2")
+        .prepare_cached("SELECT srs_idt(id) AS id FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'tags' AND id != ?2")
         .map_err(sql)?
         .query_map(params![note, id], |r| r.get(0))
         .map_err(sql)?
@@ -502,7 +502,7 @@ pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, enti
     // 投影行：对应的操作（sync2_edit_ops）在清除之后的留下；其余（含没有操作映射的合成标签行）删掉。
     let gone: Vec<(String, Option<Vec<u8>>, Option<i64>)> = conn
         .prepare_cached(
-            "SELECT f.id, m.device, m.seq FROM srs_field_edits f LEFT JOIN sync2_edit_ops m ON m.edit_id = f.id \
+            "SELECT srs_idt(f.id) AS id, m.device, m.seq FROM srs_field_edits f LEFT JOIN sync2_edit_ops m ON m.edit_id = f.id \
              WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2) AND f.field_key != 'deleted'",
         )
         .map_err(sql)?

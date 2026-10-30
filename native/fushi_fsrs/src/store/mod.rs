@@ -758,7 +758,7 @@ pub(crate) fn logs_of(
     for chunk in wanted.chunks(500) {
         let marks = vec!["?"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
+            "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
         let mut q = stmt
@@ -1062,7 +1062,7 @@ mod exec_tests {
         let (_, rows) = rows::decode(&r).unwrap();
         assert_eq!(rows[0][0], Value::Integer(1));
         // 同一条连接，事务里看得见。
-        let s = core.exec("SELECT id FROM srs_unknown_events", &[], true).unwrap();
+        let s = core.exec("SELECT srs_idt(id) AS id FROM srs_unknown_events", &[], true).unwrap();
         let (cols, rows) = rows::decode(&s).unwrap();
         assert_eq!(cols, 1);
         assert_eq!(rows.len(), 2);

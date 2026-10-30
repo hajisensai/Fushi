@@ -146,7 +146,7 @@ pub fn rebuild(c: &Connection) -> Result<(), String> {
     c.execute("DELETE FROM sync2_digest_buckets", []).map_err(sql)?;
     let mut acc: std::collections::BTreeMap<(String, i64), (Sum, i64)> = std::collections::BTreeMap::new();
     for (table, tag, body) in TABLES {
-        let mut stmt = c.prepare(&format!("SELECT profile_uid, id, {body} FROM {table}")).map_err(sql)?;
+        let mut stmt = c.prepare(&format!("SELECT srs_idt(profile_uid) AS profile_uid, srs_idt(id) AS id, {body} FROM {table}")).map_err(sql)?;
         let mut q = stmt.query([]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let profile: String = r.get(0).map_err(sql)?;
@@ -207,7 +207,7 @@ pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
 pub fn root_by_scan(c: &Connection, profile: &str) -> Result<String, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
     for (table, tag, body) in TABLES {
-        let mut stmt = c.prepare(&format!("SELECT id, {body} FROM {table} WHERE profile_uid = srs_id(?1)")).map_err(sql)?;
+        let mut stmt = c.prepare(&format!("SELECT srs_idt(id) AS id, {body} FROM {table} WHERE profile_uid = srs_id(?1)")).map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;

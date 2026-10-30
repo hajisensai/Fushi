@@ -43,7 +43,7 @@ pub fn edits_of(conn: &Connection, kind: &str, ids: &[String]) -> Result<HashMap
     for chunk in ids.chunks(400) {
         let marks = vec!["?"; chunk.len()].join(",");
         let sql = format!(
-            "SELECT f.entity_id, f.json, e.server_time FROM srs_field_edits f \
+            "SELECT srs_idt(f.entity_id) AS entity_id, f.json, e.server_time FROM srs_field_edits f \
              LEFT JOIN srs_event_local e ON e.event_id = f.id \
              WHERE f.entity_kind = ? AND f.entity_id IN ({marks})"
         );
@@ -70,7 +70,7 @@ impl DeckTree {
         let mut payloads: BTreeMap<String, Value> = BTreeMap::new();
         {
             let mut stmt = conn
-                .prepare_cached("SELECT id, payload_json FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'deck'")
+                .prepare_cached("SELECT srs_idt(id) AS id, payload_json FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'deck'")
                 .map_err(|e| e.to_string())?;
             let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
             while let Some(r) = q.next().map_err(|e| e.to_string())? {
@@ -258,7 +258,7 @@ pub fn successors(conn: &Connection, card: &str) -> Result<Vec<String>, String> 
     let key = format!("historyFrom/{card}");
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT DISTINCT entity_id FROM srs_field_edits WHERE field_key = ?1 AND entity_kind = 'card' AND {}",
+            "SELECT DISTINCT srs_idt(entity_id) AS entity_id FROM srs_field_edits WHERE field_key = ?1 AND entity_kind = 'card' AND {}",
             crate::store::schema::HISTORY_FROM_CONDITION
         ))
         .map_err(|e| e.to_string())?;

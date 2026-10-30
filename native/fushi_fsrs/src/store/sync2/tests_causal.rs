@@ -241,7 +241,7 @@ fn register_rebuild_from_the_log_matches_incremental_projection() {
     let snap = |d: &Device| {
         (
             d.rows("SELECT location, name, present, wall, logical, hex(device) FROM sync2_media_at ORDER BY location, name"),
-            d.rows("SELECT note, tags, wall, logical, hex(device) FROM sync2_tag_order ORDER BY note"),
+            d.rows("SELECT srs_idt(note) AS note, tags, wall, logical, hex(device) FROM sync2_tag_order ORDER BY note"),
             d.rows("SELECT reg, hex(device), seq FROM sync2_mvr ORDER BY reg, device, seq"),
         )
     };

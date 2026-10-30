@@ -120,8 +120,8 @@ impl SrsCore {
             let tables = profile_tables(&r)?;
             let mut uids: Vec<String> = Vec::new();
             if !tables.is_empty() {
-                let union = tables.iter().map(|t| format!("SELECT profile_uid FROM \"{t}\"")).collect::<Vec<_>>().join(" UNION ");
-                let mut stmt = r.prepare(&format!("SELECT profile_uid FROM ({union}) ORDER BY profile_uid")).map_err(sql)?;
+                let union = tables.iter().map(|t| format!("SELECT srs_idt(profile_uid) AS profile_uid FROM \"{t}\"")).collect::<Vec<_>>().join(" UNION ");
+                let mut stmt = r.prepare(&format!("SELECT srs_idt(profile_uid) AS profile_uid FROM ({union}) ORDER BY profile_uid")).map_err(sql)?;
                 uids = stmt.query_map([], |x| x.get::<_, String>(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
             }
             let swept: Option<i64> = r

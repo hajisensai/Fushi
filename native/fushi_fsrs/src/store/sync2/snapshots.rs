@@ -123,7 +123,7 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
     // 操作日志：按主键分批读、逐行改（只有带快照原文的日志操作）。
     let ops: Vec<(String, Vec<u8>, i64, Vec<u8>)> = {
         let mut stmt = c
-            .prepare("SELECT profile_uid, device, seq, payload FROM sync2_ops WHERE kind = ?1 AND sc IS NULL AND purged = 0")
+            .prepare("SELECT srs_idt(profile_uid) AS profile_uid, device, seq, payload FROM sync2_ops WHERE kind = ?1 AND sc IS NULL AND purged = 0")
             .map_err(sql)?;
         let mut q = stmt.query([i64::from(op::KIND_LOG)]).map_err(sql)?;
         let mut out = Vec::new();

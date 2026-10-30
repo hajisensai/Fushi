@@ -299,15 +299,15 @@ pub(crate) struct LogState {
 }
 
 /// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
-pub(crate) const LOGS_SQL: &str = "SELECT card_id, occurred_at, review_type, \
-     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, id \
+pub(crate) const LOGS_SQL: &str = "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, \
+     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id \
      FROM srs_review_logs WHERE profile_uid = srs_id(?1) AND kind = 'review' AND occurred_at >= ?2";
 
 /// 按 id 重读几条日志（参数同 [LOGS_SQL]，其后是 id）：走主键，profile / 种类 / 时刻只当过滤（`+`），不让 SQLite 改走
 /// 区间索引把 30 天日志扫一遍。
 pub(crate) fn logs_by_id_sql(n: usize) -> String {
     format!(
-        "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, id          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
+        "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
         marks(n)
     )
 }
@@ -474,7 +474,7 @@ impl Row {
     }
 }
 
-pub(crate) const ROW_COLUMNS: &str = "SELECT id, deck_id, hidden, suspended, scheduler = 'fushi', buried_until_day, queue, due_day, due_at, \
+pub(crate) const ROW_COLUMNS: &str = "SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, hidden, suspended, scheduler = 'fushi', buried_until_day, queue, due_day, due_at, \
      last_reviewed_at, stability FROM srs_cards_cache";
 
 /// 一个牌组自己（不含子牌组）的计数原料。

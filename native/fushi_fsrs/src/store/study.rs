@@ -177,7 +177,7 @@ impl Source for SessionSource<'_> {
 fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> String {
     let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
     format!(
-        "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
+        "SELECT srs_idt(id) AS id, due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
         marks(decks)
     )
 }
@@ -585,7 +585,7 @@ mod tests {
         pub(super) fn tallies_sql(decks: Option<usize>) -> String {
             let deck_sql = decks.map_or(String::new(), |n| format!(" AND deck_id IN ({})", marks(n)));
             format!(
-                "SELECT deck_id, COUNT(*), \
+                "SELECT srs_idt(deck_id) AS deck_id, COUNT(*), \
                  SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
                  SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
                  SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
@@ -596,7 +596,7 @@ mod tests {
         pub(super) fn due_sql(decks: usize, exclude: usize) -> String {
             let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
             format!(
-                "SELECT id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} \
+                "SELECT srs_idt(id) AS id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} \
                  AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
                  ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
                  / (9.0 * COALESCE(stability, 1.0))), id LIMIT 2",
@@ -645,7 +645,7 @@ mod tests {
                 let all: Vec<&String> = ids.iter().collect();
                 let mut out = HashMap::new();
                 for chunk in all.chunks(400) {
-                    let sql_text = format!("SELECT id, deck_id, hidden FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?)", marks(chunk.len()));
+                    let sql_text = format!("SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, hidden FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?)", marks(chunk.len()));
                     let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
                     let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
                     args.push(Sql::Text(self.profile.to_owned()));
@@ -1092,7 +1092,7 @@ mod tests {
             .read_visible(|c| {
                 let mut stmt = c
                     .prepare(
-                        "SELECT id FROM srs_cards_cache ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+                        "SELECT srs_idt(id) AS id FROM srs_cards_cache ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
                          / (9.0 * COALESCE(stability, 1.0))), id",
                     )
                     .map_err(sql)?;

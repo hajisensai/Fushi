@@ -21,7 +21,7 @@ pub(super) fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard
     for chunk in cards.chunks(500) {
         let marks = vec!["?"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l \
+            "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
              LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks}) ORDER BY l.rowid"
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
@@ -239,7 +239,7 @@ impl SrsCore {
             }
             let mut stmt = r
                 .prepare_cached(
-                    "SELECT l.rowid, l.card_id, l.json, e.server_time FROM srs_review_logs l \
+                    "SELECT l.rowid, srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
                      LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
                 )
                 .map_err(|e| e.to_string())?;
@@ -337,7 +337,7 @@ impl SrsCore {
             if with_rows {
                 let mut stmt = r
                     .prepare_cached(
-                        "SELECT id, card_id, kind, occurred_at, json FROM srs_review_logs \
+                        "SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, kind, occurred_at, json FROM srs_review_logs \
                          WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
                     )
                     .map_err(|e| e.to_string())?;

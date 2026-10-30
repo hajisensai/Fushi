@@ -1093,7 +1093,7 @@ impl Session {
             }
             flush(cur.take(), &mut edits, s)
         };
-        const SELECT: &str = "SELECT f.entity_id, f.json, s.server_time FROM srs_field_edits f \
+        const SELECT: &str = "SELECT srs_idt(f.entity_id) AS entity_id, f.json, s.server_time FROM srs_field_edits f \
              LEFT JOIN srs_event_local s ON s.event_id = f.id WHERE f.entity_kind = 'note'";
         match notes {
             None => {
@@ -1650,7 +1650,7 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     let mut by: HashMap<String, Vec<(String, String)>> = HashMap::new();
     for chunk in wanted.chunks(CHUNK) {
         let q = format!(
-            "SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
+            "SELECT srs_idt(id) AS id, srs_idt(note_type_id) AS note_type_id, dupe_norm FROM srs_notes_cache \
              WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN ({})",
             (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
         );
@@ -1688,7 +1688,7 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     let deck_notes: Vec<&str> = deck_notes.into_iter().collect();
     for chunk in deck_notes.chunks(CHUNK) {
         let q = format!(
-            "SELECT note_id, deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
+            "SELECT srs_idt(note_id) AS note_id, srs_idt(deck_id) AS deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
             (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
@@ -1957,7 +1957,7 @@ mod tests {
     /// 每条缓存行的 `dupe_norm`。
     fn dupe_norms(d: &Device) -> Vec<(String, Option<String>)> {
         let w = d.core.writer().unwrap();
-        let mut stmt = w.prepare("SELECT id, dupe_norm FROM srs_notes_cache ORDER BY id").unwrap();
+        let mut stmt = w.prepare("SELECT srs_idt(id) AS id, dupe_norm FROM srs_notes_cache ORDER BY id").unwrap();
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
     }
 
@@ -2078,7 +2078,7 @@ mod tests {
         let w = d.core.writer().unwrap();
         let plan: Vec<String> = w
             .prepare(
-                "EXPLAIN QUERY PLAN SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
+                "EXPLAIN QUERY PLAN SELECT srs_idt(id) AS id, srs_idt(note_type_id) AS note_type_id, dupe_norm FROM srs_notes_cache \
                  WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN (?2, ?3)",
             )
             .unwrap()
