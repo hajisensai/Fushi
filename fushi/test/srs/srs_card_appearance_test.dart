@@ -211,6 +211,25 @@ void main() {
       });
     });
 
+    test('翻译模糊：默认关、旧数据无此键读作关、JSON 往返、参与 ==', () {
+      expect(const SrsCardAppearance().blurTranslation, isFalse);
+      expect(
+        SrsCardAppearance.fromJson(const <String, Object?>{}).blurTranslation,
+        isFalse,
+      );
+      const SrsCardAppearance on = SrsCardAppearance(blurTranslation: true);
+      expect(on.toJson()['blurTranslation'], isTrue);
+      final SrsCardAppearance back = SrsCardAppearance.fromJson(on.toJson());
+      expect(back.blurTranslation, isTrue);
+      expect(back, on);
+      expect(on == const SrsCardAppearance(), isFalse);
+      // 只在原生视图生效：不新增模板类名（Anki / HTML 卡面不受影响）。
+      expect(
+        srsCardAppearanceClasses(on),
+        srsCardAppearanceClasses(const SrsCardAppearance()),
+      );
+    });
+
     test('词频聚合：运行时字段，不进 JSON、解码默认 true、参与 ==、决定类名', () {
       const SrsCardAppearance off = SrsCardAppearance(
         aggregateFrequency: false,
