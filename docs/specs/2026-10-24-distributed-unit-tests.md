@@ -56,15 +56,23 @@
 | `video_position_restore` | Windows 红；Mac 上因缺素材整文件 skip |
 | `video_player` | `skip: true`（要真机 + `fixtures/sample.mp4`），桌面上什么都不跑 |
 
-## heavy.dart 自动外包（`--offload` / `--analyze`，2026-10-30）
+## heavy.dart 自动外包（`--offload` / `--analyze` / `--build`，2026-10-30）
 
 用户：「我电脑上好卡，但是其他电脑上很闲」。`tool/heavy.dart` 在排本机租约前，把能外包的重活自动交给本工具：
 
 - `flutter test`（test/ 下）→ `dist_test.dart --offload`：worker 只用非 `local` 的机器；它们都没接（不可达 / 忙 / 暂停 / 平台不符）时退出码 75（`kDistOffloadDeclined`），heavy.dart 改在本机照原样跑；跑了一部分后剩下的（平台钉死、机器掉线）由 `local` worker 在租约下补跑。忙的机器只再问 `--busy-retries=2` 次。
-- `flutter analyze` → `dist_test.dart --analyze`：按 config 顺序，先问 `analyzeBlocker()`（shim 机器发 `hello`，看 `analyze=yes` / `paused`，不满足就不 lock / push / prepare），第一台 prepare 成功且接活的机器跑 `worker_analyze.sh`，输出与退出码原样带回；都不接 → 75。
+- `flutter analyze` → `dist_test.dart --analyze`：按 config 顺序，先问 `jobBlocker()`（shim 机器发 `hello`，看 `analyze=yes` / `paused`，不满足就不 lock / push / prepare），第一台 prepare 成功且接活的机器跑 `worker_analyze.sh`，输出与退出码原样带回；都不接 → 75。
 - shim 新动词 `analyze <slot> [--[no-]fatal-infos|warnings]`：选项白名单，路径走 stdin 由 `worker_analyze.sh` 校验（只许 `lib/ test/ tool/ integration_test/ test_driver/ bin/` 下已存在的路径，拒 `..`），与 `run` 同一套暂停 / 空闲内存门槛。信任面不变：同样是跑请求方仓库里的代码（analyzer），不回传任何文件。
-- 不外包：构建、gradle、集成测试、其它 package 的测试，以及写本机文件的参数（`--update-goldens` / `--coverage` / `--file-reporter`）。构建外包需要产物回传，且把朋友机器上的信任从「跑测试」扩大到「产出要在本机运行的二进制」，另立设计。
-- 判定纯函数 `tool/test_flow/heavy_offload.dart`，测试 `test/tools/heavy_offload_test.dart`；shim 契约 `test/tools/dist_shim_test.dart`。
+- **其它 package 的测试**（第二轮）：`packages/<name>/` 下的 `flutter test` / `dart test` → `--offload --package=packages/<name>`。协调者按包目录发现 suite（路径仍是包内的 `test/...`），包没有耗时表与人工钉表，按文件大小估重；包名经 flutter 参数 `--fushi-package=<name>` 带给 `worker_run.sh`，它先剥掉这个参数再 `cd ../packages/<name>`，按 pubspec 有没有 `sdk: flutter` 选 `flutter test --no-pub` 或 `dart test`（与 CI 一致）。旧 shim 的 `check_flutter_arg` 本来就放行 `--name=朴素值`，跑的又是快照里新的 `worker_run.sh`，所以朋友不用重装 shim 就能接包测试。
+- **`--coverage`**（第二轮）：同样经 flutter 参数带过去，`worker_run.sh` 给每个 `flutter test` 进程加 `--coverage-path=<state>/coverage.info`，跑完把 lcov base64 成一行 `{"type":"fushiCoverage","lcov":"..."}` 接在事件流里；本地 worker 直接读自己的文件。协调者把这些行从事件流里摘出来（不进 jsonl / 判绿），**按不可信数据校验**：只收 `SF:` 能落到该包 `lib/` 下（相对路径，或对方 checkout 的绝对路径在 `/<包名>/lib/` 处截断）、不含 `..` 的记录和 `DA:` 行，其余丢弃并计数；合并后重算 `LF` / `LH` 写到 `--coverage-out`。纯 Dart 包（`dart test --coverage=<目录>` 写的是 VM json）不外包 coverage。
+- **编译检查**（第二轮，`heavy.dart --check-only`）→ `dist_test.dart --build -- <命令>`：`flutter build apk|appbundle|windows|macos`（macOS 只认 `--debug`，那一套签名是 ad-hoc「Sign to Run Locally」，在谁的机器上都能签）与 `gradlew :app:assemble*|:app:bundle*`。命令先过 `distBuildOf` 白名单（`--debug|--profile|--release`、`--split-per-abi`、`--target-platform=android-*`、`--[no-]tree-shake-icons`、`-Ptarget-platform=`），其余一律本机——尤其 `--dart-define`（值可能是秘密）、`-t`（路径）、iOS / ipa（要本机签名）。worker 只取平台合适的（Android 任意、Windows / macOS 只在同平台），先发 `hello` 看 `build=` 列出的工具链（Android：SDK + NDK + cargo-ndk；Windows：带 C++ 工作负载的 VS；macOS：Xcode + CocoaPods），再 lock / push / prepare，然后 shim 新动词 `build <slot> flutter|gradle ...` 交给 `worker_build.sh`。
+  - `worker_build.sh` 再按同一白名单校验，缺工具链以退出码 78（`kDistToolchainMissing`）报「没编」而不是红，协调者换下一台；构建带主人的 `prepare.env`（Gradle / CMake 要下载）；输出全写文件、结束后再打印（Gradle / Flutter 的守护进程会继承 stdout 把 ssh 通道挂住），Android 结束后 `gradlew --stop` 不占主人内存。
+  - Android 的两道硬门：`app/build.gradle` 要求 release 构建有 `key.properties`，还要求每个目标 ABI 都有 `fushi_compute / rwkv / music / corpus / web_core` 的 `.so`。`.so` 在 worker 上用 `build_android_so.sh` 按 ABI 编、按 crate 源码树哈希缓存；签名用 worker 上 `keytool` 现生成的一次性 key（`dist-check.jks` + 带标记的 `key.properties`，已有不带标记的 `key.properties` 就不碰）。**真 key 永不离开本机**，这也是能把 release 编译检查外包的前提。
+  - 只回传构建日志与退出码，产物留在那台机器的 build/ 里（下次增量）。所以 heavy 只在显式 `--check-only` 时外包：没写就是要产物，照旧本机。
+  - **远端红 ≠ 代码红**：对方的 SDK / NDK / VS 版本可能和本机不同。heavy 拿到红的编译检查会在本机再编一次，以本机结果为准；绿的直接采信。
+  - 主人可在 `limits` 写 `ALLOW_BUILD=0` 关掉编译检查（`hello` 回 `build=off`，`build` 动词拒绝）。
+- 仍不外包：要在本机用产物的构建、集成测试（占对方屏幕）、`--update-goldens`（golden 钉平台，只有本机标了 `golden`）、`--merge-coverage` / `--file-reporter` / 分片参数。
+- 判定纯函数 `tool/test_flow/heavy_offload.dart`，测试 `test/tools/heavy_offload_test.dart`；构建白名单 `distBuildOf`（`dist_plan_test.dart`）；coverage 校验合并 `tool/test_flow/dist_coverage.dart`（`dist_coverage_test.dart`）；`hello` 判定 `distJobBlocker`（`dist_workers_test.dart`）；shim / worker 脚本契约 `test/tools/dist_shim_test.dart`。
 
 ## 第二期实现：朋友机器（`ssh-shim`）
 
@@ -79,6 +87,8 @@
   | `git-receive-pack '<work\|work-N>'` | 收快照推送；只认这两种名字，映射到 shim 自己的目录，且必须先 `lock` |
   | `prepare <slot> <sha>` | checkout + clean + `worker_prepare.sh`（只带主人的 `prepare.env`） |
   | `run <slot> <concurrency> [flutter 参数]` | 跑一批，测试文件从 stdin 读（`worker_run.sh` 逐行校验） |
+  | `analyze <slot> [--[no-]fatal-*]` | `flutter analyze`，路径从 stdin 读（`worker_analyze.sh` 校验） |
+  | `build <slot> flutter\|gradle ...` | 编译检查（`worker_build.sh`），只回日志与退出码 |
   | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref 并释放自己的锁 |
 
   请求先过字符集 `[A-Za-z0-9_ ,.:=+-]`（不认引号 / `$` / `;` / 反引号 / 斜杠），再逐参数按模式校验；flutter 参数只认 `--name`、`--name=朴素值` 或紧随其后的朴素值（不能以 `-` 开头），协调者在本机先用同一套规则拒绝（`shimRequest`），不把会被拒的请求发出去。
@@ -294,9 +304,9 @@ worker 必须跑**和本机完全一致**的代码，包括没提交的改动。
 - **本机不开任何入站**：不装 / 不启用 sshd，不做 `ssh -R` 反向转发；协调者生成的 ssh 命令统一带 `-o ForwardAgent=no -o ForwardX11=no -o ClearAllForwardings=yes -o PermitLocalCommand=no`，并在 `~/.ssh/config` 对这两台写死同样的选项。**ssh-agent 转发是最容易被忽略的口子**：一旦转发，朋友机器上的管理员能借你的 agent 以你的身份登录你的其它机器 / GitHub。
 - **专用密钥**：给分流单独生成一把 `~/.ssh/fushi_dist_ed25519`，只用于这两台，不复用你登录 GitHub / Mac 的那把。泄露最坏只影响这两台 worker。
 - **不带出任何秘密**：快照剔除密钥真值（第 1 节守卫）；ssh 不传环境变量（不设 `SendEnv`），协调者不把 `HTTPS_PROXY` 等本机配置传过去；worker 侧测试只用入库占位值，与 CI 一致。
-- **回传内容是不可信数据**：worker 回来的只有 json 事件流与日志文本。协调者严格按 json 解析，只读字段、不执行回传内容中的任何命令或路径；写报告时路径一律落在 `.codex-test/dist/<runId>/` 之下（拒绝 `..`）。
+- **回传内容是不可信数据**：worker 回来的只有 json 事件流与日志文本（`--coverage` 时事件流里多一行 base64 的 lcov 文本，按 7.1 同样当数据校验：只收该包 `lib/` 下的记录，不按其中路径写任何文件）。协调者严格按 json 解析，只读字段、不执行回传内容中的任何命令或路径；写报告时路径一律落在 `.codex-test/dist/<runId>/` 之下（拒绝 `..`）。
 
-### 7.2 保护朋友（你只能在他机器上做「跑测试」这一件事）
+### 7.2 保护朋友（你只能在他机器上做「跑测试 / analyze / 编译检查」这几件事）
 
 - 朋友的 `fushitest` 账户 `authorized_keys` 里这把 key 写成：
   `restrict,command="~/.fushi-worker/shim" ssh-ed25519 AAAA... fushi-dist`
@@ -308,6 +318,7 @@ worker 必须跑**和本机完全一致**的代码，包括没提交的改动。
   - `run <sha> <batchId>` → 从 stdin 读文件清单，每行必须匹配 `^test/[A-Za-z0-9_/.-]+_test\.dart$` 且文件存在，然后跑 `flutter test`，stdout 回 json 事件；
   - `cleanup <runId>`。
   其它一律拒绝。你拿到这把 key 也开不了 shell。
+- 编译检查（2026-10-30 第二轮加入）与跑测试是同一级别的信任：测试本来就在朋友机器上执行仓库里的任意代码，Gradle / CMake 构建脚本也是仓库里的代码。它**不**扩大到「朋友产出的二进制在你电脑上运行」：产物从不回传，回来的只有日志文本和退出码；release 签名用 worker 上现生成的一次性 key，真 key 不出本机。主人可用 `ALLOW_BUILD=0` 关掉。
 - 需要明说的残余风险：测试代码本身就是你仓库里的任意 Dart 代码，shim 管不住测试里写了什么。朋友在给你跑代码，信任关系是「朋友信任你提交的代码」；专用低权限账户把影响限制在 `fushitest` 的 home 里。
 
 ### 7.3 自己的 Mac
