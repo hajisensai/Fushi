@@ -5,6 +5,18 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 /// 顶部悬浮条按宽度自适应溢出（2026-10-06）：宽时全部平铺、不画「⋯」；骤缩到
 /// 窄宽时**第一帧**就收进「⋯」且不溢出（HBK034：AnimatedSize 收缩时保留旧宽度
 /// 一帧，760 → 320 右侧溢出 276px）。
+/// 顶栏整体按 [kFushiFloatingCapsuleScale] 缩：子树按「外框宽 ÷ scale」排版。
+/// 这里的测宽临界都是排版空间里的宽度，返回让顶栏恰好拿到 [layoutWidth] 排版
+/// 宽度的外框宽（取最小的、除回去不少于 [layoutWidth] 的值，避免浮点尾差让
+/// 「恰好放得下」变成差一丝放不下）。
+double _outerWidth(double layoutWidth) {
+  double outer = layoutWidth * kFushiFloatingCapsuleScale;
+  while (outer / kFushiFloatingCapsuleScale < layoutWidth) {
+    outer += 1e-9;
+  }
+  return outer;
+}
+
 void main() {
   final List<FushiToolbarItem> actions = List<FushiToolbarItem>.generate(
     10,
@@ -19,7 +31,7 @@ void main() {
     home: Scaffold(
       body: Center(
         child: SizedBox(
-          width: width,
+          width: _outerWidth(width),
           child: FushiFloatingTopBar(
             leading: <FushiToolbarItem>[
               FushiToolbarItem(
@@ -71,7 +83,7 @@ void main() {
         home: Scaffold(
           body: Center(
             child: SizedBox(
-              width: 369,
+              width: _outerWidth(369),
               child: FushiFloatingTopBar(
                 leading: leading,
                 overflow: <FushiToolbarItem>[
@@ -192,7 +204,7 @@ void main() {
         home: Scaffold(
           body: Center(
             child: SizedBox(
-              width: 900,
+              width: _outerWidth(900),
               child: FushiFloatingTopBar(
                 actionsFollowLeading: true,
                 leading: <FushiToolbarItem>[
@@ -230,7 +242,11 @@ void main() {
     final double filterLeft = tester
         .getRect(find.byKey(const ValueKey<String>('filter')))
         .left;
-    expect(filterLeft - backRight, lessThan(40), reason: '筛选紧跟返回键');
+    expect(
+      filterLeft - backRight,
+      lessThan(40 * kFushiFloatingCapsuleScale),
+      reason: '筛选紧跟返回键',
+    );
     await tester.tap(more);
     await tester.pumpAndSettle();
     expect(find.text('Clear'), findsOneWidget);
@@ -299,7 +315,7 @@ void main() {
         body: Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
-            width: width,
+            width: _outerWidth(width),
             child: FushiFloatingTopBar(
               actionsFollowLeading: true,
               leading: <FushiToolbarItem>[

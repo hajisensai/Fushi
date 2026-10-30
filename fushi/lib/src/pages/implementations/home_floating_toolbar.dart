@@ -192,22 +192,25 @@ class HomeFloatingToolbar extends StatelessWidget {
         visible: visible,
         // 整栏连同投影一起滑出顶边。
         distance: homeToolbarExtent(context) + 16,
-        child: Padding(
-          padding: const EdgeInsets.only(top: kHomeToolbarTopGap),
-          child: SizedBox(
-            height: homeToolbarHeight(context),
-            child: FocusTraversalGroup(
-              child: Row(
-                children: <Widget>[
-                  leading,
-                  const SizedBox(width: 8),
-                  // 动作组的自适应溢出按剩余宽度测（无标题胶囊，不保底标题宽）。
-                  Expanded(
-                    child: FushiFloatingTopBar(
-                      actions: <List<FushiToolbarItem>>[actions],
+        // 整行（头像 + 动作组）一起按顶部胶囊比例缩，内层顶栏不再重复缩。
+        child: FushiCapsuleScale(
+          child: Padding(
+            padding: const EdgeInsets.only(top: kHomeToolbarTopGap),
+            child: SizedBox(
+              height: homeToolbarHeight(context),
+              child: FocusTraversalGroup(
+                child: Row(
+                  children: <Widget>[
+                    leading,
+                    const SizedBox(width: 8),
+                    // 动作组的自适应溢出按剩余宽度测（无标题胶囊，不保底标题宽）。
+                    Expanded(
+                      child: FushiFloatingTopBar(
+                        actions: <List<FushiToolbarItem>>[actions],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
