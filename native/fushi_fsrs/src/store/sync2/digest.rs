@@ -106,10 +106,27 @@ pub fn install(c: &Connection) -> Result<(), String> {
          ) WITHOUT ROWID;",
     )
     .map_err(sql)?;
-    for (table, tag, body) in TABLES {
-        let new = body.replace("kind", "NEW.kind").replace("payload_json", "NEW.payload_json");
-        let new = if body == "json" { "NEW.json".to_owned() } else { new };
-        let old = new.replace("NEW.", "OLD.");
+    for (view, tag, body) in TABLES {
+        // v17 起日志 / 修改记录是「存储表 + 同名视图」（projrows.rs）：触发器挂存储表，行原文按操作拼回再算，
+        // 与 v16 及以前按原文列算的哈希逐位相同。
+        let proj = super::projrows::ALL.into_iter().find(|p| p.view == view).filter(|p| {
+            c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1", [p.table], |_| Ok(())).is_ok()
+        });
+        let (table, new, old, changed) = match proj {
+            Some(p) => (
+                p.table,
+                p.json_expr("NEW"),
+                p.json_expr("OLD"),
+                "OLD.op_dev IS NOT NEW.op_dev OR OLD.op_seq IS NOT NEW.op_seq OR OLD.x IS NOT NEW.x".to_owned(),
+            ),
+            None => {
+                let new = body.replace("kind", "NEW.kind").replace("payload_json", "NEW.payload_json");
+                let new = if body == "json" { "NEW.json".to_owned() } else { new };
+                let old = new.replace("NEW.", "OLD.");
+                let changed = format!("({old}) IS NOT ({new})");
+                (view, new, old, changed)
+            }
+        };
         let add = |side: &str, expr: &str| {
             format!(
                 "INSERT INTO sync2_digest_buckets (profile_uid, bucket, sum, n) \
@@ -130,7 +147,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
              CREATE TRIGGER sync2_dg_{table}_ins AFTER INSERT ON {table} BEGIN {ins} END;
              CREATE TRIGGER sync2_dg_{table}_del AFTER DELETE ON {table} BEGIN {del} END;
              CREATE TRIGGER sync2_dg_{table}_upd AFTER UPDATE ON {table} \
-               WHEN OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid OR ({old}) IS NOT ({new}) \
+               WHEN OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid OR {changed} \
                BEGIN {del} {ins} END;",
             ins = add("NEW", &new),
             del = sub("OLD", &old),

@@ -730,7 +730,7 @@ mod tests {
             }
         }
         uses("logs", LOGS_SQL, "idx_srs_review_logs_profile_kind_time", true);
-        uses("logs by id", &crate::store::queue::logs_by_id_sql(2), "sqlite_autoindex_srs_review_logs_1", false);
+        uses("logs by id", &crate::store::queue::logs_by_id_sql(2), "sqlite_autoindex_srs_review_log_rows_1", false);
         uses("rows by id", &format!("{ROW_COLUMNS} WHERE id IN (?, ?) AND +profile_uid = ?"), "sqlite_autoindex_srs_cards_cache_1", false);
         assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
     }

@@ -148,6 +148,8 @@ fn repeated_tag_edits_and_batched_ingest_keep_the_incremental_digest_exact() {
     assert_eq!(incremental(&a), incremental(&b));
     // 运行时这一侧：建表语句里也不许有列 / 表级的 `ON CONFLICT REPLACE`（那会让普通 INSERT 也走隐式删除）。
     for t in DIGESTED {
+        // v17 起日志 / 修改记录是视图，存储表另名（projrows.rs）。
+        let t = super::projrows::ALL.into_iter().find(|p| p.view == t).map_or(t, |p| p.table);
         let ddl = a.rows(&format!("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = '{t}'"))[1][0].to_uppercase();
         assert!(!ddl.contains("REPLACE"), "{t}: {ddl}");
     }
