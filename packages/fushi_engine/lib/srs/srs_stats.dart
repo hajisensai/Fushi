@@ -90,6 +90,8 @@ class SrsStatCard {
     this.label = '',
     this.desiredRetention = 0.8,
     this.byRecall = false,
+    this.rwkvDueDay,
+    this.rwkvIntervalDays,
   });
 
   final String id;
@@ -128,9 +130,16 @@ class SrsStatCard {
   final double desiredRetention;
 
   /// 复习卡按 RWKV-Instant 排队（所在牌组是 RWKV 且 RWKV 可用）：此刻回忆率降到目标时出现，
-  /// 存下的到期日不代表什么时候复习——未来到期 / 逾期 / 负担不计它（[SrsFutureDue.byRecall]），
-  /// [retrievability] 是 RWKV 的。
+  /// 存下的到期日不代表什么时候复习——未来到期 / 负担按 [rwkvDueDay] 计，没有预测的不计
+  /// （[SrsFutureDue.byRecall]），[retrievability] 是 RWKV 的。
   final bool byRecall;
+
+  /// [byRecall] 卡按 RWKV 预测的回忆率首次降到目标保留率的那天（SRS 日序号；今天 = 此刻已不高于
+  /// 目标）。没预测（RWKV 用不了、超出预测范围、打不了分）时 null。
+  final int? rwkvDueDay;
+
+  /// [rwkvDueDay] 距最后一次复习的天数（≥ 1），每日负担 Σ 1 / 间隔用；没预测时 null。
+  final int? rwkvIntervalDays;
 
   bool get isReview =>
       state == SrsStatCardState.young || state == SrsStatCardState.mature;
@@ -256,10 +265,16 @@ class SrsFutureDue {
     required this.daily,
     required this.dailyLoad,
     this.byRecall = 0,
+    this.byRecallForecast = 0,
   });
 
-  /// 不计在内的复习卡：按 RWKV-Instant 排队（[SrsStatCard.byRecall]），没有有意义的到期日。
+  /// 不计在内的复习卡：按 RWKV-Instant 排队（[SrsStatCard.byRecall]），存下的到期日没有意义，
+  /// 也没有 RWKV 的预测（[SrsStatCard.rwkvDueDay] 为 null）。
   final int byRecall;
+
+  /// 按 RWKV 预测的那天计入的复习卡（[SrsStatCard.rwkvDueDay]；此刻已不高于目标的算今天，不算逾期
+  /// ——RWKV-Instant 没有「过了到期日」，今天就会出它）。
+  final int byRecallForecast;
 
   /// 逾期（到期日早于今天）的复习卡数。
   final int overdue;
@@ -575,11 +590,23 @@ class SrsStatsData {
     final List<int> young = List<int>.filled(n, 0);
     int overdue = 0;
     int byRecall = 0;
+    int byRecallForecast = 0;
     double load = 0;
     for (final SrsStatCard c in cards) {
       if (!c.fushiScheduled || c.suspended) continue;
       if (c.byRecall && c.isReview) {
-        byRecall++;
+        final int? due = c.rwkvDueDay;
+        if (due == null) {
+          byRecall++;
+          continue;
+        }
+        // RWKV 预测：与出卡同口径，此刻已不高于目标的今天出（不进逾期）。
+        byRecallForecast++;
+        load += 1 / math.max(1, c.rwkvIntervalDays ?? c.intervalDays);
+        final int offset = math.max(0, due - today);
+        if (offset >= n) continue;
+        perDay[offset]++;
+        if (c.state == SrsStatCardState.young) young[offset]++;
         continue;
       }
       int? offset;
@@ -613,6 +640,7 @@ class SrsStatsData {
       daily: true,
       dailyLoad: load,
       byRecall: byRecall,
+      byRecallForecast: byRecallForecast,
     );
   }
 
@@ -620,10 +648,10 @@ class SrsStatsData {
   int furthestDueOffset() {
     int far = 30;
     for (final SrsStatCard c in cards) {
-      if (!c.fushiScheduled || c.suspended || !c.isReview || c.byRecall) {
-        continue;
-      }
-      final int off = (c.dueDay ?? today) - today + 1;
+      if (!c.fushiScheduled || c.suspended || !c.isReview) continue;
+      final int? due = c.byRecall ? c.rwkvDueDay : (c.dueDay ?? today);
+      if (due == null) continue;
+      final int off = due - today + 1;
       if (off > far) far = off;
     }
     return math.min(far, 3650);
