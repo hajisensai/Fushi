@@ -390,10 +390,184 @@ const List<String> kDistAnalyzeOptions = <String>[
 /// few minutes).
 const Duration kDistAnalyzeTimeout = Duration(minutes: 30);
 
-/// `dist_test.dart --offload` / `--analyze`: no other machine took any of the
-/// work (none configured, reachable, free or allowed to run it). Nothing ran;
-/// tool/heavy.dart runs the command on this machine instead.
+/// `dist_test.dart --offload` / `--analyze` / `--build`: no other machine took
+/// any of the work (none configured, reachable, free or allowed to run it).
+/// Nothing ran; tool/heavy.dart runs the command on this machine instead.
 const int kDistOffloadDeclined = 75;
+
+/// The directory (relative to the repo root) whose test/ a run covers: the
+/// app, or a workspace package (`dist_test.dart --package=packages/<name>`).
+const String kDistAppPackage = 'fushi';
+
+final RegExp _distPackageDir = RegExp(r'^packages/[a-z0-9_]+$');
+
+bool isDistPackageDir(String dir) =>
+    dir == kDistAppPackage || _distPackageDir.hasMatch(dir);
+
+/// The flutter test option that tells worker_run.sh which package a batch
+/// belongs to (`--fushi-package=<name under packages/>`). A plain
+/// `--name=value`, so every shim passes it on unchanged; worker_run.sh takes
+/// it off again before the test runner starts.
+const String kDistPackageOption = '--fushi-package';
+
+/// `flutter` when the package's pubspec depends on the Flutter SDK, `dart`
+/// for a pure Dart package (`dart test`, as on CI). worker_run.sh decides
+/// the same way.
+String distTestRunnerOf(String pubspec) =>
+    RegExp(r'^\s+sdk:\s*flutter\s*$', multiLine: true).hasMatch(pubspec)
+    ? 'flutter'
+    : 'dart';
+
+/// What a machine needs to compile-check a [DistBuild]; worker_shim.sh's
+/// `hello` lists the ones it has (`build=android,windows`).
+enum DistToolchain { android, windows, macos }
+
+/// A compile check `dist_test.dart --build` hands to another machine
+/// (tool/heavy.dart --check-only): the build runs there and only its log and
+/// exit code come back, never what it built. worker_build.sh accepts exactly
+/// what [distBuildOf] produces.
+class DistBuild {
+  const DistBuild({
+    required this.tool,
+    required this.args,
+    required this.toolchain,
+  });
+
+  /// `flutter` (`flutter build <target>`, run in fushi/) or `gradle`
+  /// (`gradlew <tasks>`, run in fushi/android/).
+  final String tool;
+
+  /// flutter: the target, then its options; gradle: the tasks, then
+  /// `-Ptarget-platform=`.
+  final List<String> args;
+  final DistToolchain toolchain;
+
+  /// The words after `build <slot>` in the shim request (and after
+  /// worker_build.sh).
+  List<String> get request => <String>[tool, ...args];
+
+  String get label => request.join(' ');
+
+  /// Android builds run on any host; desktop builds only on their own.
+  bool runsOn(DistPlatform platform) => switch (toolchain) {
+    DistToolchain.android => true,
+    DistToolchain.windows => platform == DistPlatform.windows,
+    DistToolchain.macos => platform == DistPlatform.macos,
+  };
+}
+
+final RegExp _androidTargetPlatforms = RegExp(
+  r'^android-(arm|arm64|x64)(,android-(arm|arm64|x64))*$',
+);
+final RegExp _gradleTask = RegExp(
+  r'^(:app:)?(assemble|bundle)(Debug|Profile|Release)$',
+);
+
+/// [command] (the executable first, any path or `.bat`) as a compile check
+/// another machine may run, or null when it has to stay here: an unknown
+/// target or option, iOS (needs this machine's signing), a macOS build that
+/// is not `--debug` (only that one signs to run locally anywhere), and
+/// anything carrying values out (`--dart-define`, `-t`, `--obfuscate`, ...).
+DistBuild? distBuildOf(List<String> command) {
+  if (command.length < 2) return null;
+  final String exe = command.first
+      .replaceAll(r'\', '/')
+      .split('/')
+      .last
+      .toLowerCase();
+  if (exe == 'flutter' || exe == 'flutter.bat') {
+    if (command.length < 3 || command[1] != 'build') return null;
+    return _flutterBuild(command[2], command.sublist(3));
+  }
+  if (exe == 'gradlew' || exe == 'gradlew.bat') {
+    return _gradleBuild(command.sublist(1));
+  }
+  return null;
+}
+
+DistBuild? _flutterBuild(String target, List<String> rest) {
+  final DistToolchain toolchain;
+  switch (target) {
+    case 'apk':
+    case 'appbundle':
+      toolchain = DistToolchain.android;
+    case 'windows':
+      toolchain = DistToolchain.windows;
+    case 'macos':
+      toolchain = DistToolchain.macos;
+    default:
+      return null;
+  }
+  String? mode;
+  final List<String> flags = <String>[];
+  String? platforms;
+  for (int i = 0; i < rest.length; i++) {
+    final String a = rest[i];
+    if (a == '--no-pub') continue;
+    if (a == '--debug' || a == '--profile' || a == '--release') {
+      mode = a;
+    } else if (a == '--tree-shake-icons' || a == '--no-tree-shake-icons') {
+      flags.add(a);
+    } else if (a == '--split-per-abi' && target == 'apk') {
+      flags.add(a);
+    } else if ((a == '--target-platform' ||
+            a.startsWith('--target-platform=')) &&
+        toolchain == DistToolchain.android) {
+      platforms = a.contains('=')
+          ? a.substring(a.indexOf('=') + 1)
+          : (i + 1 < rest.length ? rest[++i] : null);
+      if (platforms == null || !_androidTargetPlatforms.hasMatch(platforms)) {
+        return null;
+      }
+    } else {
+      return null;
+    }
+  }
+  if (toolchain == DistToolchain.macos && mode != '--debug') return null;
+  return DistBuild(
+    tool: 'flutter',
+    args: <String>[
+      target,
+      ?mode,
+      ...flags,
+      if (platforms != null) '--target-platform=$platforms',
+    ],
+    toolchain: toolchain,
+  );
+}
+
+DistBuild? _gradleBuild(List<String> rest) {
+  final List<String> tasks = <String>[];
+  String? platforms;
+  for (final String a in rest) {
+    if (_gradleTask.hasMatch(a)) {
+      tasks.add(a);
+    } else if (a.startsWith('-Ptarget-platform=')) {
+      platforms = a.substring('-Ptarget-platform='.length);
+      if (!_androidTargetPlatforms.hasMatch(platforms)) return null;
+    } else {
+      return null;
+    }
+  }
+  if (tasks.isEmpty) return null;
+  return DistBuild(
+    tool: 'gradle',
+    args: <String>[
+      ...tasks,
+      if (platforms != null) '-Ptarget-platform=$platforms',
+    ],
+    toolchain: DistToolchain.android,
+  );
+}
+
+/// A remote compile check taking longer is killed (a cold Android release
+/// build with its Rust libraries takes well over half an hour).
+const Duration kDistBuildTimeout = Duration(minutes: 90);
+
+/// worker_build.sh: the machine lacks part of the toolchain (SDK, NDK, JDK,
+/// cargo-ndk, Visual Studio, Xcode); nothing was built. Not a red build: the
+/// coordinator tries the next machine.
+const int kDistToolchainMissing = 78;
 
 /// Integration test files (`dist_test.dart --itest`): the real app, built and
 /// launched on a desktop.

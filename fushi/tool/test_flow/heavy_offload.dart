@@ -1,17 +1,25 @@
 // Which heavy commands tool/heavy.dart hands to the other machines of the
-// dist_test worker config (tool/dist_test.dart --offload / --analyze) before
-// it would run them here. Pure decisions, unit-tested
+// dist_test worker config (tool/dist_test.dart --offload / --analyze /
+// --build) before it would run them here. Pure decisions, unit-tested
 // (test/tools/heavy_offload_test.dart).
 //
-// Offloaded: `flutter test` of suites under test/ and `flutter analyze` of the
-// app, both run from fushi/. Everything else (builds, gradle, integration
-// test launches, other packages' tests) produces something this machine has
-// to use itself, or needs its screen, and stays here.
+// Offloaded:
+//   - `flutter test` of the app's test/ (run from fushi/) and `flutter test` /
+//     `dart test` of a workspace package's test/ (run from packages/<name>/),
+//     `--coverage` included (the merged lcov is written here);
+//   - `flutter analyze` of the app, run from fushi/;
+//   - with heavy.dart's --check-only, a compile check: `flutter build
+//     apk|appbundle|windows|macos` from fushi/, `gradlew :app:assemble*` from
+//     fushi/android/. Only the build's log and exit code come back, never
+//     what it built, so this is for "does it still build", not for an APK or
+//     app to use here.
+// Everything else (builds whose output is used here, integration test
+// launches, `--update-goldens`, sharding / file reporters) stays here.
 import 'dart:io';
 
 import 'dist_plan.dart';
 
-enum HeavyOffloadKind { test, analyze }
+enum HeavyOffloadKind { test, analyze, build }
 
 class HeavyOffload {
   const HeavyOffload({required this.kind, required this.distArgs});
@@ -48,13 +56,34 @@ String? heavyOffloadConfig(
   return isFile(local) ? local : null;
 }
 
+/// Where [cwd] sits in the checkout at [root], `/`-separated (`fushi`,
+/// `fushi/android`, `packages/<name>`; empty for the root itself), or null
+/// outside it. Windows paths compare case-insensitively.
+String? heavyOffloadWhere(String cwd, String root) {
+  String norm(String p) {
+    String s = p.replaceAll(r'\', '/');
+    while (s.length > 1 && s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
+
+  final String c = norm(cwd);
+  final String r = norm(root);
+  final bool windows = RegExp(r'^[A-Za-z]:').hasMatch(r);
+  final String cc = windows ? c.toLowerCase() : c;
+  final String rr = windows ? r.toLowerCase() : r;
+  if (cc == rr) return '';
+  if (!cc.startsWith('$rr/')) return null;
+  return c.substring(r.length + 1);
+}
+
 /// `flutter test` options that only make sense here: they write files on this
-/// machine, or shard / report in their own way.
+/// machine (other than the coverage dist_test merges back), or shard / report
+/// in their own way.
 const Set<String> _localOnlyTestOptions = <String>{
   '--update-goldens',
-  '--coverage',
   '--merge-coverage',
-  '--coverage-path',
   '--file-reporter',
   '--total-shards',
   '--shard-index',
@@ -88,32 +117,78 @@ bool _droppedTestOption(String a) =>
 final RegExp _plainValue = RegExp(r'^[A-Za-z0-9_,.:+][A-Za-z0-9_,.:+-]*$');
 final RegExp _plainFlag = RegExp(r'^--[a-z][a-z-]*$');
 
-/// [command] (resolved: the flutter executable first) as an offload, or null
-/// when it runs here. [inAppDir]: the command runs from fushi/ (where
-/// dist_test works). [exists]: the path exists relative to that directory.
+/// [command] (resolved: the executable first) as an offload, or null when it
+/// runs here. [where]: the directory it runs in, relative to the checkout
+/// root ([heavyOffloadWhere]); [cwd]: the same, absolute (coverage lands
+/// under it). [checkOnly]: heavy.dart --check-only, so a build's output is
+/// not wanted here. [exists]: the path exists relative to [cwd].
 HeavyOffload? planHeavyOffload(
   List<String> command, {
-  required bool inAppDir,
+  required String where,
+  required String cwd,
+  required bool checkOnly,
   required bool Function(String path) exists,
 }) {
-  if (!inAppDir || command.length < 2) return null;
-  final String exe = command.first
+  if (command.length < 2) return null;
+  final String exe = _base(command.first);
+  final bool flutter = exe == 'flutter';
+  if (checkOnly &&
+      ((where == kDistAppPackage && flutter && command[1] == 'build') ||
+          (where == '$kDistAppPackage/android' && exe == 'gradlew'))) {
+    final DistBuild? build = distBuildOf(command);
+    if (build == null) return null;
+    return HeavyOffload(
+      kind: HeavyOffloadKind.build,
+      distArgs: <String>[
+        '--build',
+        '--',
+        if (build.tool == 'flutter') ...<String>['flutter', 'build'],
+        if (build.tool == 'gradle') 'gradlew',
+        ...build.args,
+      ],
+    );
+  }
+  if (!isDistPackageDir(where)) return null;
+  final List<String> rest = command.sublist(2);
+  if (where == kDistAppPackage) {
+    if (!flutter) return null;
+    return switch (command[1]) {
+      'test' => _planTest(rest, exists, package: where, cwd: cwd, dart: false),
+      'analyze' => _planAnalyze(rest, exists),
+      _ => null,
+    };
+  }
+  if ((!flutter && exe != 'dart') || command[1] != 'test') return null;
+  return _planTest(rest, exists, package: where, cwd: cwd, dart: !flutter);
+}
+
+/// `flutter.bat` / `C:\...\dart.exe` → `flutter` / `dart`.
+String _base(String executable) {
+  final String name = executable
       .replaceAll(r'\', '/')
       .split('/')
       .last
       .toLowerCase();
-  if (exe != 'flutter' && exe != 'flutter.bat') return null;
-  final List<String> rest = command.sublist(2);
-  return switch (command[1]) {
-    'test' => _planTest(rest, exists),
-    'analyze' => _planAnalyze(rest, exists),
-    _ => null,
-  };
+  for (final String ext in <String>['.bat', '.exe', '.cmd']) {
+    if (name.endsWith(ext)) return name.substring(0, name.length - ext.length);
+  }
+  return name;
 }
 
-HeavyOffload? _planTest(List<String> args, bool Function(String) exists) {
+bool _absolute(String p) =>
+    p.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(p);
+
+HeavyOffload? _planTest(
+  List<String> args,
+  bool Function(String) exists, {
+  required String package,
+  required String cwd,
+  required bool dart,
+}) {
   final List<String> options = <String>[];
   final List<String> paths = <String>[];
+  bool coverage = false;
+  String? coveragePath;
   for (int i = 0; i < args.length; i++) {
     final String a = args[i];
     if (a == '-j' || a == '--concurrency' || a == '-r' || a == '--reporter') {
@@ -125,6 +200,20 @@ HeavyOffload? _planTest(List<String> args, bool Function(String) exists) {
       final int eq = a.indexOf('=');
       final String name = eq < 0 ? a : a.substring(0, eq);
       if (_localOnlyTestOptions.contains(name)) return null;
+      // `dart test --coverage=<dir>` writes VM json, not lcov: stays here.
+      if (name == '--coverage' || name == '--coverage-path') {
+        if (dart) return null;
+        if (name == '--coverage') {
+          if (eq >= 0) return null;
+          coverage = true;
+        } else {
+          coveragePath = eq >= 0
+              ? a.substring(eq + 1)
+              : (i + 1 < args.length ? args[++i] : null);
+          if (coveragePath == null || coveragePath.isEmpty) return null;
+        }
+        continue;
+      }
       final String? long = _testValueOptions[name];
       if (long != null) {
         final String? value = eq >= 0
@@ -144,11 +233,21 @@ HeavyOffload? _planTest(List<String> args, bool Function(String) exists) {
     if (path == null) return null;
     paths.add(path);
   }
+  final String base = cwd.replaceAll(r'\', '/');
+  final String? lcov = !coverage
+      ? null
+      : coveragePath == null
+      ? '$base/coverage/lcov.info'
+      : _absolute(coveragePath)
+      ? coveragePath.replaceAll(r'\', '/')
+      : '$base/${coveragePath.replaceAll(r'\', '/')}';
   return HeavyOffload(
     kind: HeavyOffloadKind.test,
     distArgs: <String>[
       '--offload',
       '--busy-retries=$kHeavyOffloadBusyRetries',
+      if (package != kDistAppPackage) '--package=$package',
+      if (lcov != null) ...<String>['--coverage', '--coverage-out=$lcov'],
       ...options,
       ...paths,
     ],

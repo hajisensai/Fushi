@@ -7,6 +7,17 @@
 # exist, nothing else is accepted. stdout is the `flutter test --reporter json`
 # event stream, the exit code is flutter's.
 #
+# Two options are this script's own, taken off before the runner starts
+# (they reach it through any shim as plain `--name[=value]` options):
+#   --fushi-package=<name>  the batch is packages/<name>'s suites; a pure Dart
+#                           package (no Flutter SDK dependency) runs under
+#                           `dart test`, as on CI.
+#   --coverage              each runner process writes lcov to a file here,
+#                           which then goes out on stdout as one
+#                           {"type":"fushiCoverage","lcov":"<base64>"} line
+#                           (the coordinator merges them; nothing else of
+#                           this machine's files leaves it).
+#
 # itest mode (macOS only; Windows integration tests run on the coordinator's
 # own machine through tool/run_windows_itest.ps1): the app is built once per
 # checkout state from the generated entry (itest_entry.sh), then each file is
@@ -23,6 +34,17 @@ mkdir -p "$state"
 
 concurrency=$1
 shift
+pkg=
+coverage=
+own=()
+for a in "$@"; do
+  case "$a" in
+    --fushi-package=*) pkg=${a#--fushi-package=} ;;
+    --coverage) coverage=1 ;;
+    *) own+=("$a") ;;
+  esac
+done
+set -- ${own[@]+"${own[@]}"}
 itest=
 if [ "$concurrency" = itest ]; then
   itest=1
@@ -37,6 +59,21 @@ case "$concurrency" in
 esac
 path_re='^test/[A-Za-z0-9_./-]+_test\.dart$'
 [ -n "$itest" ] && path_re='^integration_test/[A-Za-z0-9_./-]+_test\.dart$'
+runner=flutter
+if [ -n "$pkg" ]; then
+  if [ -n "$itest" ] || ! printf '%s\n' "$pkg" | grep -Eq '^[a-z0-9_]+$' ||
+     [ ! -f "../packages/$pkg/pubspec.yaml" ]; then
+    echo "error: rejected package '$pkg'" >&2
+    exit 2
+  fi
+  cd "../packages/$pkg" || exit 2
+  grep -Eq '^[[:space:]]+sdk:[[:space:]]*flutter[[:space:]]*$' pubspec.yaml ||
+    runner=dart
+fi
+if [ -n "$coverage" ] && { [ -n "$itest" ] || [ "$runner" = dart ]; }; then
+  echo "error: --coverage is for flutter test batches only" >&2
+  exit 2
+fi
 
 files=()
 while IFS= read -r f || [ -n "$f" ]; do
@@ -146,9 +183,18 @@ if [ -n "$itest" ]; then
       "$f" "$status" "$(( ($(date +%s) - start) * 1000 ))" "$tail"
   done
 else
-  args=(test --no-pub --reporter json)
+  args=(test --reporter json)
+  [ "$runner" = flutter ] && args+=(--no-pub)
   if [ "$concurrency" -gt 0 ]; then
     args+=("--concurrency=$concurrency")
+  fi
+  cov="$state/coverage.info"
+  covarg=()
+  if [ -n "$coverage" ]; then
+    # flutter on Windows takes a Windows path.
+    covpath=$cov
+    [ -n "$windows" ] && covpath=$(cygpath -m "$cov")
+    covarg=(--coverage "--coverage-path=$covpath")
   fi
   # Windows caps a command line at 32767 characters: a big batch runs as
   # several back-to-back processes, whose event streams the coordinator splits
@@ -171,9 +217,16 @@ else
   for (( c = 0; c + 1 < ${#starts[@]}; c++ )); do
     from=${starts[$c]}
     count=$(( ${starts[$((c + 1))]} - from ))
-    run_child flutter "${args[@]}" "$@" "${files[@]:$from:$count}"
+    rm -f "$cov"
+    run_child "$runner" "${args[@]}" ${covarg[@]+"${covarg[@]}"} "$@" \
+      "${files[@]:$from:$count}"
     status=$?
     [ "$rc" -eq 0 ] && rc=$status
+    if [ -n "$coverage" ] && [ -s "$cov" ]; then
+      printf '{"type":"fushiCoverage","lcov":"'
+      base64 < "$cov" | tr -d '\n'
+      printf '"}\n'
+    fi
   done
 fi
 kill "$heartbeat" 2>/dev/null
