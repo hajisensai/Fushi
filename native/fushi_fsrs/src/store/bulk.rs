@@ -202,9 +202,10 @@ fn read_cols(c: &Connection, q: &str, params: &[&dyn rusqlite::ToSql], kinds: &[
                     _ => None,
                 }
             };
+            // ID 列存的是 16 字节 BLOB（store/ids.rs）：这里直接解码回文本，不在 SQL 里逐行套 `srs_idt`。
             let text = |v: ValueRef<'_>| -> Option<String> {
                 match v {
-                    ValueRef::Text(t) => Some(String::from_utf8_lossy(t).into_owned()),
+                    ValueRef::Text(_) | ValueRef::Blob(_) => super::ids::text(v),
                     ValueRef::Integer(x) => Some(x.to_string()),
                     _ => None,
                 }
@@ -282,9 +283,9 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
     ];
     let (rows, mut cols) = read_cols(
         c,
-        "SELECT srs_idt(c.id) AS id, srs_idt(c.note_id) AS note_id, srs_idt(c.deck_id) AS deck_id, c.queue, c.scheduled_days, c.suspended, c.buried_until_day, c.scheduler, \
+        "SELECT c.id, c.note_id, c.deck_id, c.queue, c.scheduled_days, c.suspended, c.buried_until_day, c.scheduler, \
          c.due_day, c.due_at, c.stability, c.difficulty, c.last_reviewed_at, c.lapses, c.reps, \
-         COALESCE(n.created_at, c.note_created_at), srs_idt(c.last_log_id) AS last_log_id, n.source_kind, n.source_title \
+         COALESCE(n.created_at, c.note_created_at), c.last_log_id, n.source_kind, n.source_title \
          FROM srs_cards_cache c LEFT JOIN srs_notes_cache n ON n.id = c.note_id \
          WHERE c.profile_uid = srs_id(?1) AND c.hidden = 0",
         &[&profile],
@@ -338,7 +339,7 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
     // 复习投影。
     let mut stmt = c
         .prepare_cached(
-            "SELECT srs_idt(card_id) AS card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
+            "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
              FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
         )
         .map_err(sql)?;
@@ -347,7 +348,7 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut extra: Vec<String> = Vec::new();
     while let Some(r) = it.next().map_err(sql)? {
-        let id: String = r.get(0).map_err(sql)?;
+        let id = super::ids::col(r, 0).map_err(sql)?;
         let next = rows as i64 + extra.len() as i64;
         let i = match index.get(&id) {
             Some(i) => *i,
