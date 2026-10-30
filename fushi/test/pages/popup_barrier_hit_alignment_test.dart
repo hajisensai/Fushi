@@ -60,7 +60,7 @@ void main() {
                 // 桌面默认禁用滑动关闭，避免 SwipeDismissWrapper 干扰命中。
                 enableSwipeToClose: false,
                 onDismiss: () {},
-                onTextSelected: (text, rect) {},
+                onTextSelected: (text, rect, _) {},
                 onLinkClick: (query, rect) {},
                 onMineEntry: (fields) async => const MinePopupResult(),
                 onDuplicateCheck: (expression, reading) async => false,

@@ -2436,6 +2436,7 @@ function fushiShiftScanAt(x, y) {
   // 供随后 highlightSelection 高亮 + 取 bbox；内部 fire 的 textSelected 经 bridge-shim 进 __fushiOnLinkClick，
   // 那里按选区不在弹窗 ShadowRoot 内丢弃（页面选词不是递归查词）。
   const term = window.fushiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, x, y);
+  const termRuby = fushiSelectionRuby(term);
   // TODO-1218②：立刻快照被查词的锚点几何（selection.js getSelectionRect）。不能等响应回来才量——
   // 那时并发的 selectText 可能已清掉 fushiSelection.selection → highlightSelection 返回 null → 锚点
   // 退回鼠标坐标（弹窗比词底高半行）。随响应传给 fushiRender 作回退锚点。
@@ -2449,7 +2450,7 @@ function fushiShiftScanAt(x, y) {
   if (!term || !term.trim()) return;
   if (term === fushiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
   fushiLastTerm = term;
-  fushiSendLookup(term, fushiAnchorRect, null, false, hit, true);
+  fushiSendLookup(term, fushiAnchorRect, null, false, hit, true, termRuby);
 }
 // 在途结果回来后补查被在途闸吞掉的最后一次悬停取词。补查照走各自入口的全部门控（Shift 总开关、
 // 同词去重、悬浮字幕的 cue 去重），指针停在已显示的那个词上时就是 no-op。
@@ -2531,7 +2532,42 @@ function fushiShowConnectionFailure(resp) {
 // 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停正在播放的视频，并记下
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
-function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor, openedByHover) {
+// 原文自带振假名随查词带给 app（app 让引擎把读音吻合的同长度候选排前面；只用来源自带的
+// 读音，绝不推断读音）。selection.js 在 selectFromPosition 之后把 `[{s,e,r}]` 放进
+// fushiSelection.selection.rubyReadings，坐标是选出的原文 selection.text 的 UTF-16 偏移。
+// 真正发出去的 term 若被裁过句首空白 / 截短，这里按同样的偏移平移，越界 / 被截断的段丢弃；
+// term 根本不是 raw 去句首空白后的前缀（调用方改写过词）就整份不用——宁缺不错配。
+function fushiAlignLookupRuby(raw, term, ruby) {
+  if (!Array.isArray(ruby) || !ruby.length) return null;
+  const source = String(raw == null ? '' : raw);
+  const value = String(term == null ? '' : term);
+  if (!value) return null;
+  const lead = source.length - source.replace(/^\s+/, '').length;
+  if (source.substr(lead, value.length) !== value) return null;
+  const out = [];
+  for (const span of ruby) {
+    if (!span || typeof span.r !== 'string' || !span.r.trim()) continue;
+    const s = Number(span.s);
+    const e = Number(span.e);
+    if (!Number.isInteger(s) || !Number.isInteger(e) || e <= s) continue;
+    if (s < lead || e > lead + value.length) continue;
+    out.push({ s: s - lead, e: e - lead, r: span.r.trim() });
+  }
+  return out.length ? out : null;
+}
+window.fushiAlignLookupRuby = fushiAlignLookupRuby;
+// 刚由 selectFromPosition 选出的词的原文振假名（对齐到 [term]）；没有 / 结构异常 → null。
+// 必须紧跟 selectFromPosition 同步读：之后并发的 selectText / clearSelection 会换掉 selection。
+function fushiSelectionRuby(term) {
+  try {
+    const sel = window.fushiSelection && window.fushiSelection.selection;
+    if (!sel || !Array.isArray(sel.rubyReadings)) return null;
+    return fushiAlignLookupRuby(typeof sel.text === 'string' ? sel.text : term, term, sel.rubyReadings);
+  } catch (_) {
+    return null;
+  }
+}
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor, openedByHover, ruby) {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
@@ -2579,6 +2615,8 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
         rect: rect,
         fromHover: openedByHover === true,
         fromSidePanel: fromSidePanel === true,
+        // 原文振假名（已按 term 对齐）：宿主 app 的引擎据此让读音吻合的候选排前。
+        ruby: Array.isArray(ruby) && ruby.length ? ruby : null,
       }, function (matched) {
         if (seq !== fushiHostLookupSeq || !fushiHostLookupOpen) return;
         fushiHostHighlight(matched);
@@ -2605,7 +2643,10 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
   const clientStartedAt = performance.now();
   const clientSentEpochMs = performance.timeOrigin + clientStartedAt;
   try {
-    chrome.runtime.sendMessage({ type: 'lookup', term, clientSentEpochMs }, (resp) => {
+    // 原文振假名只在非空时带（空 / 无 = 旧消息形态逐字不变）。
+    const lookupMessage = { type: 'lookup', term, clientSentEpochMs };
+    if (Array.isArray(ruby) && ruby.length) lookupMessage.ruby = ruby;
+    chrome.runtime.sendMessage(lookupMessage, (resp) => {
       fushiPending = false;
       const responseAt = performance.now();
       const responseEpochMs = performance.timeOrigin + responseAt;
@@ -2729,6 +2770,7 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
   }
   if (!hit) return;
   const term = window.fushiSelection.selectFromPosition(hit.node, hit.offset, FUSHI_MAX_LEN, clientX, clientY);
+  const termRuby = fushiSelectionRuby(term);
   fushiClearNativeSelection(); // TODO-1279：显式点击查词同样清掉浏览器原生蓝色选区，只留覆盖层高亮
   let anchorRect = null;
   try {
@@ -2756,7 +2798,7 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
     fushiLastAutoLookupKey = lookupKey;
   }
   fushiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
-  fushiSendLookup(term, anchorRect, cueWindow, false, hit, autoLookup); // TODO-1219 P3：面板行传入精确窗；auto=悬浮字幕自动查词=悬停会话
+  fushiSendLookup(term, anchorRect, cueWindow, false, hit, autoLookup, termRuby); // TODO-1219 P3：面板行传入精确窗；auto=悬浮字幕自动查词=悬停会话
 };
 // 原生 Side Panel 自己请求并渲染词典，视频页只保留精确 cue 窗（制卡媒体）以及可选的
 // “查词时暂停”。这里不创建弹窗、不读/写宿主 Selection，也不修改任何宿主文本节点。
@@ -2777,9 +2819,11 @@ window.fushiPrepareLookupFromSidePanel = function (cueWindow) {
 // 取词发生在侧栏，宿主页这边并没有对应选区：先清掉上一轮的选区与高亮覆盖层，否则 fushiRender
 // 会拿上一个词的 rects 当锚点、并把那处词重新点亮。锚点给视口右上角的零宽矩形，经落点夹取后
 // 弹窗贴右缘展开——紧邻侧栏、也不压住底部字幕。
-window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio) {
+window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio, ruby) {
   const value = String(term || '').trim();
   if (!value) return false;
+  // 侧栏取词时的原文振假名以侧栏发来的 term 为坐标系，裁掉首尾空白后照样平移。
+  const valueRuby = fushiAlignLookupRuby(term, value, ruby);
   try {
     if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
       window.fushiSelection.clearSelection();
@@ -2800,7 +2844,7 @@ window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio) {
     left: edge, top: y, right: edge, bottom: y,
     authoritative: true, // 宿主页上没有对应选区，锚点以这份为准（见 fushiRender）
   };
-  fushiSendLookup(value, anchorRect, cueWindow, true);
+  fushiSendLookup(value, anchorRect, cueWindow, true, undefined, undefined, valueRuby);
   return true;
 };
 // 侧栏按 Esc 时关掉页面上的这份弹窗（面板内那份由侧栏自己关）。fushiRemoveContainer 幂等，
@@ -2848,9 +2892,9 @@ function fushiSelectionInsidePopup() {
 // 选区落在弹窗 ShadowRoot 里才是「弹窗内选词 → 递归查词」；页面上的选词若也照开子层，根弹窗
 // 在场时按住 Shift 在同一个词上挪几像素就会叠出一层同词子层（每次还白发一笔查词请求），
 // 而子层在场会让悬停离开判定永远否决——视频一直停着（用户报「移出去还是暂停」）。
-window.__fushiOnLinkClick = function (query, anchor, highlight) {
+window.__fushiOnLinkClick = function (query, anchor, highlight, ruby) {
   if (highlight === true && !fushiSelectionInsidePopup()) return;
-  if (window.fushiNestedPopups) window.fushiNestedPopups.open(query, anchor, highlight);
+  if (window.fushiNestedPopups) window.fushiNestedPopups.open(query, anchor, highlight, ruby);
 };
 
 // BUG-767：计算查词弹窗落点，保证**永不覆盖被查词**。纯函数（不碰 DOM），便于单测。

@@ -2365,6 +2365,24 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// [consumeOutsideClicksOwnerHwnd]：attached 校准字形表面命中时传游戏
   /// HWND，桌面弹窗「点卡外关闭」的点击成对吞掉、不推进游戏；台词浮窗（C 表面）
   /// 不传，行为不变。
+  /// [term]（分词器按 [index] 切出的词）在 [entry] 正文里的起点不由分词器回报：
+  /// 只在「覆盖 [index] 的出现位置唯一」时才取，歧义就不带 ruby（宁缺毋滥）。
+  List<FushiRubySpan> _rubySpansForWord(
+    TexthookerLineEntry entry,
+    String term,
+    int index,
+  ) {
+    if (entry.rubySpans.isEmpty) return const <FushiRubySpan>[];
+    int? found;
+    for (int s = index - term.length + 1; s <= index; s++) {
+      if (s < 0 || !entry.text.startsWith(term, s)) continue;
+      if (found != null) return const <FushiRubySpan>[];
+      found = s;
+    }
+    if (found == null) return const <FushiRubySpan>[];
+    return rubySpansForQuery(entry.rubySpans, found, term.length);
+  }
+
   Future<void> _onLookupText(
     String lineId,
     String text,
@@ -2392,6 +2410,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (term.isEmpty) return;
     await GlobalLookupController.instance.lookupText(
       term,
+      rubySpans: _rubySpansForWord(entry, term, index),
       // 台词浮窗本身已经显示完整句子；查词卡只保留词典正文。完整 sentence 仍会
       // 进入 mining 上下文（{sentence} 回落）。
       sentence: _cardSentenceForGame(entry, entry.text),

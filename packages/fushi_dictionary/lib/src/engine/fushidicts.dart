@@ -18,6 +18,7 @@ import '../language/transform_description_i18n.dart';
 import '../models/dictionary_search_result.dart';
 import 'background_borrow.dart';
 import 'lookup_scheduler.dart';
+import 'ruby_spans.dart';
 // 变形表资源的读法按宿主分：Flutter app 走 rootBundle（`dart.library.ui` 分支），
 // 纯 Dart 宿主（无头服务端）落到 stub，改用 [FushiDicts.preloadTransformsFrom]
 // 自己读文件。本文件因此零 Flutter，可进 fushi_dictionary_core 子 barrel。
@@ -29,6 +30,7 @@ export 'fushidicts_models.dart';
 export 'background_borrow.dart'
     show BackgroundBorrowLedger, borrowNativeHandle;
 export 'lookup_scheduler.dart' show LookupJobScheduler;
+export 'ruby_spans.dart';
 
 part 'background_lookup.dart';
 
@@ -966,6 +968,7 @@ class FushiDicts {
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
     bool chineseSimpToTrad = false,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) =>
       _lookupWith(
         _bindings!,
@@ -977,6 +980,7 @@ class FushiDicts {
         frequencyOrder: frequencyOrder,
         primaryReading: primaryReading,
         chineseSimpToTrad: chineseSimpToTrad,
+        rubySpans: rubySpans,
       );
 
   /// 同步路径（[lookup]）与后台查词共用的一次原生 lookup（同一份封送与转换）。
@@ -990,21 +994,36 @@ class FushiDicts {
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
     bool chineseSimpToTrad = false,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
     final bool useOptions = frequencyDictionary != null ||
         frequencyOrder != FushiLookupFrequencyOrder.auto ||
         primaryReading != null;
+    // 原文振假名：UTF-16 区间换成引擎用的码点偏移，一次 FFI 整批带过去。
+    final ({List<int> bounds, String readings}) ruby =
+        rubySpansToCodePointBounds(text, rubySpans);
+    final int rubyCount = ruby.bounds.length ~/ 2;
     final tp = text.toNativeUtf8(allocator: calloc);
     final fd = (frequencyDictionary ?? '').toNativeUtf8(allocator: calloc);
     final pr = (primaryReading ?? '').toNativeUtf8(allocator: calloc);
+    final Pointer<Utf8> rr = rubyCount == 0
+        ? nullptr
+        : ruby.readings.toNativeUtf8(allocator: calloc);
+    final Pointer<Int32> rb =
+        rubyCount == 0 ? nullptr : calloc<Int32>(ruby.bounds.length);
+    if (rubyCount > 0) rb.asTypedList(ruby.bounds.length).setAll(0, ruby.bounds);
+    final int flags = chineseSimpToTrad ? _lookupFlagChineseSimpToTrad : 0;
     try {
-      final r = chineseSimpToTrad
-          ? bindings.lookupWithFlags(handle, tp, maxResults, scanLength, fd,
-              frequencyOrder.index, pr, _lookupFlagChineseSimpToTrad)
-          : useOptions
-              ? bindings.lookupWithOptions(handle, tp, maxResults, scanLength,
-                  fd, frequencyOrder.index, pr)
-              : bindings.lookup(handle, tp, maxResults, scanLength);
+      final r = rubyCount > 0
+          ? bindings.lookupWithRuby(handle, tp, maxResults, scanLength, fd,
+              frequencyOrder.index, pr, flags, rb, rr, rubyCount)
+          : chineseSimpToTrad
+              ? bindings.lookupWithFlags(handle, tp, maxResults, scanLength,
+                  fd, frequencyOrder.index, pr, flags)
+              : useOptions
+                  ? bindings.lookupWithOptions(handle, tp, maxResults,
+                      scanLength, fd, frequencyOrder.index, pr)
+                  : bindings.lookup(handle, tp, maxResults, scanLength);
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
@@ -1036,6 +1055,10 @@ class FushiDicts {
       calloc.free(tp);
       calloc.free(fd);
       calloc.free(pr);
+      if (rubyCount > 0) {
+        calloc.free(rr);
+        calloc.free(rb);
+      }
     }
   }
 

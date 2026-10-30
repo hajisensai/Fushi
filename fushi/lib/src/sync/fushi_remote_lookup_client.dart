@@ -9,7 +9,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show kRemoteDictionaryMediaMaxBytes, safeDictionaryMediaPath;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
-    show kRemoteLookupLanguageField;
+    show kRemoteLookupLanguageField, kRemoteLookupRubyField;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -116,11 +116,15 @@ class FushiRemoteLookupClient {
   ///
   /// [language]：本端这次查词的语言（BCP-47）。带上后 host 按它而不是 host 自己正在读
   /// 的内容决定是否开简体 → 繁體回落；null / 空串不发该字段（旧 host 本就忽略它）。
+  ///
+  /// [rubySpans]：原文自带振假名（以 [term] 为坐标系）。非空才发 `ruby` 字段，host 让引擎
+  /// 把读音吻合的同长度候选排前面；空时请求体与旧版逐字相同（旧 host 本就忽略该字段）。
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
     required int maximumTerms,
     String? language,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final String? lookupLanguage =
         (language == null || language.trim().isEmpty) ? null : language.trim();
@@ -131,6 +135,8 @@ class FushiRemoteLookupClient {
         'wildcards': wildcards,
         'maximumTerms': maximumTerms,
         if (lookupLanguage != null) kRemoteLookupLanguageField: lookupLanguage,
+        if (rubySpans.isNotEmpty)
+          kRemoteLookupRubyField: FushiRubySpan.listToWire(rubySpans),
         // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
         if (_trackDictionaryStyles)
           'stylesRevision': _dictionaryStylesRevision ?? '',

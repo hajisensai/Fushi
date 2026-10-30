@@ -7611,7 +7611,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       screen: screen,
       controller: _popup,
       wrapContent: _wrapPopupHoverProbe,
-      onPush: (String text, Rect rect) {
+      onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) {
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
         // [rect] 已是中和后浮层坐标（父浮层 pos + WebView 局部 rect 叠出，均在同一
         // 真实视口空间），直接复用，无需任何缩放换算。
@@ -7622,6 +7622,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           selectionRect: rect,
           controller: _popup,
           autoRead: true,
+          rubySpans: rubySpans,
         );
       },
       onPop: _popNestedPopupAt,

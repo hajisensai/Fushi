@@ -42,4 +42,10 @@ bool matches_mixed_orthography(const std::string& query, const std::string& expr
 // 读音里的片假名转平假名；其余字符原样。
 std::string to_hiragana(const std::string& text);
 
+// 假名（平假名 / 片假名 / 长音 / 叠字符；々〆ヶ 算汉字位，不算假名）。
+bool is_kana(char32_t c);
+
+// 片假名码点折成对应平假名，其余原样（假名比较不分平 / 片）。
+char32_t fold_kana(char32_t c);
+
 }  // namespace mixed_orthography

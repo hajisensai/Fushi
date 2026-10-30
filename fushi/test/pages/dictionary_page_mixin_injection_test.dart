@@ -92,6 +92,7 @@ class _HostState extends ConsumerState<_Host> with DictionaryPageMixin {
   Future<DictionarySearchResult> searchPopupDictionary({
     required String term,
     required int maximumTerms,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     searches.add((term: term, maximumTerms: maximumTerms));
     return DictionarySearchResult(
@@ -125,7 +126,7 @@ class _HostState extends ConsumerState<_Host> with DictionaryPageMixin {
               index: i,
               screen: screen,
               controller: controller,
-              onPush: (String text, Rect rect) async => 0,
+              onPush: (String text, Rect rect, List<FushiRubySpan> _) async => 0,
               onPop: (int index) {},
             ),
         ],

@@ -483,15 +483,58 @@
     return cached;
   }
 
-  function fetchLookup(value) {
-    var cached = cachedLookup(value);
+  // 原文自带振假名随查词带给 app（引擎按读音排同长度候选；只用来源自带的读音，不推断）。
+  // selection.js 把 `[{s,e,r}]` 放在 fushiSelection.selection.rubyReadings（以 selection.text
+  // 为坐标系）；与 content.js 的 fushiAlignLookupRuby 同一规则：按裁掉的句首空白平移，越界 /
+  // 被截断的段丢弃，term 不是原文去句首空白后的前缀就整份不用。
+  function alignLookupRuby(raw, term, ruby) {
+    if (!Array.isArray(ruby) || !ruby.length) return null;
+    var source = String(raw == null ? '' : raw);
+    var value = String(term == null ? '' : term);
+    if (!value) return null;
+    var lead = source.length - source.replace(/^\s+/, '').length;
+    if (source.substr(lead, value.length) !== value) return null;
+    var out = [];
+    for (var i = 0; i < ruby.length; i++) {
+      var span = ruby[i];
+      if (!span || typeof span.r !== 'string' || !span.r.trim()) continue;
+      var s = Number(span.s);
+      var e = Number(span.e);
+      if (!Number.isInteger(s) || !Number.isInteger(e) || e <= s) continue;
+      if (s < lead || e > lead + value.length) continue;
+      out.push({ s: s - lead, e: e - lead, r: span.r.trim() });
+    }
+    return out.length ? out : null;
+  }
+
+  // 刚由 selectFromPosition 选出的词的原文振假名（对齐到 term）；必须紧跟选词同步读。
+  function selectionRuby(term) {
+    try {
+      var sel = window.fushiSelection && window.fushiSelection.selection;
+      if (!sel || !Array.isArray(sel.rubyReadings)) return null;
+      return alignLookupRuby(typeof sel.text === 'string' ? sel.text : term, term, sel.rubyReadings);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // 带 ruby 的查词结果排序不同，缓存 / 在途去重必须单独成键（无 ruby 时键就是词本身）。
+  function lookupKey(value, ruby) {
+    return ruby && ruby.length ? value + '\u0000ruby:' + JSON.stringify(ruby) : value;
+  }
+
+  function fetchLookup(value, ruby) {
+    var key = lookupKey(value, ruby);
+    var cached = cachedLookup(key);
     if (cached) return Promise.resolve(cached);
-    if (lookupInFlight.has(value)) return lookupInFlight.get(value);
+    if (lookupInFlight.has(key)) return lookupInFlight.get(key);
     var clientStartedAt = performance.now();
     var clientSentEpochMs = performance.timeOrigin + clientStartedAt;
-    var request = sendRuntime({
+    var lookupMessage = {
       type: 'lookup', term: value, clientSentEpochMs: clientSentEpochMs,
-    }).then(function (response) {
+    };
+    if (ruby && ruby.length) lookupMessage.ruby = ruby;
+    var request = sendRuntime(lookupMessage).then(function (response) {
       var responseAt = performance.now();
       var responseEpochMs = performance.timeOrigin + responseAt;
       if (!response || response.ok !== true || !response.data ||
@@ -564,18 +607,19 @@
         parsedEntryCount: prepared.entries.length,
         responseChars: servicePerf.responseChars || data.popupJson.length,
       });
-      rememberLookup(value, prepared);
+      rememberLookup(key, prepared);
       return prepared;
     }).finally(function () {
-      lookupInFlight.delete(value);
+      lookupInFlight.delete(key);
     });
-    lookupInFlight.set(value, request);
+    lookupInFlight.set(key, request);
     return request;
   }
 
-  async function lookupTerm(term, cue, anchor) {
+  async function lookupTerm(term, cue, anchor, ruby) {
     var value = String(term || '').trim();
     if (!value) return;
+    var valueRuby = alignLookupRuby(term, value, ruby);
     var shouldPosition = !!anchor;
     if (lookupOnPage) {
       // 「跨出面板」路径：只负责把词递给宿主页，查词请求、暂停/恢复、嵌套查词、发音、查重、
@@ -587,6 +631,7 @@
         // 侧栏与宿主页是两个视口，绝对坐标没有意义；交纵向比例，页面按自己的视口还原，
         // 弹窗就落在被点那一行的高度上（贴右缘=紧邻侧栏），不再固定糊在右上角挡内容。
         anchorRatio: lookupAnchorRatio(anchor),
+        ...(valueRuby ? { ruby: valueRuby } : {}),
       });
       if (shown && shown.ok === true) {
         pageLookupOpen = true;
@@ -602,7 +647,7 @@
     // 与 Yomitan 的主动修饰键扫描一致：host 已驻留，Shift 按下立即走查询；cue 准备与
     // 词典请求并行，同词的在途请求和已解析结果都复用，避免重复 IPC、JSON.parse 与 DOM 构建。
     sendToTab({ type: 'fushiSubtitleSidePanelPrepareLookup', cue: currentLookupCue });
-    var cached = cachedLookup(value);
+    var cached = cachedLookup(lookupKey(value, valueRuby));
     if (cached) {
       renderLookupData(value, cached, true);
       if (shouldPosition) positionLookup(anchor);
@@ -615,7 +660,7 @@
     var data = null;
     try {
       lookupPendingSince = Date.now();
-      data = await fetchLookup(value);
+      data = await fetchLookup(value, valueRuby);
     } catch (_) {
       data = null;
     } finally {
@@ -676,6 +721,7 @@
     var hovered = document.elementFromPoint(pointer.x, pointer.y);
     if (!hovered || (hovered !== pointer.textEl && !pointer.textEl.contains(hovered))) return false;
     var term = '';
+    var termRuby = null;
     var hit = null;
     try {
       hit = window.fushiSelection && window.fushiSelection.getCharacterAtPoint
@@ -684,6 +730,7 @@
         term = window.fushiSelection.selectFromPosition(
           hit.node, hit.offset, 12, pointer.x, pointer.y,
         );
+        termRuby = selectionRuby(term);
       }
     } catch (_) { term = ''; }
     if (!term) {
@@ -699,7 +746,7 @@
       return false;
     }
     activeScanKey = scanKey;
-    lookupTerm(term, pointer.cue, anchorForHit(hit, pointer.x, pointer.y));
+    lookupTerm(term, pointer.cue, anchorForHit(hit, pointer.x, pointer.y), termRuby);
     return true;
   }
 
