@@ -77,7 +77,9 @@ void main() {
       (await targetSrs.db
               .customSelect(
                 'SELECT profile_uid FROM srs_entities WHERE id = ?',
-                variables: <Variable<Object>>[Variable<String>(entityId)],
+                variables: <Variable<Object>>[
+                  Variable<String>(entityId, srsIdType),
+                ],
               )
               .getSingleOrNull())
           ?.read<String>('profile_uid');
