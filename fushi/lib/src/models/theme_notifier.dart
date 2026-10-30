@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha256;
@@ -10,7 +11,9 @@ import 'package:cupertino_ui/cupertino_ui.dart'
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
@@ -955,6 +958,273 @@ class ThemeNotifier extends ChangeNotifier {
     return <String>[raw.substring(0, mid), raw.substring(mid + 1, last), seed];
   }
 
+  // ── 页面背景（预设 / 自定义图片 / 图片取色）────────────────────────────
+  //
+  // 样式类偏好随 Profile 走；图片文件路径与取色缓存设备本地（见
+  // `kPageBackdropDeviceLocalPrefKeys`）。生效快照发布到全局
+  // [pageBackdropSettings]，路由层背景监听它。
+
+  /// 从背景图文件取候选种子色（ARGB）。测试可替换。
+  @visibleForTesting
+  static Future<List<int>> Function(String path) pageBackdropSeedExtractor =
+      _extractPageBackdropSeedsFromFile;
+
+  /// 背景图复制到的目录。测试可替换。
+  @visibleForTesting
+  static Future<Directory> Function() pageBackdropImageDirectory =
+      _defaultPageBackdropImageDirectory;
+
+  static Future<List<int>> _extractPageBackdropSeedsFromFile(
+    String path,
+  ) async {
+    final Uint8List bytes = await File(path).readAsBytes();
+    return extractImageSeedCandidates(
+      bytes,
+      desired: kPageBackdropSeedCandidates,
+    );
+  }
+
+  static Future<Directory> _defaultPageBackdropImageDirectory() async {
+    final Directory root = await AppPaths.supportRootDirectory();
+    return Directory('${root.path}${Platform.pathSeparator}page_backdrop');
+  }
+
+  PageBackdropPreset get pageBackdropPreset =>
+      PageBackdropPreset.fromWire(_get(kPageBackdropPresetPrefKey));
+
+  PageBackdropStrength get pageBackdropStrength =>
+      PageBackdropStrength.fromWire(_get(kPageBackdropStrengthPrefKey));
+
+  bool get pageBackdropMotion =>
+      _get(kPageBackdropMotionPrefKey, defaultValue: false) as bool;
+
+  PageBackdropBlur get pageBackdropBlur =>
+      PageBackdropBlur.fromWire(_get(kPageBackdropImageBlurPrefKey));
+
+  double get pageBackdropScrim =>
+      clampPageBackdropScrim(_get(kPageBackdropImageScrimPrefKey));
+
+  /// 「从图片取色」：默认开（选了自己的图，配色跟着图走是预期行为）。
+  bool get followPageBackdropAccent =>
+      _get(kPageBackdropFollowImageAccentPrefKey, defaultValue: true) as bool;
+
+  /// 用户在候选种子色里选的第几个（越界时夹到最后一个）。
+  int get pageBackdropAccentIndex {
+    final Object? raw = _get(kPageBackdropAccentIndexPrefKey, defaultValue: 0);
+    return raw is int && raw >= 0 ? raw : 0;
+  }
+
+  /// 当前横屏图的候选种子色（最近一次取色结果；没有图时为空）。
+  List<Color> get pageBackdropSeedCandidates =>
+      List<Color>.unmodifiable(_pageBackdropSeeds);
+
+  List<Color> _pageBackdropSeeds = const <Color>[];
+  int _pageBackdropSeedGeneration = 0;
+
+  /// 「从图片取色」实际生效的种子：选了自定义图片、图片在、开关开着、且已取到色。
+  /// 只读已发布的快照，不碰文件系统（主题每次构建都会走到这里）。
+  Color? get pageBackdropAccentSeed {
+    if (!pageBackdropSettings.value.hasCustomImage) return null;
+    if (!followPageBackdropAccent) return null;
+    if (_pageBackdropSeeds.isEmpty) return null;
+    return _pageBackdropSeeds[math.min(
+      pageBackdropAccentIndex,
+      _pageBackdropSeeds.length - 1,
+    )];
+  }
+
+  /// 覆盖生效主题的种子：背景图取色优先，其次「主题色跟随图标」。两者都只是覆盖，
+  /// 不改写主题偏好。
+  Color? get _overrideAccentSeed =>
+      pageBackdropAccentSeed ?? appIconAccentSeed;
+
+  PageBackdropSettings _readPageBackdropSettings() => PageBackdropSettings(
+    preset: pageBackdropPreset,
+    strength: pageBackdropStrength,
+    motion: pageBackdropMotion,
+    landscapeImagePath: existingPageBackdropImagePath(
+      _get(kPageBackdropLandscapeImagePrefKey),
+    ),
+    portraitImagePath: existingPageBackdropImagePath(
+      _get(kPageBackdropPortraitImagePrefKey),
+    ),
+    blur: pageBackdropBlur,
+    scrim: pageBackdropScrim,
+  );
+
+  /// 重读偏好发布快照；生效种子变了就重建主题。
+  void _publishPageBackdrop() {
+    final Color? before = pageBackdropAccentSeed;
+    pageBackdropSettings.value = _readPageBackdropSettings();
+    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+  }
+
+  void _onPageBackdropPreferencesLoaded() {
+    _publishPageBackdrop();
+    unawaited(refreshPageBackdropSeeds());
+  }
+
+  Future<void> setPageBackdropPreset(PageBackdropPreset preset) async {
+    await _set(kPageBackdropPresetPrefKey, preset.wire);
+    _publishPageBackdrop();
+    await refreshPageBackdropSeeds();
+  }
+
+  Future<void> setPageBackdropStrength(PageBackdropStrength strength) async {
+    await _set(kPageBackdropStrengthPrefKey, strength.wire);
+    _publishPageBackdrop();
+  }
+
+  Future<void> setPageBackdropMotion(bool value) async {
+    await _set(kPageBackdropMotionPrefKey, value);
+    _publishPageBackdrop();
+  }
+
+  Future<void> setPageBackdropBlur(PageBackdropBlur blur) async {
+    await _set(kPageBackdropImageBlurPrefKey, blur.wire);
+    _publishPageBackdrop();
+  }
+
+  Future<void> setPageBackdropScrim(double scrim) async {
+    await _set(kPageBackdropImageScrimPrefKey, clampPageBackdropScrim(scrim));
+    _publishPageBackdrop();
+  }
+
+  Future<void> setFollowPageBackdropAccent(bool value) async {
+    final Color? before = pageBackdropAccentSeed;
+    await _set(kPageBackdropFollowImageAccentPrefKey, value);
+    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+  }
+
+  Future<void> setPageBackdropAccentIndex(int index) async {
+    final Color? before = pageBackdropAccentSeed;
+    await _set(kPageBackdropAccentIndexPrefKey, math.max(0, index));
+    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+  }
+
+  /// 把用户选的图片复制进 app 数据目录当背景（[portrait] = 竖屏单独用的那张），
+  /// 并切到「自定义图片」预设。每次换图都写新文件名（[FileImage] 按路径缓存解码
+  /// 结果，同名覆盖会继续显示旧图），旧文件随后删除。
+  Future<void> importPageBackdropImage(
+    File source, {
+    required bool portrait,
+  }) async {
+    final Directory dir = await pageBackdropImageDirectory();
+    await dir.create(recursive: true);
+    final String name = source.path.split(RegExp(r'[\\/]')).last;
+    final int dot = name.lastIndexOf('.');
+    final String ext = dot > 0 ? name.substring(dot).toLowerCase() : '.img';
+    final String slot = portrait ? 'portrait' : 'landscape';
+    final String target =
+        '${dir.path}${Platform.pathSeparator}$slot-'
+        '${DateTime.now().millisecondsSinceEpoch}$ext';
+    await source.copy(target);
+    final String key = portrait
+        ? kPageBackdropPortraitImagePrefKey
+        : kPageBackdropLandscapeImagePrefKey;
+    final Object? previous = _get(key);
+    await _set(key, target);
+    if (!portrait) await _set(kPageBackdropPresetPrefKey, 'custom');
+    await _deleteOwnedPageBackdropImage(previous, dir);
+    _publishPageBackdrop();
+    if (!portrait) {
+      await _set(kPageBackdropAccentIndexPrefKey, 0);
+      await refreshPageBackdropSeeds();
+    }
+  }
+
+  /// 去掉竖屏单独的那张图（竖屏回到与横屏共用）。
+  Future<void> clearPageBackdropPortraitImage() async {
+    final Object? previous = _get(kPageBackdropPortraitImagePrefKey);
+    await _set(kPageBackdropPortraitImagePrefKey, '');
+    await _deleteOwnedPageBackdropImage(
+      previous,
+      await pageBackdropImageDirectory(),
+    );
+    _publishPageBackdrop();
+  }
+
+  /// 只删本功能自己复制进来的文件（路径在 [dir] 下），绝不碰用户原图。
+  Future<void> _deleteOwnedPageBackdropImage(
+    Object? path,
+    Directory dir,
+  ) async {
+    if (path is! String || path.isEmpty) return;
+    if (!File(path).absolute.path.startsWith(dir.absolute.path)) return;
+    try {
+      await File(path).delete();
+    } on FileSystemException catch (error) {
+      debugPrint('[theme] page backdrop image cleanup failed: $error');
+    }
+  }
+
+  /// 按当前横屏图重取候选种子色（没选自定义图片时清空）。先同步套用缓存，再核对
+  /// 文件修改时间 / 大小，变了才在后台重取（与「主题色跟随图标」同一做法）。
+  Future<void> refreshPageBackdropSeeds() async {
+    final int generation = ++_pageBackdropSeedGeneration;
+    final PageBackdropSettings settings = pageBackdropSettings.value;
+    final String? path = settings.hasCustomImage
+        ? settings.landscapeImagePath
+        : null;
+    final Color? before = pageBackdropAccentSeed;
+    if (path == null) {
+      _pageBackdropSeeds = const <Color>[];
+      if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+      return;
+    }
+    final ({String path, String stamp, List<int> seeds})? cache =
+        _readPageBackdropSeedCache();
+    _pageBackdropSeeds = cache != null && cache.path == path
+        ? cache.seeds.map(Color.new).toList(growable: false)
+        : const <Color>[];
+    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+    String? stamp;
+    List<int> seeds;
+    try {
+      final FileStat stat = await File(path).stat();
+      stamp = '${stat.modified.millisecondsSinceEpoch}:${stat.size}';
+      if (generation != _pageBackdropSeedGeneration) return;
+      if (cache != null && cache.path == path && cache.stamp == stamp) return;
+      seeds = await pageBackdropSeedExtractor(path);
+    } catch (error) {
+      debugPrint('[theme] page backdrop seed extraction failed: $error');
+      seeds = const <int>[];
+    }
+    if (generation != _pageBackdropSeedGeneration) return;
+    final Color? previous = pageBackdropAccentSeed;
+    _pageBackdropSeeds = seeds.map(Color.new).toList(growable: false);
+    if (pageBackdropAccentSeed != previous) _onAppIconSeedChanged();
+    // 设置页的候选色圆点要跟着变（种子没变也要通知一次）。
+    notifyListeners();
+    if (seeds.isNotEmpty) {
+      await _set(
+        kPageBackdropSeedCachePrefKey,
+        '$path|$stamp|${seeds.join(',')}',
+      );
+    }
+  }
+
+  ({String path, String stamp, List<int> seeds})? _readPageBackdropSeedCache() {
+    final Object? raw = _get(kPageBackdropSeedCachePrefKey);
+    if (raw is! String) return null;
+    final int last = raw.lastIndexOf('|');
+    if (last <= 0) return null;
+    final int mid = raw.lastIndexOf('|', last - 1);
+    if (mid <= 0) return null;
+    final List<int> seeds = <int>[];
+    for (final String part in raw.substring(last + 1).split(',')) {
+      final int? argb = int.tryParse(part);
+      if (argb == null) return null;
+      seeds.add(argb);
+    }
+    if (seeds.isEmpty) return null;
+    return (
+      path: raw.substring(0, mid),
+      stamp: raw.substring(mid + 1, last),
+      seeds: seeds,
+    );
+  }
+
   // Stable, testable id source. Defaults to epoch-millis + a monotonic counter
   // so two entries created in the same millisecond never collide. Tests can
   // inject a deterministic generator. (TODO-930)
@@ -1048,6 +1318,7 @@ class ThemeNotifier extends ChangeNotifier {
       ..clear()
       ..addAll(snapshot);
     _onAppIconPreferencesLoaded();
+    _onPageBackdropPreferencesLoaded();
     _designSystemPreferenceRevision++;
     final _DesignSystemPreferenceMigration? migration =
         _normalizeHiddenDesignSystemInMemory();
@@ -1070,6 +1341,7 @@ class ThemeNotifier extends ChangeNotifier {
       ..clear()
       ..addAll(all);
     _onAppIconPreferencesLoaded();
+    _onPageBackdropPreferencesLoaded();
     _designSystemPreferenceRevision++;
     final _DesignSystemPreferenceMigration? migration =
         _normalizeHiddenDesignSystemInMemory();
@@ -1677,8 +1949,8 @@ class ThemeNotifier extends ChangeNotifier {
   /// 返回 null（扩展收不到种子就不按种子派生）。以前这里恒为 [_seedColor]，系统取色下落成
   /// 默认种子，扩展派生的另一明暗与 app 实际配色对不上。
   Color? get activeSeedColor {
-    final Color? iconSeed = appIconAccentSeed;
-    if (iconSeed != null) return iconSeed;
+    final Color? overrideSeed = _overrideAccentSeed;
+    if (overrideSeed != null) return overrideSeed;
     if (appThemeKey == 'system-theme') {
       if (_systemPalette != null) return null;
       return _systemAccentColor ?? _seedColor;
@@ -1689,7 +1961,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 当前主题的 M3 方案变体（同上）。系统取色与 [buildSystemThemeColorScheme] 同口径：
   /// 无彩度强调色用 tonalSpot，其余用默认变体。
   DynamicSchemeVariant get activeSchemeVariant {
-    if (appIconAccentSeed != null) return kFushiDefaultSchemeVariant;
+    if (_overrideAccentSeed != null) return kFushiDefaultSchemeVariant;
     if (appThemeKey == 'system-theme') {
       final Color? seed = activeSeedColor;
       return seed != null && isAchromaticSeed(seed)
@@ -1709,9 +1981,9 @@ class ThemeNotifier extends ChangeNotifier {
     if (einkMode) {
       return buildEinkColorScheme(brightness);
     }
-    // 「主题色跟随图标」：自定义图标取出的种子覆盖当前主题（不改写主题偏好，
-    // 关掉开关 / 换回预设图标即回到原主题）。
-    final Color? iconSeed = appIconAccentSeed;
+    // 「背景图取色」/「主题色跟随图标」：取出的种子覆盖当前主题（不改写主题
+    // 偏好，关掉开关 / 换掉图片即回到原主题）。背景图取色优先。
+    final Color? iconSeed = _overrideAccentSeed;
     if (iconSeed != null) {
       return buildFushiColorScheme(
         seedColor: iconSeed,
