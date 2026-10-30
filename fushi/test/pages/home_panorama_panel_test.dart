@@ -4,10 +4,10 @@ import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
 
 void main() {
-  test('自动 / 钉了显示：出；钉了隐藏：不出', () {
+  test('默认（自动）/ 钉了隐藏：不出；钉了显示：出', () {
     expect(
       resolveHomePanoramaPanelVisible(mode: HomeDashboardPanelMode.auto),
-      isTrue,
+      isFalse,
     );
     expect(
       resolveHomePanoramaPanelVisible(mode: HomeDashboardPanelMode.shown),

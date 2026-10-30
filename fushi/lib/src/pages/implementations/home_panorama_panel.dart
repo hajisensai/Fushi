@@ -18,8 +18,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 全景面板该不该出现（纯函数）：钉了显示 / 隐藏照办；自动 = 显示（空库时面板里给引导语）。
+/// 默认（auto）不显示（2026-10-30 用户「默认关闭媒体库全景」）：只有在
+/// 设置 › 外观 › 首页面板 里钉成显示才出现。
 bool resolveHomePanoramaPanelVisible({required HomeDashboardPanelMode mode}) =>
-    mode != HomeDashboardPanelMode.hidden;
+    mode == HomeDashboardPanelMode.shown;
 
 final Provider<bool> homePanoramaPanelVisibleProvider = Provider<bool>((
   Ref ref,
