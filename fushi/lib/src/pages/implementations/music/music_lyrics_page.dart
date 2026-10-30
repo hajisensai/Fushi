@@ -2058,9 +2058,7 @@ class _TitleBarScope extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiTitleBarColorScope(
-    colors: FushiDesktopTitleBar.immersivePagesFillWindow
-        ? fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface)
-        : null,
+    colors: fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface),
     child: child,
   );
 }
