@@ -455,7 +455,9 @@ pub(crate) fn purge_op(conn: &Connection, profile: &str, id: &OpId, own: Option<
         return Ok(());
     }
     let skel = op.purge();
-    conn.prepare_cached("UPDATE sync2_ops SET payload = ?4, purged = 1 WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+    conn.prepare_cached(
+        "UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
+    )
         .map_err(sql)?
         .execute(params![profile, id.device.0.to_vec(), id.seq as i64, &skel.payload[..]])
         .map_err(sql)?;

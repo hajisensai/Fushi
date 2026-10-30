@@ -72,6 +72,12 @@ pub fn register(conn: &Connection) -> rusqlite::Result<()> {
         let body: Option<String> = ctx.get(2)?;
         Ok(bytes_of(&row_hash(tag.as_bytes().first().copied().unwrap_or(0), &id, body.as_deref().unwrap_or(""))))
     })?;
+    // 日志行按快照引用展开后的原文（snapshots.rs）：第二个参数是触发器子查询取到的快照原文（没有引用 = NULL）。
+    conn.create_scalar_function("sync2_dg_log", 2, flags, |ctx| {
+        let json: Option<String> = ctx.get(0)?;
+        let body: Option<String> = ctx.get(1)?;
+        Ok(json.map(|j| super::snapshots::expand_with(&j, body.as_deref())))
+    })?;
     for (name, sign) in [("sync2_dg_add", false), ("sync2_dg_sub", true)] {
         conn.create_scalar_function(name, 2, flags, move |ctx| {
             let a: Vec<u8> = ctx.get(0)?;
@@ -87,15 +93,23 @@ pub fn register(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// 三张投影表：(表, tag, 正文表达式)。
-const TABLES: [(&str, &str, &str); 3] = [
-    ("srs_entities", "e", "kind || payload_json"),
-    ("srs_field_edits", "f", "json"),
-    ("srs_review_logs", "l", "json"),
-];
+/// 三张投影表：(表, tag)；正文表达式见 [body_expr]。
+const TABLES: [(&str, &str); 3] = [("srs_entities", "e"), ("srs_field_edits", "f"), ("srs_review_logs", "l")];
+
+/// 一行的正文表达式（[side] = `NEW.` / `OLD.` / 空）：实体 `kind || payload_json`、修改记录 `json`、日志 `json`
+/// 按配置快照引用展开后的原文（v16，snapshots.rs）——与引用前逐字相同，所以存储形态改了摘要不变。
+fn body_expr(table: &str, side: &str) -> String {
+    match table {
+        "srs_entities" => format!("{side}kind || {side}payload_json"),
+        "srs_review_logs" => format!("sync2_dg_log({side}json, {})", super::snapshots::body_sql(side)),
+        _ => format!("{side}json"),
+    }
+}
 
 /// 桶表与触发器（schema V12）。可重放：先删同名触发器再建。
 pub fn install(c: &Connection) -> Result<(), String> {
+    // 日志行的正文表达式查快照表（[body_expr]）：升级阶梯上 v12 / v14 就装触发器、全量重建，那时还没到 v16。
+    c.execute_batch(super::snapshots::V16).map_err(sql)?;
     c.execute_batch(
         "CREATE TABLE IF NOT EXISTS sync2_digest_buckets (
            profile_uid TEXT NOT NULL,
@@ -106,10 +120,9 @@ pub fn install(c: &Connection) -> Result<(), String> {
          ) WITHOUT ROWID;",
     )
     .map_err(sql)?;
-    for (table, tag, body) in TABLES {
-        let new = body.replace("kind", "NEW.kind").replace("payload_json", "NEW.payload_json");
-        let new = if body == "json" { "NEW.json".to_owned() } else { new };
-        let old = new.replace("NEW.", "OLD.");
+    for (table, tag) in TABLES {
+        let new = body_expr(table, "NEW.");
+        let old = body_expr(table, "OLD.");
         let add = |side: &str, expr: &str| {
             format!(
                 "INSERT INTO sync2_digest_buckets (profile_uid, bucket, sum, n) \
@@ -144,7 +157,8 @@ pub fn install(c: &Connection) -> Result<(), String> {
 pub fn rebuild(c: &Connection) -> Result<(), String> {
     c.execute("DELETE FROM sync2_digest_buckets", []).map_err(sql)?;
     let mut acc: std::collections::BTreeMap<(String, i64), (Sum, i64)> = std::collections::BTreeMap::new();
-    for (table, tag, body) in TABLES {
+    for (table, tag) in TABLES {
+        let body = body_expr(table, "");
         let mut stmt = c.prepare(&format!("SELECT profile_uid, id, {body} FROM {table}")).map_err(sql)?;
         let mut q = stmt.query([]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
@@ -205,7 +219,8 @@ pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
 #[cfg(test)]
 pub fn root_by_scan(c: &Connection, profile: &str) -> Result<String, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
-    for (table, tag, body) in TABLES {
+    for (table, tag) in TABLES {
+        let body = body_expr(table, "");
         let mut stmt = c.prepare(&format!("SELECT id, {body} FROM {table} WHERE profile_uid = ?1")).map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {

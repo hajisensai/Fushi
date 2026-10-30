@@ -77,6 +77,25 @@ class SrsBackupSource {
           .getSingleOrNull() !=
       null;
 
+  /// 读日志投影行原文的 SQL 表达式（行别名 `l`）。srs.db v16 起本机作答日志的配置快照存成引用
+  /// （`"sc":"<哈希>"`，原文在同库的 `sync2_snapshots`；native/fushi_fsrs/src/store/sync2/snapshots.rs）：
+  /// 这里读的是备份里的另一份库，引用要就地展开，并回本机时内核才拿得到原文。老库没有这张表、也不会有引用。
+  Future<String> _logJsonSql() async {
+    final bool has =
+        await _db
+            .customSelect(
+              'SELECT 1 FROM ${_t('sqlite_master')} '
+              "WHERE type = 'table' AND name = 'sync2_snapshots'",
+            )
+            .getSingleOrNull() !=
+        null;
+    if (!has) return 'l.json';
+    final String snapshots = _t('sync2_snapshots');
+    return '''CASE WHEN instr(l.json, '"sc":"') > 0 THEN json_set(l.json, '\$.sc', '''
+        '''COALESCE(json((SELECT s.body FROM $snapshots s WHERE s.hash = json_extract(l.json, '\$.sc'))), '''
+        '''json_extract(l.json, '\$.sc'))) ELSE l.json END''';
+  }
+
   /// 该 profile 在备份里是否有内置行之外的 SRS 数据。
   Future<bool> _hasData(String profileUid) async {
     final Set<String> builtin = <String>{
@@ -159,10 +178,11 @@ class SrsBackupSource {
             .get()) {
       out.add(SrsEditEvent(SrsFieldEdit.fromJson(obj(r.read<String>('json')))));
     }
+    final String logJson = await _logJsonSql();
     for (final QueryRow r
         in await _db
             .customSelect(
-              'SELECT json FROM ${_t('srs_review_logs')} '
+              'SELECT $logJson AS json FROM ${_t('srs_review_logs')} l '
               'WHERE profile_uid = ? ORDER BY id',
               variables: v,
             )

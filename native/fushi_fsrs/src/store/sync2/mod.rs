@@ -16,6 +16,7 @@ pub(crate) mod mvr;
 pub mod relay;
 pub mod schema;
 pub(crate) mod semantics;
+pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
 
@@ -204,9 +205,11 @@ fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
 
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
     let deps = intern_deps(conn, &op.deps)?;
+    // 配置快照原文只存一份（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
+    let (payload, sc, sc_at) = snapshots::pack_payload(conn, op.kind, &op.payload)?;
     conn.prepare_cached(
-        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at, sc, sc_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
     )
     .map_err(sql)?
     .execute(params![
@@ -218,10 +221,12 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
         deps,
         i64::from(op.kind),
         i64::from(op.schema),
-        &op.payload[..],
+        payload,
         i64::from(op.purged),
         chain.to_vec(),
-        now
+        now,
+        sc,
+        sc_at
     ])
     .map_err(sql)?;
     Ok(())
@@ -230,8 +235,8 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
 /// 读一条操作（因果判定、前缀闭包、重签发用）。
 pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Option<Op>, String> {
     conn.prepare_cached(
-        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged FROM sync2_ops o JOIN sync2_deps d ON d.id = o.deps \
-         WHERE o.profile_uid = ?1 AND o.device = ?2 AND o.seq = ?3",
+        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at FROM sync2_ops o \
+         JOIN sync2_deps d ON d.id = o.deps WHERE o.profile_uid = ?1 AND o.device = ?2 AND o.seq = ?3",
     )
     .map_err(sql)?
     .query_row(params![profile, id.device.0.to_vec(), id.seq as i64], |r| {
@@ -243,12 +248,15 @@ pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Opt
             r.get::<_, i64>(4)?,
             r.get::<_, Vec<u8>>(5)?,
             r.get::<_, i64>(6)? != 0,
+            r.get::<_, Option<String>>(7)?,
+            r.get::<_, Option<i64>>(8)?,
         ))
     })
     .optional()
     .map_err(sql)?
-    .map(|(w, l, vv, k, s, p, purged)| {
+    .map(|(w, l, vv, k, s, p, purged, sc, sc_at)| {
         let deps = Vv::read(&mut crate::sync2::codec::Reader::new(&vv)).map_err(|e| e.to_string())?;
+        let p = snapshots::unpack_payload(conn, p, sc, sc_at)?;
         Ok(Op {
             id: *id,
             hlc: Hlc { wall: w, logical: l as u32, device: id.device },
@@ -279,7 +287,8 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
             out.merge(&Dvv::parse(&ctx));
             continue;
         }
-        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。
+        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不按引用存（snapshots.rs 只剪日志），
+        // 直读即原文。
         let mut stmt = conn
             .prepare_cached("SELECT payload FROM sync2_ops WHERE profile_uid = ?1 AND device = ?2 AND seq <= ?3 AND kind = ?4")
             .map_err(sql)?;
@@ -823,7 +832,8 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         .exists([&lid])
         .map_err(sql)?;
     if !exists {
-        let row = log_row(profile, op, l);
+        let mut row = log_row(profile, op, l);
+        snapshots::compact_row(conn, &mut row)?;
         conn.prepare_cached(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -927,7 +937,7 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
         let mut q = stmt.query([c]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;
-            let json: String = r.get(1).map_err(sql)?;
+            let json: String = snapshots::expand_text(conn, r.get(1).map_err(sql)?)?;
             let st: Option<i64> = r.get(2).map_err(sql)?;
             let code: Option<i64> = r.get(3).map_err(sql)?;
             let arg: Option<i64> = r.get(4).map_err(sql)?;
@@ -967,9 +977,10 @@ pub(crate) fn replay_cards(conn: &Connection, cards: &BTreeSet<String>) -> Resul
         let out = replay::replay(&input)?;
         for (k, new) in out.rows.iter().enumerate() {
             if let Some(json) = new {
+                let stored = snapshots::compact_text(conn, json)?;
                 conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = ?1")
                     .map_err(sql)?
-                    .execute(params![rows[k].0, json])
+                    .execute(params![rows[k].0, stored.as_deref().unwrap_or(json)])
                     .map_err(sql)?;
                 changed.insert(rows[k].4.clone());
             }
@@ -1125,6 +1136,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
                 .optional()
                 .map_err(sql)?;
             let Some((json, st, note)) = row else { return Ok(None) };
+            let json = snapshots::expand_text(c, json)?;
             let x: Value = serde_json::from_str(&json).map_err(|e| format!("bad review log: {e}"))?;
             let hlc = x["hlc"].as_str().map(str::to_owned);
             // 旧日志不带配置快照（`sc`）：重放按作者结果照抄，迁移不改任何卡的到期日。
@@ -1278,6 +1290,11 @@ impl SrsCore {
                             tree = Some(config::DeckTree::load(c, profile)?);
                         }
                         stamp_config(c, tree.as_ref().expect("tree just loaded"), &mut l)?;
+                        Body::Log(l)
+                    }
+                    // 外来日志是从投影读出来的（Dart 备份 / profile 合并）：快照引用换回原文。
+                    Body::Log(mut l) if stamped => {
+                        snapshots::expand_extra(c, &mut l.extra)?;
                         Body::Log(l)
                     }
                     other => {
@@ -1558,6 +1575,8 @@ mod tests_perf;
 mod tests_digest;
 #[cfg(test)]
 mod tests_replay_pending;
+#[cfg(test)]
+mod tests_footprint;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
