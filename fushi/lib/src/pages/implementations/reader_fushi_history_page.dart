@@ -1721,7 +1721,35 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   ///
   /// 原并排的「统计」三格（总数/在读/已完成，BUG-991 的口径修正随之退役）已按
   /// 用户反馈移除——与右上角「阅读统计」入口重复。
-  Widget _buildShelfOverviewSection(List<MediaItem> progressBooks) {
+  /// 书架网格的列数与格宽（hero 宽度上限与网格共用同一份）。
+  ({int columns, double cardWidth}) _shelfCardLayout(
+    BoxConstraints constraints,
+  ) {
+    final double gridInset = FushiDesignTokens.of(context).spacing.gap;
+    return unifiedShelfCardLayout(
+      availableWidth: constraints.maxWidth - gridInset * 2,
+      targetWidth: _gridExtent(context, constraints),
+      spacing: 0,
+    );
+  }
+
+  /// 宽屏时「继续阅读」卡只铺到第三本书的封面右缘（2026-10-30 用户「宽屏这块
+  /// 长度对齐到第三本书一样长」）。书卡自带内边距 `card - gap`，封面左缘落在
+  /// 页边 `card` 上（见网格的 gridInset 注释），所以三格封面外缘总宽 =
+  /// 3 × 格宽 − 2 × 卡内边距。不到三列时不封顶（照常铺满）。
+  double? _heroWidthCap(BoxConstraints constraints, FushiDesignTokens tokens) {
+    final ({int columns, double cardWidth}) layout = _shelfCardLayout(
+      constraints,
+    );
+    if (layout.columns <= 3) return null;
+    final double cardInner = tokens.spacing.card - tokens.spacing.gap;
+    return layout.cardWidth * 3 - cardInner * 2;
+  }
+
+  Widget _buildShelfOverviewSection(
+    List<MediaItem> progressBooks,
+    BoxConstraints constraints,
+  ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ShelfProgressTally<MediaItem> tally = tallyShelfProgress<MediaItem>(
       progressBooks,
@@ -1742,17 +1770,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final MediaItem? hero = mostRecentlyReadCandidate(tally.inProgress, readAt);
     if (hero == null) return const SizedBox.shrink();
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.gap,
-        tokens.spacing.card,
-        0,
-      ),
+      // 顶上不再另加 gap：列表顶部已留「工具区高度 + gap」，再叠一层会让 hero
+      // 离顶栏比离下面的书格远一截（2026-10-30 用户截图）。
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
       child: _buildContinueReadingHero(
         hero,
         tokens,
         tally.inProgress.where((MediaItem m) => !identical(m, hero)).toList()
           ..sort((MediaItem a, MediaItem b) => readAt(b).compareTo(readAt(a))),
+        widthCap: _heroWidthCap(constraints, tokens),
       ),
     );
   }
@@ -1763,8 +1789,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildContinueReadingHero(
     MediaItem hero,
     FushiDesignTokens tokens,
-    List<MediaItem> others,
-  ) {
+    List<MediaItem> others, {
+    double? widthCap,
+  }) {
     final double fraction = hero.duration > 0
         ? (hero.position / hero.duration).clamp(0.0, 1.0)
         : 0.0;
@@ -1780,6 +1807,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override 书名；直读 DB
     // 原始列 hero.title 会在改名后仍显示旧名。
     return FushiContinueHero(
+      widthCap: widthCap,
       cardKey: const ValueKey<String>('reader_shelf_continue_hero'),
       focusId: const FushiFocusId('reader-shelf-continue-hero'),
       progressKey: const ValueKey<String>(
@@ -2182,7 +2210,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
                 if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
                   SliverToBoxAdapter(
-                    child: _buildShelfOverviewSection(shelfBooks),
+                    child: _buildShelfOverviewSection(shelfBooks, constraints),
                   ),
                 // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
                 // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
@@ -2228,31 +2256,36 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     BoxConstraints constraints, {
     required List<String> unitKeys,
   }) {
-    final ({int columns, double cardWidth}) cardLayout = unifiedShelfCardLayout(
-      availableWidth: constraints.maxWidth,
-      targetWidth: _gridExtent(context, constraints),
-      spacing: 0,
+    // 书卡自带约 12 的内边距：网格再左右各缩 gap（8），封面外缘落在页边 20
+    // 上，与顶栏胶囊、「继续阅读」hero 同一条竖线（2026-10-30 窄屏截图里书格
+    // 比上面两者各往外多出一截）。
+    final double gridInset = FushiDesignTokens.of(context).spacing.gap;
+    final ({int columns, double cardWidth}) cardLayout = _shelfCardLayout(
+      constraints,
     );
     if (_reordering) {
       return <Widget>[
-        SliverToBoxAdapter(
-          child: ShelfCoverMaterialScope(
-            material: ShelfCoverMaterial.glossyBook,
-            child: FushiReorderableGrid(
-              key: const ValueKey<String>('reader_shelf_reorder_grid'),
-              itemCount: groups.length,
-              crossAxisCount: cardLayout.columns,
-              childAspectRatio: kShelfBookCardAspectRatio,
-              reordering: true,
-              keyForIndex: (int i) => ValueKey<String>(unitKeys[i]),
-              onReorder: (int from, int to) =>
-                  _onShelfReorder(unitKeys, from, to),
-              itemBuilder: (_, int i) => FushiStaggeredEntrance(
-                index: i,
-                child: IgnorePointer(
-                  child: _buildShelfGroupCard(
-                    groups[i],
-                    epubCoverUrisByBookKey,
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: gridInset),
+          sliver: SliverToBoxAdapter(
+            child: ShelfCoverMaterialScope(
+              material: ShelfCoverMaterial.glossyBook,
+              child: FushiReorderableGrid(
+                key: const ValueKey<String>('reader_shelf_reorder_grid'),
+                itemCount: groups.length,
+                crossAxisCount: cardLayout.columns,
+                childAspectRatio: kShelfBookCardAspectRatio,
+                reordering: true,
+                keyForIndex: (int i) => ValueKey<String>(unitKeys[i]),
+                onReorder: (int from, int to) =>
+                    _onShelfReorder(unitKeys, from, to),
+                itemBuilder: (_, int i) => FushiStaggeredEntrance(
+                  index: i,
+                  child: IgnorePointer(
+                    child: _buildShelfGroupCard(
+                      groups[i],
+                      epubCoverUrisByBookKey,
+                    ),
                   ),
                 ),
               ),
@@ -2267,17 +2300,20 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 2026-10-25 库页定版：书架 / 漫画库的条目材质是光面书皮（单本）/ 扇形
       // （合集），墨水屏由 [shelfCoverMaterialOf] 自动退回描边封面框。只包网格：
       // 顶部「继续阅读」hero 不在本次定版范围内。
-      ShelfCoverMaterialScope(
-        material: ShelfCoverMaterial.glossyBook,
-        child: SliverGrid.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cardLayout.columns,
-            childAspectRatio: kShelfBookCardAspectRatio,
-          ),
-          itemCount: groups.length,
-          itemBuilder: (_, int i) => FushiStaggeredEntrance(
-            index: i,
-            child: _buildShelfGroupCard(groups[i], epubCoverUrisByBookKey),
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: gridInset),
+        sliver: ShelfCoverMaterialScope(
+          material: ShelfCoverMaterial.glossyBook,
+          child: SliverGrid.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cardLayout.columns,
+              childAspectRatio: kShelfBookCardAspectRatio,
+            ),
+            itemCount: groups.length,
+            itemBuilder: (_, int i) => FushiStaggeredEntrance(
+              index: i,
+              child: _buildShelfGroupCard(groups[i], epubCoverUrisByBookKey),
+            ),
           ),
         ),
       ),
