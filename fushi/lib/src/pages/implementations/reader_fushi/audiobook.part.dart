@@ -827,8 +827,13 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // TODO-724：仅当图片暂停开启（imagePauseSec>0）时，cue 推进跨过插图才把视口
     // 滚到插图（配合 Dart 的 triggerImagePause 暂停让用户看见）。imagePauseSec=0
     // 时图片暂停关闭，绝不滚图，否则视口会无预兆跳到不知哪张图（用户报告症状）。
+    // 歌词模式：「插图提示方式」= 弹出停留时同样放开（与插图卡停留同一个秒数）；
+    // = 红点时保持不停。
     final bool pauseEnabled =
-        !_lyricsMode && controller.imagePauseSec.value > 0;
+        controller.imagePauseSec.value > 0 &&
+        (!_lyricsMode ||
+            ReaderFushiSource.instance.lyricsIllustrationCue ==
+                LyricsIllustrationCue.popup);
     // TODO-825：cue 权威驱动视口跟随时（reveal=true）AudiobookBridge.highlight 会经 JS
     // scrollToTarget 用 behavior:'smooth' 平滑滚动到当前句。这条程序化跟随滚动必须武装 B-3
     // settle 保护窗（与 恢复/缩放/换样式 三条 reanchor commit 同机制，见 eaa151581）：smooth

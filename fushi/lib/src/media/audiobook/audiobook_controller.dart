@@ -476,6 +476,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// （歌词层只读 [consumeForceReveal]）。
   AudioCue? _explicitNavigationRevealCue;
 
+  /// 是否有一次显式跳句还没被 reader 消费（只读，不清登记）。歌词模式「弹出停留」
+  /// 据此认出「跳句经过插图」、不停留。
+  bool get hasPendingExplicitNavigationReveal =>
+      _explicitNavigationRevealCue != null;
+
   /// reader 的 `_onCueChanged` 读一次：当前句就是刚显式跳到的那句、且正文跟随开着
   /// 时返回 true（reader 据此 reveal：翻页 / 滚动 / VN 翻屏由各 view mode 的 JS 按同一个
   /// reveal 参数各自落实）。无论结果如何都清掉登记，不会在之后的某次通知里迟到生效。
@@ -700,8 +705,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     required bool readerMovedDuringPause,
   }) => !readerMovedDuringPause;
 
+  /// 插图停留秒数上限（BUG-3887：设置项改成可自定义秒数的步进器，原先只有
+  /// 0/5/10/15 四档）。
+  static const int maxImagePauseSec = 60;
+
   void setImagePauseSec(int sec) {
-    final int clamped = sec.clamp(0, 15);
+    final int clamped = sec.clamp(0, maxImagePauseSec);
     if (imagePauseSec.value == clamped) return;
     imagePauseSec.value = clamped;
     final Future<void> Function(int)? persist = onImagePausePersist;

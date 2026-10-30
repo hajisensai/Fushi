@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, immutable;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -131,6 +131,7 @@ class FushiMeshBackdrop extends StatefulWidget {
     this.bleedTop = 0,
     this.plateRect,
     this.animate = true,
+    this.colorTransition = false,
   });
 
   /// 画布顶上延伸到标题栏底下的高度（歌词模式桌面标题栏里画同一张背景）。
@@ -142,6 +143,12 @@ class FushiMeshBackdrop extends StatefulWidget {
   /// false = 整张背景静止在相位 0（不起 Ticker）：手机遥控器这类长时间常亮页面
   /// 不为背景流动白花 GPU。
   final bool animate;
+
+  /// true = 配色变化（封面取色到达、换书换章取色变了、主题 / 深浅色切换）时用
+  /// [FushiMotion.medium] 做一次交叉过渡，过渡完就停、不再出帧；减弱动态效果时
+  /// 直接切换。false（默认）= 配色变了下一帧直接换（原行为）。歌词模式用
+  /// `animate: false` + 这个：静态网格渐变，只在颜色变化时动一下。
+  final bool colorTransition;
 
   @override
   State<FushiMeshBackdrop> createState() => _FushiMeshBackdropState();
@@ -224,31 +231,87 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
           final Rect? plate = widget.plateRect
               ?.call(page, padding)
               ?.translate(0, bleed);
-          return CustomPaint(
+          final _MeshColors target = _MeshColors(
+            base: cs.surface,
+            blobs: <Color>[
+              cs.primaryContainer.withValues(alpha: dark ? 0.85 : 0.9),
+              cs.tertiaryContainer.withValues(alpha: dark ? 0.75 : 0.8),
+              cs.secondaryContainer.withValues(alpha: dark ? 0.7 : 0.75),
+              cs.primary.withValues(alpha: dark ? 0.22 : 0.16),
+            ],
+            // 底板：surfaceContainerLow 档（令牌 group）半透明，透出流动
+            // 背景又压住对比度。
+            plate: tokens.surfaces.group.withValues(alpha: dark ? 0.5 : 0.55),
+          );
+          Widget paint(_MeshColors colors) => CustomPaint(
             size: size,
             isComplex: true,
             painter: _MeshPainter(
               phase: _phase,
               cache: _cache,
-              base: cs.surface,
-              blobs: <Color>[
-                cs.primaryContainer.withValues(alpha: dark ? 0.85 : 0.9),
-                cs.tertiaryContainer.withValues(alpha: dark ? 0.75 : 0.8),
-                cs.secondaryContainer.withValues(alpha: dark ? 0.7 : 0.75),
-                cs.primary.withValues(alpha: dark ? 0.22 : 0.16),
-              ],
+              base: colors.base,
+              blobs: colors.blobs,
               plate: plate,
-              // 底板：surfaceContainerLow 档（令牌 group）半透明，透出流动
-              // 背景又压住对比度。
-              plateColor: tokens.surfaces.group.withValues(
-                alpha: dark ? 0.5 : 0.55,
-              ),
+              plateColor: colors.plate,
             ),
+          );
+          if (!widget.colorTransition) return paint(target);
+          // 几何（相位）不变、只换颜色：逐色线性插值与两张渐变交叉淡化等价，
+          // 且只在过渡期间出帧（TweenAnimationBuilder 到终点即停 Ticker）。
+          return TweenAnimationBuilder<_MeshColors>(
+            tween: _MeshColorsTween(end: target),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.standard,
+            builder: (BuildContext context, _MeshColors colors, _) =>
+                paint(colors),
           );
         },
       ),
     );
   }
+}
+
+/// 网格背景的一套配色（底色 + 四团 + 底板）。
+@immutable
+class _MeshColors {
+  const _MeshColors({
+    required this.base,
+    required this.blobs,
+    required this.plate,
+  });
+
+  final Color base;
+  final List<Color> blobs;
+  final Color plate;
+
+  static _MeshColors lerp(_MeshColors a, _MeshColors b, double t) {
+    if (a.blobs.length != b.blobs.length) return t < 0.5 ? a : b;
+    return _MeshColors(
+      base: Color.lerp(a.base, b.base, t)!,
+      blobs: <Color>[
+        for (int i = 0; i < a.blobs.length; i++)
+          Color.lerp(a.blobs[i], b.blobs[i], t)!,
+      ],
+      plate: Color.lerp(a.plate, b.plate, t)!,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _MeshColors &&
+      other.base == base &&
+      other.plate == plate &&
+      _MeshPainter._sameColors(other.blobs, blobs);
+
+  @override
+  int get hashCode => Object.hash(base, plate, Object.hashAll(blobs));
+}
+
+class _MeshColorsTween extends Tween<_MeshColors> {
+  _MeshColorsTween({super.end});
+
+  @override
+  _MeshColors lerp(double t) => _MeshColors.lerp(begin ?? end!, end!, t);
 }
 
 class _MeshPainter extends CustomPainter {

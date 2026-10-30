@@ -2393,6 +2393,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 不在歌词模式 / 还没探测完 / 这本书没有可显示的插图。
   LyricsIllustrationController? _lyricsIllustrations;
 
+  /// 「弹出停留」在途：控制器（停留结束 / 用户按播放或暂停）与插图状态机（用户
+  /// 手动关卡）两头都听，任一头先到就收尾。
+  ({AudiobookPlayerController ctrl, LyricsIllustrationController ill})?
+  _lyricsIllustrationStay;
+
+  /// 上一次喂插图状态机时的（墙钟, 音频位置），判「连续播放」用。
+  ({DateTime at, int audioMs})? _lyricsIllustrationLastObservation;
+
   /// 插图探测的代次：退出歌词模式（或重进）后，在途的探测结果作废。
   int _lyricsIllustrationGeneration = 0;
 
@@ -3573,6 +3581,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (_lyricsMode) _audiobookController?.setReaderFollowOverride(false);
     // 可见性是本页喂的；会话比本页活得久，撤掉本页的「后台」判断（BUG-3777 D）。
     _audiobookController?.setReaderVisible(true);
+    // 歌词模式插图「弹出停留」挂在控制器上的监听随页面一起摘（控制器比本页活得久）。
+    _endLyricsIllustrationStay();
     // 控制器是会话对象、可能比页面活得久：解绑前把播放态监听摘掉。
     _audiobookController = null;
     _syncChromePlaybackListener();

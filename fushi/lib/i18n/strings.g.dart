@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176341 (10373 per locale)
+/// Strings: 176528 (10384 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6649,6 +6649,13 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lyrics_control_zone_top => 'Top';
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  String get lyrics_controls_expand => 'Expand playback controls';
+  String get lyrics_controls_style => 'Playback controls layout';
+  String get lyrics_controls_style_classic => 'Classic';
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  String get lyrics_controls_style_modern => 'New';
   String get lyrics_exit_to_library => 'Close and return to library';
   String get lyrics_font_size => 'Lyrics font size';
   String get lyrics_font_size_hint =>
@@ -6657,6 +6664,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lyrics_highlight_color_hint =>
       'Use your own color for the line being read instead of the player theme color';
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  String get lyrics_illustration_cue_dot => 'Dot';
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  String get lyrics_illustration_cue_popup => 'Pop up';
   String get lyrics_illustration_next => 'Next illustration';
   String get lyrics_illustration_open => 'View illustrations';
   String get lyrics_illustration_previous => 'Previous illustration';
@@ -6665,6 +6677,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lyrics_mode_hint_body =>
       'Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.';
   String get lyrics_mode_hint_title => 'Lyrics mode';
+  String get lyrics_seek_bar => 'Playback position';
   String get lyrics_sentence_replay => 'Replay current sentence';
   String get lyrics_skipped_text_show => 'Show unread book text';
   String get lyrics_skipped_text_show_hint =>
@@ -25824,6 +25837,19 @@ class _StringsAr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'حجم خط كلمات الأغاني';
@@ -25837,6 +25863,15 @@ class _StringsAr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -25852,6 +25887,8 @@ class _StringsAr extends _StringsEn {
       'وضع كلمات الأغاني له إعداد حجم خط خاص به. يمكنك ضبطه في ⚙ الإعدادات ← الطباعة.';
   @override
   String get lyrics_mode_hint_title => 'وضع كلمات الأغاني';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -51156,6 +51193,19 @@ class _StringsDe extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Liedtext-Schriftgröße';
@@ -51169,6 +51219,15 @@ class _StringsDe extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -51184,6 +51243,8 @@ class _StringsDe extends _StringsEn {
       'Der Liedtextmodus hat eine eigene Schriftgrößeneinstellung. Du kannst sie unter ⚙ Einstellungen → Typografie anpassen.';
   @override
   String get lyrics_mode_hint_title => 'Liedtextmodus';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -76706,6 +76767,19 @@ class _StringsEs extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Tamaño de fuente de letras';
@@ -76719,6 +76793,15 @@ class _StringsEs extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -76734,6 +76817,8 @@ class _StringsEs extends _StringsEn {
       'El modo de letras tiene su propia configuración de tamaño de fuente. Puedes ajustarlo en ⚙ Ajustes → Tipografía.';
   @override
   String get lyrics_mode_hint_title => 'Modo de letras';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -102328,6 +102413,19 @@ class _StringsFr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Taille de police des paroles';
@@ -102341,6 +102439,15 @@ class _StringsFr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -102356,6 +102463,8 @@ class _StringsFr extends _StringsEn {
       'Le mode paroles a son propre réglage de taille de police. Vous pouvez l\'ajuster dans ⚙ Paramètres → Typographie.';
   @override
   String get lyrics_mode_hint_title => 'Mode paroles';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -127831,6 +127940,19 @@ class _StringsId extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Ukuran Font Lirik';
@@ -127844,6 +127966,15 @@ class _StringsId extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -127859,6 +127990,8 @@ class _StringsId extends _StringsEn {
       'Mode lirik memiliki pengaturan ukuran font sendiri. Anda dapat menyesuaikannya di ⚙ Pengaturan → Tipografi.';
   @override
   String get lyrics_mode_hint_title => 'Mode Lirik';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -153222,6 +153355,19 @@ class _StringsIt extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Dimensione carattere testi';
@@ -153235,6 +153381,15 @@ class _StringsIt extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -153250,6 +153405,8 @@ class _StringsIt extends _StringsEn {
       'La modalità testi ha la propria impostazione della dimensione del carattere. Puoi regolarla in ⚙ Impostazioni → Tipografia.';
   @override
   String get lyrics_mode_hint_title => 'Modalità testi';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -178223,6 +178380,19 @@ class _StringsJa extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => '歌詞フォントサイズ';
@@ -178235,6 +178405,15 @@ class _StringsJa extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -178250,6 +178429,8 @@ class _StringsJa extends _StringsEn {
       '歌詞モードには独自のフォントサイズ設定があります。⚙ 設定 → タイポグラフィで調整できます。';
   @override
   String get lyrics_mode_hint_title => '歌詞モード';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -202680,6 +202861,19 @@ class _StringsKo extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => '가사 글꼴 크기';
@@ -202692,6 +202886,15 @@ class _StringsKo extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -202707,6 +202910,8 @@ class _StringsKo extends _StringsEn {
       '가사 모드에는 자체 글꼴 크기 설정이 있습니다. ⚙ 설정 → 타이포그래피에서 조정할 수 있습니다.';
   @override
   String get lyrics_mode_hint_title => '가사 모드';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -227646,6 +227851,19 @@ class _StringsNl extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Lettergrootte songtekst';
@@ -227659,6 +227877,15 @@ class _StringsNl extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -227674,6 +227901,8 @@ class _StringsNl extends _StringsEn {
       'De songtekstmodus heeft een eigen lettergrootte-instelling. Je kunt deze aanpassen via ⚙ Instellingen → Typografie.';
   @override
   String get lyrics_mode_hint_title => 'Songtekstmodus';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -253120,6 +253349,19 @@ class _StringsPtBr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Tamanho da fonte das letras';
@@ -253133,6 +253375,15 @@ class _StringsPtBr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -253148,6 +253399,8 @@ class _StringsPtBr extends _StringsEn {
       'O modo de letras tem sua própria configuração de tamanho de fonte. Você pode ajustá-lo em ⚙ Configurações → Tipografia.';
   @override
   String get lyrics_mode_hint_title => 'Modo de letras';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -278580,6 +278833,19 @@ class _StringsRu extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Размер шрифта текста песен';
@@ -278593,6 +278859,15 @@ class _StringsRu extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -278608,6 +278883,8 @@ class _StringsRu extends _StringsEn {
       'Режим текстов песен имеет собственную настройку размера шрифта. Вы можете настроить его в ⚙ Настройки → Типографика.';
   @override
   String get lyrics_mode_hint_title => 'Режим текстов песен';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -303874,6 +304151,19 @@ class _StringsTh extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'ขนาดตัวอักษรเนื้อเพลง';
@@ -303887,6 +304177,15 @@ class _StringsTh extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -303902,6 +304201,8 @@ class _StringsTh extends _StringsEn {
       'โหมดเนื้อเพลงมีการตั้งค่าขนาดตัวอักษรของตัวเอง คุณสามารถปรับได้ใน ⚙ การตั้งค่า → การจัดรูปแบบ';
   @override
   String get lyrics_mode_hint_title => 'โหมดเนื้อเพลง';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -329112,6 +329413,19 @@ class _StringsTr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Şarkı Sözü Yazı Boyutu';
@@ -329125,6 +329439,15 @@ class _StringsTr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -329140,6 +329463,8 @@ class _StringsTr extends _StringsEn {
       'Şarkı sözü modunun kendi yazı boyutu ayarı vardır. ⚙ Ayarlar → Tipografi bölümünden ayarlayabilirsiniz.';
   @override
   String get lyrics_mode_hint_title => 'Şarkı Sözü Modu';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -354408,6 +354733,19 @@ class _StringsVi extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Cỡ chữ lời bài hát';
@@ -354421,6 +354759,15 @@ class _StringsVi extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -354436,6 +354783,8 @@ class _StringsVi extends _StringsEn {
       'Chế độ lời bài hát có cài đặt cỡ chữ riêng. Bạn có thể điều chỉnh trong ⚙ Cài đặt → Kiểu chữ.';
   @override
   String get lyrics_mode_hint_title => 'Chế độ lời bài hát';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -378712,6 +379061,18 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get lyrics_control_zone_top_hint => '手机在顶栏，宽屏在右上角';
   @override
+  String get lyrics_controls_collapse => '收起播放控件';
+  @override
+  String get lyrics_controls_expand => '展开播放控件';
+  @override
+  String get lyrics_controls_style => '播放控件布局';
+  @override
+  String get lyrics_controls_style_classic => '经典';
+  @override
+  String get lyrics_controls_style_hint => '新版：手机上是可收起的迷你条，宽屏是底部浮岛；经典：原来的布局';
+  @override
+  String get lyrics_controls_style_modern => '新版';
+  @override
   String get lyrics_exit_to_library => '关闭并返回书架';
   @override
   String get lyrics_font_size => '歌词字号';
@@ -378723,6 +379084,15 @@ class _StringsZhCn extends _StringsEn {
   String get lyrics_highlight_color_hint => '正在朗读的一行改用自定义颜色，不跟随播放器主题取色';
   @override
   String get lyrics_illustration_back_to_cover => '回到封面';
+  @override
+  String get lyrics_illustration_cue => '插图提示方式';
+  @override
+  String get lyrics_illustration_cue_dot => '红点';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      '弹出停留：弹出插图卡，并按下面的「图片暂停」秒数暂停后继续；红点：只在封面缩略图上标红点';
+  @override
+  String get lyrics_illustration_cue_popup => '弹出停留';
   @override
   String get lyrics_illustration_next => '下一张插图';
   @override
@@ -378737,6 +379107,8 @@ class _StringsZhCn extends _StringsEn {
   String get lyrics_mode_hint_body => '歌词模式有独立的字号设置，可在 ⚙ 设置 → 排版 中调整。';
   @override
   String get lyrics_mode_hint_title => '歌词模式';
+  @override
+  String get lyrics_seek_bar => '播放进度';
   @override
   String get lyrics_sentence_replay => '重播当前句';
   @override
@@ -402065,6 +402437,19 @@ class _StringsZhHk extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => '歌詞字體大小';
@@ -402076,6 +402461,15 @@ class _StringsZhHk extends _StringsEn {
   String get lyrics_highlight_color_hint => '正在朗讀的一行改用自訂顏色，不跟隨播放器主題取色';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -402090,6 +402484,8 @@ class _StringsZhHk extends _StringsEn {
   String get lyrics_mode_hint_body => '歌詞模式有自己的字體大小設定。你可以在 ⚙ 設定 → 排版 中調整。';
   @override
   String get lyrics_mode_hint_title => '歌詞模式';
+  @override
+  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -424874,6 +425270,18 @@ extension on _StringsEn {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -424886,6 +425294,14 @@ extension on _StringsEn {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -424900,6 +425316,8 @@ extension on _StringsEn {
         return 'Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.';
       case 'lyrics_mode_hint_title':
         return 'Lyrics mode';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -446423,6 +446841,18 @@ extension on _StringsAr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -446435,6 +446865,14 @@ extension on _StringsAr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -446449,6 +446887,8 @@ extension on _StringsAr {
         return 'وضع كلمات الأغاني له إعداد حجم خط خاص به. يمكنك ضبطه في ⚙ الإعدادات ← الطباعة.';
       case 'lyrics_mode_hint_title':
         return 'وضع كلمات الأغاني';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -468013,6 +468453,18 @@ extension on _StringsDe {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -468025,6 +468477,14 @@ extension on _StringsDe {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -468039,6 +468499,8 @@ extension on _StringsDe {
         return 'Der Liedtextmodus hat eine eigene Schriftgrößeneinstellung. Du kannst sie unter ⚙ Einstellungen → Typografie anpassen.';
       case 'lyrics_mode_hint_title':
         return 'Liedtextmodus';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -489624,6 +490086,18 @@ extension on _StringsEs {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -489636,6 +490110,14 @@ extension on _StringsEs {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -489650,6 +490132,8 @@ extension on _StringsEs {
         return 'El modo de letras tiene su propia configuración de tamaño de fuente. Puedes ajustarlo en ⚙ Ajustes → Tipografía.';
       case 'lyrics_mode_hint_title':
         return 'Modo de letras';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -511245,6 +511729,18 @@ extension on _StringsFr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -511257,6 +511753,14 @@ extension on _StringsFr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -511271,6 +511775,8 @@ extension on _StringsFr {
         return 'Le mode paroles a son propre réglage de taille de police. Vous pouvez l\'ajuster dans ⚙ Paramètres → Typographie.';
       case 'lyrics_mode_hint_title':
         return 'Mode paroles';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -532841,6 +533347,18 @@ extension on _StringsId {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -532853,6 +533371,14 @@ extension on _StringsId {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -532867,6 +533393,8 @@ extension on _StringsId {
         return 'Mode lirik memiliki pengaturan ukuran font sendiri. Anda dapat menyesuaikannya di ⚙ Pengaturan → Tipografi.';
       case 'lyrics_mode_hint_title':
         return 'Mode Lirik';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -554421,6 +554949,18 @@ extension on _StringsIt {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -554433,6 +554973,14 @@ extension on _StringsIt {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -554447,6 +554995,8 @@ extension on _StringsIt {
         return 'La modalità testi ha la propria impostazione della dimensione del carattere. Puoi regolarla in ⚙ Impostazioni → Tipografia.';
       case 'lyrics_mode_hint_title':
         return 'Modalità testi';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -575965,6 +576515,18 @@ extension on _StringsJa {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -575977,6 +576539,14 @@ extension on _StringsJa {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -575991,6 +576561,8 @@ extension on _StringsJa {
         return '歌詞モードには独自のフォントサイズ設定があります。⚙ 設定 → タイポグラフィで調整できます。';
       case 'lyrics_mode_hint_title':
         return '歌詞モード';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -597438,6 +598010,18 @@ extension on _StringsKo {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -597450,6 +598034,14 @@ extension on _StringsKo {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -597464,6 +598056,8 @@ extension on _StringsKo {
         return '가사 모드에는 자체 글꼴 크기 설정이 있습니다. ⚙ 설정 → 타이포그래피에서 조정할 수 있습니다.';
       case 'lyrics_mode_hint_title':
         return '가사 모드';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -618978,6 +619572,18 @@ extension on _StringsNl {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -618990,6 +619596,14 @@ extension on _StringsNl {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -619004,6 +619618,8 @@ extension on _StringsNl {
         return 'De songtekstmodus heeft een eigen lettergrootte-instelling. Je kunt deze aanpassen via ⚙ Instellingen → Typografie.';
       case 'lyrics_mode_hint_title':
         return 'Songtekstmodus';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -640574,6 +641190,18 @@ extension on _StringsPtBr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -640586,6 +641214,14 @@ extension on _StringsPtBr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -640600,6 +641236,8 @@ extension on _StringsPtBr {
         return 'O modo de letras tem sua própria configuração de tamanho de fonte. Você pode ajustá-lo em ⚙ Configurações → Tipografia.';
       case 'lyrics_mode_hint_title':
         return 'Modo de letras';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -662172,6 +662810,18 @@ extension on _StringsRu {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -662184,6 +662834,14 @@ extension on _StringsRu {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -662198,6 +662856,8 @@ extension on _StringsRu {
         return 'Режим текстов песен имеет собственную настройку размера шрифта. Вы можете настроить его в ⚙ Настройки → Типографика.';
       case 'lyrics_mode_hint_title':
         return 'Режим текстов песен';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -683743,6 +684403,18 @@ extension on _StringsTh {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -683755,6 +684427,14 @@ extension on _StringsTh {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -683769,6 +684449,8 @@ extension on _StringsTh {
         return 'โหมดเนื้อเพลงมีการตั้งค่าขนาดตัวอักษรของตัวเอง คุณสามารถปรับได้ใน ⚙ การตั้งค่า → การจัดรูปแบบ';
       case 'lyrics_mode_hint_title':
         return 'โหมดเนื้อเพลง';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -705314,6 +705996,18 @@ extension on _StringsTr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -705326,6 +706020,14 @@ extension on _StringsTr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -705340,6 +706042,8 @@ extension on _StringsTr {
         return 'Şarkı sözü modunun kendi yazı boyutu ayarı vardır. ⚙ Ayarlar → Tipografi bölümünden ayarlayabilirsiniz.';
       case 'lyrics_mode_hint_title':
         return 'Şarkı Sözü Modu';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -726887,6 +727591,18 @@ extension on _StringsVi {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -726899,6 +727615,14 @@ extension on _StringsVi {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -726913,6 +727637,8 @@ extension on _StringsVi {
         return 'Chế độ lời bài hát có cài đặt cỡ chữ riêng. Bạn có thể điều chỉnh trong ⚙ Cài đặt → Kiểu chữ.';
       case 'lyrics_mode_hint_title':
         return 'Chế độ lời bài hát';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -748331,6 +749057,18 @@ extension on _StringsZhCn {
         return '顶部';
       case 'lyrics_control_zone_top_hint':
         return '手机在顶栏，宽屏在右上角';
+      case 'lyrics_controls_collapse':
+        return '收起播放控件';
+      case 'lyrics_controls_expand':
+        return '展开播放控件';
+      case 'lyrics_controls_style':
+        return '播放控件布局';
+      case 'lyrics_controls_style_classic':
+        return '经典';
+      case 'lyrics_controls_style_hint':
+        return '新版：手机上是可收起的迷你条，宽屏是底部浮岛；经典：原来的布局';
+      case 'lyrics_controls_style_modern':
+        return '新版';
       case 'lyrics_exit_to_library':
         return '关闭并返回书架';
       case 'lyrics_font_size':
@@ -748343,6 +749081,14 @@ extension on _StringsZhCn {
         return '正在朗读的一行改用自定义颜色，不跟随播放器主题取色';
       case 'lyrics_illustration_back_to_cover':
         return '回到封面';
+      case 'lyrics_illustration_cue':
+        return '插图提示方式';
+      case 'lyrics_illustration_cue_dot':
+        return '红点';
+      case 'lyrics_illustration_cue_hint':
+        return '弹出停留：弹出插图卡，并按下面的「图片暂停」秒数暂停后继续；红点：只在封面缩略图上标红点';
+      case 'lyrics_illustration_cue_popup':
+        return '弹出停留';
       case 'lyrics_illustration_next':
         return '下一张插图';
       case 'lyrics_illustration_open':
@@ -748357,6 +749103,8 @@ extension on _StringsZhCn {
         return '歌词模式有独立的字号设置，可在 ⚙ 设置 → 排版 中调整。';
       case 'lyrics_mode_hint_title':
         return '歌词模式';
+      case 'lyrics_seek_bar':
+        return '播放进度';
       case 'lyrics_sentence_replay':
         return '重播当前句';
       case 'lyrics_skipped_text_show':
@@ -769663,6 +770411,18 @@ extension on _StringsZhHk {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -769675,6 +770435,14 @@ extension on _StringsZhHk {
         return '正在朗讀的一行改用自訂顏色，不跟隨播放器主題取色';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -769689,6 +770457,8 @@ extension on _StringsZhHk {
         return '歌詞模式有自己的字體大小設定。你可以在 ⚙ 設定 → 排版 中調整。';
       case 'lyrics_mode_hint_title':
         return '歌詞模式';
+      case 'lyrics_seek_bar':
+        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
