@@ -96,7 +96,7 @@ pub fn register(conn: &Connection) -> rusqlite::Result<()> {
 /// 三张投影表：(表, tag)；正文表达式见 [body_expr]。
 const TABLES: [(&str, &str); 3] = [("srs_entities", "e"), ("srs_field_edits", "f"), ("srs_review_logs", "l")];
 
-/// 一行的正文表达式（[side] = `NEW.` / `OLD.` / 空）：实体 `kind || payload_json`、修改记录 `json`、日志 `json`
+/// 触发器里一行的正文表达式（[side] = `NEW.` / `OLD.`）：实体 `kind || payload_json`、修改记录 `json`、日志 `json`
 /// 按配置快照引用展开后的原文（v16，snapshots.rs）——与引用前逐字相同，所以存储形态改了摘要不变。
 fn body_expr(table: &str, side: &str) -> String {
     match table {
@@ -104,6 +104,26 @@ fn body_expr(table: &str, side: &str) -> String {
         "srs_review_logs" => format!("sync2_dg_log({side}json, {})", super::snapshots::body_sql(side)),
         _ => format!("{side}json"),
     }
+}
+
+/// 全量扫描时的 (正文列, 快照原文列)：与 [body_expr] 同一个输入，展开在 Rust 里做（升级阶梯上的连接不一定注册了
+/// 触发器用的 SQL 函数）。
+fn scan_cols(table: &str) -> String {
+    match table {
+        "srs_entities" => "kind || payload_json, NULL".to_owned(),
+        "srs_review_logs" => format!("json, {}", super::snapshots::body_sql("")),
+        _ => "json, NULL".to_owned(),
+    }
+}
+
+fn scan_text(r: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<String> {
+    let text: Option<String> = r.get(at)?;
+    let body: Option<String> = r.get(at + 1)?;
+    let text = text.unwrap_or_default();
+    Ok(match body {
+        Some(b) => super::snapshots::expand_with(&text, Some(&b)),
+        None => text,
+    })
 }
 
 /// 桶表与触发器（schema V12）。可重放：先删同名触发器再建。
@@ -123,6 +143,13 @@ pub fn install(c: &Connection) -> Result<(), String> {
     for (table, tag) in TABLES {
         let new = body_expr(table, "NEW.");
         let old = body_expr(table, "OLD.");
+        // WHEN 比存储原值（不经 SQL 函数：建触发器时就要解析 WHEN，升级阶梯上的连接不一定注册了函数）。只是快照引用 /
+        // 内联两种存法互换时也会进来，删旧加新的哈希相同，桶不变。
+        let changed = if table == "srs_entities" {
+            "(OLD.kind || OLD.payload_json) IS NOT (NEW.kind || NEW.payload_json)"
+        } else {
+            "OLD.json IS NOT NEW.json"
+        };
         let add = |side: &str, expr: &str| {
             format!(
                 "INSERT INTO sync2_digest_buckets (profile_uid, bucket, sum, n) \
@@ -143,7 +170,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
              CREATE TRIGGER sync2_dg_{table}_ins AFTER INSERT ON {table} BEGIN {ins} END;
              CREATE TRIGGER sync2_dg_{table}_del AFTER DELETE ON {table} BEGIN {del} END;
              CREATE TRIGGER sync2_dg_{table}_upd AFTER UPDATE ON {table} \
-               WHEN OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid OR ({old}) IS NOT ({new}) \
+               WHEN OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid OR {changed} \
                BEGIN {del} {ins} END;",
             ins = add("NEW", &new),
             del = sub("OLD", &old),
@@ -158,14 +185,14 @@ pub fn rebuild(c: &Connection) -> Result<(), String> {
     c.execute("DELETE FROM sync2_digest_buckets", []).map_err(sql)?;
     let mut acc: std::collections::BTreeMap<(String, i64), (Sum, i64)> = std::collections::BTreeMap::new();
     for (table, tag) in TABLES {
-        let body = body_expr(table, "");
-        let mut stmt = c.prepare(&format!("SELECT profile_uid, id, {body} FROM {table}")).map_err(sql)?;
+        let cols = scan_cols(table);
+        let mut stmt = c.prepare(&format!("SELECT profile_uid, id, {cols} FROM {table}")).map_err(sql)?;
         let mut q = stmt.query([]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let profile: String = r.get(0).map_err(sql)?;
             let id: String = r.get(1).map_err(sql)?;
-            let text: Option<String> = r.get(2).map_err(sql)?;
-            let h = row_hash(tag.as_bytes()[0], &id, text.as_deref().unwrap_or(""));
+            let text = scan_text(r, 2).map_err(sql)?;
+            let h = row_hash(tag.as_bytes()[0], &id, &text);
             let e = acc.entry((profile, bucket_of(&id))).or_insert(([0; 4], 0));
             for i in 0..4 {
                 e.0[i] = e.0[i].wrapping_add(h[i]);
@@ -220,13 +247,13 @@ pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
 pub fn root_by_scan(c: &Connection, profile: &str) -> Result<String, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
     for (table, tag) in TABLES {
-        let body = body_expr(table, "");
-        let mut stmt = c.prepare(&format!("SELECT id, {body} FROM {table} WHERE profile_uid = ?1")).map_err(sql)?;
+        let cols = scan_cols(table);
+        let mut stmt = c.prepare(&format!("SELECT id, {cols} FROM {table} WHERE profile_uid = ?1")).map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let id: String = r.get(0).map_err(sql)?;
-            let text: Option<String> = r.get(1).map_err(sql)?;
-            let h = row_hash(tag.as_bytes()[0], &id, text.as_deref().unwrap_or(""));
+            let text = scan_text(r, 1).map_err(sql)?;
+            let h = row_hash(tag.as_bytes()[0], &id, &text);
             let slot = &mut all[bucket_of(&id) as usize];
             for i in 0..4 {
                 slot[i] = slot[i].wrapping_add(h[i]);
