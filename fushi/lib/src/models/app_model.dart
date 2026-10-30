@@ -9963,6 +9963,9 @@ class AppModel with ChangeNotifier {
       prefsRepo.setSrsReviewChromeFloating(value);
 
   // 复习页评分栏只留「重来 / 良好」（透传 prefsRepo）。可空读：prefs 未装配 = 四按钮。
+  bool get srsReviewTapToReveal => _prefsRepo?.srsReviewTapToReveal ?? false;
+  Future<void> setSrsReviewTapToReveal(bool value) =>
+      prefsRepo.setSrsReviewTapToReveal(value);
   bool get srsReviewHideHardEasy => _prefsRepo?.srsReviewHideHardEasy ?? false;
   Future<void> setSrsReviewHideHardEasy(bool value) =>
       prefsRepo.setSrsReviewHideHardEasy(value);

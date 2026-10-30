@@ -7587,6 +7587,8 @@
   "srs_review_layout_show_counts_hint": "在牌组名下方显示新卡 · 学习 · 复习的剩余数量",
   "srs_review_layout_show_intervals": "评分按钮显示下次间隔",
   "srs_review_layout_show_intervals_hint": "评价下方的小字，误按或排程异常一眼可见",
+  "srs_review_layout_tap_to_reveal": "点空白处显示答案",
+  "srs_review_layout_tap_to_reveal_hint": "点按卡片正面的空白处即显示背面，等同于「显示答案」按钮。",
   "srs_review_layout_title": "复习选项",
   "srs_review_layout_volume": "音频音量",
   "srs_review_layout_volume_hint": "卡面音频的音量，点播和自动播放都按它",

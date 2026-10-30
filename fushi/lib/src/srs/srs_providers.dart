@@ -153,6 +153,12 @@ final Provider<bool> srsReviewChromeFloatingProvider = Provider<bool>(
   ),
 );
 
+/// 复习页正面点卡面空白是否直接显示答案（按 profile 偏好，默认关）。
+final Provider<bool> srsReviewTapToRevealProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewTapToReveal)),
+);
+
 /// 复习页页头是否显示剩余卡数（按 profile 偏好，默认显示；对齐 Anki「显示剩余卡片数量」）。
 final Provider<bool> srsReviewShowCountsProvider = Provider<bool>(
   (Ref ref) =>

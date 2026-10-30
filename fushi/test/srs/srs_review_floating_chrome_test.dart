@@ -78,6 +78,7 @@ Future<void> _pumpReview(
   required SrsDbStore store,
   bool apple = false,
   bool? floating,
+  bool tapToReveal = false,
   List<SrsCardFace>? faces,
 }) async {
   tester.view.physicalSize = const Size(1100, 900);
@@ -99,6 +100,7 @@ Future<void> _pumpReview(
           faces?.add(face);
           return SrsPlainCardFace(face: face);
         }),
+        srsReviewTapToRevealProvider.overrideWithValue(tapToReveal),
         // null = 不覆盖：走 AppModel 的默认值（偏好未装配 = 悬浮）。
         if (floating != null)
           srsReviewChromeFloatingProvider.overrideWithValue(floating),
@@ -184,7 +186,7 @@ void main() {
     final SrsDbStore store = await _openStore(tester);
     await _addLapis(tester, store);
     final List<SrsCardFace> faces = <SrsCardFace>[];
-    await _pumpReview(tester, store: store, faces: faces);
+    await _pumpReview(tester, store: store, faces: faces, tapToReveal: true);
 
     expect(faces.last.showingAnswer, isFalse);
     final VoidCallback? tapEmpty = faces.last.onTapEmpty;
@@ -197,11 +199,29 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('卡面回报点空白：背面切换顶栏', (WidgetTester tester) async {
+  testWidgets('默认（点空白显示答案关闭）：正面点空白沿用旧行为——切换顶栏、不显示答案', (
+    WidgetTester tester,
+  ) async {
     final SrsDbStore store = await _openStore(tester);
     await _addLapis(tester, store);
     final List<SrsCardFace> faces = <SrsCardFace>[];
     await _pumpReview(tester, store: store, faces: faces);
+
+    faces.last.onTapEmpty!();
+    await _animate(tester);
+    expect(faces.last.showingAnswer, isFalse);
+    expect(_floatingBar, findsOneWidget);
+    faces.last.onTapEmpty!();
+    await _animate(tester);
+    expect(_floatingBar, findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('卡面回报点空白：背面切换顶栏', (WidgetTester tester) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addLapis(tester, store);
+    final List<SrsCardFace> faces = <SrsCardFace>[];
+    await _pumpReview(tester, store: store, faces: faces, tapToReveal: true);
 
     faces.last.onTapEmpty!(); // 正面：显示答案
     await _animate(tester);
@@ -229,7 +249,7 @@ void main() {
   testWidgets('原生 Fushi 卡面：正面点空白显示答案，背面点空白切换顶栏', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
     await _addFushiCard(tester, store);
-    await _pumpReview(tester, store: store);
+    await _pumpReview(tester, store: store, tapToReveal: true);
 
     final Finder showAnswer = find.byKey(
       const ValueKey<String>('srs-show-answer'),
@@ -265,7 +285,7 @@ void main() {
   ) async {
     final SrsDbStore store = await _openStore(tester);
     await _addFushiCard(tester, store);
-    await _pumpReview(tester, store: store);
+    await _pumpReview(tester, store: store, tapToReveal: true);
 
     // 卡面铺到窗口底端、底栏压在它上面：这条里的点按会命中下面的卡面，除非底栏自己认领。
     expect(

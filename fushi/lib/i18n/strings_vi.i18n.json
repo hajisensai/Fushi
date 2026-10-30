@@ -7587,6 +7587,8 @@
   "srs_review_layout_show_counts_hint": "New · learning · review counts under the deck name",
   "srs_review_layout_show_intervals": "Show next interval on rating buttons",
   "srs_review_layout_show_intervals_hint": "A small label under each rating, so a mis-tap or an odd schedule stands out",
+  "srs_review_layout_tap_to_reveal": "Tap empty space to show answer",
+  "srs_review_layout_tap_to_reveal_hint": "Tapping empty space on the front of a card reveals the back, like the Show answer button.",
   "srs_review_layout_title": "Review options",
   "srs_review_layout_volume": "Audio volume",
   "srs_review_layout_volume_hint": "Volume of card audio, both when tapped and when played automatically",

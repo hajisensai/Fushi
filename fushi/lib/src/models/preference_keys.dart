@@ -642,6 +642,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：评分按钮显示下次间隔（小号副标签，误按 / 排程异常一眼可见）。
   // 非凭据、跨设备。
   'srs_review_show_intervals',
+  // bool（默认 false）：复习页正面点卡面空白 = 显示答案（与「显示答案」按钮同一条路径）；
+  // 关闭时正面点空白沿用旧行为（切换悬浮顶栏）。非凭据、跨设备。
+  'srs_review_tap_to_reveal',
   // double（默认 1.0，0–1）：复习卡面音频音量，点播与自动连播共用。非凭据、跨设备。
   'srs_review_volume',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。

@@ -3355,6 +3355,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页正面点卡面空白 = 显示答案。默认 false（关 = 点空白切换悬浮顶栏）。
+  bool get srsReviewTapToReveal =>
+      getPref('srs_review_tap_to_reveal', defaultValue: false) as bool;
+
+  Future<void> setSrsReviewTapToReveal(bool value) async {
+    await setPref('srs_review_tap_to_reveal', value);
+    notifyListeners();
+  }
+
   // 复习页评分栏只留「重来 / 良好」（对齐 AnkiDroid hideHardAndEasy）。默认 false。
   bool get srsReviewHideHardEasy =>
       getPref('srs_review_hide_hard_easy', defaultValue: false) as bool;

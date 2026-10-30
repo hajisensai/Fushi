@@ -1345,7 +1345,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 正面点空白 = 点「显示答案」（与按钮同一条 [_showAnswer] 路径）；背面才切换悬浮顶栏。
   void _onCardTapEmpty() {
     if (_lookup.isOpen) return;
-    if (!_showingAnswer) {
+    if (!_showingAnswer && ref.read(srsReviewTapToRevealProvider)) {
       _showAnswer();
       return;
     }

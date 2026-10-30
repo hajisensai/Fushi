@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176341 (10373 per locale)
+/// Strings: 176375 (10375 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -10988,6 +10988,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Show next interval on rating buttons';
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   String get srs_review_layout_title => 'Review options';
   String get srs_review_layout_volume => 'Audio volume';
   String get srs_review_layout_volume_hint =>
@@ -33339,6 +33343,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   @override
   String get srs_review_layout_title => 'Review options';
   @override
@@ -58775,6 +58785,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   @override
   String get srs_review_layout_title => 'Review options';
   @override
@@ -84333,6 +84349,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   @override
   String get srs_review_layout_title => 'Review options';
   @override
@@ -109980,6 +110002,12 @@ class _StringsFr extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -135389,6 +135417,12 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   @override
   String get srs_review_layout_title => 'Review options';
   @override
@@ -160841,6 +160875,12 @@ class _StringsIt extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -185582,6 +185622,12 @@ class _StringsJa extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -210057,6 +210103,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   @override
   String get srs_review_layout_title => 'Review options';
   @override
@@ -235240,6 +235292,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   @override
   String get srs_review_layout_title => 'Review options';
   @override
@@ -260724,6 +260782,12 @@ class _StringsPtBr extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -286184,6 +286248,12 @@ class _StringsRu extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -311395,6 +311465,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
+  @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
   @override
   String get srs_review_layout_title => 'Review options';
   @override
@@ -336673,6 +336749,12 @@ class _StringsTr extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -361945,6 +362027,12 @@ class _StringsVi extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -385667,6 +385755,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_review_layout_show_intervals_hint => '评价下方的小字，误按或排程异常一眼可见';
   @override
+  String get srs_review_layout_tap_to_reveal => '点空白处显示答案';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      '点按卡片正面的空白处即显示背面，等同于「显示答案」按钮。';
+  @override
   String get srs_review_layout_title => '复习选项';
   @override
   String get srs_review_layout_volume => '音频音量';
@@ -409295,6 +409388,12 @@ class _StringsZhHk extends _StringsEn {
   String get srs_review_layout_show_intervals_hint =>
       'A small label under each rating, so a mis-tap or an odd schedule stands out';
   @override
+  String get srs_review_layout_tap_to_reveal =>
+      'Tap empty space to show answer';
+  @override
+  String get srs_review_layout_tap_to_reveal_hint =>
+      'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
+  @override
   String get srs_review_layout_title => 'Review options';
   @override
   String get srs_review_layout_volume => 'Audio volume';
@@ -431468,6 +431567,10 @@ extension on _StringsEn {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -453018,6 +453121,10 @@ extension on _StringsAr {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -474624,6 +474731,10 @@ extension on _StringsDe {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -496234,6 +496345,10 @@ extension on _StringsEs {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -517855,6 +517970,10 @@ extension on _StringsFr {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -539436,6 +539555,10 @@ extension on _StringsId {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -561026,6 +561149,10 @@ extension on _StringsIt {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -582550,6 +582677,10 @@ extension on _StringsJa {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -604023,6 +604154,10 @@ extension on _StringsKo {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -625586,6 +625721,10 @@ extension on _StringsNl {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -647180,6 +647319,10 @@ extension on _StringsPtBr {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -668778,6 +668921,10 @@ extension on _StringsRu {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -690336,6 +690483,10 @@ extension on _StringsTh {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -711912,6 +712063,10 @@ extension on _StringsTr {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -733483,6 +733638,10 @@ extension on _StringsVi {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':
@@ -754854,6 +755013,10 @@ extension on _StringsZhCn {
         return '评分按钮显示下次间隔';
       case 'srs_review_layout_show_intervals_hint':
         return '评价下方的小字，误按或排程异常一眼可见';
+      case 'srs_review_layout_tap_to_reveal':
+        return '点空白处显示答案';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return '点按卡片正面的空白处即显示背面，等同于「显示答案」按钮。';
       case 'srs_review_layout_title':
         return '复习选项';
       case 'srs_review_layout_volume':
@@ -776241,6 +776404,10 @@ extension on _StringsZhHk {
         return 'Show next interval on rating buttons';
       case 'srs_review_layout_show_intervals_hint':
         return 'A small label under each rating, so a mis-tap or an odd schedule stands out';
+      case 'srs_review_layout_tap_to_reveal':
+        return 'Tap empty space to show answer';
+      case 'srs_review_layout_tap_to_reveal_hint':
+        return 'Tapping empty space on the front of a card reveals the back, like the Show answer button.';
       case 'srs_review_layout_title':
         return 'Review options';
       case 'srs_review_layout_volume':

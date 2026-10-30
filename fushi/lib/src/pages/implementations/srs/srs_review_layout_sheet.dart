@@ -44,6 +44,7 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
     final bool intervals = ref.watch(srsReviewShowIntervalsProvider);
     final bool counts = ref.watch(srsReviewShowCountsProvider);
     final bool floating = ref.watch(srsReviewChromeFloatingProvider);
+    final bool tapToReveal = ref.watch(srsReviewTapToRevealProvider);
     final bool hideHardEasy = ref.watch(srsReviewHideHardEasyProvider);
     final double volume = ref.watch(srsReviewVolumeProvider);
     final SrsReviewImageSize imageSize = ref.watch(srsReviewImageSizeProvider);
@@ -125,6 +126,13 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
             subtitle: t.srs_review_layout_floating_top_bar_hint,
             value: floating,
             onChanged: (bool v) => app.setSrsReviewChromeFloating(v),
+          ),
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-review-layout-tap-to-reveal'),
+            title: t.srs_review_layout_tap_to_reveal,
+            subtitle: t.srs_review_layout_tap_to_reveal_hint,
+            value: tapToReveal,
+            onChanged: (bool v) => app.setSrsReviewTapToReveal(v),
           ),
           AdaptiveSettingsSegmentedRow<SrsReviewImageSize>(
             key: const ValueKey<String>('srs-review-layout-image-size'),
