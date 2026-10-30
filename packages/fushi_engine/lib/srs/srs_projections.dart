@@ -330,10 +330,14 @@ typedef SrsRwkvNowCard = ({
 });
 
 /// 一批「此刻」行（card_type / 间隔规则在 projection.rs `push_rwkv_now_row`，整批一次 FFI）。
+///
+/// [atMs] 非空时是每行各自的「此刻」（与 [cards] 同序，统计页预测到期时各卡查不同的未来时刻），
+/// 这时 [nowMs] 不用。
 RwkvRows srsRwkvNowRows(
   List<SrsRwkvNowCard> cards, {
   required int nowMs,
   required SrsDayContext day,
+  List<int>? atMs,
   FushiFsrs? library,
 }) {
   final FushiFsrs lib =
@@ -342,6 +346,9 @@ RwkvRows srsRwkvNowRows(
       (throw SrsHistoryKernelUnavailableError());
   const int words = 9;
   final int n = cards.length;
+  if (atMs != null && atMs.length != n) {
+    throw ArgumentError.value(atMs.length, 'atMs', 'must match cards ($n)');
+  }
   final Pointer<Int64> ints = malloc<Int64>(n == 0 ? 1 : n * words);
   final Pointer<Size> outLen = calloc<Size>();
   final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
@@ -359,7 +366,7 @@ RwkvRows srsRwkvNowRows(
         last?.rating ?? 0,
         last == null ? 0 : _reviewTypeCode(last.reviewType),
         x.queue.index,
-        nowMs,
+        atMs?[i] ?? nowMs,
       ]);
     }
     final Pointer<Uint8> out = lib.bindings.ffsrs_rwkv_now_rows(

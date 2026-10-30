@@ -570,6 +570,52 @@ void main() {
       ]);
       expect(m, <int>[1, 2, 1]);
     });
+
+    test('未来到期：RWKV 卡有预测按预测那天计入，没预测的单列不计', () {
+      SrsStatCard rwkvCard(String id, {int? dueDay, int? interval}) =>
+          SrsStatCard(
+            id: id,
+            noteId: id,
+            deckId: 'd',
+            state: SrsStatCardState.mature,
+            intervalDays: 40,
+            // 存下的（FSRS）到期日：RWKV 卡不按它计。
+            dueDay: today - 3,
+            byRecall: true,
+            rwkvDueDay: dueDay,
+            rwkvIntervalDays: interval,
+          );
+      final SrsStatsData d = SrsStatsData(
+        day: kJst,
+        nowMs: nowMs,
+        reviews: const <SrsStatReview>[],
+        cards: <SrsStatCard>[
+          rwkvCard('now', dueDay: today, interval: 5),
+          rwkvCard('later', dueDay: today + 4, interval: 10),
+          rwkvCard('far', dueDay: today + 200, interval: 250),
+          rwkvCard('none'),
+          SrsStatCard(
+            id: 'fsrs',
+            noteId: 'fsrs',
+            deckId: 'd',
+            state: SrsStatCardState.young,
+            intervalDays: 2,
+            dueDay: today + 4,
+          ),
+        ],
+        maturityEvents: const <SrsStatMaturityEvent>[],
+      );
+      final SrsFutureDue f = d.futureDue(31);
+      expect(f.byRecallForecast, 3);
+      expect(f.byRecall, 1);
+      expect(f.overdue, 0);
+      expect(f.dueToday, 1);
+      expect(f.perDay[4], 2);
+      expect(f.youngPerDay[4], 1); // 只有 FSRS 年轻卡
+      expect(f.total, 3); // far 在范围外
+      expect(f.dailyLoad, closeTo(1 / 5 + 1 / 10 + 1 / 250 + 1 / 2, 1e-9));
+      expect(d.furthestDueOffset(), 201);
+    });
   });
 
   group('loadSrsStats（真实库）', () {
