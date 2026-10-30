@@ -43,6 +43,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
+import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
     show redactSubsonicCredentials;
 import 'package:media_kit/media_kit.dart';
@@ -53,6 +54,7 @@ import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 
 /// 纯函数：整轨文件里的一段 → mpv EDL URI。路径按 UTF-8 字节数加 `%len%` 前缀，
 /// 路径里的逗号 / 等号不会被当成 EDL 分隔符。[endMs] 为 null = 播到文件尾。
@@ -77,7 +79,13 @@ Media musicMediaOf(MusicPlayItem item) {
 }
 
 /// 一首曲目交给 mpv 的东西：[media] + 加载它时要下发的逐文件选项。
-typedef MusicResolvedMedia = ({Media media, Map<String, String> fileLocal});
+///
+/// [expiresAt]：在线插件给的流地址过期时刻（epoch 毫秒）；其余为 null。
+typedef MusicResolvedMedia = ({
+  Media media,
+  Map<String, String> fileLocal,
+  int? expiresAt,
+});
 
 /// 纯函数：音频 CD 的一段盘时间轴 → 逐文件选项。起止按扇区还原到轨界
 /// （[musicCddaSeconds]），段尾与 EDL 同样补 [kMusicEdlEndSlackSeconds]（mpv 按
@@ -112,10 +120,23 @@ bool musicCddaContinues(MusicPlayItem from, MusicPlayItem to) =>
 ///
 /// 音频 CD 曲目是整盘 `cdda://` + 逐文件起止（文件头「音频 CD」）；[playThrough] = 同一
 /// 文件里接着播到的、盘上相邻的后一首（[musicCddaContinues]），文件终点取它的终点。
+///
+/// 在线音源插件曲目（`fushi-music-plugin://`）此时才向插件取流（[pluginResolver]，缺省
+/// [resolveMusicPluginStream]），取不到抛 [MusicPluginStreamUnavailable]。
 Future<MusicResolvedMedia> resolveMusicMedia(
   MusicPlayItem item, {
   MusicPlayItem? playThrough,
+  MusicPluginStreamResolver? pluginResolver,
 }) async {
+  if (isMusicPluginPath(item.path)) {
+    final MusicPluginStream s =
+        await (pluginResolver ?? resolveMusicPluginStream)(item.path);
+    return (
+      media: Media(s.url, httpHeaders: s.headers.isEmpty ? null : s.headers),
+      fileLocal: const <String, String>{},
+      expiresAt: s.expiresAt,
+    );
+  }
   if (isMusicCddaPath(item.path)) {
     return (
       media: Media(item.path),
@@ -123,6 +144,7 @@ Future<MusicResolvedMedia> resolveMusicMedia(
         startMs: item.startMs ?? 0,
         endMs: (playThrough ?? item).endMs,
       ),
+      expiresAt: null,
     );
   }
   if (isMusicDiscTitlePath(item.path)) {
@@ -132,12 +154,35 @@ Future<MusicResolvedMedia> resolveMusicMedia(
       endMs: item.endMs,
     );
     if (disc != null) {
-      return (media: Media(disc.uri), fileLocal: disc.fileLocalOptions);
+      return (
+        media: Media(disc.uri),
+        fileLocal: disc.fileLocalOptions,
+        expiresAt: null,
+      );
     }
-    return (media: Media(item.path), fileLocal: const <String, String>{});
+    return (
+      media: Media(item.path),
+      fileLocal: const <String, String>{},
+      expiresAt: null,
+    );
   }
-  return (media: musicMediaOf(item), fileLocal: const <String, String>{});
+  return (
+    media: musicMediaOf(item),
+    fileLocal: const <String, String>{},
+    expiresAt: null,
+  );
 }
+
+/// 插件流地址被服务端拒绝（签名过期）时 mpv 打出的那一行。本仓随包 libmpv 的 http(s) 走
+/// curl 流（真 libmpv 实测：`[error] curl: HTTP error 403`，紧接着
+/// `[error] stream: Failed to open <url>.`）；没有 curl 流、退回 FFmpeg http 协议的构建打的是
+/// warning `https: HTTP error 403 Forbidden` / 错误 `Server returned 403 Forbidden`。三种都认。
+final RegExp _kHttpRejected = RegExp(
+  r'HTTP error (?:403|410)(?!\d)|Server returned 403 Forbidden',
+);
+
+/// 纯函数：这行 mpv 日志是不是「流地址被拒（403 / 410）」。
+bool isMusicStreamRejectedLog(String text) => _kHttpRejected.hasMatch(text);
 
 /// 当前进程的输出平台。
 MusicOutputPlatform musicOutputPlatformOfHost() {
@@ -189,26 +234,66 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   /// [initialProperties] 在第一次下发设置前写一次，且之后的设置不会覆盖其中的键
   /// （测试用 `ao=null` 免得真出声）。
   MpvMusicOutputBackend({
+    // 日志要到 warn 级：随包 libmpv 的 curl 流把「HTTP error 403」打在 error 级，但退回
+    // FFmpeg http 协议的构建打在 warning 级；原位重取（[_onLog]）靠这行分辨「地址过期」与
+    // 「流坏了」。
     PlayerConfiguration configuration = const PlayerConfiguration(
       vo: 'null',
       title: 'Fushi Music',
+      logLevel: MPVLogLevel.warn,
     ),
     Map<String, String> initialProperties = const <String, String>{},
     MusicOutputPlatform? platform,
     MusicPlatformOutput platformOutput = const MusicPlatformOutput(),
     MusicCdDiscIdReader? cdDiscIdReader,
+    MusicPluginStreamResolver? pluginStreamResolver,
+    int Function()? nowMs,
   }) : _player = Player(configuration: configuration),
        _initialProperties = initialProperties,
        _platform = platform ?? musicOutputPlatformOfHost(),
        _platformOutput = platformOutput,
-       _cdDiscIdReader = cdDiscIdReader {
+       _cdDiscIdReader = cdDiscIdReader,
+       _pluginStreamResolver = pluginStreamResolver,
+       _nowMs = nowMs ?? _wallClockMs {
     _subs.add(_player.stream.position.listen(_onPosition));
     _subs.add(_player.stream.playing.listen(_onPlaying));
     _subs.add(_player.stream.playlist.listen(_onPlaylist));
     _subs.add(_player.stream.completed.listen(_onCompleted));
     _subs.add(_player.stream.error.listen(_onError));
     _subs.add(_player.stream.audioParams.listen(_onAudioParams));
+    _subs.add(_player.stream.log.listen(_onLog));
   }
+
+  static int _wallClockMs() => DateTime.now().millisecondsSinceEpoch;
+
+  /// 插件曲目取流（null = 全局装配点 [resolveMusicPluginStream]）。
+  final MusicPluginStreamResolver? _pluginStreamResolver;
+
+  /// 墙钟（epoch 毫秒），判插件流地址是否过期。
+  final int Function() _nowMs;
+
+  /// 打开代次：每次 [openPair]（及内部重开 / [stop]）加一。取流回来时代次已变 = 用户已经
+  /// 切走，结果丢弃、不碰播放器。
+  int _openGen = 0;
+
+  /// 「下一首」代次：每次换下一首（[openPair] / [replaceNext] / [stop]）加一。异步取流的下一首
+  /// 回来时代次已变就丢弃。
+  int _nextGen = 0;
+
+  /// 插件流地址的过期时刻（epoch 毫秒），按曲目。
+  final Map<String, int> _streamExpiresAt = <String, int>{};
+
+  /// 预排的插件下一首在流地址过期前重取（[_scheduleNextRefresh]）。
+  Timer? _nextRefreshTimer;
+
+  /// 自上次把文件交给 mpv 以来见过 HTTP 403 / 410（插件流地址过期）。
+  bool _httpRejected = false;
+
+  /// 本轮打开里已经原位重取过一次流的曲目（再被拒就按取流失败报）。
+  final Set<String> _refetched = <String>{};
+
+  /// 出声曲目最近一次上报的位置（原位重取后跳回这里）。
+  Duration _lastPosition = Duration.zero;
 
   final Player _player;
   final Map<String, String> _initialProperties;
@@ -422,14 +507,40 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     final MusicResolvedMedia resolved = await resolveMusicMedia(
       item,
       playThrough: playThrough,
+      pluginResolver: _pluginStreamResolver,
     );
     if (resolved.fileLocal.isEmpty) {
       _fileLocalFor.remove(item.trackUid);
     } else {
       _fileLocalFor[item.trackUid] = resolved.fileLocal;
     }
+    final int? expiresAt = resolved.expiresAt;
+    if (expiresAt == null) {
+      _streamExpiresAt.remove(item.trackUid);
+    } else {
+      _streamExpiresAt[item.trackUid] = expiresAt;
+    }
     return resolved.media;
   }
+
+  /// 预排的下一首：插件曲目取不到流时不排（放到它时 [_handleCompleted] 再取一次）。
+  Future<Media?> _mediaForOrNull(MusicPlayItem item) async {
+    try {
+      return await _mediaFor(item);
+    } on MusicPluginStreamUnavailable {
+      return null;
+    }
+  }
+
+  static bool _isPlugin(MusicPlayItem? item) =>
+      item != null && isMusicPluginPath(item.path);
+
+  static MusicBackendFailed _unavailable(String message, MusicPlayItem item) =>
+      MusicBackendFailed(
+        message,
+        reason: MusicPlaybackFailure.trackUnavailable,
+        trackUid: item.trackUid,
+      );
 
   static bool _isCd(MusicPlayItem? item) =>
       item != null && isMusicCddaPath(item.path);
@@ -456,6 +567,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
             ? MusicPlaybackFailure.cdOtherDisc
             : MusicPlaybackFailure.cdNoDisc,
         device: musicCddaDevice(item.path),
+        trackUid: item.trackUid,
       ),
     );
   }
@@ -467,10 +579,26 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     required bool play,
     bool crossfadeNext = false,
   }) async {
+    _refetched.clear();
+    await _open(current, next, play: play);
+  }
+
+  /// [openPair] 的实现。返回 false = 被更晚的一次打开作废（或 CD 核对没过），没有打开
+  /// [current]。取流失败抛 [MusicTrackOpenException]（被作废的不抛）。
+  Future<bool> _open(
+    MusicPlayItem current,
+    MusicPlayItem? next, {
+    required bool play,
+  }) async {
+    final int gen = ++_openGen;
+    _nextGen++;
+    _cancelNextRefresh();
     await _ensureInitialised();
+    if (gen != _openGen) return false;
     _cancelPending();
     if (_isCd(current)) {
       final MusicCdDiscCheck check = await _checkCd(current);
+      if (gen != _openGen) return false;
       if (check != MusicCdDiscCheck.ok) {
         // 不把光驱里的别的盘当成这首播：停掉、交还设备、明确报原因。
         _audible = current;
@@ -479,27 +607,47 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
         _nextUnavailable = null;
         await _releaseAudioDevice();
         _emitCdFailure(check, current);
-        return;
+        return false;
       }
     }
+    if (_isPlugin(current)) {
+      // 取流要走网络（可能几秒）：先停掉正在放的旧曲。取流期间没有出声曲目，旧曲的位置 /
+      // 播完不会被当成新曲的上报。
+      await _unload();
+      if (gen != _openGen) return false;
+    }
+    final bool continues = next != null && musicCddaContinues(current, next);
+    final Media first;
+    try {
+      first = await _mediaFor(current, playThrough: continues ? next : null);
+    } on MusicPluginStreamUnavailable catch (e) {
+      if (gen != _openGen) return false;
+      throw MusicTrackOpenException(_unavailable(e.message, current));
+    }
+    if (gen != _openGen) return false;
+    _nextUnavailable = null;
+    final MusicPlayItem? separate = continues
+        ? null
+        : await _queueableNext(next);
+    if (gen != _openGen) return false;
+    // 插件下一首要走网络取流：先把当前曲交给 mpv，下一首随后异步补进播放列表
+    // （[_attachNext]），不让它拖慢起播。
+    final MusicPlayItem? lateNext = _isPlugin(separate) ? separate : null;
+    final Media? second = separate == null || lateNext != null
+        ? null
+        : await _mediaFor(separate);
+    if (gen != _openGen) return false;
     _rewiring = true;
     _entryProducedAudio = false;
     try {
       _audible = current;
       _next = next;
-      _nextContinues = next != null && musicCddaContinues(current, next);
-      _nextUnavailable = null;
+      _nextContinues = continues;
       _lastIndex = 0;
-      final MusicPlayItem? separate = _nextContinues
-          ? null
-          : await _queueableNext(next);
-      _mpvItems = <MusicPlayItem>[current, ?separate];
+      _lastPosition = Duration.zero;
+      _httpRejected = false;
+      _mpvItems = <MusicPlayItem>[current, if (second != null) separate!];
       await _applyGain(current);
-      final Media first = await _mediaFor(
-        current,
-        playThrough: _nextContinues ? next : null,
-      );
-      final Media? second = separate == null ? null : await _mediaFor(separate);
       if (_isCd(current) || _isCd(separate)) {
         // 盘协议进播放列表会丢掉直接请求的来源（native_open_policy.dart）：各自 loadfile。
         await _player.open(first, play: play);
@@ -510,6 +658,100 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     } finally {
       _rewiring = false;
     }
+    if (second != null) _scheduleNextRefresh(separate!);
+    if (lateNext != null) unawaited(_attachNext(lateNext, _nextGen));
+    return gen == _openGen;
+  }
+
+  /// 卸掉正在放的文件（不交还设备），清空出声 / 预排状态。
+  Future<void> _unload() async {
+    _cancelPending();
+    _audible = null;
+    _next = null;
+    _nextContinues = false;
+    _nextUnavailable = null;
+    _mpvItems = <MusicPlayItem>[];
+    _rewiring = true;
+    try {
+      await _player.stop();
+    } finally {
+      _rewiring = false;
+    }
+  }
+
+  /// 异步取到插件下一首的流后补进 mpv 播放列表。期间下一首换了（[_nextGen] 变了）就丢弃；
+  /// 取不到流就不排（当前曲放完时 [_handleCompleted] 再取一次、仍失败按这一首失败报）。
+  Future<void> _attachNext(MusicPlayItem item, int nextGen) async {
+    final Media? media = await _mediaForOrNull(item);
+    if (media == null ||
+        nextGen != _nextGen ||
+        !identical(_next, item) ||
+        _pending != null ||
+        _mpvItems.length != 1) {
+      return;
+    }
+    _rewiring = true;
+    try {
+      await _player.add(media);
+      _mpvItems = <MusicPlayItem>[..._mpvItems, item];
+    } finally {
+      _rewiring = false;
+    }
+    _scheduleNextRefresh(item);
+  }
+
+  void _cancelNextRefresh() {
+    _nextRefreshTimer?.cancel();
+    _nextRefreshTimer = null;
+  }
+
+  /// 预排进 mpv 的插件下一首：流地址到期前 [kMusicPluginStreamRefreshMargin] 重取一次并换掉
+  /// 播放列表里那一项（暂停时同样到点重取——长暂停后续播不会拿过期地址）。地址本来就快过期
+  /// （有效期短于余量）时不排，免得反复重取；真被拒由 HTTP 403 / 410 的原位重取兜住。
+  void _scheduleNextRefresh(MusicPlayItem item) {
+    _cancelNextRefresh();
+    if (!_isPlugin(item)) return;
+    final int? expiresAt = _streamExpiresAt[item.trackUid];
+    if (expiresAt == null) return;
+    final int dueMs =
+        expiresAt - kMusicPluginStreamRefreshMargin.inMilliseconds - _nowMs();
+    if (dueMs <= 0) return;
+    final int nextGen = _nextGen;
+    _nextRefreshTimer = Timer(
+      Duration(milliseconds: dueMs),
+      () => unawaited(_refreshQueuedNext(item, nextGen)),
+    );
+  }
+
+  bool _nextStillQueued(MusicPlayItem item, int nextGen) =>
+      nextGen == _nextGen &&
+      identical(_next, item) &&
+      _pending == null &&
+      _mpvItems.length == 2 &&
+      identical(_mpvItems.last, item);
+
+  Future<void> _refreshQueuedNext(MusicPlayItem item, int nextGen) async {
+    _nextRefreshTimer = null;
+    if (!_nextStillQueued(item, nextGen)) return;
+    final Media? media = await _mediaForOrNull(item);
+    if (!_nextStillQueued(item, nextGen)) return;
+    _rewiring = true;
+    try {
+      final int count = _player.state.playlist.medias.length;
+      final int index = _player.state.playlist.index;
+      for (int i = count - 1; i > index; i--) {
+        await _player.remove(i);
+      }
+      _lastIndex = _player.state.playlist.index;
+      _mpvItems = <MusicPlayItem>[_mpvItems.first];
+      if (media != null) {
+        await _player.add(media);
+        _mpvItems = <MusicPlayItem>[..._mpvItems, item];
+      }
+    } finally {
+      _rewiring = false;
+    }
+    if (media != null) _scheduleNextRefresh(item);
   }
 
   /// 不在同一文件里接着播的下一首能不能交给 mpv：CD 曲目先核对盘，不通过就记下原因、不排
@@ -527,7 +769,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     MusicPlayItem? next, {
     bool crossfadeNext = false,
   }) async {
+    final int nextGen = ++_nextGen;
+    _cancelNextRefresh();
     _rewiring = true;
+    MusicPlayItem? lateNext;
+    MusicPlayItem? queued;
     try {
       final int count = _player.state.playlist.medias.length;
       final int index = _player.state.playlist.index;
@@ -564,19 +810,40 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
         }
         await _native?.setProperty('file-local-options/end', value);
       }
+      _mpvItems = <MusicPlayItem>[?loaded];
       final MusicPlayItem? separate = _nextContinues
           ? null
           : await _queueableNext(next);
-      _mpvItems = <MusicPlayItem>[?loaded, ?separate];
-      if (separate != null) await _player.add(await _mediaFor(separate));
+      if (nextGen != _nextGen) return;
+      if (_isPlugin(separate)) {
+        // 走网络取流：不在 rewiring 里等（等的这段时间 mpv 的自然推进不能被吞掉）。
+        lateNext = separate;
+      } else if (separate != null) {
+        final Media? media = await _mediaForOrNull(separate);
+        if (nextGen != _nextGen) return;
+        if (media != null) {
+          await _player.add(media);
+          _mpvItems = <MusicPlayItem>[..._mpvItems, separate];
+          queued = separate;
+        }
+      }
     } finally {
       _rewiring = false;
     }
+    if (queued != null) _scheduleNextRefresh(queued);
+    if (lateNext != null) await _attachNext(lateNext, nextGen);
   }
 
   void _onPlaylist(Playlist playlist) {
     if (_rewiring) {
       _lastIndex = playlist.index;
+      return;
+    }
+    if (playlist.index > _lastIndex && _rejectedMidStream()) {
+      // 插件流地址中途被拒（长暂停后重连拿到 403 / 410），mpv 把它当成文件结束切走了：
+      // 不是播完，原位重取。
+      _lastIndex = playlist.index;
+      unawaited(_refetchInPlace(_audible!));
       return;
     }
     if (playlist.index > _lastIndex && _next != null) {
@@ -689,19 +956,38 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   }
 
   void _onCompleted(bool done) {
-    if (!done || _recovering) return;
+    // 没有出声曲目 = 取流期间卸掉旧曲带出来的「播完」，不当真。
+    if (!done || _recovering || _audible == null) return;
     unawaited(_handleCompleted());
+  }
+
+  /// 插件曲目没放到结尾（离结尾还有 5 秒以上）就结束了、而且这期间见过 HTTP 403 / 410：
+  /// 流地址过期，不是播完。
+  bool _rejectedMidStream() {
+    final MusicPlayItem? audible = _audible;
+    if (_refetching) return false;
+    if (!_httpRejected || _pending != null || !_isPlugin(audible)) {
+      return false;
+    }
+    final int? ms = audible!.durationMs;
+    return ms == null ||
+        _lastPosition + const Duration(seconds: 5) < Duration(milliseconds: ms);
   }
 
   Future<void> _handleCompleted() async {
     if (!_entryProducedAudio) {
       // 没收到过 audio-pts：要么 AO 打不开（报错日志随后到，由 [_recoverOutput] 处理），
-      // 要么是不发 audio-pts 的非实时 AO（ao=pcm）。AO 还开着 = 后者，照常算播完。
+      // 要么是不发 audio-pts 的非实时 AO（ao=pcm），要么是插件流地址一打开就被拒（由
+      // [_onError] 原位重取）。AO 还开着 = 第二种，照常算播完。
       final NativePlayer? native = _native;
       if (native == null) return;
       if ((await native.getPropertyAsync('current-ao')).isEmpty) return;
     }
-    if (_recovering) return;
+    if (_recovering || _refetching || _audible == null) return;
+    if (_rejectedMidStream()) {
+      await _refetchInPlace(_audible!);
+      return;
+    }
     if (_pending != null) await _commitAdvance();
     // 文件放完 = 同一文件里接着的那一首也放完了。
     if (_nextContinues) await _commitContinuedAdvance();
@@ -727,9 +1013,90 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       _emitCdFailure(unavailable.check, unavailable.item);
       return;
     }
+    final MusicPlayItem? next = _next;
+    if (next != null &&
+        !_mpvItems.any((MusicPlayItem i) => identical(i, next))) {
+      // 下一首没进 mpv 播放列表（插件曲目预排时没取到流 / 取流还没回来）：现在取。
+      await _openDeferredNext(next);
+      return;
+    }
     if (_next != null) return;
     _emit(const MusicBackendCompleted());
     await _releaseAudioDevice();
+  }
+
+  /// 当前曲放完、下一首（插件曲目）还没交给 mpv：现在取流。取到就当作 mpv 自然前进
+  /// （[MusicBackendAdvanced]，引擎随后照常 [replaceNext]）；仍取不到就停下，报**这一首**
+  /// 取流失败（引擎据 trackUid 推进到它并按失败处理：跳下一首或停）。
+  Future<void> _openDeferredNext(MusicPlayItem item) async {
+    final int gen = ++_openGen;
+    _nextGen++;
+    _cancelNextRefresh();
+    final Media media;
+    try {
+      media = await _mediaFor(item);
+    } on MusicPluginStreamUnavailable catch (e) {
+      if (gen != _openGen) return;
+      _next = null;
+      await _releaseAudioDevice();
+      _emit(_unavailable(e.message, item));
+      return;
+    }
+    if (gen != _openGen) return;
+    _rewiring = true;
+    _entryProducedAudio = false;
+    try {
+      _audible = item;
+      _next = null;
+      _nextContinues = false;
+      _lastIndex = 0;
+      _lastPosition = Duration.zero;
+      _httpRejected = false;
+      _mpvItems = <MusicPlayItem>[item];
+      await _applyGain(item);
+      await _player.open(Playlist(<Media>[media]));
+    } finally {
+      _rewiring = false;
+    }
+    _emit(MusicBackendAdvanced(item.trackUid));
+  }
+
+  /// 插件流地址被拒（HTTP 403 / 410，签名过期）：重新取流、在原位置接着放。同一首在一次
+  /// 打开里只重取一次，再被拒按取流失败报（引擎跳下一首）。
+  Future<void> _refetchInPlace(MusicPlayItem item) async {
+    // 同一次被拒会同时触发打开失败、文件结束与播放列表前进：只处理第一个。
+    if (_refetching) return;
+    _refetching = true;
+    try {
+      await _refetchInPlaceOnce(item);
+    } finally {
+      _refetching = false;
+    }
+  }
+
+  bool _refetching = false;
+
+  Future<void> _refetchInPlaceOnce(MusicPlayItem item) async {
+    _httpRejected = false;
+    if (!_refetched.add(item.trackUid)) {
+      _next = null;
+      await _releaseAudioDevice();
+      _emit(_unavailable('流地址被服务器拒绝（HTTP 403 / 410）', item));
+      return;
+    }
+    // 被拒的是切换期里刚开始解码的下一首：它从头放，并补发推进（前一首的尾巴随之丢掉）。
+    final bool wasPending = identical(item, _pending);
+    final Duration at = wasPending ? Duration.zero : _lastPosition;
+    final bool opened;
+    try {
+      opened = await _open(item, wasPending ? null : _next, play: true);
+    } on MusicTrackOpenException catch (e) {
+      _emit(e.failure);
+      return;
+    }
+    if (!opened) return;
+    if (wasPending) _emit(MusicBackendAdvanced(item.trackUid));
+    if (at > Duration.zero) await seek(at);
   }
 
   /// 卸载文件并交还音频设备（独占 / hog mode 随之释放）。
@@ -760,20 +1127,44 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       return;
     }
     final MusicPlayItem? item = _pending ?? _audible;
+    // 没有出声曲目（取流期间卸掉旧曲）时的报错属于旧曲，不上报。
+    if (item == null) return;
     if (_isCd(item)) {
-      unawaited(_reportCdError(item!, message));
+      unawaited(_reportCdError(item, message));
+      return;
+    }
+    if (_isPlugin(item)) {
+      if (_refetching) return;
+      if (_httpRejected) {
+        // 流地址过期被拒：原位重取一次。
+        unawaited(_refetchInPlace(item));
+        return;
+      }
+      // 插件流打不开（网络 / 服务端拒绝）：只是这一首拿不到流，引擎跳下一首。
+      _emit(_unavailable(redactSubsonicCredentials(message), item));
       return;
     }
     // 服务器曲库的流地址把凭据放在 query 里（mpv 没有头通道）：mpv 的打开失败文本会带上
     // 整条 URL，界面 toast / 错误日志拿到前先脱敏（含 Subsonic 的 t / s）。
-    _emit(MusicBackendFailed(redactSubsonicCredentials(message)));
+    _emit(
+      MusicBackendFailed(
+        redactSubsonicCredentials(message),
+        trackUid: item.trackUid,
+      ),
+    );
+  }
+
+  /// mpv 日志：记下插件流地址被拒（403 / 410）。这行（`curl:` / `ffmpeg:` 前缀）不进 media_kit
+  /// 的错误流，错误流只收到随后的「Failed to open」；据此才把那次失败判成地址过期而不是坏流。
+  void _onLog(PlayerLog log) {
+    if (isMusicStreamRejectedLog(log.text)) _httpRejected = true;
   }
 
   /// CD 曲目播放报错：盘不在 / 换了盘时报这个原因，否则原样报 mpv 的文本。
   Future<void> _reportCdError(MusicPlayItem item, String message) async {
     final MusicCdDiscCheck check = await _checkCd(item);
     if (check == MusicCdDiscCheck.ok) {
-      _emit(MusicBackendFailed(message));
+      _emit(MusicBackendFailed(message, trackUid: item.trackUid));
     } else {
       _emitCdFailure(check, item);
     }
@@ -800,8 +1191,14 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await applySettings(_settings);
       if (audible == null) return;
       final Duration at = _player.state.position - _originOf(audible);
-      await openPair(audible, _next, play: true);
-      if (at > Duration.zero) await seek(at);
+      final bool opened;
+      try {
+        opened = await _open(audible, _next, play: true);
+      } on MusicTrackOpenException catch (e) {
+        _emit(e.failure);
+        return;
+      }
+      if (opened && at > Duration.zero) await seek(at);
     } finally {
       _recovering = false;
     }
@@ -865,18 +1262,19 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       return;
     }
     final MusicPlayItem? item = _audible;
-    final Duration? duration = item?.durationMs == null
+    // 取流期间没有出声曲目：mpv 卸掉旧曲时报的位置不上报。
+    if (item == null) return;
+    final Duration? duration = item.durationMs == null
         ? (_player.state.duration > Duration.zero
               ? _player.state.duration
               : null)
-        : Duration(milliseconds: item!.durationMs!);
+        : Duration(milliseconds: item.durationMs!);
     final Duration relative = absolute - _originOf(item);
-    _emit(
-      MusicBackendPosition(
-        relative < Duration.zero ? Duration.zero : relative,
-        duration,
-      ),
-    );
+    final Duration clamped = relative < Duration.zero
+        ? Duration.zero
+        : relative;
+    _lastPosition = clamped;
+    _emit(MusicBackendPosition(clamped, duration));
   }
 
   @override
@@ -892,7 +1290,12 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       // 切换期 mpv 已加载下一首，用户拖的是还在出声的前一首：重开前一首再跳。
       final MusicPlayItem pending = _pending!;
       final bool wasPlaying = _playing;
-      await openPair(audible, pending, play: wasPlaying);
+      try {
+        if (!await _open(audible, pending, play: wasPlaying)) return;
+      } on MusicTrackOpenException catch (e) {
+        _emit(e.failure);
+        return;
+      }
     }
     // 同一 cdda:// 文件里接着的下一首：已排的推进时刻作废，下一个 audio-pts 重算。
     if (_nextContinues) _advanceTimer?.cancel();
@@ -919,6 +1322,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
 
   @override
   Future<void> stop() async {
+    // 在途的打开 / 取流作废：回来后不再把文件交给 mpv。
+    _openGen++;
+    _nextGen++;
+    _cancelNextRefresh();
     await _releaseAudioDevice();
     if (_platform == MusicOutputPlatform.android &&
         _androidBitPerfect != null) {
@@ -1008,6 +1415,9 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   @override
   Future<void> dispose() async {
     _disposed = true;
+    _openGen++;
+    _nextGen++;
+    _cancelNextRefresh();
     _cancelPending();
     for (final StreamSubscription<Object?> s in _subs) {
       await s.cancel();

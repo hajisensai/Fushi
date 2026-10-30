@@ -50,21 +50,34 @@ class VideoContinueSpotlight extends StatelessWidget {
   static const double _sideTitleHeight = 24;
 
   /// 横滑区四周给小卡悬停放大留的余量：滚动区要裁切（懒加载 cacheExtent 里建好
-  /// 的卡不能画到区外、压到主卡上），贴着视口边的卡放大时不能被裁平。
-  static const double _liftRoom = 4;
+  /// 的卡不能画到区外、压到主卡上），贴着视口边的卡放大时不能被裁平。余量按
+  /// 卡的尺寸与放大比例推（以卡中心缩放，每侧外扩 尺寸 × (scale − 1) / 2），
+  /// 不写死：曾经固定 4px，卡宽过 160 就不够，贴左沿那列放大后片名首字被切掉
+  /// （用户 2026-10-30 截图）。与首页横滚行（BUG-2002 / BUG-3278）同一口径。
+  static double _liftRoom(double extent) =>
+      extent * (kFushiHoverLiftScale - 1) / 2;
 
   static double _gap(double unit) => unit * 1.5;
 
   /// 宽屏几何：主卡宽高、小卡列数与图高。
+  ///
+  /// 小卡封面恒为 16:9（封面图就是 16:9 剧照，格子更扁会被 BoxFit.cover 上下
+  /// 裁掉一截，用户 2026-10-30 截图）：列数向上取整，卡宽不超过「行高放得下的
+  /// 16:9 宽」，图高由卡宽反推；行里剩下的竖向空白落在片名下面。
   static _WideGeometry _wideGeometry(double width, double gap) {
     final double mainWidth = math.min(width * 0.55, _mainMaxHeight * 16 / 9);
     final double mainHeight = mainWidth * 9 / 16;
-    final double sideWidth = width - mainWidth - gap - _liftRoom * 2;
-    final double rowHeight = (mainHeight - gap - _liftRoom * 2) / 2;
+    // 两行卡 + 行距 + 上下放大余量（余量 = 行高 × (scale − 1) / 2）恰好等于主卡高。
+    final double rowHeight =
+        (mainHeight - gap) / (2 + (kFushiHoverLiftScale - 1));
+    final double liftVertical = _liftRoom(rowHeight);
     final double natural = (rowHeight - _sideTitleHeight) * 16 / 9;
+    // 卡宽不超过 natural（列数向上取整），左右余量按 natural 取上界。
+    final double liftHorizontal = _liftRoom(natural);
+    final double sideWidth = width - mainWidth - gap - liftHorizontal * 2;
     final int columns = math.max(
       2,
-      ((sideWidth + gap) / (natural + gap)).floor(),
+      ((sideWidth + gap) / (natural + gap)).ceil(),
     );
     final double cardWidth = (sideWidth - gap * (columns - 1)) / columns;
     return (
@@ -72,10 +85,9 @@ class VideoContinueSpotlight extends StatelessWidget {
       mainHeight: mainHeight,
       columns: columns,
       sideWidth: cardWidth,
-      sideImageHeight: math.min(
-        rowHeight - _sideTitleHeight,
-        cardWidth * 9 / 16,
-      ),
+      sideImageHeight: cardWidth * 9 / 16,
+      liftHorizontal: liftHorizontal,
+      liftVertical: liftVertical,
     );
   }
 
@@ -127,7 +139,10 @@ class VideoContinueSpotlight extends StatelessWidget {
                       HorizontalDragScrollable(
                         child: GridView.builder(
                           scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.all(_liftRoom),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: g.liftHorizontal,
+                            vertical: g.liftVertical,
+                          ),
                           physics: desktopAwareScrollPhysics(),
                           itemCount: rest.length,
                           gridDelegate:
@@ -175,12 +190,17 @@ class VideoContinueSpotlight extends StatelessWidget {
                 height:
                     _narrowSideWidth * 9 / 16 +
                     _sideTitleHeight +
-                    _liftRoom * 2,
+                    _liftRoom(_narrowSideWidth * 9 / 16 + _sideTitleHeight) * 2,
                 child: _horizontalScroller(
                   HorizontalDragScrollable(
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.all(_liftRoom),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: _liftRoom(_narrowSideWidth),
+                        vertical: _liftRoom(
+                          _narrowSideWidth * 9 / 16 + _sideTitleHeight,
+                        ),
+                      ),
                       physics: desktopAwareScrollPhysics(),
                       itemCount: rest.length,
                       separatorBuilder: (BuildContext _, int __) =>
@@ -215,6 +235,8 @@ typedef _WideGeometry = ({
   int columns,
   double sideWidth,
   double sideImageHeight,
+  double liftHorizontal,
+  double liftVertical,
 });
 
 /// 一部在看的作品（主卡 / 小卡共用）。

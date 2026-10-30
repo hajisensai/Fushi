@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,10 +10,14 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
+import 'package:fushi/src/pages/implementations/music/music_unified_search.dart'
+    show kMusicSearchDebounce;
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart'
+    show FushiSearchBar;
 
 import '../helpers/test_platform_services.dart';
 
@@ -97,17 +103,35 @@ Future<void> _pump(WidgetTester tester, AppModel app, Widget home) async {
   await tester.pumpAndSettle();
 }
 
+/// 没装任何插件的插件管理器：根目录不存在，列表恒空，不碰磁盘。
+MusicPluginManager _noPlugins() => MusicPluginManager(
+  rootDir: Directory(
+    '${Directory.systemTemp.path}/fushi-music-library-test-no-plugins',
+  ),
+  httpClientFactory: HttpClient.new,
+  log: (_, _, _) {},
+);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('五个分区；专辑网格 → 歌曲 → 作品空态', (WidgetTester tester) async {
+    // 顶栏与其它库页同一套浮动 chrome：动作组至少占半行，窄窗时页签在胶囊里
+    // 横滑。给一个桌面宽度，五个页签都在可视区内直接点。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
     await _pump(tester, app, const MusicLibraryPage());
 
-    for (final MusicLibrarySection s in MusicLibrarySection.values) {
+    // 推荐页签只在装了带 `home` 能力的插件时出现，这里没有插件。
+    for (final MusicLibrarySection s in MusicLibrarySection.values.where(
+      (MusicLibrarySection s) => s != MusicLibrarySection.recommend,
+    )) {
       expect(find.text(musicLibrarySectionLabel(s)), findsWidgets);
     }
     expect(find.text('Night Album'), findsOneWidget);
@@ -131,73 +155,108 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('搜索框按当前分区筛选；无匹配给空态；清空恢复', (WidgetTester tester) async {
+  testWidgets('二级搜索页：输入筛本地、无匹配给空态、清空回提示', (WidgetTester tester) async {
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
     await _pump(tester, app, const MusicLibraryPage());
-    final Finder field = find.byKey(const ValueKey<String>('music-library-search'));
-    expect(field, findsOneWidget);
-
-    await tester.tap(find.text(t.music_section_songs));
+    await tester.tap(find.byKey(const ValueKey<String>('music_open_search')));
     await tester.pumpAndSettle();
+    final Finder field = find.byKey(
+      const ValueKey<String>('music-search-page-field'),
+    );
+    expect(field, findsOneWidget);
+    // 查询为空：只给提示，不出结果。
+    expect(
+      find.byKey(const ValueKey<String>('music-search-page-overview')),
+      findsNothing,
+    );
+
     await tester.enterText(field, 'song t1');
     await tester.pumpAndSettle();
-    expect(find.text('Song t1'), findsOneWidget);
+    expect(find.text('Song t1'), findsWidgets);
     expect(find.text('Song t2'), findsNothing);
 
     await tester.enterText(field, 'zzzz');
+    // 先 pump 一帧让综合结果拿到新查询（防抖计时从这里起算），再推过防抖窗口：
+    // 防抖结束前综合结果只转圈；动画关闭时 pumpAndSettle 不会替我们等计时器。
+    await tester.pump();
+    await tester.pump(kMusicSearchDebounce);
     await tester.pumpAndSettle();
     expect(find.text(t.music_library_search_empty), findsOneWidget);
 
     await tester.enterText(field, '');
     await tester.pumpAndSettle();
-    expect(find.text('Song t1'), findsOneWidget);
-    expect(find.text('Song t2'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music-search-page-overview')),
+      findsNothing,
+    );
+    expect(find.text(t.music_library_search_empty), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
 
-  testWidgets('搜索框与分段选择器左缘对齐、宽 520-600、每个分区都在', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1424, 951);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final FushiDatabase db = await _seed();
-    addTearDown(db.close);
-    final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
-    await _pump(tester, app, const MusicLibraryPage());
-    final Finder field = find.byKey(
-      const ValueKey<String>('music-library-search'),
-    );
-    final Finder selector = find.byType(FushiPillSegmentedButton<MusicLibrarySection>);
-    final double selectorLeft = tester.getTopLeft(selector).dx;
-    final Finder bar = find.ancestor(
-      of: field,
-      matching: find.byType(ConstrainedBox),
-    );
-    for (final MusicLibrarySection s in MusicLibrarySection.values) {
-      await tester.tap(find.text(musicLibrarySectionLabel(s)).first);
+  for (final Size size in const <Size>[Size(400, 860), Size(1424, 951)]) {
+    testWidgets('宽窄屏同一套（${size.width.toInt()} 宽）：无常驻搜索框，右上角搜索按钮推入二级搜索页，'
+        '返回后首页原样', (WidgetTester tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final FushiDatabase db = await _seed();
+      addTearDown(db.close);
+      final AppModel app = AppModel(testPlatformServices())
+        ..wireDatabaseForTesting(db)
+        ..wireMusicPluginManagerForTesting(_noPlugins());
+      await _pump(tester, app, const MusicLibraryPage());
+
+      expect(find.byType(FushiSearchBar), findsNothing);
+      final Finder open = find.byKey(
+        const ValueKey<String>('music_open_search'),
+      );
+      expect(open, findsOneWidget);
+
+      await tester.tap(open);
       await tester.pumpAndSettle();
-      expect(field, findsOneWidget, reason: '$s');
-      final Rect r = tester.getRect(field);
-      expect(r.left, selectorLeft, reason: '$s left edge');
-      expect(r.width, inInclusiveRange(520, 600), reason: '$s width');
-      expect(tester.getTopLeft(selector).dy, lessThan(r.top));
-    }
-    expect(bar, findsWidgets);
+      final Finder field = find.byKey(
+        const ValueKey<String>('music-search-page-field'),
+      );
+      expect(field, findsOneWidget);
+      // 自动聚焦：键盘 / 手柄直接能输入。
+      final EditableText editable = tester.widget<EditableText>(
+        find.descendant(of: field, matching: find.byType(EditableText)),
+      );
+      expect(editable.focusNode.hasFocus, isTrue);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-  });
+      await tester.enterText(field, 'song t1');
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('music-search-page-overview')),
+        findsOneWidget,
+      );
+      expect(find.text('Song t1'), findsWidgets);
+      expect(find.text('Song t2'), findsNothing);
+
+      await tester.tap(find.byTooltip('Back').last);
+      await tester.pumpAndSettle();
+      expect(field, findsNothing);
+      expect(open, findsOneWidget);
+      expect(find.text('Night Album'), findsOneWidget);
+      expect(find.byType(FushiSearchBar), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+  }
 
   testWidgets('空曲库显示添加文件夹入口', (WidgetTester tester) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
     await _pump(tester, app, const MusicLibraryPage());
     expect(find.text(t.music_library_empty), findsOneWidget);
     expect(
@@ -212,7 +271,8 @@ void main() {
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
     final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(db);
     final MusicAlbumRow album = snap.albums.single;
     await _pump(

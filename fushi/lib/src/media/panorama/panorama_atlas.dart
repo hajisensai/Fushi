@@ -171,20 +171,26 @@ class PanoramaAtlasSpec {
     required this.thumbPx,
     required this.emPx,
     required this.maxGlyphs,
+    this.maxThumbPx = 0,
+    this.coverBudgetPx = 0,
   });
 
-  /// 桌面：4096 页、封面面积约 112² 像素、字身 28 像素。
+  /// 桌面：4096 页、封面面积 112²～384² 像素（按作品数分 1.25 页预算）、字身 28 像素。
   static const PanoramaAtlasSpec desktop = PanoramaAtlasSpec(
     pageSize: 4096,
     thumbPx: 112,
+    maxThumbPx: 384,
+    coverBudgetPx: 4096 * 4096 * 1.25,
     emPx: 28,
     maxGlyphs: 6000,
   );
 
-  /// 移动端：2048 页、封面约 88²、字身 22。
+  /// 移动端：2048 页、封面约 88²～256²（1.25 页预算）、字身 22。
   static const PanoramaAtlasSpec mobile = PanoramaAtlasSpec(
     pageSize: 2048,
     thumbPx: 88,
+    maxThumbPx: 256,
+    coverBudgetPx: 2048 * 2048 * 1.25,
     emPx: 22,
     maxGlyphs: 4000,
   );
@@ -193,8 +199,24 @@ class PanoramaAtlasSpec {
       Platform.isAndroid || Platform.isIOS ? mobile : desktop;
 
   final int pageSize;
+
+  /// 封面面积边长的下限（作品很多时）。
   final double thumbPx;
+
+  /// 封面面积边长的上限；≤ [thumbPx] 时固定用 [thumbPx]。
+  final double maxThumbPx;
+
+  /// 全部封面合计的像素面积预算（决定作品少时能给每张多清晰）。
+  final double coverBudgetPx;
   final double emPx;
+
+  /// [works] 部作品时每张封面的面积边长：拉近到球心时封面占屏几百像素，固定 112² 会糊；
+  /// 作品少就按预算给大图，作品多再往 [thumbPx] 收，图集总面积有上限。
+  double thumbPxFor(int works) {
+    if (maxThumbPx <= thumbPx || coverBudgetPx <= 0) return thumbPx;
+    final double fit = math.sqrt(coverBudgetPx / math.max(1, works));
+    return fit.clamp(thumbPx, maxThumbPx).floorToDouble();
+  }
 
   /// （字体, 字）唯一字形数上限；超出时先合并字体套数，仍超就丢掉引入新字的词。
   final int maxGlyphs;
@@ -343,6 +365,7 @@ Future<PanoramaAtlas> buildPanoramaAtlas(
 
   // 1. 封面缩略图（并发解码，控制在 6 路）。
   final int n = library.works.length;
+  final double thumbPx = spec.thumbPxFor(n);
   final List<({ui.Image image, double aspect})?> thumbs =
       List<({ui.Image image, double aspect})?>.filled(n, null);
   int next = 0;
@@ -350,7 +373,7 @@ Future<PanoramaAtlas> buildPanoramaAtlas(
   Future<void> worker() async {
     while (next < n) {
       final int i = next++;
-      thumbs[i] = await _decodeThumb(library.works[i].coverPath, spec.thumbPx);
+      thumbs[i] = await _decodeThumb(library.works[i].coverPath, thumbPx);
       done++;
       onProgress?.call(0.6 * done / math.max(1, n));
     }
@@ -361,8 +384,8 @@ Future<PanoramaAtlas> buildPanoramaAtlas(
     final PanoramaWork w = library.works[i];
     final double aspect = thumbs[i]?.aspect ?? 0.7;
     final Size cover = Size(
-      spec.thumbPx * math.sqrt(aspect),
-      spec.thumbPx / math.sqrt(aspect),
+      thumbPx * math.sqrt(aspect),
+      thumbPx / math.sqrt(aspect),
     );
     final Size framed = panoramaFramedSize(cover);
     final double hue = panoramaWorkHue(w, i);

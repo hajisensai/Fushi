@@ -1633,7 +1633,7 @@ jobs:
           bash ../native/fushi_compute/verify_abi.sh "$bin" nm
           bash ../native/fushi_web_core/verify_abi.sh "$bin" nm
           bash ../native/fushi_rwkv/verify_abi.sh "$bin" nm
-          bash ../native/fushi_music/verify_abi.sh "$bin" nm
+          bash ../native/fushi_music/verify_abi.sh --no-plugin "$bin" nm
           bash ../native/fushi_corpus/verify_abi.sh "$bin" nm
       - name: Save iOS umbrella staticlib to native artifact store
         if: steps.ios_native_store.outputs.hit != 'true'

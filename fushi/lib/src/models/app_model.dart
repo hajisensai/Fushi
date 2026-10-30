@@ -322,6 +322,11 @@ import 'package:fushi/src/media/music/music_library_scanner.dart'
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
+import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
+import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
@@ -682,6 +687,13 @@ class AppModel with ChangeNotifier {
       dictRepo = dictionaryRepository;
       _dictionaryRepoReady = true;
     }
+  }
+
+  /// Test seam：注入插件管理器（音乐页一初始化就读插件列表；只接了数据库、没有
+  /// 数据目录的测试用它给一个临时目录下的空管理器）。
+  @visibleForTesting
+  void wireMusicPluginManagerForTesting(MusicPluginManager manager) {
+    _musicPluginManager = manager;
   }
 
   /// Test seam：注入带假 Bangumi API 的 [MediaTrackingService]（控制通道 /
@@ -1693,11 +1705,23 @@ class AppModel with ChangeNotifier {
   late final MusicSession musicSession = _createMusicSession();
 
   MusicLyricsLive? _musicLyricsLive;
+
+  /// 音乐会话建好后才有（插件装卸时据此重拉收藏缓存，不为此去建会话）。
+  MusicPluginFavorites? _musicFavorites;
   MusicStudyTracker? _musicStudy;
 
   /// 音乐会话 + 跟着引擎走的两个常驻伴随者（歌词当前行 → 桌面歌词 / 锁屏副标题；
   /// 学习统计写入面）。三者共用同一个引擎，所以在一处一起建。
   MusicSession _createMusicSession() {
+    // 插件曲目在 mpv 后端打开时才取流：装配点先于任何播放装好（管理器仍按需懒建）。
+    if (isMusicPluginSourcesAvailable) {
+      musicPluginPlaybackHost = MusicPluginPlaybackHost(
+        manager: () => musicPluginManager,
+        quality: () => musicPluginQualityForBitrate(
+          isPreferencesReady ? prefsRepo.musicServerMaxBitrate : 320,
+        ),
+      );
+    }
     final MusicPlayerEngine engine = MusicPlayerEngine(
       // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
       // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
@@ -1715,6 +1739,14 @@ class AppModel with ChangeNotifier {
       audiobook: audiobookSession,
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
+      // 歌曲收藏 = 平台账号的「喜欢」（插件 `like`）：首次被问到才拉喜欢集合。
+      favorites: _musicFavorites = isMusicPluginSourcesAvailable
+          ? MusicPluginFavorites(
+              MusicPluginManagerLikeHost(() => musicPluginManager),
+              onError: (Object e, StackTrace st) =>
+                  ErrorLogService.instance.log('MusicPluginFavorites', e, st),
+            )
+          : null,
     );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
@@ -1820,12 +1852,53 @@ class AppModel with ChangeNotifier {
     await musicSession.engine.reapplySettings();
   }
 
-  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → LRCLIB。
+  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → 插件自带 → LRCLIB。
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
+    pluginLyrics: isMusicPluginSourcesAvailable
+        ? (String pluginId, String trackId) =>
+              musicPluginManager.source(pluginId).lyrics(trackId)
+        : null,
   );
+
+  /// 在线音源插件管理器（docs/specs/2026-10-28-music-plugins.md）：插件包与插件存储都在
+  /// `<数据库目录>/music_plugins/`，不进 Drift。按首次访问懒建；没过
+  /// [isMusicPluginSourcesAvailable] 的平台别来取。
+  MusicPluginManager? _musicPluginManager;
+  MusicPluginManager get musicPluginManager =>
+      _musicPluginManager ??= _createMusicPluginManager();
+
+  /// 插件账号登录 / 退出后调：收藏（平台「喜欢」）缓存按新账号重拉。
+  void onMusicPluginAccountChanged(String pluginId) {
+    final MusicPluginFavorites? f = _musicFavorites;
+    if (f != null && f.loaded) unawaited(f.refreshPlugin(pluginId));
+  }
+
+  MusicPluginManager _createMusicPluginManager() {
+    final Directory pluginRoot = Directory(
+      path.join(databaseDirectory.path, 'music_plugins'),
+    );
+    final MusicPluginManager manager = MusicPluginManager(
+      rootDir: pluginRoot,
+      // 非 Windows：保险库数据密钥在系统安全存储里（含旧版明文密钥文件的一次性迁移）。
+      vaultKey: MusicPluginVaultKey(
+        vaultRoot: pluginRoot.path,
+        store: const FlutterMusicPluginSecretStore(),
+      ).call,
+      httpClientFactory: createAppHttpClient,
+      // 插件日志是不可信文本：只进诊断日志，不进界面。
+      log: (String id, String level, String message) =>
+          debugPrint('[music-plugin] $id $level: $message'),
+    );
+    // 装卸 / 启停插件：收藏缓存跟着重拉（还没被问到过的不拉，首次读时自己会拉）。
+    manager.changes.listen((_) {
+      final MusicPluginFavorites? f = _musicFavorites;
+      if (f != null && f.loaded) unawaited(f.refresh());
+    });
+    return manager;
+  }
 
   bool get musicLyricsOnline => prefsRepo.musicLyricsOnline;
   Future<void> setMusicLyricsOnline(bool value) =>
@@ -9754,6 +9827,8 @@ class AppModel with ChangeNotifier {
     _animeMihonManager = null;
     _lnReaderManager?.dispose();
     _lnReaderManager = null;
+    unawaited(_musicPluginManager?.dispose());
+    _musicPluginManager = null;
     final ExitFlushCallback? mihonExitShutdown = _mihonRuntimeExitShutdown;
     _mihonRuntimeExitShutdown = null;
     if (mihonExitShutdown != null) {

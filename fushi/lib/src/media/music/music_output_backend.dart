@@ -34,11 +34,20 @@ class MusicPlayItem {
     this.rgTrackPeak,
     this.rgAlbumGain,
     this.rgAlbumPeak,
+    this.artistRefs = const <MusicPlayArtistRef>[],
+    this.sourceAlbumId,
   });
 
   final String trackUid;
   final String path;
   final String title;
+
+  /// 来源侧的歌手引用（插件曲目带插件里的歌手 id），歌词页点歌手跳详情用；
+  /// 本地曲目为空（按曲库的歌手表匹配名字）。
+  final List<MusicPlayArtistRef> artistRefs;
+
+  /// 来源侧的专辑 id（插件曲目）；本地曲目用 [albumUid]。
+  final String? sourceAlbumId;
 
   /// CUE 虚拟曲目在整轨文件里的起止（毫秒）；普通文件为 null。
   final int? startMs;
@@ -260,10 +269,19 @@ enum MusicPlaybackFailure {
 
   /// 音频 CD 曲目：光驱里换成了另一张盘（Disc ID 对不上）。
   cdOtherDisc,
+
+  /// 这一首拿不到可播放的流（在线插件曲目：会员 / 无版权 / 只给试听 / 插件已停用或卸载 /
+  /// 取流超时 / 流地址打不开）。只影响这一首：引擎自动跳到下一首（连续多首都这样才停）。
+  trackUnavailable,
 }
 
 final class MusicBackendFailed extends MusicBackendEvent {
-  const MusicBackendFailed(this.message, {this.reason, this.device});
+  const MusicBackendFailed(
+    this.message, {
+    this.reason,
+    this.device,
+    this.trackUid,
+  });
 
   final String message;
 
@@ -272,6 +290,22 @@ final class MusicBackendFailed extends MusicBackendEvent {
 
   /// [reason] 涉及的设备（音频 CD 的光驱，如 `E:`）。
   final String? device;
+
+  /// 失败的是哪一首（后端知道时给）。引擎按它对位：不是当前曲目、也不是预排的下一首的
+  /// 失败是过期事件（用户已经切走了），丢弃。
+  final String? trackUid;
+}
+
+/// [MusicOutputBackend.openPair] 打不开「当前」这一首（取流失败等，打开前就能确定的失败）：
+/// 不以事件上报，而是让 `openPair` 直接抛出，调用方（引擎）据此决定跳过还是停下——这样
+/// 失败与这一次打开严格对应，不会和用户随后的切歌事件交错。
+final class MusicTrackOpenException implements Exception {
+  const MusicTrackOpenException(this.failure);
+
+  final MusicBackendFailed failure;
+
+  @override
+  String toString() => 'MusicTrackOpenException(${failure.message})';
 }
 
 /// 输出后端。实现必须保证：[openPair] 后后端只持有 [current] 与（可选）[next] 两项；
@@ -286,6 +320,11 @@ abstract interface class MusicOutputBackend {
   Future<void> applySettings(MusicOutputSettings settings);
 
   /// 换掉整个播放列表：从 [current] 开始，预排 [next]。
+  ///
+  /// 打开前就确定打不开 [current]（取流失败）时抛 [MusicTrackOpenException]。后来的
+  /// `openPair` 会作废还没打开完的前一次（前一次静默返回、不再碰播放器，也不抛）：调用方
+  /// 自己按代次判断结果是否还作数。需要异步取流的曲目在取流期间先停掉正在放的旧曲，新文件
+  /// 真正交给播放器之后才上报它的位置。
   Future<void> openPair(
     MusicPlayItem current,
     MusicPlayItem? next, {
@@ -314,4 +353,12 @@ abstract interface class MusicOutputBackend {
 
   /// 可选的输出设备。
   Future<List<MusicAudioDevice>> listAudioDevices();
+}
+
+/// 播放项上的一个歌手引用：[id] 是来源侧（插件）的歌手 id，没有就只按名字找。
+class MusicPlayArtistRef {
+  const MusicPlayArtistRef({required this.name, this.id});
+
+  final String? id;
+  final String name;
 }

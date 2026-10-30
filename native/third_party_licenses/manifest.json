@@ -232,6 +232,21 @@
         ],
         "note": "Upstream ships only the standard LGPL-3.0 and MPL-2.0 texts, without a project copyright line"
       },
+      "rquickjs-core@0.14.0": {
+        "upstream": "https://github.com/DelSkayn/rquickjs/tree/d7ef5eeae702fea24c03643064de454f1c1dd4b0",
+        "texts": [
+          "native/third_party_licenses/texts/crates/DelSkayn-rquickjs-d7ef5eea/LICENSE"
+        ],
+        "note": "rquickjs-core ships no LICENSE; the repo-root MIT LICENSE at tag v0.14.0 covers every crate in the workspace"
+      },
+      "rquickjs-sys@0.14.0": {
+        "upstream": "https://github.com/DelSkayn/rquickjs/tree/d7ef5eeae702fea24c03643064de454f1c1dd4b0",
+        "texts": [
+          "native/third_party_licenses/texts/crates/DelSkayn-rquickjs-d7ef5eea/LICENSE",
+          "native/third_party_licenses/texts/crates/quickjs-ng-in-rquickjs-sys-0.14.0/LICENSE"
+        ],
+        "note": "rquickjs-sys ships no LICENSE for its own code (repo-root MIT LICENSE at v0.14.0); it compiles the vendored QuickJS-ng C sources, whose LICENSE is copied verbatim from rquickjs-sys-0.14.0/quickjs/LICENSE"
+      },
       "rustls-platform-verifier-android@0.2.0": {
         "upstream": "https://github.com/rustls/rustls-platform-verifier/tree/252e25161a91af476cbea620e29d277592d27ec7",
         "texts": [
