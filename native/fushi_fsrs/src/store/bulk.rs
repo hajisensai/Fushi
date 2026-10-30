@@ -438,7 +438,7 @@ pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Val
         }
         let q = format!(
             "SELECT srs_idt(note_id) AS note_id, anki_id, srs_idt(template_id) AS template_id, cloze_ord FROM srs_cards_cache              WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
-            (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+            (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let args = std::iter::once(profile).chain(chunk.iter().map(String::as_str));

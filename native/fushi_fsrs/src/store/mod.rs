@@ -210,6 +210,9 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
 #[cfg(test)]
 impl Drop for SrsCore {
     fn drop(&mut self) {
+        if let Ok(w) = self.writer() {
+            ids::audit::check_stored(&w);
+        }
         ids::audit::check();
     }
 }
@@ -256,22 +259,22 @@ impl SrsCore {
         compact::run(&writer, path.parent().unwrap_or(Path::new(".")), compact::free_bytes(path), now);
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
-        let mut reader = Connection::open_with_flags(
+        let reader = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open reader {}: {e}", path.display()))?;
         configure(&reader)?;
         #[cfg(test)]
-        ids::audit::install(&mut reader);
-        let mut drift_reader = Connection::open_with_flags(
+        let reader = ids::audit::installed(reader);
+        let drift_reader = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
         configure(&drift_reader)?;
         #[cfg(test)]
-        ids::audit::install(&mut drift_reader);
+        let drift_reader = ids::audit::installed(drift_reader);
         Ok(Self {
             writer: Mutex::new(Some(writer)),
             reader: Mutex::new(Some(reader)),
@@ -685,14 +688,14 @@ impl SrsCore {
     /// 把关库后可能已被删换的库文件重新打开。会话开好之后与本对象无关，关库不结束它。
     pub fn read_session(&self) -> Result<Arc<ReadSession>, String> {
         let _open = self.reader()?;
-        let mut conn = Connection::open_with_flags(
+        let conn = Connection::open_with_flags(
             &self.path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
         configure(&conn)?;
         #[cfg(test)]
-        ids::audit::install(&mut conn);
+        let conn = ids::audit::installed(conn);
         conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
             .map_err(|e| e.to_string())?;

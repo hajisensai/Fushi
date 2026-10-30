@@ -321,9 +321,9 @@ fn migration_wraps_legacy_rows_and_keeps_projection() {
     let deck = super::config::default_deck_id(P);
     let w = a.core.writer().unwrap();
     w.execute_batch(&format!(
-        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES ('{deck}', '{P}', 'deck', '{{\"createdAt\":1}}', 1);
+        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id('{deck}'), srs_id('{P}'), 'deck', '{{\"createdAt\":1}}', 1);
          INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) VALUES
-           ('{e1}', '{P}', 'note', 'N1', 'f/x', 'old', 1, '{{\"ctx\":{{\"vv\":{{}}}},\"e\":\"N1\",\"f\":\"f/x\",\"hlc\":\"5:0:old\",\"id\":\"{e1}\",\"k\":\"note\",\"p\":\"{P}\",\"s\":1,\"ts\":\"wall\",\"v\":\"legacy\",\"w\":\"old\"}}');",
+           (srs_id('{e1}'), srs_id('{P}'), 'note', 'N1', 'f/x', 'old', 1, '{{\"ctx\":{{\"vv\":{{}}}},\"e\":\"N1\",\"f\":\"f/x\",\"hlc\":\"5:0:old\",\"id\":\"{e1}\",\"k\":\"note\",\"p\":\"{P}\",\"s\":1,\"ts\":\"wall\",\"v\":\"legacy\",\"w\":\"old\"}}');",
         e1 = crate::registers::edit_id("old", 1)
     ))
     .unwrap();
@@ -1164,7 +1164,7 @@ fn pre_upgrade_small_segments_are_sized_and_compacted() {
         for seq in 1..=top {
             w.execute(
                 "INSERT INTO sync2_segments (profile_uid, device, first, last, bytes) \
-                 SELECT ?1, device, ?2, ?2, 0 FROM sync2_self WHERE profile_uid = srs_id(?1)",
+                 SELECT srs_id(?1), device, ?2, ?2, 0 FROM sync2_self WHERE profile_uid = srs_id(?1)",
                 rusqlite::params![P, seq],
             )
             .unwrap();
