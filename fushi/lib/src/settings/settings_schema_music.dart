@@ -15,6 +15,7 @@ import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
     show showMusicSourcesDialog;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -370,6 +371,23 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicLyricsOnline(value);
             },
+          ),
+          SettingsNavigationItem(
+            id: 'music.lyrics_providers',
+            title: t.music_lyrics_providers_title,
+            subtitle: t.music_lyrics_providers_hint,
+            icon: FushiIcons.lyrics,
+            showIcon: true,
+            // 与「插件音源」同一道合规门（iOS 不渲染）。
+            visible: (_) => isMusicPluginSourcesAvailable,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.music,
+              title: t.music_lyrics_providers_title,
+              icon: FushiIcons.lyrics,
+              sections: const <SettingsSection>[],
+              body: (SettingsContext c) =>
+                  MusicLyricsProvidersBody(appModel: c.appModel),
+            ),
           ),
           SettingsSwitchItem(
             id: 'music.lyrics_lookup_pause',

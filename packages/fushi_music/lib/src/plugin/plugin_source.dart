@@ -558,6 +558,41 @@ class MusicPluginSource {
     return v == null ? null : MusicPluginLyrics.fromJson(v);
   }
 
+  /// 歌词来源：按曲目信息搜候选（最多前 20 条，坏项丢弃）。[query] 由宿主生成，插件愿意
+  /// 可忽略自拼。空列表 = 没有。
+  Future<List<MusicPluginLyricsCandidate>> lyricsSearch(
+    String title, {
+    String? artist,
+    String? album,
+    int? durationMs,
+    String? query,
+  }) async {
+    final (
+      _,
+      Object? v,
+    ) = await _call(MusicPluginCapability.lyricsSearch, <String, Object?>{
+      'query': query ?? (artist == null ? title : '$title $artist'),
+      'title': title,
+      'artist': ?artist,
+      'album': ?album,
+      'durationMs': ?durationMs,
+    });
+    if (v == null) return const <MusicPluginLyricsCandidate>[];
+    return MusicPluginLyricsCandidate.listFrom(
+      _object(v, 'lyricsSearch')['items'],
+    );
+  }
+
+  /// 歌词来源：按候选的 [ref] 取词（原文必有，译文可选）。插件返回 null / 没有可用原文 =
+  /// null（「没有」）；插件抛错照常抛 [MusicPluginException]。
+  Future<MusicPluginLyrics?> lyricsFetch(Object ref) async {
+    final (_, Object? v) = await _call(
+      MusicPluginCapability.lyricsFetch,
+      <String, Object?>{'ref': ref},
+    );
+    return v == null ? null : MusicPluginLyrics.fromJson(v);
+  }
+
   /// 当前账号状态；插件不支持登录时恒为未登录。
   Future<MusicPluginAccount> account() async {
     final MusicPluginInstance inst = await _manager.instance(pluginId);

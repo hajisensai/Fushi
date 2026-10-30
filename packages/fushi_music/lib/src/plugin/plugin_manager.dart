@@ -24,6 +24,13 @@ class InstalledMusicPlugin {
   final String? error;
 
   bool get usable => enabled && info != null;
+
+  /// 可作为音乐来源（搜索 / 首页 / 曲库入口）：可用且声明了歌词来源以外的能力。
+  /// 纯歌词插件为 false。
+  bool get isMusicSource => usable && info!.manifest.providesMusicSource;
+
+  /// 可作为歌词来源（可用且声明了 `lyricsSearch` + `lyricsFetch`）。
+  bool get isLyricsSource => usable && info!.manifest.providesLyricsSource;
 }
 
 /// 插件目录管理：安装 / 启停 / 卸载 / 按需开实例（docs/specs/2026-10-28-music-plugins.md §5）。

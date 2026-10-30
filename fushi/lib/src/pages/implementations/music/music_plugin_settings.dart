@@ -27,6 +27,8 @@ String musicPluginCapabilityLabel(String capability) => switch (capability) {
   'artist' => t.music_section_artists,
   'stream' => t.music_plugins_cap_stream,
   'lyrics' => t.music_plugins_cap_lyrics,
+  'lyricsSearch' ||
+  'lyricsFetch' => t.music_plugins_cap_lyrics_search,
   _ => capability,
 };
 
@@ -42,6 +44,50 @@ String musicPluginPermissionLabel(String permission) => switch (permission) {
 String musicPluginErrorText(Object error) => musicPluginErrorSummary(
   error is MusicPluginException ? error.message : '$error',
 );
+
+/// 选 `.fushiplug` 文件 → 校验并展示清单 / 权限 / 签名 → 用户确认后安装。
+/// 插件音源设置页与歌词来源页共用同一条安装流程。返回是否真的装上了。
+Future<bool> pickAndInstallMusicPlugin(
+  BuildContext context,
+  MusicPluginManager manager,
+) async {
+  final FilePickerResult? picked = await pickFilesByExtensions(
+    context: context,
+    allowedExtensions: const <String>['fushiplug', 'zip'],
+    withData: true,
+  );
+  final PlatformFile? file = picked?.files.firstOrNull;
+  if (file == null) return false;
+  try {
+    final Uint8List bytes = file.bytes ?? await File(file.path!).readAsBytes();
+    final MusicPluginPackageInfo info = await manager.inspect(bytes);
+    final bool signerChanged = await manager.signerChanged(info);
+    if (!context.mounted) return false;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.music_plugins_install_title,
+      icon: FushiIcons.browserExtension,
+      confirmLabel: t.music_plugins_install_action,
+      content: MusicPluginPackageDetails(
+        info: info,
+        signerChanged: signerChanged,
+      ),
+    );
+    if (!ok) return false;
+    await manager.install(bytes, info.digest);
+    FushiToast.show(
+      msg: t.music_plugins_installed(name: info.manifest.name),
+      severity: ToastSeverity.success,
+    );
+    return true;
+  } on Object catch (e) {
+    FushiToast.show(
+      msg: t.music_plugins_install_failed(error: musicPluginErrorText(e)),
+      severity: ToastSeverity.error,
+    );
+    return false;
+  }
+}
 
 class MusicPluginSettingsBody extends StatefulWidget {
   const MusicPluginSettingsBody({super.key, required this.appModel});
@@ -63,42 +109,9 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   });
 
   Future<void> _install() async {
-    final FilePickerResult? picked = await pickFilesByExtensions(
-      context: context,
-      allowedExtensions: const <String>['fushiplug', 'zip'],
-      withData: true,
-    );
-    final PlatformFile? file = picked?.files.firstOrNull;
-    if (file == null) return;
     setState(() => _busy = true);
     try {
-      final Uint8List bytes =
-          file.bytes ?? await File(file.path!).readAsBytes();
-      final MusicPluginPackageInfo info = await _manager.inspect(bytes);
-      final bool signerChanged = await _manager.signerChanged(info);
-      if (!mounted) return;
-      final bool ok = await showFushiConfirmDialog(
-        context: context,
-        title: t.music_plugins_install_title,
-        icon: FushiIcons.browserExtension,
-        confirmLabel: t.music_plugins_install_action,
-        content: MusicPluginPackageDetails(
-          info: info,
-          signerChanged: signerChanged,
-        ),
-      );
-      if (!ok) return;
-      await _manager.install(bytes, info.digest);
-      FushiToast.show(
-        msg: t.music_plugins_installed(name: info.manifest.name),
-        severity: ToastSeverity.success,
-      );
-      _reload();
-    } on Object catch (e) {
-      FushiToast.show(
-        msg: t.music_plugins_install_failed(error: musicPluginErrorText(e)),
-        severity: ToastSeverity.error,
-      );
+      if (await pickAndInstallMusicPlugin(context, _manager)) _reload();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -215,6 +228,9 @@ class _PluginTile extends StatelessWidget {
                   t.music_plugins_version(version: m.version),
                   m.id,
                   if (m.author != null) m.author!,
+                  // 纯歌词插件（没有任何音乐来源能力）标一个小标签。
+                  if (m.providesLyricsSource && !m.providesMusicSource)
+                    t.music_plugins_cap_lyrics_search,
                 ].join(' · '),
           value: plugin.enabled && plugin.info != null,
           onChanged: plugin.info == null ? null : onToggle,

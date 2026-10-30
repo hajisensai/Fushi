@@ -4,6 +4,8 @@
 /// 不因一条坏数据让整页失败；但能力返回值整体形状不对（比如 search 没有 items）按插件错误处理。
 library;
 
+import 'dart:convert';
+
 /// 插件调用失败（插件抛错、返回值形状不对、运行时被终止）。[message] 可以直接给用户看。
 final class MusicPluginException implements Exception {
   const MusicPluginException(this.message, {this.pluginId});
@@ -166,6 +168,19 @@ class MusicPluginManifest {
   final String? homepage;
 
   bool can(MusicPluginCapability c) => capabilities.contains(c.wire);
+
+  /// 声明了歌词来源能力（`lyricsSearch` + `lyricsFetch`，Rust 侧保证成对）。
+  bool get providesLyricsSource =>
+      can(MusicPluginCapability.lyricsSearch) &&
+      can(MusicPluginCapability.lyricsFetch);
+
+  /// 声明了任何「音乐来源」能力（除歌词来源外的全部）。纯歌词插件为 false：它不该出现在
+  /// 插件音源的搜索 / 首页 / 曲库入口，只出现在歌词来源设置里。
+  bool get providesMusicSource => capabilities.any(
+    (String c) =>
+        c != MusicPluginCapability.lyricsSearch.wire &&
+        c != MusicPluginCapability.lyricsFetch.wire,
+  );
 }
 
 /// 能力名（wire 值与清单 / 入口导出名一致）。
@@ -187,7 +202,13 @@ enum MusicPluginCapability {
 
   /// 平台账号的「喜欢」：读喜欢集合与喜欢 / 取消喜欢。
   /// 需同时声明 `login` / `account`。
-  like('like');
+  like('like'),
+
+  /// 歌词来源：按标题 / 艺人 / 时长搜候选（与 [lyricsFetch] 成对声明）。
+  lyricsSearch('lyricsSearch'),
+
+  /// 歌词来源：按候选的不透明 `ref` 取词。
+  lyricsFetch('lyricsFetch');
 
   const MusicPluginCapability(this.wire);
 
@@ -868,13 +889,16 @@ class MusicPluginLyricText {
     'txt',
   };
 
+  /// 歌词文本上限（字符数）：超过当没有。
+  static const int maxTextLength = 1024 * 1024;
+
   static MusicPluginLyricText? fromJson(Object? raw) {
     final Map<String, Object?> j = _map(raw);
     final String? format = _str(j['format']);
     final String? text = _str(j['text']);
     if (format == null || text == null || !formats.contains(format))
       return null;
-    if (text.trim().isEmpty) return null;
+    if (text.trim().isEmpty || text.length > maxTextLength) return null;
     return MusicPluginLyricText(
       format: format,
       text: text,
@@ -905,6 +929,59 @@ class MusicPluginLyrics {
   final MusicPluginLyricText? original;
   final MusicPluginLyricText? translation;
   final MusicPluginLyricText? romanization;
+}
+
+/// 歌词候选（`lyricsSearch` 的一项）。[ref] 是插件自定的不透明 JSON，宿主原样回传给
+/// `lyricsFetch`。
+class MusicPluginLyricsCandidate {
+  const MusicPluginLyricsCandidate({
+    required this.title,
+    required this.ref,
+    this.artist,
+    this.durationMs,
+  });
+
+  /// `ref` 序列化后的字节上限（契约：≤2 KiB）。
+  static const int maxRefBytes = 2048;
+
+  /// 宿主最多取前这么多条候选。
+  static const int maxItems = 20;
+
+  static MusicPluginLyricsCandidate? fromJson(Object? raw) {
+    final Map<String, Object?> j = _map(raw);
+    final String? title = _text(j['title'], 200);
+    final Object? ref = j['ref'];
+    if (title == null || ref == null) return null;
+    final int refBytes;
+    try {
+      refBytes = utf8.encode(jsonEncode(ref)).length;
+    } on Object {
+      return null;
+    }
+    if (refBytes > maxRefBytes) return null;
+    return MusicPluginLyricsCandidate(
+      title: title,
+      artist: _text(j['artist'], 200),
+      durationMs: _count(j['durationMs']),
+      ref: ref,
+    );
+  }
+
+  /// 缺 `title` / `ref`（或 `ref` 过大）的项丢弃，最多 [maxItems] 条。
+  static List<MusicPluginLyricsCandidate> listFrom(Object? raw) {
+    final List<MusicPluginLyricsCandidate> out = <MusicPluginLyricsCandidate>[];
+    for (final Object? x in _list(raw)) {
+      if (out.length >= maxItems) break;
+      final MusicPluginLyricsCandidate? c = fromJson(x);
+      if (c != null) out.add(c);
+    }
+    return out;
+  }
+
+  final String title;
+  final String? artist;
+  final int? durationMs;
+  final Object ref;
 }
 
 /// 插件账号状态（`account()`）。
