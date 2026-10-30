@@ -495,20 +495,22 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         tx.execute_batch(V16_DROP).map_err(|e| e.to_string())?;
         super::sync2::snapshots::migrate(&tx)?;
         // 腾出来的页只进空闲链表：打开时整理一次文件（store/compact.rs，事务外做）。
-        tx.execute(
+        // 新建的库没有可整理的页。
+        if current > 0 { tx.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, '16') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [super::compact::PENDING],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?; }
     }
     if current < 17 {
         // V17：ID 列存 16 字节 BLOB（store/ids.rs）。整表重建，腾出的页同样留给打开时的整理。
         super::ids::migrate(&tx)?;
-        tx.execute(
+        // 新建的库没有可整理的页。
+        if current > 0 { tx.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, '17') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [super::compact::PENDING],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?; }
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
