@@ -407,6 +407,23 @@ impl SrsCore {
         })
     }
 
+    /// v1 位置迁移（Dart `srs_location_migration.dart`）：[items]（名字, 内容 sha256, 字节数）里还没有绑定的名字绑到
+    /// 这份内容；已有绑定的一概不动——绑定是日志里的寄存器，迁移只补「从来没人绑过」的空位，不跟任何设备的绑定抢。
+    pub fn sync2_media_bind_unbound(&self, profile: &str, items: &[(String, [u8; 32], i64)], now: i64) -> Result<Value, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let mut binds = Vec::new();
+            for (name, sha, size) in items {
+                if binding(c, profile, name)?.is_none() && !binds.iter().any(|b: &(String, [u8; 32], i64)| &b.0 == name) {
+                    binds.push((name.clone(), *sha, *size));
+                }
+            }
+            append_bindings(c, profile, &binds, now)?;
+            let bound: Vec<&str> = binds.iter().map(|b| b.0.as_str()).collect();
+            Ok(json!({"appended": binds.len(), "bound": bound}))
+        })
+    }
+
     /// 位置清理用：[expired]（只被删除已满保留期的笔记引用的名字）绑定的内容里，不被 [live]（存活引用）任何一个名字绑定的
     /// 那些。返回 `{"sha": [十六进制…]}`。
     pub fn sync2_media_doomed(&self, profile: &str, expired: &[String], live: &[String]) -> Result<Value, String> {
