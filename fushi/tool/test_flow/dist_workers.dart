@@ -105,6 +105,10 @@ const int kSshConnectionFailure = 255;
 /// low memory / disk). Not a failure of the batch.
 const int kDistShimBusy = 75;
 
+/// `worker_shim.sh`: the request itself is refused (unknown verb, bad
+/// argument).
+const int kDistShimRefused = 2;
+
 enum DistWorkerKind {
   /// This checkout, through the machine-wide heavy lease.
   local,
@@ -430,6 +434,16 @@ abstract class DistWorker {
   Future<DistBatchRun> run(
     DistBatch batch, {
     required List<String> flutterArgs,
+    required IOSink stderrLog,
+    required Duration timeout,
+  });
+
+  /// `flutter analyze --no-pub [options] [paths]` of the prepared checkout
+  /// (tool/dist_test/worker_analyze.sh); [DistBatchRun.lines] is its stdout.
+  /// Only other machines analyze: the point is to take the work off this one.
+  Future<DistBatchRun> analyze(
+    List<String> paths, {
+    required List<String> options,
     required IOSink stderrLog,
     required Duration timeout,
   });
@@ -850,6 +864,16 @@ class LocalDistWorker extends DistWorker {
   }
 
   @override
+  Future<DistBatchRun> analyze(
+    List<String> paths, {
+    required List<String> options,
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) => throw DistWorkerError(
+    'analyze is only handed to other machines; run it here directly',
+  );
+
+  @override
   Future<void> cancel() async {
     final Process? p = _process;
     if (p != null) _killTree(p);
@@ -1127,6 +1151,63 @@ class SshDistWorker extends DistWorker {
         exitCode: run.exitCode,
         lines: expandDistItestReports(run.lines),
         infraError: run.infraError,
+      );
+    }
+    return run;
+  }
+
+  @override
+  Future<DistBatchRun> analyze(
+    List<String> paths, {
+    required List<String> options,
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) async {
+    for (final String p in paths) {
+      if (!isSafeDistAnalyzePath(p)) {
+        throw DistWorkerError('refusing to send unsafe analyze path "$p"');
+      }
+    }
+    final String remote = _shim
+        ? shimRequest('analyze', <String>['${config.slotIndex}', ...options])
+        : '${_prefix}bash fushi/tool/dist_test/worker_analyze.sh '
+              '${options.map(shellQuote).join(' ')}';
+    final Process process = await Process.start(distSshExecutable(), <String>[
+      ..._sshBase,
+      remote,
+    ]);
+    _process = process;
+    process.stdin.write(paths.isEmpty ? '' : '${paths.join('\n')}\n');
+    await process.stdin.close();
+    final StringBuffer errors = StringBuffer();
+    final DistBatchRun run;
+    try {
+      run = await _drive(
+        process,
+        stderrLog: stderrLog,
+        timeout: timeout,
+        kill: _killRemote,
+        connectionFailure: (int code) => code,
+        stderrCopy: errors,
+      );
+    } finally {
+      _process = null;
+    }
+    final String reason = errors.toString().trim().split('\n').last;
+    if (run.exitCode == kDistShimBusy && run.lines.isEmpty) {
+      return DistBatchRun(
+        exitCode: run.exitCode,
+        lines: const <String>[],
+        busy: reason.isEmpty ? 'busy' : reason,
+      );
+    }
+    // A shim installed before `analyze` existed refuses the verb: this
+    // machine cannot take the work, which is not a red analyze.
+    if (_shim && run.exitCode == kDistShimRefused && run.lines.isEmpty) {
+      return DistBatchRun(
+        exitCode: run.exitCode,
+        lines: const <String>[],
+        infraError: 'refused by the worker shim: $reason',
       );
     }
     return run;

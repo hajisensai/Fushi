@@ -21,6 +21,15 @@ import 'test_flow/suite_timings.dart';
 ///   dart tool/dist_test.dart --dry-run           # show what would run where
 ///   dart tool/dist_test.dart --itest             # the desktop integration
 ///                                                # tests of dist_itests.json
+///   dart tool/dist_test.dart --analyze [paths]   # flutter analyze on another
+///                                                # machine
+///   dart tool/dist_test.dart --offload [paths]   # other machines first; this
+///                                                # one only for the leftovers
+///
+/// tool/heavy.dart runs `--offload` / `--analyze` by itself for the
+/// `flutter test` / `flutter analyze` it would otherwise run here
+/// (test_flow/heavy_offload.dart); exit code [kDistOffloadDeclined] then means
+/// no other machine took any of it.
 ///
 /// Any other `--flag` is passed to every `flutter test` (e.g.
 /// `--exclude-tags golden`). Workers: tool/dist_test/workers.local.json.
@@ -36,6 +45,26 @@ Future<void> main(List<String> args) async {
       '(${options.flutterArgs.join(' ')}): each file is one app launch',
     );
     exit(64);
+  }
+  if (options.analyze) {
+    if (options.itest) {
+      stderr.writeln('--analyze and --itest do not go together');
+      exit(64);
+    }
+    final List<String> bad = <String>[
+      for (final String a in options.flutterArgs)
+        if (!kDistAnalyzeOptions.contains(a)) a,
+      for (final String p in options.paths)
+        if (!isSafeDistAnalyzePath(p)) p,
+    ];
+    if (bad.isNotEmpty) {
+      stderr.writeln(
+        '--analyze takes ${kDistAnalyzeOptions.join(' / ')} and paths under '
+        'lib/ test/ tool/ integration_test/ test_driver/ bin/ only: '
+        '${bad.join(', ')}',
+      );
+      exit(64);
+    }
   }
   if (!hasSharedConsole()) {
     stderr.writeln(
@@ -82,11 +111,26 @@ Future<void> main(List<String> args) async {
         if (options.workers!.contains(c.name)) c,
     ];
   }
+  // Off this machine: the other machines are the workers; this one only
+  // picks up test suites they could not run (never analyze: heavy.dart then
+  // runs it here itself).
+  final bool offMachine = options.offload || options.analyze;
   final List<DistWorker> workers = <DistWorker>[
     for (final DistWorkerConfig c in configs)
-      ...createDistWorkers(c, repoRoot: repoRoot),
+      if (!offMachine || c.kind != DistWorkerKind.local)
+        ...createDistWorkers(c, repoRoot: repoRoot),
+  ];
+  final List<DistWorker> fallback = <DistWorker>[
+    if (options.offload && !options.analyze)
+      for (final DistWorkerConfig c in configs)
+        if (c.kind == DistWorkerKind.local)
+          ...createDistWorkers(c, repoRoot: repoRoot),
   ];
   if (workers.isEmpty) {
+    if (offMachine) {
+      stdout.writeln('DIST OFFLOAD: no other machine is configured');
+      exit(kDistOffloadDeclined);
+    }
     stderr.writeln('no workers selected');
     exit(64);
   }
@@ -97,6 +141,24 @@ Future<void> main(List<String> args) async {
         w.status().then((String s) => stdout.writeln('${w.name}: $s')),
     ]);
     return;
+  }
+
+  if (options.analyze) {
+    final DistSnapshot snapshot = await _snapshot(repoRoot);
+    final String runId = _runId();
+    final Directory out = Directory(
+      options.outputDir ?? '../.codex-test/dist/$runId',
+    )..createSync(recursive: true);
+    exit(
+      await _analyzeOffMachine(
+        workers,
+        snapshot: snapshot,
+        runId: runId,
+        out: out,
+        paths: options.paths,
+        options: options.flutterArgs,
+      ),
+    );
   }
 
   // ---- plan ----
@@ -146,8 +208,22 @@ Future<void> main(List<String> args) async {
   }
   final List<DistUnit> unplaceable = <DistUnit>[
     for (final DistUnit u in units)
-      if (!workers.any((DistWorker w) => w.eligible(u))) u,
+      if (!<DistWorker>[
+        ...workers,
+        ...fallback,
+      ].any((DistWorker w) => w.eligible(u)))
+        u,
   ];
+  if (options.offload &&
+      !units.any(
+        (DistUnit u) => workers.any((DistWorker w) => w.eligible(u)),
+      )) {
+    stdout.writeln(
+      'DIST OFFLOAD: no other machine may run these suites '
+      '(platform / capability pins)',
+    );
+    exit(kDistOffloadDeclined);
+  }
   final DistSuiteQueue queue = DistSuiteQueue(
     units.where((DistUnit u) => !unplaceable.contains(u)),
   );
@@ -155,22 +231,7 @@ Future<void> main(List<String> args) async {
   if (options.dryRun) return;
 
   // ---- snapshot ----
-  final Directory scratch = Directory.systemTemp.createTempSync('dist_test_');
-  final DistSnapshot snapshot;
-  try {
-    snapshot = await createDistSnapshot(gitIn(repoRoot), scratchDir: scratch);
-  } on DistSnapshotError catch (e) {
-    stderr.writeln(e.message);
-    stdout.writeln('DIST TEST VERDICT: FAILED - no snapshot');
-    exit(1);
-  } finally {
-    scratch.deleteSync(recursive: true);
-  }
-  stdout.writeln(
-    'snapshot ${snapshot.commit.substring(0, 12)}'
-    '${snapshot.isHead ? ' (= HEAD)' : ' (HEAD + working tree)'}; '
-    'held at HEAD: ${snapshot.protectedPaths.join(', ')}',
-  );
+  final DistSnapshot snapshot = await _snapshot(repoRoot);
 
   final String runId = _runId();
   final Directory out = Directory(
@@ -180,33 +241,54 @@ Future<void> main(List<String> args) async {
 
   // ---- run ----
   final Stopwatch wall = Stopwatch()..start();
+  final List<DistWorker> everyWorker = <DistWorker>[...workers, ...fallback];
   final _Scheduler scheduler = _Scheduler(
     queue: queue,
-    workers: workers,
+    workers: everyWorker,
     flutterArgs: options.flutterArgs,
     out: out,
     runId: runId,
     snapshot: snapshot,
+    busyRetries: options.busyRetries,
   );
   final StreamSubscription<ProcessSignal> sigint = ProcessSignal.sigint
       .watch()
       .listen((_) async {
         stderr.writeln('\ninterrupted: stopping the workers');
         await Future.wait(<Future<void>>[
-          for (final DistWorker w in workers) w.cancel(),
+          for (final DistWorker w in everyWorker) w.cancel(),
         ]);
         await Future.wait(<Future<void>>[
-          for (final DistWorker w in workers) w.finish(runId),
+          for (final DistWorker w in everyWorker) w.finish(runId),
         ]);
         exit(130);
       });
   await Future.wait(<Future<void>>[
     for (final DistWorker w in workers) scheduler.drive(w),
   ]);
+  if (options.offload && scheduler.results.isEmpty) {
+    // Nothing ran anywhere else (unreachable, busy, paused): the caller runs
+    // the whole command here, in its own form.
+    await Future.wait(<Future<void>>[
+      for (final DistWorker w in everyWorker) w.finish(runId),
+    ]);
+    await sigint.cancel();
+    stdout.writeln('DIST OFFLOAD: no other machine took any suite');
+    exit(kDistOffloadDeclined);
+  }
+  if (queue.remaining.isNotEmpty && fallback.isNotEmpty) {
+    stdout.writeln(
+      '${queue.remaining.length} suite(s) left that no other machine ran: '
+      'running them here',
+    );
+    await Future.wait(<Future<void>>[
+      for (final DistWorker w in fallback) scheduler.drive(w),
+    ]);
+  }
   // Every red suite once more on another machine, for the report only.
   await scheduler.rerunFailures();
   await Future.wait(<Future<void>>[
-    for (final DistWorker w in workers) w.finish(runId),
+    for (final DistWorker w in everyWorker) w.finish(runId),
   ]);
   await sigint.cancel();
   wall.stop();
@@ -271,6 +353,7 @@ class _Scheduler {
     required this.out,
     required this.runId,
     required this.snapshot,
+    this.busyRetries = kBusyRetries,
   }) : _speeds = <DistWorker, DistSpeed>{
          for (final DistWorker w in workers) w: DistSpeed(),
        };
@@ -280,6 +363,9 @@ class _Scheduler {
   final Directory out;
   final String runId;
   final DistSnapshot snapshot;
+
+  /// Busy answers in a row before a worker is dropped ([kBusyRetries]).
+  final int busyRetries;
   final List<DistBatchResult> results = <DistBatchResult>[];
   final Map<int, int> weightByBatch = <int, int>{};
 
@@ -393,7 +479,7 @@ class _Scheduler {
         queue.giveBack(batch);
         weightByBatch.remove(batch.id);
         _notify();
-        if (run.paused || ++busyStreak > kBusyRetries) {
+        if (run.paused || ++busyStreak > busyRetries) {
           stdout.writeln('[${worker.name}] DROPPED: $busy');
           dropped = true;
           break;
@@ -612,6 +698,97 @@ class _Scheduler {
   }
 }
 
+/// The run's snapshot commit (HEAD + working tree, secrets held at HEAD).
+Future<DistSnapshot> _snapshot(String repoRoot) async {
+  final Directory scratch = Directory.systemTemp.createTempSync('dist_test_');
+  final DistSnapshot snapshot;
+  try {
+    snapshot = await createDistSnapshot(gitIn(repoRoot), scratchDir: scratch);
+  } on DistSnapshotError catch (e) {
+    stderr.writeln(e.message);
+    stdout.writeln('DIST TEST VERDICT: FAILED - no snapshot');
+    exit(1);
+  } finally {
+    scratch.deleteSync(recursive: true);
+  }
+  stdout.writeln(
+    'snapshot ${snapshot.commit.substring(0, 12)}'
+    '${snapshot.isHead ? ' (= HEAD)' : ' (HEAD + working tree)'}; '
+    'held at HEAD: ${snapshot.protectedPaths.join(', ')}',
+  );
+  return snapshot;
+}
+
+/// `flutter analyze` on the first of [workers] (config order) that prepares
+/// and takes it; its output goes to stdout and its exit code is returned.
+/// [kDistOffloadDeclined] when none did.
+Future<int> _analyzeOffMachine(
+  List<DistWorker> workers, {
+  required DistSnapshot snapshot,
+  required String runId,
+  required Directory out,
+  required List<String> paths,
+  required List<String> options,
+}) async {
+  for (final DistWorker w in workers) {
+    final IOSink prepLog = File(
+      '${out.path}/prepare.${w.name}.log',
+    ).openWrite();
+    final Stopwatch prep = Stopwatch()..start();
+    try {
+      stdout.writeln('[${w.name}] preparing');
+      await w.prepare(snapshot, runId, prepLog);
+      stdout.writeln('[${w.name}] ready after ${prep.elapsed.inSeconds}s');
+    } on Object catch (e) {
+      stdout.writeln('[${w.name}] skipped: prepare failed: $e');
+      await prepLog.close();
+      await w.finish(runId);
+      continue;
+    }
+    await prepLog.close();
+    final IOSink errLog = File(
+      '${out.path}/analyze.${w.name}.stderr.log',
+    ).openWrite();
+    final Stopwatch sw = Stopwatch()..start();
+    DistBatchRun run;
+    try {
+      run = await w.analyze(
+        paths,
+        options: options,
+        stderrLog: errLog,
+        timeout: kDistAnalyzeTimeout,
+      );
+    } on Object catch (e) {
+      run = DistBatchRun(
+        exitCode: -1,
+        lines: const <String>[],
+        infraError: 'could not start: $e',
+      );
+    }
+    await errLog.close();
+    await w.finish(runId);
+    final String? skipped = run.busy ?? run.infraError;
+    if (skipped != null) {
+      stdout.writeln('[${w.name}] skipped: $skipped');
+      continue;
+    }
+    File(
+      '${out.path}/analyze.${w.name}.log',
+    ).writeAsStringSync(run.lines.isEmpty ? '' : '${run.lines.join('\n')}\n');
+    stdout
+      ..writeAll(run.lines, '\n')
+      ..writeln()
+      ..writeln(
+        'DIST ANALYZE: ran on ${w.name} in ${sw.elapsed.inSeconds}s '
+        '-> exit ${run.exitCode}',
+      );
+    await stdout.flush();
+    return run.exitCode;
+  }
+  stdout.writeln('DIST OFFLOAD: no other machine took the analyze');
+  return kDistOffloadDeclined;
+}
+
 class _Options {
   _Options({
     required this.paths,
@@ -622,6 +799,9 @@ class _Options {
     required this.status,
     required this.dryRun,
     required this.itest,
+    required this.analyze,
+    required this.offload,
+    required this.busyRetries,
   });
 
   final List<String> paths;
@@ -635,6 +815,18 @@ class _Options {
   /// Integration tests (tool/test_flow/dist_itests.json) instead of test/.
   final bool itest;
 
+  /// `flutter analyze` of [paths] (none: the whole app) on the first other
+  /// machine that takes it, instead of tests.
+  final bool analyze;
+
+  /// tool/heavy.dart handing work off this machine: other machines first,
+  /// this one only for what they leave; [kDistOffloadDeclined] when no other
+  /// machine took anything.
+  final bool offload;
+
+  /// How often in a row a busy worker is asked again before it is dropped.
+  final int busyRetries;
+
   static _Options parse(List<String> args) {
     final List<String> paths = <String>[];
     final List<String> flutterArgs = <String>[];
@@ -644,6 +836,9 @@ class _Options {
     bool status = false;
     bool dryRun = false;
     bool itest = false;
+    bool analyze = false;
+    bool offload = false;
+    int busyRetries = _Scheduler.kBusyRetries;
     for (int i = 0; i < args.length; i++) {
       final String arg = args[i];
       if (arg == '--status') {
@@ -652,6 +847,14 @@ class _Options {
         dryRun = true;
       } else if (arg == '--itest') {
         itest = true;
+      } else if (arg == '--analyze') {
+        analyze = true;
+      } else if (arg == '--offload') {
+        offload = true;
+      } else if (arg.startsWith('--busy-retries=')) {
+        busyRetries =
+            int.tryParse(arg.substring('--busy-retries='.length)) ??
+            busyRetries;
       } else if (arg.startsWith('--config=')) {
         configPath = arg.substring('--config='.length);
       } else if (arg.startsWith('--workers=')) {
@@ -662,6 +865,7 @@ class _Options {
         flutterArgs.add(arg);
         // `--exclude-tags golden` style: take the value along.
         if (!arg.contains('=') &&
+            !kDistAnalyzeOptions.contains(arg) &&
             i + 1 < args.length &&
             !args[i + 1].startsWith('-') &&
             !args[i + 1].startsWith('test') &&
@@ -673,7 +877,7 @@ class _Options {
       }
     }
     return _Options(
-      paths: paths.isEmpty && !itest ? <String>['test'] : paths,
+      paths: paths.isEmpty && !itest && !analyze ? <String>['test'] : paths,
       flutterArgs: flutterArgs,
       configPath: configPath,
       workers: workers,
@@ -681,6 +885,9 @@ class _Options {
       status: status,
       dryRun: dryRun,
       itest: itest,
+      analyze: analyze,
+      offload: offload,
+      busyRetries: busyRetries,
     );
   }
 }

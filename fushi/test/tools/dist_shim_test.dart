@@ -189,4 +189,71 @@ void main() {
     expect(shim('lock 1 $_runA').exitCode, 0);
     refused('run 1 itest');
   });
+
+  test('analyze needs the lock and takes only the fatal-* switches', () {
+    refused('analyze 1');
+    expect(shim('lock 1 $_runA').exitCode, 0);
+    refused('analyze 1 --write=lib/x.dart');
+    refused('analyze 1 --watch');
+    refused('analyze 1 lib');
+    refused('analyze 2');
+  });
+
+  test('analyze is turned down as busy when paused or short of memory', () {
+    expect(shim('lock 1 $_runA').exitCode, 0);
+    expect(shim(null, args: <String>['pause']).exitCode, 0);
+    final ProcessResult paused = shim('analyze 1 --no-fatal-infos');
+    expect(paused.exitCode, 75);
+    expect('${paused.stderr}', contains('paused'));
+    expect(shim(null, args: <String>['resume']).exitCode, 0);
+    File(
+      '${home.path}/limits',
+    ).writeAsStringSync('MIN_FREE_DISK_GB=0\nMIN_FREE_MEM_MB=999999999\n');
+    final ProcessResult low = shim('analyze 1');
+    expect(low.exitCode, 75);
+    expect('${low.stderr}', contains('low memory'));
+  });
+
+  group('worker_analyze.sh', () {
+    /// Runs it in this checkout with [paths] on stdin; it must refuse before
+    /// flutter starts.
+    Future<ProcessResult> analyze(
+      List<String> paths, {
+      List<String> options = const <String>[],
+    }) async {
+      final Process p = await Process.start(bash, <String>[
+        'tool/dist_test/worker_analyze.sh',
+        ...options,
+      ]);
+      p.stdin.write(paths.map((String l) => '$l\n').join());
+      await p.stdin.close();
+      final Future<String> out = p.stdout
+          .transform(const SystemEncoding().decoder)
+          .join();
+      final Future<String> err = p.stderr
+          .transform(const SystemEncoding().decoder)
+          .join();
+      return ProcessResult(p.pid, await p.exitCode, await out, await err);
+    }
+
+    test('refuses paths outside the app sources and unknown options', () async {
+      for (final String bad in <String>[
+        '../secrets',
+        'lib/../../x',
+        '/etc',
+        'android/app',
+        'lib/a b.dart',
+        r'lib/$(touch x)',
+        'lib/no_such_file_xyz.dart',
+      ]) {
+        final ProcessResult r = await analyze(<String>[bad]);
+        expect(r.exitCode, 2, reason: '$bad\n${r.stderr}');
+      }
+      final ProcessResult opt = await analyze(
+        const <String>[],
+        options: <String>['--write=x'],
+      );
+      expect(opt.exitCode, 2, reason: '${opt.stderr}');
+    });
+  });
 }

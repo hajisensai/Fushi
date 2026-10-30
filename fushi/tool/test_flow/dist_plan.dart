@@ -368,6 +368,33 @@ bool isSafeDistTestPath(String path) =>
         kDistItestPathPattern.hasMatch(path)) &&
     !path.split('/').contains('..');
 
+/// A path `dist_test.dart --analyze` may send (worker_analyze.sh checks the
+/// same pattern): a file or directory of the app's Dart sources.
+final RegExp kDistAnalyzePathPattern = RegExp(
+  r'^(lib|test|tool|integration_test|test_driver|bin)(/[A-Za-z0-9_.-]+)*/?$',
+);
+
+bool isSafeDistAnalyzePath(String path) =>
+    kDistAnalyzePathPattern.hasMatch(path) && !path.split('/').contains('..');
+
+/// The `flutter analyze` options `dist_test.dart --analyze` passes on (the
+/// shim and worker_analyze.sh accept these and nothing else).
+const List<String> kDistAnalyzeOptions = <String>[
+  '--fatal-infos',
+  '--no-fatal-infos',
+  '--fatal-warnings',
+  '--no-fatal-warnings',
+];
+
+/// A remote `flutter analyze` taking longer is killed (a full one takes a
+/// few minutes).
+const Duration kDistAnalyzeTimeout = Duration(minutes: 30);
+
+/// `dist_test.dart --offload` / `--analyze`: no other machine took any of the
+/// work (none configured, reachable, free or allowed to run it). Nothing ran;
+/// tool/heavy.dart runs the command on this machine instead.
+const int kDistOffloadDeclined = 75;
+
 /// Integration test files (`dist_test.dart --itest`): the real app, built and
 /// launched on a desktop.
 final RegExp kDistItestPathPattern = RegExp(

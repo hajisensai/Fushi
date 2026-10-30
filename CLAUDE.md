@@ -121,7 +121,7 @@
 ## 验证
 
 - 文档改动：至少 `git diff --cached --check`，不必跑 Flutter 测试。
-- **本机重活一律走租约**：本地 `flutter test` / `flutter analyze` / `flutter build` / `gradlew` / `run_windows_itest.ps1` 一律在 `fushi/` 下写成 `dart tool/heavy.dart -- <原命令>`（用 `dart` 直接跑、不加 `run`）；`dart tool/heavy.dart --status` 看槽位与排队。机制、退出码与超时参数见 [docs/agent/heavy-lease.md](docs/agent/heavy-lease.md)。
+- **本机重活一律走租约**：本地 `flutter test` / `flutter analyze` / `flutter build` / `gradlew` / `run_windows_itest.ps1` 一律在 `fushi/` 下写成 `dart tool/heavy.dart -- <原命令>`（用 `dart` 直接跑、不加 `run`）；`dart tool/heavy.dart --status` 看槽位与排队。**`flutter test`（test/ 下）与 `flutter analyze` 会先自动外包给 dist_test 的其它机器**（用户 2026-10-30：本机卡、别的电脑闲），没机器接才回本机跑；外包时末行是 `DIST TEST VERDICT` / `DIST ANALYZE`，退出码照旧判绿；`--here` 或 `FUSHI_HEAVY_OFFLOAD=off` 强制本机。机制、退出码与超时参数见 [docs/agent/heavy-lease.md](docs/agent/heavy-lease.md)。
 - **推送前唯一本地门：在 `fushi/` 下跑一次全量 `dart tool/heavy.dart -- flutter analyze --no-pub`**，一个分支只在 push 前跑一次、批量合并只在集成结果上跑一次（开发中要早看用 `dart analyze <改动文件>`）。`tool/pre_push_check.dart` 不是推送门、不要主动跑。analyze 过了 ≠ CI 会绿，推完要看 PR CI。（[细则](docs/agent/rules-detail.md#推送前只跑-analyze)）
 - Dart/Flutter 改动：`dart format` 改动文件 + push 前全量 analyze；测试只定向跑新增 / 改动的测试文件，**几个文件合成一次** `dart tool/heavy.dart -- flutter test a_test.dart b_test.dart --no-pub`；**本地不跑全量测试**，全量 / 成片目录走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`（判绿只认末行 `DIST TEST VERDICT` 与退出码）。**判绿只认退出码 + 实际执行数**（别用 `| tail` 吃掉退出码）；遇红先按 fast-workflow.md「并发伪红判别」分型，零执行的红不算红，也不许拿伪红当借口跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
 - **每条 PR 合入 `develop` 后固定加跑「目录枚举型守卫」整批**（51 条，~62 秒；定向测试结构上挑不到它们），清单与命令见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)「合并后必跑」。（[细则](docs/agent/rules-detail.md#合并后必跑目录枚举型守卫)）
