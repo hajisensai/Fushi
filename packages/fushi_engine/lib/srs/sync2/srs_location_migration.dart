@@ -322,8 +322,8 @@ int _minReaderOf(Map<String, Object?> meta) {
   return v is num ? v.toInt() : 1;
 }
 
-/// 旧根上除了围栏（`meta.json`、文件夹位置的 `media` 普通文件）之外还有没有东西。
-Future<bool> _v1HasData(SrsLocationStore v1) async {
+/// 集合根上除了 `meta.json`（与旧根上文件夹位置的 `media` 普通文件）之外还有没有东西。
+Future<bool> _hasData(SrsLocationStore v1) async {
   for (final SrsLocationEntry e in await v1.list('')) {
     if (e.name == 'meta.json' && !e.isFolder) continue;
     if (e.name == kSrsMediaFolder && !e.isFolder) continue;
@@ -409,7 +409,7 @@ Future<SrsLocationPrepared> srsPrepareLocation({
     return out;
   }
   if (old == null) {
-    if (await _v1HasData(v1)) {
+    if (await _hasData(v1)) {
       // 有旧数据却读不到 meta（最终一致的列目录还没看到 / 被删）：不围栏、不迁移，下一轮再看。新根已在用就照常同步。
       if (!ready) out.error = kSrsSync2MetaUnavailable;
       return out;
@@ -466,8 +466,14 @@ Future<SrsLocationPrepared> srsPrepareLocation({
       );
     }
   }
-  if (writerDirs.isEmpty && !await _v1HasData(v1)) {
+  if (writerDirs.isEmpty && !await _hasData(v1)) {
     if (!ready) {
+      if (await _hasData(current)) {
+        // 迁移早已做完（旧根空了），新根有数据却读不到 meta（被删 / 同步工具还没带过来）：与握手同一条规矩——
+        // 不替一份可能还在的 meta 重写（重写会换掉集合身份 / 加密参数），这一轮不同步。
+        out.error = kSrsSync2MetaUnavailable;
+        return out;
+      }
       await current.putNew(
         'meta.json',
         utf8.encode(
