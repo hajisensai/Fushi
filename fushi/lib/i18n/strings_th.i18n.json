@@ -2026,6 +2026,7 @@
   "dict_import_started": "กำลังนำเข้าพจนานุกรมในเบื้องหลัง...",
   "dict_import_storage_full": "Not enough free storage to import this dictionary. Free up some space and try again.",
   "dict_import_success_summary": "นำเข้าพจนานุกรม $n เล่มแล้ว",
+  "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "อัตโนมัติ",
   "dict_language_description": "กำหนดฟอนต์ที่ใช้แสดงข้อความพจนานุกรม อัตโนมัติจะใช้ภาษาที่พจนานุกรมระบุไว้",
   "dict_language_title": "ภาษาเนื้อหาพจนานุกรม",

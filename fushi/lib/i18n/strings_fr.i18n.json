@@ -2026,6 +2026,7 @@
   "dict_import_started": "Importation des dictionnaires en arrière-plan...",
   "dict_import_storage_full": "Not enough free storage to import this dictionary. Free up some space and try again.",
   "dict_import_success_summary": "$n dictionnaire(s) importé(s)",
+  "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Automatique",
   "dict_language_description": "Détermine quelle police affiche le texte de ce dictionnaire. Automatique utilise la langue déclarée par le dictionnaire.",
   "dict_language_title": "Langue du contenu du dictionnaire",

@@ -2026,6 +2026,7 @@
   "dict_import_started": "Đang nhập từ điển ở chế độ nền...",
   "dict_import_storage_full": "Not enough free storage to import this dictionary. Free up some space and try again.",
   "dict_import_success_summary": "Đã nhập $n từ điển",
+  "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Tự động",
   "dict_language_description": "Quyết định phông chữ nào hiển thị văn bản của từ điển này. Tự động sử dụng ngôn ngữ mà từ điển khai báo.",
   "dict_language_title": "Ngôn ngữ nội dung từ điển",

@@ -2026,6 +2026,7 @@
   "dict_import_started": "Importando dicionários em segundo plano...",
   "dict_import_storage_full": "Not enough free storage to import this dictionary. Free up some space and try again.",
   "dict_import_success_summary": "$n dicionário(s) importado(s)",
+  "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Automático",
   "dict_language_description": "Define qual fonte renderiza o texto deste dicionário. Automático usa o idioma declarado pelo dicionário.",
   "dict_language_title": "Idioma do conteúdo do dicionário",
