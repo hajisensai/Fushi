@@ -326,13 +326,23 @@ void main() {
     /// 区块从树上摘掉时 **ProviderScope 原位保留**：整棵树换掉会连 AppModel 与
     /// PreferencesRepository 一起 dispose，dispose-flush 的异步写就会撞上一个已
     /// 释放的 repo——那是 harness 假象，不是生产行为。
-    Widget harness({AiChatClientFactory? clientFactory}) => ProviderScope(
+    Widget harness({
+      AiChatClientFactory? clientFactory,
+      double width = 640,
+      double textScale = 1,
+    }) => ProviderScope(
       overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
+        builder: (BuildContext context, Widget? child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
         home: Scaffold(
           body: SizedBox(
-            width: 640,
+            width: width,
             child: SingleChildScrollView(
               child: AiProviderSettingsSection(clientFactory: clientFactory),
             ),
@@ -344,11 +354,19 @@ void main() {
     Future<void> pumpSection(
       WidgetTester tester, {
       AiChatClientFactory? clientFactory,
+      double width = 640,
+      double textScale = 1,
     }) async {
       tester.view.physicalSize = const Size(900, 4000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness(clientFactory: clientFactory));
+      await tester.pumpWidget(
+        harness(
+          clientFactory: clientFactory,
+          width: width,
+          textScale: textScale,
+        ),
+      );
       await tester.pumpAndSettle();
     }
 
@@ -692,6 +710,39 @@ void main() {
       await tester.tap(find.text(t.ai_features_section));
       await tester.pumpAndSettle();
       expect(featureRow, findsOneWidget, reason: '点分组头展开后功能行出现');
+    });
+
+    testWidgets('手机宽度：功能行的说明不被下拉按钮挤成一字一行，按钮落到说明下一行', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'LM Studio (local, long provider name)'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      // 测试字体（Ahem）的字形远宽于真字体：缩到 0.5 倍让折叠头等无关部件不溢出，
+      // 本测试只量设置行的堆叠判据。
+      await pumpSection(tester, width: 360, textScale: 0.5);
+
+      final Finder summary = find.text(
+        t.ai_feature_galgame_text_process_summary,
+      );
+      final Finder button = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+        ),
+      );
+      await tester.ensureVisible(summary);
+      await tester.pumpAndSettle();
+
+      // 堆叠前标题 / 说明只剩十几 dp（BUG-2550 同款挤压）；堆叠后拿到整行宽。
+      expect(tester.getSize(summary).width, greaterThan(200));
+      expect(
+        tester.getTopLeft(button).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(summary).dy),
+        reason: '窄行里下拉按钮应在说明下面，而不是挤在它右边',
+      );
     });
 
     testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (WidgetTester tester) async {
