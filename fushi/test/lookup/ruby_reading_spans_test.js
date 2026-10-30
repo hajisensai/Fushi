@@ -5,13 +5,14 @@
 // 读音在 JS 这一步就丢了，宿主无从按它排序。
 //
 // 本 harness 在最小 fake DOM 里真执行阅读器注入脚本 ReaderSelectionScripts.source()
-// （由 .dart wrapper 落到临时文件，路径经 FUSHI_READER_SELECTION_JS 传入），断言
-// rubyReadingSpans 对取词串报出的区间与读音。
+// （由 .dart wrapper 落到固定位置 fushi/.dart_tool/fushi_test_scripts/reader_selection.js；
+// 不接受外部传入路径），断言 rubyReadingSpans 对取词串报出的区间与读音。
 //
-// 运行：FUSHI_READER_SELECTION_JS=<path> node fushi/test/lookup/ruby_reading_spans_test.js
+// 运行：先跑一次 .dart wrapper 落脚本，再 node fushi/test/lookup/ruby_reading_spans_test.js
 
 const assert = require('node:assert');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 
 function selectorTags(selector) {
@@ -132,9 +133,9 @@ function scan(src, paragraph, node, offset) {
   };
 }
 
-const readerPath = process.env.FUSHI_READER_SELECTION_JS;
-if (!readerPath) {
-  console.log('reader selection script not provided');
+const readerPath = path.join(__dirname, '../../.dart_tool/fushi_test_scripts/reader_selection.js');
+if (!fs.existsSync(readerPath)) {
+  console.log('reader selection script not generated; run ruby_reading_spans_test.dart');
   process.exit(1);
 }
 const src = fs.readFileSync(readerPath, 'utf8');

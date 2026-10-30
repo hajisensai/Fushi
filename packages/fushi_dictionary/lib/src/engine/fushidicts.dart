@@ -1011,7 +1011,9 @@ class FushiDicts {
         : ruby.readings.toNativeUtf8(allocator: calloc);
     final Pointer<Int32> rb =
         rubyCount == 0 ? nullptr : calloc<Int32>(ruby.bounds.length);
-    if (rubyCount > 0) rb.asTypedList(ruby.bounds.length).setAll(0, ruby.bounds);
+    if (rubyCount > 0) {
+      rb.asTypedListOutOfLine(ruby.bounds.length).setAll(0, ruby.bounds);
+    }
     final int flags = chineseSimpToTrad ? _lookupFlagChineseSimpToTrad : 0;
     try {
       final r = rubyCount > 0

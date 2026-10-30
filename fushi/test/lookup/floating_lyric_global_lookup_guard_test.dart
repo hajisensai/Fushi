@@ -66,8 +66,11 @@ void main() {
     test('热键与 lookupText 共用同一条查词链（_lookupExternal，无复制粘贴）', () {
       expect(controller.contains('_lookupExternal('), isTrue,
           reason: '查词链必须抽成共享方法');
-      // searchDictionary 在控制器里只允许出现在共享链 + 嵌套查词两处调用。
-      final int calls = 'searchDictionary('.allMatches(controller).length;
+      // searchDictionary（含带原文振假名的 searchDictionaryWithRuby）在控制器里只允许
+      // 出现在共享链 + 嵌套查词两处调用。
+      final int calls = RegExp(r'searchDictionary(WithRuby)?\(')
+          .allMatches(controller)
+          .length;
       expect(calls, 2,
           reason: '根查词只能活在 _lookupExternal（另一处是 _lookupNested）；'
               '出现第三处说明热键/programmatic 链又分叉了');
