@@ -123,12 +123,27 @@ class FushiDesktopTitleBar extends StatefulWidget {
     reassertMacTrafficLights();
   }
 
+  /// 沉浸页的标题行此刻是否隐去（悬停才浮出，见 [_ImmersiveCaptionReveal]）。
+  /// macOS 的系统红绿灯不在 Flutter 树里、跟不上标题行的淡出，按它同步显隐。
+  static bool _immersiveCaptionConcealed = false;
+
+  static void _setImmersiveCaptionConcealed(bool concealed) {
+    if (_immersiveCaptionConcealed == concealed) return;
+    _immersiveCaptionConcealed = concealed;
+    reassertMacTrafficLights();
+  }
+
   /// macOS 原生红绿灯的显隐真值：顶栏在时显示（任何设计系统都用系统红绿灯，
   /// 用户 2026-10-04），内容全屏收起顶栏时隐藏（否则三个圆点浮在视频 / 阅读
-  /// 内容左上角，BUG-973）。AppKit 进出原生全屏会重建标题栏视图、复位
-  /// `isHidden`，所以退出全屏后调用方要再断言一次。非 macOS no-op。
+  /// 内容左上角，BUG-973），沉浸页标题行隐去时也隐藏（悬停浮出时一起回来）。
+  /// AppKit 进出原生全屏会重建标题栏视图、复位 `isHidden`，所以退出全屏后
+  /// 调用方要再断言一次。非 macOS no-op。
   static void reassertMacTrafficLights() {
-    unawaited(setMacOSTrafficLightsHidden(_contentFullscreen.value));
+    unawaited(
+      setMacOSTrafficLightsHidden(
+        _contentFullscreen.value || _immersiveCaptionConcealed,
+      ),
+    );
   }
 
   /// Keep the app frame in sync with the fullscreen state owned by
@@ -243,14 +258,15 @@ class FushiDesktopTitleBar extends StatefulWidget {
     );
   }
 
-  /// 上报了配色的沉浸页此刻是否占满整窗（顶栏悬停才浮出、不让位）。macOS 的
-  /// 系统红绿灯收不起，沉浸页仍从顶栏下沿开始排。
-  static bool get immersivePagesFillWindow => !_hostIsMacOS;
+  /// 上报了配色的沉浸页此刻是否占满整窗（顶栏悬停才浮出、不让位）。各宿主
+  /// 一致（用户 2026-10-30「mac 也要和 windows 一样」）：macOS 的系统红绿灯随
+  /// 标题行一起隐去 / 浮出（[reassertMacTrafficLights]）。
+  static bool get immersivePagesFillWindow => true;
 
   /// 沉浸页顶部 padding 里属于自绘顶栏的那一段（悬停浮出的窗口按钮让位，不是
   /// 系统安全区）：页面的悬浮胶囊按 padding 排在它下面，正文 / 画面要多吃这一条
   /// 显示面积时从自己的顶部预留里扣掉它（用户 2026-10-30「目的只是为了更多显示
-  /// 面积」）。macOS / 未装自绘顶栏 / 内容全屏时为 0。
+  /// 面积」）。未装自绘顶栏 / 内容全屏时为 0。
   static double get immersiveCaptionInset =>
       _isEnabled && !_contentFullscreen.value && immersivePagesFillWindow
       ? height
@@ -258,8 +274,9 @@ class FushiDesktopTitleBar extends StatefulWidget {
 
   /// 上报了配色的沉浸页（[FushiTitleBarColorScope]）头顶上自绘顶栏让出的高度
   /// （未装自绘顶栏 / 内容全屏收起时为 0）。页面要把背景延伸到顶栏底下时，用它
-  /// 算画布；随 [visibleHeightListenable] 变化。只有 macOS 让位（系统红绿灯收
-  /// 不起）；其余宿主沉浸页占满整窗、顶栏悬停才浮出，不让位，恒为 0。
+  /// 算画布；随 [visibleHeightListenable] 变化。沉浸页现在各宿主都占满整窗、
+  /// 顶栏悬停才浮出，不让位，生产上恒为 0（保留给 [immersivePagesFillWindow]
+  /// 再分宿主时用）。
   static double get visibleHeight =>
       _isEnabled && !_contentFullscreen.value && !immersivePagesFillWindow
       ? height
@@ -483,8 +500,8 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           // 页面 MediaQuery 就是整窗（顶部 padding 仍让出标题行高度，页面的
           // 悬浮胶囊排在它下面）；标题行
           // 平时隐去，指针移到窗口顶边才浮出（[_ImmersiveCaptionReveal]），
-          // 浮出时盖在页面顶端、不改页面版面。macOS 的红绿灯是系统画的、收不起，
-          // 仍按「标题行实色 + 页面从标题行下沿开始」排。几种排法只差页面的
+          // 浮出时盖在页面顶端、不改页面版面；macOS 的系统红绿灯随标题行一起
+          // 隐去 / 浮出（用户 2026-10-30）。几种排法只差页面的
           // top 偏移与 padding，子树结构恒定，不会重挂 Navigator。
           child: ValueListenableBuilder<FushiTitleBarColors?>(
             valueListenable: FushiDesktopTitleBar._pageColors,
@@ -856,6 +873,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
 
   @override
   void dispose() {
+    FushiDesktopTitleBar._setImmersiveCaptionConcealed(false);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onGlobalPointer);
     WindowCaptionChannel.captionMaxButtonHovered.removeListener(
       _onNativeMaxButton,
@@ -895,6 +913,8 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   @override
   Widget build(BuildContext context) {
     final bool shown = _shown;
+    // 只改静态真值 + 发平台消息，不标脏任何 widget，build 里同步即可。
+    FushiDesktopTitleBar._setImmersiveCaptionConcealed(!shown);
     // translucent：带子自己记悬停，同时不挡下面页面的命中（隐藏时页面顶端
     // 照常可点；显示时标题行自己的命中层在上面接管）。
     return MouseRegion(
