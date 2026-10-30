@@ -13,7 +13,7 @@
 QuickJS（rquickjs ≥0.14）沙箱跑用户安装的 `.fushiplug` JS 插件：包校验（`files.json` 逐文件
 sha256 + 可选 Ed25519 签名）、原子安装、每次加载重新哈希、清单网络授权（默认拒绝、拒私网）、
 同步 crypto / encoding 原生函数、`ffm_plugin_step` 步进式驱动（宿主调用 http / storage 交回 Dart
-执行）。契约与边界见 `docs/specs/2026-10-28-music-plugins.md`；Dart 侧在
+执行）。契约与边界见 `docs/specs/2026-10-28-music-plugins.md`，第三方开发包见 `tools/music-plugin-sdk/`；Dart 侧在
 `packages/fushi_music/lib/src/plugin/`。`plugin` 是默认特性，**iOS 伞形库以
 `default-features = false` 依赖本 crate，不编入 JS 引擎**（App Store 合规，守卫
 `fushi/test/build/ios_store_compliance_guard_test.dart`）。rquickjs 0.9 在 CPU 预算中断后释放运行时
