@@ -1087,6 +1087,10 @@ class _AiProviderSettingsSectionState
         showIcon: true,
         title: title,
         subtitle: summary,
+        // 当前值最宽 200（提供商名普遍偏长）+ 箭头 + 按钮内边距。不声明的话堆叠判据
+        // 套 220 的经验值，手机宽度（~360）仍走行内布局，标题与说明被挤到十几 dp、
+        // 一字一行。声明后窄行把按钮落到标题下一行。
+        trailingWidth: _kAiChoiceTrailingWidth,
         trailing: _AiChoiceButton(
           key: menuKey,
           semanticLabel: title,
@@ -1635,6 +1639,9 @@ class _ProbeState {
   final bool ok;
   final String message;
 }
+
+/// [_AiChoiceButton] 的固有宽度上限：文字 200 + 间距 2 + 箭头 24 + 文字按钮内边距。
+const double _kAiChoiceTrailingWidth = 250;
 
 /// 设置行尾的单选弹出按钮：当前值 + 下拉箭头，点开菜单（当前项打勾）。
 ///
