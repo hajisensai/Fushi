@@ -9,6 +9,7 @@ void main() {
       expect(s.minReviewsPerDay, 0);
       expect(s.repeatMinReviews, 5);
       expect(s.repeatMinSeconds, 30);
+      expect(s.ignoreReviewLimit, isFalse);
     }
   });
 
@@ -17,6 +18,7 @@ void main() {
       minReviewsPerDay: 12,
       repeatMinReviews: 0,
       repeatMinSeconds: 90,
+      ignoreReviewLimit: true,
     );
     expect(SrsRwkvQueueSettings.fromValue(s.toValue()), s);
     final SrsRwkvQueueSettings odd = SrsRwkvQueueSettings.fromValue(

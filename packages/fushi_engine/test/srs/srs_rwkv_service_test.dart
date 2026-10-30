@@ -984,6 +984,64 @@ void main() {
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[2]);
     });
 
+    test('忽略每日复习上限：按 R 合格的卡全部计入，不按每日复习上限截断', () async {
+      f.advance(kDay);
+      for (int i = 0; i < 4; i++) {
+        backend.setR(cards[i], 0.3);
+      }
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 2},
+        },
+      );
+      expect(await f.reviewCount(), 2);
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
+            ignoreReviewLimit: true,
+          ).toValue(),
+        },
+      );
+      expect(await f.reviewCount(), 4);
+    });
+
+    test('重学步长留空：答错的复习卡留在复习队列，由 RWKV 按 R 当天再出', () async {
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckSteps: <String, Object?>{
+            'learn': <double>[],
+            'relearn': <double>[],
+          },
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
+            repeatMinReviews: 0,
+            repeatMinSeconds: 10,
+          ).toValue(),
+        },
+      );
+      final SrsDeckView deck = (await f.store
+          .deckTree())[f.store.defaultDeckId]!;
+      expect(deck.learnSteps, isEmpty);
+      expect(deck.relearnSteps, isEmpty);
+      f.advance(kDay);
+      backend.setR(cards[0], 0.1);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
+      await f.store.answer(cards[0], 1);
+      expect(
+        (await f.store.cardRow(cards[0]))!.queue,
+        SrsQueue.review.wire,
+        reason: '没有重学步：不进重学队列',
+      );
+      await service.refresh();
+      f.advance(11000);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
+    });
+
     test('手动重建：重置后按全部历史重新回放，回到就绪', () async {
       final int resetsBefore = backend.resets;
       backend.replayedCards.clear();

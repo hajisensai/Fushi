@@ -33,7 +33,11 @@ class SrsSchedulingConfig {
 
 /// 步长校验：每项 > 0 且 < 1 天（1440 分钟）。返回剔除非法项后的列表；
 /// 全被剔除时用默认步长（导入 Anki 的 1d / 3d 这类步长走这里）。
+///
+/// 空列表 = 不用步长（Anki 语义：新卡 / 答错的卡直接进复习），原样返回空；只有给了步长但全被剔除
+/// （都 ≥ 1 天或非正）才用 [fallback]。
 List<double> srsSanitizeSteps(List<double> steps, List<double> fallback) {
+  if (steps.isEmpty) return const <double>[];
   final List<double> ok = <double>[
     for (final double s in steps)
       if (s > 0 && s < 1440) s,

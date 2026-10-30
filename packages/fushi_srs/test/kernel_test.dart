@@ -492,6 +492,9 @@ void main() {
         10,
       ]);
       expect(srsSanitizeSteps(<double>[5, 1440], <double>[1]), <double>[5]);
+      // 空 = 不用步长（Anki 预设留空、设置页留空），不回落默认。
+      expect(srsSanitizeSteps(<double>[], <double>[1, 10]), isEmpty);
+      expect(srsValidateSteps(<double>[]), isTrue);
     });
 
     test('撤销只允许最后一条有效日志', () {

@@ -31,7 +31,8 @@ List<double>? parseSrsSteps(String text) {
       .split(RegExp(r'[\s,，、]+'))
       .where((String s) => s.isNotEmpty)
       .toList();
-  if (parts.isEmpty) return null;
+  // 留空 = 不用步长（直接进复习）。
+  if (parts.isEmpty) return const <double>[];
   final List<double> out = <double>[];
   for (final String p in parts) {
     final double? v = double.tryParse(p);
@@ -99,6 +100,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   final TextEditingController _newLoadBudget = TextEditingController();
   final TextEditingController _newLoadBoost = TextEditingController();
   bool _newLoadAuto = true;
+  bool _rwkvIgnoreLimit = false;
   double _retention = 0.8;
   SrsAlgorithm _algorithm = srsDefaultAlgorithm;
   bool _autoOptimize = true;
@@ -177,6 +179,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
         _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
         _rwkvRefreshEvery.text = '${deck.rwkvQueue.refreshEvery}';
+        _rwkvIgnoreLimit = deck.rwkvQueue.ignoreReviewLimit;
         _newLoadAuto = deck.newCardPlan.autoLoad;
         _newLoadBudget.text = '${deck.newCardPlan.budgetPercent}';
         _newLoadBoost.text = '${deck.newCardPlan.boostPercent}';
@@ -207,6 +210,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             current.repeatMinSeconds,
         'refreshEvery':
             int.tryParse(_rwkvRefreshEvery.text.trim()) ?? current.refreshEvery,
+        'ignoreLimit': _rwkvIgnoreLimit,
       });
 
   /// 输入框里的新卡计划；空 / 非数字的项沿用 [current]，越界的夹到合法范围。
@@ -603,6 +607,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       spacing: tokens.spacing.gap * 1.5,
       children: <Widget>[
         Text(t.srs_settings_rwkv_queue, style: tokens.type.sectionLabel),
+        Text(
+          t.srs_settings_rwkv_steps_note,
+          style: context.fushiType.bodySmall,
+        ),
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('srs-settings-rwkv-ignore-limit'),
+          title: t.srs_settings_rwkv_ignore_limit,
+          subtitle: t.srs_settings_rwkv_ignore_limit_hint,
+          value: _rwkvIgnoreLimit,
+          onChanged: (bool v) => setState(() => _rwkvIgnoreLimit = v),
+        ),
         _numberField(
           _rwkvMinReviews,
           t.srs_settings_rwkv_min_reviews,
@@ -785,14 +800,16 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-learn-steps'),
           controller: _learnSteps,
           labelText: t.srs_settings_learn_steps,
-          helperText: t.srs_settings_steps_hint,
+          helperText:
+              '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
           errorText: _learnError,
         ),
         FushiTextField(
           key: const ValueKey<String>('srs-settings-relearn-steps'),
           controller: _relearnSteps,
           labelText: t.srs_settings_relearn_steps,
-          helperText: t.srs_settings_steps_hint,
+          helperText:
+              '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
           errorText: _relearnError,
         ),
         _conflictNote(context, SrsFieldKeys.deckSteps),

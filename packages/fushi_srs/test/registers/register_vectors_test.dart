@@ -30,18 +30,23 @@ List<Map<String, Object?>> _vectors() {
 Map<String, Object?> _map(Object? v) => (v! as Map).cast<String, Object?>();
 
 /// 向量生成之后牌组视图新加的字段，按它们的缺省补进期望视图（向量的输入里本来就没有这些键，
-/// 旧实现的视图里自然也没有）：`rwkvQueue.refreshEvery`（2026-10-23，fb7289744c）。
+/// 旧实现的视图里自然也没有）：`rwkvQueue.refreshEvery`（2026-10-23，fb7289744c）、
+/// `rwkvQueue.ignoreLimit`（2026-10-30）。
 Object? _withLaterDefaults(Object? view) {
   if (view is! Map) return view;
   final Map<String, Object?> v = view.cast<String, Object?>();
   final Object? q = v['rwkvQueue'];
-  if (q is! Map || q.containsKey('refreshEvery')) return v;
+  if (q is! Map) return v;
+  const SrsRwkvQueueSettings d = SrsRwkvQueueSettings();
   return <String, Object?>{
     for (final MapEntry<String, Object?> e in v.entries)
       e.key: e.key == 'rwkvQueue'
           ? <String, Object?>{
               ...q.cast<String, Object?>(),
-              'refreshEvery': const SrsRwkvQueueSettings().refreshEvery,
+              if (!q.containsKey('refreshEvery'))
+                'refreshEvery': d.refreshEvery,
+              if (!q.containsKey('ignoreLimit'))
+                'ignoreLimit': d.ignoreReviewLimit,
             }
           : e.value,
   };

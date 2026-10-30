@@ -194,9 +194,12 @@ impl DeckTree {
     }
 }
 
-/// `srsSanitizeSteps`：每项 > 0 且 < 1 天；全被剔除用默认。不是列表 = 默认。
+/// `srsSanitizeSteps`：每项 > 0 且 < 1 天；全被剔除用默认。空列表 = 不用步长。不是列表 = 默认。
 fn steps(v: &Value, fallback: &[f64]) -> Vec<f64> {
     let Some(xs) = v.as_array() else { return fallback.to_vec() };
+    if xs.is_empty() {
+        return Vec::new();
+    }
     let ok: Vec<f64> = xs.iter().filter_map(Value::as_f64).filter(|&s| s > 0.0 && s < 1440.0).collect();
     if ok.is_empty() { fallback.to_vec() } else { ok }
 }

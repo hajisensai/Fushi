@@ -76,6 +76,7 @@ class SrsRwkvQueueSettings {
     this.repeatMinReviews = 5,
     this.repeatMinSeconds = 30,
     this.refreshEvery = 1,
+    this.ignoreReviewLimit = false,
   });
 
   /// 每天最少复习数：今天在这个牌组复习过的卡不到这个数时，从回忆率高于目标保留率（本不该出）
@@ -93,6 +94,10 @@ class SrsRwkvQueueSettings {
   /// 生效（`SrsRwkvService`）。调大能减少复习时 RWKV 的计算，代价是队列在两次刷新之间用的是
   /// 较旧的估计。最小 1。
   final int refreshEvery;
+
+  /// 忽略每日复习上限（上游 Anki「Ignore review limit」）：R 降到目标保留率的复习卡全部出，
+  /// 不按 [SrsDeckView.reviewsPerDay] 截断。缺省关（与以前相同）。
+  final bool ignoreReviewLimit;
 
   static const int maxMinReviewsPerDay = 9999;
   static const int maxRepeatMinReviews = 999;
@@ -127,6 +132,7 @@ class SrsRwkvQueueSettings {
         1,
         read('refreshEvery', d.refreshEvery, maxRefreshEvery),
       ),
+      ignoreReviewLimit: v['ignoreLimit'] == true,
     );
   }
 
@@ -135,6 +141,7 @@ class SrsRwkvQueueSettings {
     'repeatReviews': repeatMinReviews,
     'repeatSeconds': repeatMinSeconds,
     'refreshEvery': refreshEvery,
+    'ignoreLimit': ignoreReviewLimit,
   };
 
   @override
@@ -143,7 +150,8 @@ class SrsRwkvQueueSettings {
       other.minReviewsPerDay == minReviewsPerDay &&
       other.repeatMinReviews == repeatMinReviews &&
       other.repeatMinSeconds == repeatMinSeconds &&
-      other.refreshEvery == refreshEvery;
+      other.refreshEvery == refreshEvery &&
+      other.ignoreReviewLimit == ignoreReviewLimit;
 
   @override
   int get hashCode => Object.hash(
@@ -151,6 +159,7 @@ class SrsRwkvQueueSettings {
     repeatMinReviews,
     repeatMinSeconds,
     refreshEvery,
+    ignoreReviewLimit,
   );
 }
 
