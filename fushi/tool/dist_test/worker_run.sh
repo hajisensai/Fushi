@@ -118,11 +118,11 @@ kill_tree() {
 
 # Heartbeat of the checkout lock (see kDistLockStaleMinutes); fds detached
 # so it can never hold the ssh channel open.
-(while sleep 60; do touch "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
+(while sleep 60; do touch -c "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
 heartbeat=$!
 pid=
 trap 'kill "$heartbeat" 2>/dev/null; [ -n "$pid" ] && kill_tree "$pid"; rm -f "$state/run.pid" "$state/runner.pid"; exit 143' TERM INT HUP
-touch "$state/lock" 2>/dev/null
+touch -c "$state/lock" 2>/dev/null
 
 # worker_kill.sh stops this script (whose trap takes the test tree down) so
 # no further chunk / file starts.
@@ -185,6 +185,10 @@ if [ -n "$itest" ]; then
 else
   args=(test --reporter json)
   [ "$runner" = flutter ] && args+=(--no-pub)
+  # Coverage: one suite at a time, or every suite started before the first
+  # one's report is merged pays the whole collection cost again
+  # (kDistCoverageConcurrency).
+  [ -n "$coverage" ] && concurrency=1
   if [ "$concurrency" -gt 0 ]; then
     args+=("--concurrency=$concurrency")
   fi
@@ -198,7 +202,8 @@ else
   fi
   # Windows caps a command line at 32767 characters: a big batch runs as
   # several back-to-back processes, whose event streams the coordinator splits
-  # again at each `start` event (as for its own local worker).
+  # again at each `start` event (as for its own local worker). The coordinator
+  # sizes batch timeouts by the same count (kRemoteWindowsMaxCommandChars).
   max_chars=0
   [ -n "$windows" ] && max_chars=24000
   # Start index of each chunk in files (plain arrays: macOS ships bash 3.2).

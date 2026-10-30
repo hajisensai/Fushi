@@ -38,11 +38,11 @@ done
 
 # Heartbeat of the checkout lock and the pid files worker_kill.sh reads, as in
 # worker_run.sh.
-(while sleep 60; do touch "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
+(while sleep 60; do touch -c "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
 heartbeat=$!
 pid=
 trap 'kill "$heartbeat" 2>/dev/null; [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null; rm -f "$state/run.pid" "$state/runner.pid"; exit 143' TERM INT HUP
-touch "$state/lock" 2>/dev/null
+touch -c "$state/lock" 2>/dev/null
 echo "$$" > "$state/runner.pid"
 
 flutter analyze --no-pub "$@" ${paths[@]+"${paths[@]}"} < /dev/null &

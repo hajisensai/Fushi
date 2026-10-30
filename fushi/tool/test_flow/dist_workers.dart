@@ -36,6 +36,10 @@ const List<String> kDistSshOptions = <String>[
 /// Path characters per local `flutter test` process (cmd.exe stops at 8191).
 const int kLocalMaxCommandChars = 6000;
 
+/// The same on a remote Windows worker (worker_run.sh's `max_chars`; Git
+/// Bash starts flutter without cmd.exe, so only Windows' 32767 cap applies).
+const int kRemoteWindowsMaxCommandChars = 24000;
+
 /// The ssh client for remote commands. On Windows the system OpenSSH
 /// (native Win32 pipes): Git for Windows' msys `ssh.exe`, which PATH often
 /// finds first, emulates select() over the pipes Dart hands it and stalled a
@@ -109,6 +113,26 @@ const int kDistShimBusy = 75;
 /// `worker_shim.sh`: the request itself is refused (unknown verb, bad
 /// argument).
 const int kDistShimRefused = 2;
+
+/// The exit code a failed remote command meant, read back from the tag the
+/// shim and the worker scripts put on the stderr line they turn work down
+/// with (`busy: ` [kDistShimBusy], `error: ` [kDistShimRefused],
+/// `toolchain: ` [kDistToolchainMissing]) when nothing came on stdout.
+/// A Windows worker's sshd runs the shim through its account's shell, which
+/// reports every failure as 1 (2026-10-30: the shim's exit 2 arrived as 1,
+/// and a busy worker read as three red batches); the tag survives that.
+int distRemoteExitCode(
+  int exitCode, {
+  required bool printedNothing,
+  required String stderr,
+}) {
+  if (exitCode == 0 || !printedNothing) return exitCode;
+  final String last = stderr.trim().split('\n').last.trim();
+  if (last.startsWith('busy: ')) return kDistShimBusy;
+  if (last.startsWith('toolchain: ')) return kDistToolchainMissing;
+  if (last.startsWith('error: ')) return kDistShimRefused;
+  return exitCode;
+}
 
 enum DistWorkerKind {
   /// This checkout, through the machine-wide heavy lease.
@@ -481,6 +505,17 @@ abstract class DistWorker {
       unit.eligibleFor(config.platform, config.capabilities) &&
       (!isDistItestPath(unit.path) || config.slotIndex == 1);
 
+  /// Path characters per test process this worker starts for a batch (0: no
+  /// limit, one process); see worker_run.sh's `max_chars`.
+  int get maxCommandChars => config.platform == DistPlatform.windows
+      ? kRemoteWindowsMaxCommandChars
+      : 0;
+
+  /// How many test processes [batch] runs as here.
+  int processCount(DistBatch batch) => maxCommandChars <= 0
+      ? 1
+      : splitByPathChars(batch.files, maxCommandChars).length;
+
   /// Gets the worker onto [snapshot] with dependencies and native libraries
   /// ready. Throws [DistWorkerError]; [log] receives the step output.
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log);
@@ -605,6 +640,9 @@ class LocalDistWorker extends DistWorker {
   String get _fushiDir => '$repoRoot/fushi';
 
   @override
+  int get maxCommandChars => kLocalMaxCommandChars;
+
+  @override
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log) async {
     // pub workspace: the resolution lands in the workspace root's .dart_tool.
     if (!File('$repoRoot/.dart_tool/package_config.json').existsSync() &&
@@ -684,8 +722,12 @@ class LocalDistWorker extends DistWorker {
           if (!dart) '--no-pub',
           '--reporter',
           'json',
-          // The heavy lease books memory for heavy.dart's default.
-          '--concurrency=${config.concurrency ?? kDefaultTestConcurrency}',
+          // The heavy lease books memory for heavy.dart's default. One at a
+          // time with coverage ([kDistCoverageConcurrency]).
+          if (covFile != null)
+            '--concurrency=$kDistCoverageConcurrency'
+          else
+            '--concurrency=${config.concurrency ?? kDefaultTestConcurrency}',
           if (covFile != null) ...<String>[
             '--coverage',
             '--coverage-path=${covFile.path}',
@@ -1312,10 +1354,15 @@ class SshDistWorker extends DistWorker {
     } finally {
       _process = null;
     }
-    if (run.exitCode == kDistShimBusy && run.lines.isEmpty) {
-      final String reason = errors.toString().trim().split('\n').last;
+    final int code = distRemoteExitCode(
+      run.exitCode,
+      printedNothing: run.lines.isEmpty,
+      stderr: errors.toString(),
+    );
+    if (code == kDistShimBusy) {
+      final String reason = errors.toString().trim().split('\n').last.trim();
       return DistBatchRun(
-        exitCode: run.exitCode,
+        exitCode: code,
         lines: const <String>[],
         busy: reason.isEmpty ? 'busy' : reason,
       );
@@ -1418,26 +1465,31 @@ class SshDistWorker extends DistWorker {
     } finally {
       _process = null;
     }
-    final String reason = errors.toString().trim().split('\n').last;
-    if (run.exitCode == kDistShimBusy && run.lines.isEmpty) {
+    final String reason = errors.toString().trim().split('\n').last.trim();
+    final int code = distRemoteExitCode(
+      run.exitCode,
+      printedNothing: run.lines.isEmpty,
+      stderr: errors.toString(),
+    );
+    if (code == kDistShimBusy) {
       return DistBatchRun(
-        exitCode: run.exitCode,
+        exitCode: code,
         lines: const <String>[],
         busy: reason.isEmpty ? 'busy' : reason,
       );
     }
     // A shim installed before the verb existed refuses it: this machine
     // cannot take the work, which is not a red result.
-    if (_shim && run.exitCode == kDistShimRefused && run.lines.isEmpty) {
+    if (_shim && code == kDistShimRefused) {
       return DistBatchRun(
-        exitCode: run.exitCode,
+        exitCode: code,
         lines: const <String>[],
         infraError: 'refused by the worker shim: $reason',
       );
     }
-    if (run.exitCode == kDistToolchainMissing && run.lines.isEmpty) {
+    if (code == kDistToolchainMissing) {
       return DistBatchRun(
-        exitCode: run.exitCode,
+        exitCode: code,
         lines: const <String>[],
         infraError: reason.isEmpty ? 'toolchain missing' : reason,
       );

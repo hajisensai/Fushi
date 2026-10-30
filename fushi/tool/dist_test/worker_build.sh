@@ -139,7 +139,7 @@ esac
 
 # Heartbeat of the checkout lock and the pid files worker_kill.sh reads, as in
 # worker_run.sh.
-(while sleep 60; do touch "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
+(while sleep 60; do touch -c "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
 heartbeat=$!
 pid=
 kill_tree() {
@@ -157,7 +157,7 @@ kill_tree() {
   kill -TERM "$1" 2>/dev/null || true
 }
 trap 'kill "$heartbeat" 2>/dev/null; [ -n "$pid" ] && kill_tree "$pid"; rm -f "$state/run.pid" "$state/runner.pid"; exit 143' TERM INT HUP
-touch "$state/lock" 2>/dev/null
+touch -c "$state/lock" 2>/dev/null
 echo "$$" > "$state/runner.pid"
 
 # Everything goes to a file, printed at the end: Gradle and the Flutter tool
