@@ -140,6 +140,9 @@ void main() {
               speed: 1,
               lyricsMasked: false,
               clock: clock,
+              // 这几条钉的是经典布局（左栏封面 + 右栏歌词 + 左右互换）；新版布局见
+              // lyrics_modern_layout_test.dart。
+              controlsStyle: LyricsControlsStyle.classic,
             ),
             callbacks: callbacks(),
             onHtmlThemeChanged: (LyricsHtmlTheme t) => reported = t,
@@ -195,6 +198,9 @@ void main() {
             speed: 1,
             lyricsMasked: false,
             clock: clock,
+            // 这几条钉的是经典布局（左栏封面 + 右栏歌词 + 左右互换）；新版布局见
+            // lyrics_modern_layout_test.dart。
+            controlsStyle: LyricsControlsStyle.classic,
             sidesMirrored: mirrored,
           ),
           callbacks: LyricsPlayerCallbacks(
@@ -267,6 +273,9 @@ void main() {
             speed: 1,
             lyricsMasked: false,
             clock: clock,
+            // 这几条钉的是经典布局（左栏封面 + 右栏歌词 + 左右互换）；新版布局见
+            // lyrics_modern_layout_test.dart。
+            controlsStyle: LyricsControlsStyle.classic,
             sidesMirrored: mirrored,
           ),
           callbacks: callbacks(),
