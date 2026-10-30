@@ -23,7 +23,7 @@ regex = "1"
 # srs.db（docs/specs/2026-10-23-srs-rust-store.md）：自带一份 SQLite（bundled），只开 srs.db，绝不开主库 fushi.db。
 # `functions`：注册 SQL 自定义函数——摘要桶哈希（store/sync2/digest.rs）与写连接上常驻复习队列的临时触发器回调
 # （store/queue.rs）。
-rusqlite = { version = "0.37", features = ["bundled", "functions"] }
+rusqlite = { version = "0.37", features = ["bundled", "functions", "column_decltype"] }
 # 字段寄存器（registers.rs）：修改记录 ID 的 UUIDv5 与「释义样式去重」规范形的样式文件名（与 native/fushi_compute 同一个包）。
 sha1 = "0.10"
 # sha256：内容寻址媒体（store/sync2/media.rs，`media/<前2位>/<sha256>`）与 Anki 数字 id（`hash53`，与 Dart
@@ -44,6 +44,8 @@ libm = "0.2.16"
 libc = "0.2"
 
 [dev-dependencies]
+# 测试构建里盯住漏编码的 ID 绑定（store/ids.rs `audit`）。
+rusqlite = { version = "0.37", features = ["trace"] }
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 
 [profile.release]

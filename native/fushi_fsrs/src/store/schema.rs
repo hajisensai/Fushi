@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 16;
+pub const SCHEMA_VERSION: i64 = 17;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -369,6 +369,11 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 16 {
         super::sync2::snapshots::ensure_columns(&tx)?;
     }
+    // v17 的 ID 编码（store/ids.rs）：之后的旧步骤用新代码按编码读写，所以从更老的版本升上来时先把已有的表转过去；
+    // 中途建出来的表在结尾再转一次。可重放。
+    if (1..17).contains(&current) {
+        super::ids::migrate(&tx)?;
+    }
     if current > SCHEMA_VERSION {
         return Err(format!(
             "srs.db schema {current} is newer than this build ({SCHEMA_VERSION})"
@@ -489,6 +494,15 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 腾出来的页只进空闲链表：打开时整理一次文件（store/compact.rs，事务外做）。
         tx.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, '16') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [super::compact::PENDING],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    if current < 17 {
+        // V17：ID 列存 16 字节 BLOB（store/ids.rs）。整表重建，腾出的页同样留给打开时的整理。
+        super::ids::migrate(&tx)?;
+        tx.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, '17') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [super::compact::PENDING],
         )
         .map_err(|e| e.to_string())?;

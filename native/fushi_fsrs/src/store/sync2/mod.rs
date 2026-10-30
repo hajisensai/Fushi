@@ -1044,7 +1044,7 @@ pub(crate) fn body_of_event(ev: &Value, note: Option<&str>, stamped: bool, serve
 
 /// 迁移队列：要包成操作的旧行（phase 0 身份记录 / 1 修改记录 / 2 日志 / 3 不认识的事件），`pos` 是确定的包装顺序。
 const MIGRATE_QUEUE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (\
-     profile_uid TEXT NOT NULL, pos INTEGER NOT NULL, phase INTEGER NOT NULL, src TEXT NOT NULL, \
+     profile_uid UUIDTEXT NOT NULL, pos INTEGER NOT NULL, phase INTEGER NOT NULL, src TEXT NOT NULL, \
      PRIMARY KEY (profile_uid, pos)) WITHOUT ROWID;";
 
 /// `srs_meta` 里「这个 profile 的迁移已开始、队列已排好」的标记键前缀（值 = 开始时刻）。
