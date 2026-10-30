@@ -340,7 +340,7 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
             rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
         };
         let mut up = c
-            .prepare(&format!("UPDATE {table} SET anki_id = ?1 WHERE id = ?2"))
+            .prepare(&format!("UPDATE {table} SET anki_id = ?1 WHERE id = srs_id(?2)"))
             .map_err(|e| e.to_string())?;
         for id in &ids {
             up.execute(rusqlite::params![anki_numeric_id(id), id]).map_err(|e| e.to_string())?;
@@ -697,7 +697,7 @@ mod tests {
             ];
             let filter = decks.map_or(String::new(), |d| {
                 args.extend(d.iter().map(|s| Value::Text(s.clone())));
-                format!(" AND deck_id IN ({})", vec!["?"; d.len()].join(", "))
+                format!(" AND deck_id IN ({})", vec!["srs_id(?)"; d.len()].join(", "))
             });
             (
                 format!(

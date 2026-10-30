@@ -677,7 +677,7 @@ fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, da
     let d: Value = serde_json::from_str(data).unwrap_or(Value::Null);
     let rec = json!({"id": idt, "p": profile, "k": kind.wire(), "d": d});
     let existing: Option<(String, String)> = conn
-        .prepare_cached("SELECT payload_json, kind FROM srs_entities WHERE id = ?1")
+        .prepare_cached("SELECT payload_json, kind FROM srs_entities WHERE id = srs_id(?1)")
         .map_err(sql)?
         .query_row([idt], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()
@@ -783,7 +783,7 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     }
     for &d in &deleted[0] {
         let id = &existing[d].0;
-        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([id]).map_err(sql)?;
+        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)").map_err(sql)?.execute([id]).map_err(sql)?;
         t.dominated.push(id.clone());
     }
     conn.prepare_cached(
@@ -827,7 +827,7 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         return Ok(());
     }
     let exists: bool = conn
-        .prepare_cached("SELECT 1 FROM srs_review_logs WHERE id = ?1")
+        .prepare_cached("SELECT 1 FROM srs_review_logs WHERE id = srs_id(?1)")
         .map_err(sql)?
         .exists([&lid])
         .map_err(sql)?;
@@ -976,7 +976,7 @@ pub(crate) fn replay_cards(conn: &Connection, cards: &BTreeSet<String>) -> Resul
         let out = replay::replay(&input)?;
         for (k, new) in out.rows.iter().enumerate() {
             if let Some(json) = new {
-                conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = ?1")
+                conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = srs_id(?1)")
                     .map_err(sql)?
                     .execute(params![rows[k].0, json])
                     .map_err(sql)?;
@@ -1080,7 +1080,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
     Ok(match phase {
         0 => {
             let row: Option<(String, String)> = c
-                .prepare_cached("SELECT kind, payload_json FROM srs_entities WHERE id = ?1")
+                .prepare_cached("SELECT kind, payload_json FROM srs_entities WHERE id = srs_id(?1)")
                 .map_err(sql)?
                 .query_row([src], |r| Ok((r.get(0)?, r.get(1)?)))
                 .optional()
@@ -1095,7 +1095,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
             let row: Option<(String, Option<i64>)> = c
                 .prepare_cached(
                     "SELECT f.json, e.server_time FROM srs_field_edits f LEFT JOIN srs_event_local e ON e.event_id = f.id \
-                     WHERE f.id = ?1",
+                     WHERE f.id = srs_id(?1)",
                 )
                 .map_err(sql)?
                 .query_row([src], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -1127,7 +1127,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
                 .prepare_cached(
                     "SELECT l.json, e.server_time, srs_idt(cc.note_id) AS note_id FROM srs_review_logs l \
                      LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN srs_cards_cache cc ON cc.id = l.card_id \
-                     WHERE l.id = ?1",
+                     WHERE l.id = srs_id(?1)",
                 )
                 .map_err(sql)?
                 .query_row([src], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
@@ -1140,7 +1140,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
             Some(Body::Log(log_body_of(&x, note.as_deref(), hlc, st)?))
         }
         _ => c
-            .prepare_cached("SELECT json FROM srs_unknown_events WHERE id = ?1")
+            .prepare_cached("SELECT json FROM srs_unknown_events WHERE id = srs_id(?1)")
             .map_err(sql)?
             .query_row([src], |r| r.get::<_, String>(0))
             .optional()
@@ -1485,7 +1485,7 @@ impl SrsCore {
         let (kind, entity): (String, String) = {
             let r = self.reader()?;
             r.query_row(
-                "SELECT entity_kind, srs_idt(entity) AS entity FROM sync2_conflicts WHERE profile_uid = srs_id(?1) AND id = ?2",
+                "SELECT entity_kind, srs_idt(entity) AS entity FROM sync2_conflicts WHERE profile_uid = srs_id(?1) AND id = srs_id(?2)",
                 params![profile, conflict],
                 |x| Ok((x.get(0)?, x.get(1)?)),
             )
@@ -1584,7 +1584,7 @@ impl SrsCore {
             let looked_up: Option<String> = match note {
                 Some(_) => None,
                 None => c
-                    .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = ?1")
+                    .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)")
                     .map_err(sql)?
                     .query_row([card], |r| r.get(0))
                     .optional()

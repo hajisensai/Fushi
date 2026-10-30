@@ -208,13 +208,13 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
     });
     let text = canonical(&row);
     let old: Option<String> = conn
-        .prepare_cached("SELECT json FROM srs_field_edits WHERE id = ?1")
+        .prepare_cached("SELECT json FROM srs_field_edits WHERE id = srs_id(?1)")
         .map_err(sql)?
         .query_row([&id], |r| r.get(0))
         .optional()
         .map_err(sql)?;
     let others: Vec<String> = conn
-        .prepare_cached("SELECT srs_idt(id) AS id FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'tags' AND id != ?2")
+        .prepare_cached("SELECT srs_idt(id) AS id FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'tags' AND id != srs_id(?2)")
         .map_err(sql)?
         .query_map(params![note, id], |r| r.get(0))
         .map_err(sql)?
@@ -224,7 +224,7 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
         return Ok(());
     }
     for o in &others {
-        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([o]).map_err(sql)?;
+        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)").map_err(sql)?.execute([o]).map_err(sql)?;
         t.dominated.push(o.clone());
     }
     conn.prepare_cached(
@@ -318,7 +318,7 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
             .map_err(sql)?;
         if !conflicting.is_empty() {
             let (eid, _) = edit_row(conn, profile, d, &body)?;
-            if conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([&eid]).map_err(sql)? > 0 {
+            if conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)").map_err(sql)?.execute([&eid]).map_err(sql)? > 0 {
                 t.dominated.push(eid);
             }
             conn.prepare_cached(
@@ -516,7 +516,7 @@ pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, enti
                 continue;
             }
         }
-        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([&id]).map_err(sql)?;
+        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)").map_err(sql)?.execute([&id]).map_err(sql)?;
         t.dominated.push(id);
     }
     if kind == EntKind::Note {

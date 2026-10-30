@@ -408,7 +408,9 @@ impl SrsCore {
             ));
         }
         let w = self.writer()?;
-        let marks = vec!["?"; t.columns.len()].join(", ");
+        // ID 列编码（store/ids.rs）：旧库搬来的是文本。
+        let id_cols = ids::COLUMNS.iter().find(|(n, _)| *n == t.name).map_or(&[][..], |(_, c)| *c);
+        let marks = t.columns.iter().map(|c| if id_cols.contains(c) { "srs_id(?)" } else { "?" }).collect::<Vec<_>>().join(", ");
         let sql = format!(
             "INSERT INTO {} ({}) VALUES ({marks})",
             t.name,
@@ -756,7 +758,7 @@ pub(crate) fn logs_of(
     let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
         std::collections::HashMap::with_capacity(wanted.len());
     for chunk in wanted.chunks(500) {
-        let marks = vec!["?"; chunk.len()].join(", ");
+        let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
         let sql = format!(
             "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
         );
