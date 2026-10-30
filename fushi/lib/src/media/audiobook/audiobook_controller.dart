@@ -700,8 +700,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     required bool readerMovedDuringPause,
   }) => !readerMovedDuringPause;
 
+  /// 插图停留秒数上限（BUG-3887：设置项改成可自定义秒数的步进器，原先只有
+  /// 0/5/10/15 四档）。
+  static const int maxImagePauseSec = 60;
+
   void setImagePauseSec(int sec) {
-    final int clamped = sec.clamp(0, 15);
+    final int clamped = sec.clamp(0, maxImagePauseSec);
     if (imagePauseSec.value == clamped) return;
     imagePauseSec.value = clamped;
     final Future<void> Function(int)? persist = onImagePausePersist;

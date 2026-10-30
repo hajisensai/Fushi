@@ -32,13 +32,16 @@ const reply = '<p>「あ、うん、え？」</p>';
 const chapterStart = figure + sentence + reply;
 // 章中插图：前一段 → 图 → 这句。
 const midChapter = '<p>たぶんそういうのわかってて言ってるんだと思うよ」</p>' + figure + sentence + reply;
+// BUG-3887：图前是不以「。！？」收尾的对白段（轻小说里最常见的形状）。按句分屏时它曾越过
+// 插图把图后的这句吞进同一个句子单元，插图屏排到这句之后、字符区间倒挂。
+const dialogueBeforeFigure = '<p>「たぶんそういうのわかってて言ってるんだと思うよ」</p>' + figure + sentence + reply;
 
-function pageFor(css, body) {
+function pageFor(css, body, screenMode, preserveDialogue) {
   const config = {
     vnRevealSpeed: 0,
-    vnScreenMode: 'block',
+    vnScreenMode: screenMode || 'block',
     vnSentencesPerScreen: 1,
-    vnPreserveDialogue: true,
+    vnPreserveDialogue: preserveDialogue === undefined ? true : preserveDialogue,
     vnMergeCrossScreenSentenceAudioCues: false,
     sentenceAudioCues: [],
     initialProgress: 0,
@@ -197,6 +200,38 @@ try {
   assert.ok(arrival.resumed.geo.index === 1 && arrival.resumed.geo.outside === 0 &&
     arrival.resumed.detected === 1,
     'chapter arrival: the follow then shows the sentence ' + JSON.stringify(arrival));
+  passed++;
+  // ④ BUG-3887：按句分屏（vnScreenMode = sentences，保留对白气泡关 = 默认值）+ 图前是「……」对白段。插图必须独占
+  // 一屏、排在图前那句与图后这句之间；跟随从图前那句推进到这句时先停在图上。
+  const sentences = await driver.evalOnPage(pageFor(scripts.cssVertical, dialogueBeforeFigure, 'sentences', false), `(async () => {
+    ${HELPERS}
+    await new Promise((r) => setTimeout(r, 300));
+    const reader = window.fushiReader;
+    applyYokuCue(reader);
+    const screens = reader.screens.map((s, i) => ({ i, media: reader.isMediaOnlyScreen(s),
+      start: reader.screenStartCharCount(s), end: reader.screenEndCharCount(s) }));
+    reader.renderScreen(0, true);
+    const first = geometry(reader);
+    reader.highlightSentenceAudioCue('yoku', true, true, false);
+    await frame();
+    const paused = { geo: geometry(reader), detected: window.imageDetected };
+    reader.highlightSentenceAudioCue('yoku', true, true, false);
+    await frame();
+    return { screens, first, paused, resumed: { geo: geometry(reader), detected: window.imageDetected } };
+  })()`);
+  const mediaAt = sentences.screens.findIndex((s) => s.media);
+  assert.ok(mediaAt === 1, 'sentences mode: the illustration is the second screen ' + JSON.stringify(sentences));
+  for (let i = 1; i < sentences.screens.length; i++) {
+    assert.ok(sentences.screens[i].start >= sentences.screens[i - 1].end,
+      'sentences mode: screen char ranges stay in reading order ' + JSON.stringify(sentences));
+  }
+  assert.ok(!sentences.first.text.includes('よく人を見ている'),
+    'sentences mode: the sentence after the illustration is not pulled in front of it ' + JSON.stringify(sentences));
+  assert.ok(sentences.paused.geo.index === mediaAt && sentences.paused.geo.imgs.length === 1 &&
+    sentences.paused.detected === 1,
+    'sentences mode: follow stops on the crossed illustration ' + JSON.stringify(sentences));
+  assert.ok(sentences.resumed.geo.text.includes('よく人を見ている') && sentences.resumed.detected === 1,
+    'sentences mode: after the pause the follow lands on the sentence ' + JSON.stringify(sentences));
   passed++;
   console.log('PASS ' + passed + ' VN illustration/sentence screens');
 } finally {
