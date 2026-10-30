@@ -196,6 +196,8 @@ Future<Object?> ttsGetJson({
 }
 
 /// POST 一个 JSON 并解析 JSON 响应（Google 这类把音频 base64 包在 JSON 里的引擎）。
+/// [sendBody] 为 false 时发空请求体（参数全在 query 里的接口，如 VOICEVOX
+/// `/audio_query`），[body] 被忽略。
 Future<Object?> ttsPostJson({
   required HttpClient client,
   required Uri uri,
@@ -203,6 +205,7 @@ Future<Object?> ttsPostJson({
   required TtsCancelToken cancel,
   Map<String, String> headers = const <String, String>{},
   int maxResponseBytes = kTtsMaxResponseBytes,
+  bool sendBody = true,
 }) async {
   cancel.throwIfCancelled();
   HttpClientRequest? request;
@@ -214,14 +217,18 @@ Future<Object?> ttsPostJson({
     request = req;
     cancel.throwIfCancelled();
     req.followRedirects = false;
-    req.headers.set(
-      HttpHeaders.contentTypeHeader,
-      'application/json; charset=utf-8',
-    );
+    if (sendBody) {
+      req.headers.set(
+        HttpHeaders.contentTypeHeader,
+        'application/json; charset=utf-8',
+      );
+    }
     headers.forEach(req.headers.set);
-    final List<int> bytes = utf8.encode(jsonEncode(body));
+    final List<int> bytes = sendBody
+        ? utf8.encode(jsonEncode(body))
+        : const <int>[];
     req.contentLength = bytes.length;
-    req.add(bytes);
+    if (bytes.isNotEmpty) req.add(bytes);
     final HttpClientResponse response = await req.close().timeout(
       kTtsRequestTimeout,
     );

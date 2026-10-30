@@ -255,6 +255,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_window_bg_opacity',
   'gal_hook_toolbar_auto_hide',
   'gal_hook_toolbar_labels',
+  // String：galgame 台词浮窗 TTS 设置（整份 GalLineTtsSettings JSON，gal_line_tts.dart）。
+  // 含本机声音预设 id → 设备本地，见 sync_repository 的本机键表。
+  'gal_line_tts_settings',
   'gal_mining_animated_format',
   'gal_mining_clip_format',
   'gal_mining_image_mode',

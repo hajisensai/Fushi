@@ -9,6 +9,9 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/gal_line_tts.dart';
+import 'package:fushi/src/lookup/gal_line_tts_settings_page.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -90,6 +93,136 @@ SettingsDestination buildGameDestination() {
           ),
         ],
       ),
+      // 台词朗读（TTS）：给没有配音的旁白 / 主角补声音。浮窗工具条上有「朗读」与
+      // 「自动朗读」两颗键，这里是它们的全部配置；规则 / 语音修正在子页里。
+      SettingsSection(
+        title: t.gal_line_tts_section,
+        liveListenable: (_) => GalHookTextOverlayController.instance,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'game.gal_line_tts_auto',
+            title: t.gal_line_tts_auto,
+            subtitle: t.gal_line_tts_auto_hint,
+            icon: FushiIcons.volumeUp,
+            defaultValue: false,
+            visible: (_) => Platform.isWindows,
+            value: (_) => GalHookTextOverlayController
+                .instance
+                .lineTtsSettings
+                .autoPlayEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              final GalHookTextOverlayController c =
+                  GalHookTextOverlayController.instance;
+              await c.setLineTtsSettings(
+                c.lineTtsSettings.copyWith(autoPlayEnabled: value),
+              );
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSegmentedItem<GalLineTtsAutoPlay>(
+            id: 'game.gal_line_tts_scope',
+            title: t.gal_line_tts_scope,
+            subtitle: t.gal_line_tts_scope_hint,
+            icon: FushiIcons.filterList,
+            visible: (_) => Platform.isWindows,
+            defaultValue: GalLineTtsAutoPlay.unvoicedOnly,
+            options: <SettingsSegmentOption<GalLineTtsAutoPlay>>[
+              SettingsSegmentOption<GalLineTtsAutoPlay>(
+                value: GalLineTtsAutoPlay.unvoicedOnly,
+                label: t.gal_line_tts_scope_unvoiced,
+              ),
+              SettingsSegmentOption<GalLineTtsAutoPlay>(
+                value: GalLineTtsAutoPlay.all,
+                label: t.gal_line_tts_scope_all,
+              ),
+            ],
+            selected: (_) {
+              final GalLineTtsAutoPlay mode = GalHookTextOverlayController
+                  .instance
+                  .lineTtsSettings
+                  .autoPlay;
+              return mode == GalLineTtsAutoPlay.off
+                  ? GalLineTtsAutoPlay.unvoicedOnly
+                  : mode;
+            },
+            onChanged:
+                (SettingsContext settingsContext, GalLineTtsAutoPlay v) async {
+                  final GalHookTextOverlayController c =
+                      GalHookTextOverlayController.instance;
+                  await c.setLineTtsSettings(
+                    c.lineTtsSettings.copyWith(autoPlay: v),
+                  );
+                  settingsContext.refresh();
+                },
+          ),
+          SettingsNavigationItem(
+            id: 'game.gal_line_tts_voice',
+            title: t.gal_line_tts_voice,
+            icon: FushiIcons.voice,
+            showIcon: true,
+            visible: (_) => Platform.isWindows,
+            subtitleBuilder: (SettingsContext settingsContext) =>
+                galLineTtsVoiceLabel(
+                  TtsServices.of(settingsContext.appModel.prefsRepo),
+                  GalHookTextOverlayController
+                      .instance
+                      .lineTtsSettings
+                      .presetId,
+                ),
+            onTap: (SettingsContext settingsContext) async {
+              final GalHookTextOverlayController c =
+                  GalHookTextOverlayController.instance;
+              final ({String? presetId})? picked =
+                  await showGalLineTtsVoicePicker(
+                    settingsContext.context,
+                    TtsServices.of(settingsContext.appModel.prefsRepo),
+                    current: c.lineTtsSettings.presetId,
+                  );
+              if (picked == null) return;
+              await c.setLineTtsSettings(
+                picked.presetId == null
+                    ? c.lineTtsSettings.copyWith(clearPresetId: true)
+                    : c.lineTtsSettings.copyWith(presetId: picked.presetId),
+              );
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_line_tts_volume',
+            title: t.gal_line_tts_volume,
+            icon: FushiIcons.volumeUp,
+            visible: (_) => Platform.isWindows,
+            divisions: 20,
+            defaultValue: 1.0,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${(v * 100).round()}%',
+            value: (_) =>
+                GalHookTextOverlayController.instance.lineTtsSettings.volume,
+            onChanged: (SettingsContext settingsContext, double v) async {
+              final GalHookTextOverlayController c =
+                  GalHookTextOverlayController.instance;
+              await c.setLineTtsSettings(c.lineTtsSettings.copyWith(volume: v));
+              settingsContext.refresh();
+            },
+          ),
+          SettingsNavigationItem(
+            id: 'game.gal_line_tts_rules',
+            title: t.gal_line_tts_rules,
+            subtitle: t.gal_line_tts_rules_hint,
+            icon: FushiIcons.filterList,
+            showIcon: true,
+            visible: (_) => Platform.isWindows,
+            onTap: (SettingsContext settingsContext) async {
+              await openGalLineTtsRulesPage(
+                settingsContext.context,
+                TtsServices.of(settingsContext.appModel.prefsRepo),
+              );
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
       // 游戏内查词属于**游戏**域，不是查词域：它改变的是「这一局游戏里点字会发生
       // 什么」，与阅读器/视频/剪贴板那几路查词共用引擎但不共用触发面。放在查词分类
       // 里，用户要在游戏跑着的时候去另一个分类翻开关，找不到是必然的。
@@ -146,7 +279,9 @@ SettingsDestination buildGameDestination() {
               run: (SettingsContext c, Map<String, String> args) async {
                 final String? sha = _ingameLookupExeSha256();
                 if (sha == null) {
-                  throw StateError(t.gal_hook_ingame_lookup_exe_hash_unavailable);
+                  throw StateError(
+                    t.gal_hook_ingame_lookup_exe_hash_unavailable,
+                  );
                 }
                 return <String, Object?>{'sha256': sha};
               },
@@ -320,8 +455,9 @@ SettingsDestination buildGameDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookPassThroughBlocksMouse,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setGalHookPassThroughBlocksMouse(value);
+              await settingsContext.appModel.setGalHookPassThroughBlocksMouse(
+                value,
+              );
               await GalHookTextOverlayChannel.setPassThroughBlocksMouse(value);
               settingsContext.refresh();
             },
@@ -343,8 +479,9 @@ SettingsDestination buildGameDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookFoldProgressiveLines,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setGalHookFoldProgressiveLines(value);
+              await settingsContext.appModel.setGalHookFoldProgressiveLines(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -517,7 +654,8 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_background_color',
             title: t.gal_hook_text_background_color,
             icon: Icons.format_color_fill,
-            defaultColor: PreferencesRepository.galHookTextBackgroundColorDefault,
+            defaultColor:
+                PreferencesRepository.galHookTextBackgroundColorDefault,
             value: (SettingsContext context) =>
                 context.appModel.galHookTextBackgroundColor,
             onChanged: (SettingsContext context, int value) =>
@@ -667,8 +805,7 @@ GalLookupAdmission _ingameLookupAdmission() =>
 
 /// 准入是否把本局的游戏内查词整个挡在门外。判据的唯一真值在
 /// [GalLookupAdmissionState.blocksLookup]——尤其 unknown（"还不知道"）不算挡住。
-bool _isIngameLookupBlocked() =>
-    _ingameLookupAdmission().state.blocksLookup;
+bool _isIngameLookupBlocked() => _ingameLookupAdmission().state.blocksLookup;
 
 /// 开关**副标题**上的原因文案；没被挡住时返回 null（回落静态 hint）。
 /// 开关本身不置灰，理由见上面构造处。
@@ -694,7 +831,9 @@ String? _ingameLookupExeSha256() {
 
 /// 轻量提示条（与 settings_schema_video.dart 的 `_showVideoSettingsSnackBar` 同款）。
 void _showGameSettingsSnackBar(
-    SettingsContext settingsContext, String message) {
+  SettingsContext settingsContext,
+  String message,
+) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
   ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));

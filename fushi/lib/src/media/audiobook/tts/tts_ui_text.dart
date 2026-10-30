@@ -8,6 +8,8 @@ import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
+import 'package:fushi_engine/tts/providers/voicepeak_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
@@ -28,6 +30,10 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
   AzureTtsDescriptor.providerId => t.audiobook_tts_provider_azure,
   GoogleCloudTtsDescriptor.providerId => t.audiobook_tts_provider_google_cloud,
   SystemTtsDescriptor.providerId => t.audiobook_tts_provider_system,
+  VoicevoxTtsDescriptor.providerId => t.audiobook_tts_provider_voicevox,
+  AivisSpeechTtsDescriptor.providerId => t.audiobook_tts_provider_aivis_speech,
+  SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_sharevox,
+  VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak,
   _ => providerId,
 };
 
@@ -39,6 +45,10 @@ String? ttsProviderHint(String providerId) => switch (providerId) {
     t.audiobook_tts_unofficial_free_hint,
   AzureTtsDescriptor.providerId ||
   GoogleCloudTtsDescriptor.providerId => t.audiobook_tts_key_required_hint,
+  VoicevoxTtsDescriptor.providerId ||
+  AivisSpeechTtsDescriptor.providerId ||
+  SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_voicevox_hint,
+  VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak_hint,
   _ => null,
 };
 
@@ -65,6 +75,18 @@ String ttsParamLabel(String key) => switch (key) {
   'api_key' => t.audiobook_tts_param_api_key,
   'voice' => t.audiobook_tts_param_voice,
   SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine,
+  VoicevoxCompatibleTtsDescriptor.speakerKey => t.audiobook_tts_param_speaker,
+  VoicevoxCompatibleTtsDescriptor.speedScaleKey ||
+  VoicepeakTtsDescriptor.speedKey => t.audiobook_tts_param_speed,
+  VoicevoxCompatibleTtsDescriptor.pitchScaleKey ||
+  VoicepeakTtsDescriptor.pitchKey => t.audiobook_tts_param_pitch,
+  VoicevoxCompatibleTtsDescriptor.intonationScaleKey =>
+    t.audiobook_tts_param_intonation,
+  VoicevoxCompatibleTtsDescriptor.volumeScaleKey =>
+    t.audiobook_tts_param_volume,
+  VoicepeakTtsDescriptor.executableKey => t.audiobook_tts_param_executable,
+  VoicepeakTtsDescriptor.narratorKey => t.audiobook_tts_param_narrator,
+  VoicepeakTtsDescriptor.emotionKey => t.audiobook_tts_param_emotion,
   _ => key,
 };
 
@@ -92,31 +114,58 @@ String ttsLanguageLabel(String code) => switch (code) {
 };
 
 /// 参数下方的说明（没有返回 null）。
-String? ttsParamHint(String providerId, String key) =>
-    switch ((providerId, key)) {
-      (GptSovitsTtsDescriptor.providerId, GptSovitsTtsDescriptor.refAudioKey) =>
-        t.audiobook_tts_param_ref_audio_hint,
-      (GptSovitsTtsDescriptor.providerId, GptSovitsTtsDescriptor.apiKeyKey) =>
-        t.audiobook_tts_param_bearer_hint,
-      (IrodoriTtsDescriptor.providerId, IrodoriTtsDescriptor.endpointKey) =>
-        t.audiobook_tts_param_irodori_endpoint_hint,
-      (
-        IrodoriServerTtsDescriptor.providerId,
-        IrodoriServerTtsDescriptor.endpointKey,
-      ) =>
-        t.audiobook_tts_param_irodori_server_endpoint_hint,
-      (
-        IrodoriServerTtsDescriptor.providerId,
-        IrodoriServerTtsDescriptor.captionKey,
-      ) =>
-        t.audiobook_tts_param_caption_hint,
-      (
-        IrodoriServerTtsDescriptor.providerId,
-        IrodoriServerTtsDescriptor.apiKeyKey,
-      ) =>
-        t.audiobook_tts_param_bearer_hint,
-      _ => null,
-    };
+String? ttsParamHint(String providerId, String key) => switch ((
+  providerId,
+  key,
+)) {
+  (GptSovitsTtsDescriptor.providerId, GptSovitsTtsDescriptor.refAudioKey) =>
+    t.audiobook_tts_param_ref_audio_hint,
+  (GptSovitsTtsDescriptor.providerId, GptSovitsTtsDescriptor.apiKeyKey) =>
+    t.audiobook_tts_param_bearer_hint,
+  (IrodoriTtsDescriptor.providerId, IrodoriTtsDescriptor.endpointKey) =>
+    t.audiobook_tts_param_irodori_endpoint_hint,
+  (
+    IrodoriServerTtsDescriptor.providerId,
+    IrodoriServerTtsDescriptor.endpointKey,
+  ) =>
+    t.audiobook_tts_param_irodori_server_endpoint_hint,
+  (
+    IrodoriServerTtsDescriptor.providerId,
+    IrodoriServerTtsDescriptor.captionKey,
+  ) =>
+    t.audiobook_tts_param_caption_hint,
+  (
+    IrodoriServerTtsDescriptor.providerId,
+    IrodoriServerTtsDescriptor.apiKeyKey,
+  ) =>
+    t.audiobook_tts_param_bearer_hint,
+  (
+    VoicevoxTtsDescriptor.providerId ||
+        AivisSpeechTtsDescriptor.providerId ||
+        SharevoxTtsDescriptor.providerId,
+    VoicevoxCompatibleTtsDescriptor.endpointKey,
+  ) =>
+    t.audiobook_tts_param_voicevox_endpoint_hint,
+  (
+    VoicevoxTtsDescriptor.providerId ||
+        AivisSpeechTtsDescriptor.providerId ||
+        SharevoxTtsDescriptor.providerId,
+    VoicevoxCompatibleTtsDescriptor.speedScaleKey ||
+        VoicevoxCompatibleTtsDescriptor.pitchScaleKey ||
+        VoicevoxCompatibleTtsDescriptor.intonationScaleKey ||
+        VoicevoxCompatibleTtsDescriptor.volumeScaleKey,
+  ) =>
+    t.audiobook_tts_param_voicevox_scale_hint,
+  (VoicepeakTtsDescriptor.providerId, VoicepeakTtsDescriptor.executableKey) =>
+    t.audiobook_tts_param_voicepeak_executable_hint,
+  (VoicepeakTtsDescriptor.providerId, VoicepeakTtsDescriptor.emotionKey) =>
+    t.audiobook_tts_param_voicepeak_emotion_hint,
+  (VoicepeakTtsDescriptor.providerId, VoicepeakTtsDescriptor.speedKey) =>
+    t.audiobook_tts_param_voicepeak_speed_hint,
+  (VoicepeakTtsDescriptor.providerId, VoicepeakTtsDescriptor.pitchKey) =>
+    t.audiobook_tts_param_voicepeak_pitch_hint,
+  _ => null,
+};
 
 /// 失败码的文案。给了 [descriptor] 且该引擎不需要凭据（微软 Edge / 翻译接口等免费
 /// 接口）时，「拒绝了请求」不提示去检查密钥——用户根本没有密钥可查，那是服务端

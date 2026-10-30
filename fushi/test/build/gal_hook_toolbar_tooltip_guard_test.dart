@@ -39,9 +39,11 @@ void main() {
   test('① 文案是一张共享表，两个工具条宿主都接了提示', () {
     expect(
       toolbarCpp.contains(
-          'void SetSlotTooltips(Profile profile, std::vector<std::wstring>'),
+        'void SetSlotTooltips(Profile profile, std::vector<std::wstring>',
+      ),
       isTrue,
-      reason: '文案表的唯一写入口必须是 hook_toolbar::SetSlotTooltips，且按 profile '
+      reason:
+          '文案表的唯一写入口必须是 hook_toolbar::SetSlotTooltips，且按 profile '
           '分表——两个浮窗可以同时在屏上，共用一张表意味着后 show 的那个把另一个的'
           '提示整表覆盖掉',
     );
@@ -169,9 +171,9 @@ void main() {
     );
     // 行宽 / 行起点在整份源码里各只算一次；绘制与穿透工具条窗定位都问它。
     expect(
-      RegExp(r'return btn \* slots \+ gap \* \(slots - 1\);')
-          .allMatches(window)
-          .length,
+      RegExp(
+        r'return btn \* slots \+ gap \* \(slots - 1\);',
+      ).allMatches(window).length,
       1,
       reason: '一行按钮的总宽只允许在 HookToolbarRowWidth 里算一次',
     );
@@ -217,9 +219,14 @@ void main() {
         'constexpr const char\\* $tableName\\[$countName\\] = \\{([\\s\\S]*?)\\};',
       ).firstMatch(toolbarHeader);
       expect(table, isNotNull, reason: '$tableName 表必须存在');
-      final int slotCount =
-          RegExp(r'"[a-zA-Z]+",').allMatches(table!.group(1)!).length;
-      expect(slotCount, expectedSlots, reason: '$tableName 当前是 $expectedSlots 槽');
+      final int slotCount = RegExp(
+        r'"[a-zA-Z]+",',
+      ).allMatches(table!.group(1)!).length;
+      expect(
+        slotCount,
+        expectedSlots,
+        reason: '$tableName 当前是 $expectedSlots 槽',
+      );
 
       final Match? tooltips = RegExp(
         r'List<String> get _slotTooltips => <String>\[([\s\S]*?)\];',
@@ -248,7 +255,9 @@ void main() {
     checkTable(
       countName: 'kGalHookSlotCount',
       tableName: 'kGalHookSlotActions',
-      expectedSlots: 10,
+      // 10 → 12：加了台词 TTS 的「朗读」「自动朗读」两颗键（speakLine /
+      // toggleAutoSpeak），提示表 / 标签表同步各加两条。
+      expectedSlots: 12,
       tooltipSource: controller,
       keyPrefix: 'game_hook_btn_',
     );
@@ -259,9 +268,9 @@ void main() {
       // （native 收到后什么都不做）。这个数字是**规模哨兵**，故意写死——表一变就
       // 逼人来这儿确认一次「Dart 提示表跟着删了没」，而不是让它自动跟随。
       expectedSlots: 6,
-      tooltipSource:
-          File('lib/src/media/audiobook/audiobook_session.dart')
-              .readAsStringSync(),
+      tooltipSource: File(
+        'lib/src/media/audiobook/audiobook_session.dart',
+      ).readAsStringSync(),
       keyPrefix: 'floating_lyric_',
     );
   });
