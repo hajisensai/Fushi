@@ -33,17 +33,6 @@ abstract interface class SrsRwkvScheduling {
     required int nowMs,
   });
 
-  /// 统计页「未来到期」：[cards] 这些复习卡按 RWKV 预测的回忆率**首次不高于** [targets]（与 [cards]
-  /// 同序，各卡所在牌组的目标保留率；与出卡同口径 R ≤ 目标）的日偏移，与 [cards] 同序：0 = 今天
-  /// （此刻已不高于目标，RWKV-Instant 今天就会出它）；超过 [days] 天、或某张卡打不了分时该项为 null。
-  /// 没准备好 / 状态落后需要重建时整体返回 null（不启动服务）。只查询：不改分数表、不推进模型状态。
-  Future<List<int?>?> forecastDueOffsets(
-    List<SrsRwkvCandidate> cards, {
-    required List<double> targets,
-    required int days,
-    required int nowMs,
-  });
-
   /// 本机评分已落库（[log] 是这张卡新的最后一条有效日志）。
   Future<void> onAnswered(String cardId, SrsReviewLog log);
 
