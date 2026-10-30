@@ -161,6 +161,7 @@ cmd_hello() {
   echo "max_slots=$(max_slots)"
   echo "max_concurrency=$(max_concurrency)"
   echo "paused=$(paused && echo yes || echo no)"
+  echo "analyze=yes"
 }
 
 cmd_lock() {

@@ -448,6 +448,10 @@ abstract class DistWorker {
     required Duration timeout,
   });
 
+  /// Why this worker cannot take [analyze] right now, asked before anything
+  /// is pushed or prepared there; null when it can.
+  Future<String?> analyzeBlocker();
+
   /// Kills whatever batch is in flight (Ctrl-C).
   Future<void> cancel();
 
@@ -874,6 +878,9 @@ class LocalDistWorker extends DistWorker {
   );
 
   @override
+  Future<String?> analyzeBlocker() async => 'this machine';
+
+  @override
   Future<void> cancel() async {
     final Process? p = _process;
     if (p != null) _killTree(p);
@@ -1211,6 +1218,23 @@ class SshDistWorker extends DistWorker {
       );
     }
     return run;
+  }
+
+  @override
+  Future<String?> analyzeBlocker() async {
+    if (!_shim) return null;
+    final ProcessResult r = await _ssh('hello');
+    if (r.exitCode != 0) {
+      return 'unreachable (exit ${r.exitCode})';
+    }
+    final String hello = '${r.stdout}';
+    if (!RegExp(r'^analyze=yes\s*$', multiLine: true).hasMatch(hello)) {
+      return 'its shim predates analyze (the owner re-runs worker_setup)';
+    }
+    if (RegExp(r'^paused=yes\s*$', multiLine: true).hasMatch(hello)) {
+      return 'paused by the owner';
+    }
+    return null;
   }
 
   Future<void> _killRemote() async {
