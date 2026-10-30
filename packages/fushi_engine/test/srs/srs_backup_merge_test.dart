@@ -179,7 +179,7 @@ void main() {
       final QueryRow c = await localSrs.db
           .customSelect(
             'SELECT COUNT(*) AS c FROM $table WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(oldUid)],
+            variables: <Variable<Object>>[Variable<String>(oldUid, srsIdType)],
           )
           .getSingle();
       expect(c.read<int>('c'), 0, reason: '$table 不应残留旧 uid 的行');
