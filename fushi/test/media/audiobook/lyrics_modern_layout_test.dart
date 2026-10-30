@@ -420,9 +420,10 @@ void main() {
       await tester.pumpWidget(themed(Colors.deepOrange));
       await tester.pump(const Duration(milliseconds: 16));
       expect(tester.binding.hasScheduledFrame, isTrue, reason: '过渡进行中');
-      // 单次 pump 只推进一帧；主题切换带的其它隐式动画收尾还要一两帧。
+      // 单次 pump 只推进一帧：MaterialApp 的 AnimatedTheme 先在一帧里跳到终点，
+      // 网格背景的过渡在那一帧才拿到最终目标色、再走一段 FushiMotion.medium。
       await tester.pump(const Duration(seconds: 2));
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 2));
       await tester.pump(const Duration(milliseconds: 100));
       expect(tester.binding.hasScheduledFrame, isFalse, reason: '过渡完静止');
     });
