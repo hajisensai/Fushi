@@ -41,15 +41,15 @@ fn profile_tables(c: &Connection) -> Result<Vec<String>, String> {
 /// 用户看得见的规模：未删除的笔记、它们的卡、全部复习记录；外加该 uid 在各表里的总行数。
 fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
     let count = |q: &str| -> Result<i64, String> { c.query_row(q, [profile], |r| r.get(0)).map_err(sql) };
-    let notes = count("SELECT COUNT(*) FROM srs_notes_cache WHERE profile_uid = ?1 AND deleted_at IS NULL")?;
+    let notes = count("SELECT COUNT(*) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL")?;
     let cards = count(
-        "SELECT COUNT(*) FROM srs_cards_cache c WHERE c.profile_uid = ?1 AND EXISTS \
+        "SELECT COUNT(*) FROM srs_cards_cache c WHERE c.profile_uid = srs_id(?1) AND EXISTS \
          (SELECT 1 FROM srs_notes_cache n WHERE n.id = c.note_id AND n.deleted_at IS NULL)",
     )?;
-    let reviews = count("SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = ?1")?;
+    let reviews = count("SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = srs_id(?1)")?;
     let mut rows = 0i64;
     for t in profile_tables(c)? {
-        rows += count(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = ?1"))?;
+        rows += count(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"))?;
     }
     Ok(json!({"notes": notes, "cards": cards, "reviews": reviews, "rows": rows}))
 }
@@ -80,7 +80,7 @@ impl SrsCore {
             let mut tables = Map::new();
             let mut deleted = 0i64;
             for t in profile_tables(c)? {
-                let n = c.execute(&format!("DELETE FROM \"{t}\" WHERE profile_uid = ?1"), [profile]).map_err(sql)? as i64;
+                let n = c.execute(&format!("DELETE FROM \"{t}\" WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)? as i64;
                 if n > 0 {
                     tables.insert(t, json!(n));
                 }
@@ -250,7 +250,7 @@ mod tests {
             .unwrap();
         assert!(every.len() > 25, "{every:?}");
         for t in every {
-            let n: i64 = w.query_row(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = ?1"), [P], |r| r.get(0)).unwrap();
+            let n: i64 = w.query_row(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"), [P], |r| r.get(0)).unwrap();
             assert_eq!(n, 0, "{t} still has rows of the purged profile");
         }
         let meta: i64 = w.query_row("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/' || ?1", [P], |r| r.get(0)).unwrap();

@@ -240,7 +240,7 @@ impl SrsCore {
             let mut stmt = r
                 .prepare_cached(
                     "SELECT l.rowid, l.card_id, l.json, e.server_time FROM srs_review_logs l \
-                     LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = ?1 ORDER BY l.rowid",
+                     LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
                 )
                 .map_err(|e| e.to_string())?;
             let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
@@ -318,7 +318,7 @@ impl SrsCore {
                 let (c, m): (i64, i64) = r
                     .query_row(
                         "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = ?1",
+                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1)",
                         rusqlite::params![profile, since],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
@@ -327,7 +327,7 @@ impl SrsCore {
             } else {
                 r.query_row(
                     "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
-                     FROM srs_review_logs WHERE profile_uid = ?1",
+                     FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
                     rusqlite::params![profile, since],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
@@ -338,7 +338,7 @@ impl SrsCore {
                 let mut stmt = r
                     .prepare_cached(
                         "SELECT id, card_id, kind, occurred_at, json FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = ?1 ORDER BY occurred_at, rowid",
+                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
                     )
                     .map_err(|e| e.to_string())?;
                 let mut q = stmt.query(rusqlite::params![profile, since]).map_err(|e| e.to_string())?;

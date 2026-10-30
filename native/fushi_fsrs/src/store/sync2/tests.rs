@@ -907,7 +907,7 @@ fn fushisrs_streaming_export_import_is_format_compatible_and_handles_large_packa
         out.u8(1);
         local.collection.write(&mut out);
         let devices: Vec<(Vec<u8>, Option<Vec<u8>>, i64)> = w
-            .prepare("SELECT device, public, applied FROM sync2_devices WHERE profile_uid = ?1 ORDER BY device")
+            .prepare("SELECT device, public, applied FROM sync2_devices WHERE profile_uid = srs_id(?1) ORDER BY device")
             .unwrap()
             .query_map([P], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .unwrap()
@@ -1164,7 +1164,7 @@ fn pre_upgrade_small_segments_are_sized_and_compacted() {
         for seq in 1..=top {
             w.execute(
                 "INSERT INTO sync2_segments (profile_uid, device, first, last, bytes) \
-                 SELECT ?1, device, ?2, ?2, 0 FROM sync2_self WHERE profile_uid = ?1",
+                 SELECT ?1, device, ?2, ?2, 0 FROM sync2_self WHERE profile_uid = srs_id(?1)",
                 rusqlite::params![P, seq],
             )
             .unwrap();
