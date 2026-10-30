@@ -2026,6 +2026,7 @@
   "dict_import_started": "Sözlükler arka planda içe aktarılıyor...",
   "dict_import_storage_full": "Not enough free storage to import this dictionary. Free up some space and try again.",
   "dict_import_success_summary": "$n sözlük içe aktarıldı",
+  "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Otomatik",
   "dict_language_description": "Bu sözlüğün metnini hangi yazı tipinin oluşturacağını belirler. Otomatik, sözlüğün beyan ettiği dili kullanır.",
   "dict_language_title": "Sözlük içerik dili",
