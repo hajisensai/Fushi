@@ -1,7 +1,7 @@
 // Runs one heavy command under the machine-wide lease (test_flow/heavy_lease.dart):
 //
 //   dart run tool/heavy.dart [--wait-max-min=0] [--max-minutes=120]
-//                            [--cap-mb=N] -- <command...>
+//                            [--cap-mb=N] [--here] -- <command...>
 //   dart run tool/heavy.dart --status
 //
 //   e.g. dart run tool/heavy.dart -- flutter test test/foo_test.dart --no-pub
@@ -22,11 +22,21 @@
 // command's; 2 for a mismatched SDK; 75 when an
 // explicit --wait-max-min ran out before admission; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
 // run the command directly.
+//
+// Before queueing here, a `flutter test` of test/ suites or a `flutter
+// analyze` run from fushi/ goes to the other machines of the dist_test worker
+// config (FUSHI_DIST_CONFIG, else tool/dist_test/workers.local.json) through
+// tool/dist_test.dart (test_flow/heavy_offload.dart): its output and exit code
+// are then dist_test's (`DIST TEST VERDICT` / `DIST ANALYZE` last lines). When
+// no other machine takes it, it runs here as before. `--here` or
+// FUSHI_HEAVY_OFFLOAD=off keep it here.
 import 'dart:async';
 import 'dart:io';
 
+import 'test_flow/dist_plan.dart' show kDistOffloadDeclined;
 import 'test_flow/heavy_budget.dart';
 import 'test_flow/heavy_lease.dart';
+import 'test_flow/heavy_offload.dart';
 import 'test_flow/heavy_sdk_check.dart';
 
 Future<void> main(List<String> args) async {
@@ -63,6 +73,11 @@ Future<void> main(List<String> args) async {
   final int waitMax = _intArg(own, '--wait-max-min=') ?? 0;
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
+
+  if (!own.contains('--here')) {
+    final int? remote = await _offload(command, maxMinutes: maxMinutes);
+    if (remote != null) exit(remote);
+  }
 
   final HeavyJob? job = joinHeavyJob(
     need.capMb,
@@ -127,6 +142,68 @@ Future<void> main(List<String> args) async {
     );
   }
   exit(cut ? 124 : code);
+}
+
+/// Runs [command] on the other machines through tool/dist_test.dart when it
+/// may go there (test_flow/heavy_offload.dart); its exit code, or null when
+/// it is to run here (not offloadable, no worker config, or no other machine
+/// took it).
+Future<int?> _offload(List<String> command, {required int maxMinutes}) async {
+  final Map<String, String> env = Platform.environment;
+  if (heavyLeaseSkipReason(env) != null || heavyOffloadDisabled(env)) {
+    return null;
+  }
+  final String appDir = Directory.current.absolute.path.replaceAll(r'\', '/');
+  final HeavyOffload? plan = planHeavyOffload(
+    command,
+    inAppDir:
+        File('$appDir/tool/dist_test.dart').existsSync() &&
+        File('$appDir/pubspec.yaml').existsSync(),
+    exists: (String p) =>
+        FileSystemEntity.typeSync('$appDir/$p') !=
+        FileSystemEntityType.notFound,
+  );
+  if (plan == null) return null;
+  final String? config = heavyOffloadConfig(env, appDir);
+  if (config == null) return null;
+  stderr.writeln(
+    'heavy: handing this ${plan.kind.name} to the other machines '
+    '(tool/dist_test.dart ${plan.distArgs.join(' ')}); --here or '
+    'FUSHI_HEAVY_OFFLOAD=off keeps it on this machine',
+  );
+  final Process p;
+  try {
+    p = await Process.start(
+      Platform.resolvedExecutable,
+      <String>['tool/dist_test.dart', '--config=$config', ...plan.distArgs],
+      workingDirectory: appDir,
+      mode: ProcessStartMode.inheritStdio,
+    );
+  } on ProcessException catch (e) {
+    stderr.writeln(
+      'heavy: cannot start dist_test (${e.message}); running here',
+    );
+    return null;
+  }
+  bool cut = false;
+  final Timer? limit = maxMinutes <= 0
+      ? null
+      : Timer(Duration(minutes: maxMinutes), () {
+          cut = true;
+          stderr.writeln(
+            'heavy: offloaded run still going after $maxMinutes min; '
+            'killing it',
+          );
+          _killTree(p);
+        });
+  final int code = await p.exitCode;
+  limit?.cancel();
+  if (cut) return 124;
+  if (code == kDistOffloadDeclined) {
+    stderr.writeln('heavy: no other machine took it; running it here');
+    return null;
+  }
+  return code;
 }
 
 void _killTree(Process p) {

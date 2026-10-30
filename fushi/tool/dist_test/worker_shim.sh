@@ -16,7 +16,8 @@
 #   git-receive-pack '<work|work-N>'   receive the run's snapshot commit
 #   prepare <slot> <sha>               check it out, pub get, native libraries
 #   run <slot> <concurrency> [args]    one batch; test files on stdin
-#   kill <slot>                        stop that slot's batch
+#   analyze <slot> [--[no-]fatal-*]    flutter analyze; paths on stdin
+#   kill <slot>                        stop that slot's batch / analyze
 #   finish <slot> <runId>              drop the run's ref and lock
 #
 # Anything else is refused. Nothing outside $FUSHI_WORKER_HOME is written by
@@ -284,6 +285,31 @@ cmd_run() {
   exec bash fushi/tool/dist_test/worker_run.sh "$concurrency" "$@"
 }
 
+cmd_analyze() {
+  [ $# -ge 1 ] || die "usage: analyze <slot> [--[no-]fatal-infos|--[no-]fatal-warnings]"
+  check_slot "$1"
+  local dir
+  dir=$(slot_dir "$1")
+  check_owner "$dir"
+  shift
+  local a
+  for a in "$@"; do
+    case "$a" in
+      --fatal-infos|--no-fatal-infos|--fatal-warnings|--no-fatal-warnings) ;;
+      *) die "rejected analyze option '$a'" ;;
+    esac
+  done
+  paused && busy "paused by the owner"
+  local mem need
+  mem=$(free_mem_mb)
+  need=$(limit MIN_FREE_MEM_MB 4096)
+  [ "$mem" -ge "$need" ] || busy "low memory: ${mem} MB free (MIN_FREE_MEM_MB=$need)"
+  cd "$dir" || die "no checkout"
+  # worker_analyze.sh reads the paths from stdin and accepts only existing
+  # lib/ test/ tool/ ... paths of this checkout.
+  exec bash fushi/tool/dist_test/worker_analyze.sh "$@"
+}
+
 cmd_kill() {
   [ $# -eq 1 ] || die "usage: kill <slot>"
   check_slot "$1"
@@ -333,6 +359,7 @@ case "$verb" in
   lock) cmd_lock ${args[@]+"${args[@]}"} ;;
   prepare) cmd_prepare ${args[@]+"${args[@]}"} ;;
   run) cmd_run ${args[@]+"${args[@]}"} ;;
+  analyze) cmd_analyze ${args[@]+"${args[@]}"} ;;
   kill) cmd_kill ${args[@]+"${args[@]}"} ;;
   finish) cmd_finish ${args[@]+"${args[@]}"} ;;
   *) die "not allowed: $verb" ;;
