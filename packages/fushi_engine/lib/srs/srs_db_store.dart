@@ -3141,7 +3141,6 @@ class SrsDbStore implements SrsSync2Host {
     final Set<String> touched = <String>{
       ...ctx.introducedToday,
       ...ctx.reviewedToday,
-      ...ctx.introducedThisWeek,
     };
     for (final List<String> chunk in _chunks(touched)) {
       final List<QueryRow> cards = await db
@@ -3161,7 +3160,6 @@ class SrsDbStore implements SrsSync2Host {
         if (t == null) continue;
         if (ctx.introducedToday.contains(id)) t.newDone++;
         if (ctx.reviewedToday.contains(id)) t.reviewDone++;
-        if (ctx.introducedThisWeek.contains(id)) t.weekNewDone++;
       }
     }
     return out;
@@ -3182,14 +3180,7 @@ class SrsDbStore implements SrsSync2Host {
       day,
       today,
     );
-    final bool anyWeekly = tree.decks.any(
-      (SrsDeckView d) => d.newCardPlan.perWeek > 0,
-    );
-    final int weekStart = srsWeekStartDay(today);
     return _CountContext(
-      introducedThisWeek: anyWeekly && weekStart < today
-          ? await _introducedBetween(day, weekStart, today)
-          : const <String>{},
       tree: tree,
       day: day,
       nowMs: nowMs,
@@ -3264,8 +3255,6 @@ class SrsDbStore implements SrsSync2Host {
         dueReviews: sub.due,
         reviewsPerDayLast30: ctx.last30,
         plan: d.newCardPlan,
-        introducedThisWeekBeforeToday: sub.weekNewDone,
-        daysLeftInWeek: 7 - srsWeekdayOfDay(ctx.today),
       );
       final int newRemaining = max(0, budget.allowed - sub.newDone);
       final int reviewRemaining = max(0, d.reviewsPerDay - sub.reviewDone);
@@ -3486,38 +3475,6 @@ class SrsDbStore implements SrsSync2Host {
       if (res is Map && res['reps'] == 1) introduced.add(cardId);
     }
     return (introduced, reviewed, answers);
-  }
-
-  /// [fromDay, toDay) 这几天里从新卡学起的卡（第一次作答的学习步，同 [_todayActivity] 的判据）。
-  /// 只读学习步那几行的正文。
-  Future<Set<String>> _introducedBetween(
-    SrsDayContext day,
-    int fromDay,
-    int toDay,
-  ) async {
-    final List<QueryRow> rows = await db
-        .customSelect(
-          'SELECT card_id, json FROM srs_review_logs '
-          'WHERE profile_uid = ? AND kind = ? AND review_type = ? '
-          'AND occurred_at >= ? AND occurred_at < ?',
-          variables: <Variable<Object>>[
-            Variable<String>(profileUid),
-            Variable<String>(SrsLogKind.review),
-            Variable<String>(SrsReviewType.learn),
-            Variable<int>(day.dayStartMs(fromDay)),
-            Variable<int>(day.dayStartMs(toDay)),
-          ],
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.srsReviewLogs,
-          },
-        )
-        .get();
-    final Set<String> out = <String>{};
-    for (final QueryRow r in rows) {
-      final Object? res = (jsonDecode(r.read<String>('json')) as Map)['res'];
-      if (res is Map && res['reps'] == 1) out.add(r.read<String>('card_id'));
-    }
-    return out;
   }
 
   /// [nextCard] 的新卡 ORDER BY。按词频时名次在前：名次是笔记上的值、随笔记同步，各设备出卡顺序一致，
@@ -4951,9 +4908,6 @@ class _DeckTally {
   int newDone = 0;
   int reviewDone = 0;
 
-  /// 本周（周一起）今天之前已学的新卡（每周新卡任务用）。
-  int weekNewDone = 0;
-
   void add(_DeckTally o) {
     total += o.total;
     newAvail += o.newAvail;
@@ -4961,7 +4915,6 @@ class _DeckTally {
     due += o.due;
     newDone += o.newDone;
     reviewDone += o.reviewDone;
-    weekNewDone += o.weekNewDone;
   }
 }
 
@@ -5001,7 +4954,6 @@ class _CountContext {
     required this.introducedToday,
     required this.reviewedToday,
     required this.answersToday,
-    required this.introducedThisWeek,
   });
 
   final SrsDeckTree tree;
@@ -5011,9 +4963,6 @@ class _CountContext {
   final List<int> last30;
   final Set<String> introducedToday;
   final Set<String> reviewedToday;
-
-  /// 本周（周一起）今天之前从新卡学起的卡；没有牌组设每周新卡任务时为空、不查库。
-  final Set<String> introducedThisWeek;
 
   /// 今天的全部作答（卡, 时刻），按时刻升序。
   final List<(String, int)> answersToday;

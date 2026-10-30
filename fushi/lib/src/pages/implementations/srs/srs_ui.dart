@@ -279,7 +279,6 @@ String? srsNewBudgetNote(SrsNewCardBudget budget) => switch (budget.reason) {
   SrsNewCardBudgetReason.increased => t.srs_deck_new_increased(
     n: budget.allowed,
   ),
-  SrsNewCardBudgetReason.weekDone => t.srs_deck_new_week_done,
   null => null,
 };
 

@@ -598,7 +598,7 @@ void main() {
       expect(b.allowed, 2);
     });
 
-    test('复习少时多出：0 到期时 +boost%，一半预算处不加；不超过本周剩余', () {
+    test('复习少时多出：0 到期时 +boost%，一半预算处不加', () {
       SrsNewCardBudget b = srsComputeNewCardBudget(
         newPerDayLimit: 10,
         dueReviews: 0,
@@ -615,65 +615,22 @@ void main() {
       );
       expect(b.allowed, 10);
       expect(b.reason, isNull);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 10,
-        dueReviews: 0,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(perWeek: 30, boostPercent: 100),
-        introducedThisWeekBeforeToday: 18,
-        daysLeftInWeek: 2,
-      );
-      // 本周剩 12，摊到 2 天 = 6；加倍到 12，正好等于本周剩余。
-      expect(b.allowed, 12);
-      expect(b.reason, SrsNewCardBudgetReason.increased);
-    });
-
-    test('每周任务：剩余 ÷ 剩余天数向上取整，不超过每日上限；完成即 weekDone', () {
-      SrsNewCardBudget b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 0,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(perWeek: 50),
-        introducedThisWeekBeforeToday: 0,
-        daysLeftInWeek: 7,
-      );
-      expect(b.allowed, 8);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 0,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(perWeek: 200),
-        daysLeftInWeek: 1,
-      );
-      expect(b.allowed, 20);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 0,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(perWeek: 50),
-        introducedThisWeekBeforeToday: 55,
-      );
-      expect(b.allowed, 0);
-      expect(b.reason, SrsNewCardBudgetReason.weekDone);
     });
 
     test('新卡计划值对象：缺省 / 坏值回落，越界夹住，往返不变', () {
       expect(SrsNewCardPlan.fromValue(null), const SrsNewCardPlan());
       expect(
         SrsNewCardPlan.fromValue(<String, Object?>{
-          'week': -3,
           'auto': 'x',
           'budget': 5,
           'boost': 99999,
         }),
         const SrsNewCardPlan(
-          perWeek: 0,
           budgetPercent: SrsNewCardPlan.minBudgetPercent,
           boostPercent: SrsNewCardPlan.maxBoostPercent,
         ),
       );
       const SrsNewCardPlan p = SrsNewCardPlan(
-        perWeek: 70,
         autoLoad: false,
         budgetPercent: 200,
         boostPercent: 30,
