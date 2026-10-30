@@ -455,6 +455,13 @@ abstract final class FushiMotion {
   /// 共用，见 `highlightStrokeSweepLineDuration`。
   static const Duration strokeSweepPerEm = Duration(milliseconds: 26);
 
+  /// 环境动效（页面背景「缓慢漂移」）：一次往返的单程时长。慢到察觉不到在动，
+  /// 只让页面底有一点「活」的感觉；不是弹簧推导的交互动效。
+  static const Duration ambientDrift = Duration(seconds: 40);
+
+  /// 环境动效：背景大形状自转一圈的时长。
+  static const Duration ambientSpin = Duration(seconds: 120);
+
   /// 进入：临界阻尼弹簧形状（快起步、柔落点，不过冲，可驱动透明度）。
   static const Curve enter = FushiSpringCurve.effects;
 

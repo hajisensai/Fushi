@@ -11,6 +11,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_page_backdrop.dart';
 import 'package:fushi/src/settings/nav_module_order_list.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
@@ -216,6 +217,15 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.contrast_outlined,
             searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
+          ),
+          // 「页面背景」子页（2026-10-30）：每一页底下的装饰——形状预设、纯色、
+          // 用户自定义图片（可从图片取色）。
+          SettingsNavigationItem(
+            id: 'appearance.page_backdrop',
+            title: t.page_backdrop_title,
+            subtitle: t.page_backdrop_hint,
+            icon: Icons.wallpaper_outlined,
+            child: buildPageBackdropDestination,
           ),
           // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再
           // 自带明暗 / 纯黑），改成明暗旁的独立开关；对系统取色 / 预设 / 自定义主题

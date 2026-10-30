@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -10,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/page_backdrop_layer.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// 库页条目材质（2026-10-25 用户定版，设计稿
@@ -1145,13 +1147,17 @@ class ShelfTitleLine extends StatelessWidget {
   }
 }
 
-/// 应用背景：角落三块低饱和 M3E 形状（9 瓣饼干 / 四叶 / 6 瓣饼干），颜色取动态
-/// 主题的 container 色阶，深浅色都跟着走。2026-10-25 先定在库页，同日用户拍板
-/// 「整个应用都加」，由路由层 `FushiPageBackdrop` 给每一页垫上。只在 Material
-/// 设计系统下画（Apple / 墨水屏不画）。形状是纯装饰：不参与命中、不进无障碍树。
+/// 应用背景：路由层 `FushiPageBackdrop` 给每一页垫的那层装饰。2026-10-25 先定在
+/// 库页（角落三块低饱和 M3E 形状），同日用户拍板「整个应用都加」；2026-10-30 扩成
+/// 可切换的预设 + 用户自定义图片（[PageBackdropSettings]，画法在
+/// [PageBackdropLayer]）。颜色取动态主题的 container 色阶，深浅色都跟着走。
 ///
-/// 子树结构恒定（不画时形状层换成空盒，[child] 位置不变）：切换设计系统 / 墨水
-/// 屏时页面 State 不重建。
+/// 形状类预设只在 Material 设计系统下画（Apple / 墨水屏不画）；用户自己选的图片
+/// Apple 下也画，墨水屏不画。「纯色」预设什么都不画。纯装饰：不参与命中、不进
+/// 无障碍树。
+///
+/// 子树结构恒定（不画时装饰层换成空盒，[child] 位置不变）：切换设计系统 / 墨水
+/// 屏 / 背景预设时页面 State 不重建。
 class LibraryShapeBackdrop extends StatelessWidget {
   const LibraryShapeBackdrop({
     required this.child,
@@ -1161,12 +1167,22 @@ class LibraryShapeBackdrop extends StatelessWidget {
 
   final Widget child;
 
-  /// false = 本页不画形状（整页要透明的底层合成页，见 `FushiPageBackdrop`）。
+  /// false = 本页不画装饰（整页要透明的底层合成页，见 `FushiPageBackdrop`）。
   final bool show;
 
-  /// 当前主题下是否画形状（Material 设计系统且不是墨水屏）。
+  /// 当前主题与背景设置下是否画装饰层。
   static bool enabledOf(BuildContext context) =>
-      !isEinkTheme(context) && !isGlassDesign(context);
+      enabledFor(context, pageBackdropSettings.value);
+
+  /// [enabledOf] 的显式设置版（设置页预览按候选设置判断）。
+  static bool enabledFor(BuildContext context, PageBackdropSettings settings) {
+    if (isEinkTheme(context)) return false;
+    return switch (settings.effectivePreset) {
+      PageBackdropPreset.plain => false,
+      PageBackdropPreset.custom => true,
+      _ => !isGlassDesign(context),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1178,9 +1194,17 @@ class LibraryShapeBackdrop extends StatelessWidget {
       fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
-          child: show && enabledOf(context)
-              ? const _LibraryShapeLayer()
-              : const SizedBox.shrink(),
+          child: ValueListenableBuilder<PageBackdropSettings>(
+            valueListenable: pageBackdropSettings,
+            builder:
+                (
+                  BuildContext context,
+                  PageBackdropSettings settings,
+                  Widget? _,
+                ) => show && enabledFor(context, settings)
+                ? _LibraryShapeLayer(settings: settings)
+                : const SizedBox.shrink(),
+          ),
         ),
         child,
       ],
@@ -1189,68 +1213,10 @@ class LibraryShapeBackdrop extends StatelessWidget {
 }
 
 class _LibraryShapeLayer extends StatelessWidget {
-  const _LibraryShapeLayer();
+  const _LibraryShapeLayer({required this.settings});
+
+  final PageBackdropSettings settings;
 
   @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool dark = cs.brightness == Brightness.dark;
-    Widget blob(RoundedPolygon shape, Color color, double alpha) =>
-        DecoratedBox(
-          decoration: ShapeDecoration(
-            color: color.withValues(alpha: alpha),
-            shape: MaterialShapeBorder(shape: shape),
-          ),
-        );
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints c) {
-            final double unit = math.min(c.maxWidth, c.maxHeight);
-            final double big = unit * 0.52;
-            final double mid = unit * 0.38;
-            final double small = unit * 0.25;
-            return Stack(
-              clipBehavior: Clip.hardEdge,
-              children: <Widget>[
-                Positioned(
-                  right: -big * 0.15,
-                  top: -big * 0.28,
-                  width: big,
-                  height: big,
-                  child: blob(
-                    MaterialShapes.cookie9Sided,
-                    cs.primaryContainer,
-                    dark ? 0.35 : 0.8,
-                  ),
-                ),
-                Positioned(
-                  left: unit * 0.05,
-                  bottom: -mid * 0.2,
-                  width: mid,
-                  height: mid,
-                  child: blob(
-                    MaterialShapes.clover4Leaf,
-                    cs.tertiaryContainer,
-                    dark ? 0.32 : 0.65,
-                  ),
-                ),
-                Positioned(
-                  right: c.maxWidth * 0.24,
-                  bottom: -small * 0.2,
-                  width: small,
-                  height: small,
-                  child: blob(
-                    MaterialShapes.cookie6Sided,
-                    cs.secondaryContainer,
-                    dark ? 0.32 : 0.6,
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => PageBackdropLayer(settings: settings);
 }
