@@ -1612,7 +1612,8 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.ensureVisible(order);
+      // 顶栏浮在列表上：居中，免得滚到顶被顶栏盖住。
+      await Scrollable.ensureVisible(tester.element(order), alignment: 0.5);
       await tester.pumpAndSettle();
       final Finder position = find.descendant(
         of: order,
@@ -1754,6 +1755,78 @@ void main() {
       );
       expect(tree[store.defaultDeckId]!.rwkvQueue, want);
       expect(tree.paramsOwner(kid).rwkvQueue, want, reason: '子牌组随继承');
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：新卡计划（每周任务 / 按复习量调整的预算与多出比例 / 关掉调整）写进牌组', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      // 设置页是懒构建的列表：新卡计划在基础设置末尾，先滚到它。
+      Future<Finder> reveal(String key) async {
+        final Finder field = find.byKey(ValueKey<String>(key));
+        await tester.scrollUntilVisible(
+          field,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        // 顶栏浮在列表上：居中，免得滚到顶被顶栏盖住。
+        await Scrollable.ensureVisible(tester.element(field), alignment: 0.5);
+        await tester.pumpAndSettle();
+        return field;
+      }
+
+      Future<void> enter(String key, String value) async {
+        final Finder field = await reveal(key);
+        await tester.enterText(
+          find.descendant(of: field, matching: find.byType(EditableText)),
+          value,
+        );
+        await tester.pump();
+      }
+
+      Future<void> save() async {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        );
+        await _settle(tester);
+      }
+
+      await enter('srs-settings-new-per-week', '70');
+      await enter('srs-settings-new-load-budget', '120');
+      await enter('srs-settings-new-load-boost', '30');
+      await save();
+      SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(
+        tree[store.defaultDeckId]!.newCardPlan,
+        const SrsNewCardPlan(perWeek: 70, budgetPercent: 120, boostPercent: 30),
+      );
+
+      // 关掉按复习量调整：预算 / 多出两项收起，保存后只改开关。
+      final Finder auto = await reveal('srs-settings-new-load-auto');
+      await tester.tap(auto);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-new-load-budget')),
+        findsNothing,
+      );
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      expect(
+        tree[store.defaultDeckId]!.newCardPlan,
+        const SrsNewCardPlan(
+          perWeek: 70,
+          autoLoad: false,
+          budgetPercent: 120,
+          boostPercent: 30,
+        ),
+      );
       await _unmount(tester);
     });
   });
