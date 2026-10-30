@@ -1,7 +1,7 @@
 // Contract: on a Windows dist_test worker, worker_build.sh links the Windows
 // plugins with junctions (tool/dist_test/plugin_junctions.dart) before
-// `flutter build windows`: on wight-win no native program could follow the
-// directory symlinks the Flutter tool makes, and CMake found no plugin.
+// `flutter build windows`, replacing links left from another pub cache, and
+// without the symlink privilege the Flutter tool's own links need.
 // See docs/specs/2026-10-24-distributed-unit-tests.md.
 
 import 'dart:convert';
