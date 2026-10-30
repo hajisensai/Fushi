@@ -1342,8 +1342,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   /// 卡面空白处被点（WebView 卡面经页内取词脚本、原生卡面经 [SrsBlankTapRegion] 回报）。
   /// 查词弹窗开着时这一下是关弹窗，不切换顶栏。
-  /// 正面点空白 = 点「显示答案」（与按钮同一条 [_showAnswer] 路径）；背面才切换悬浮顶栏。
   void _onCardTapEmpty() {
+    if (_lookup.isOpen) return;
+    _toggleChrome();
+  }
+
+  /// 正面内容**下方**的空白被点（原生 Fushi 卡面才会报）。「点空白显示答案」开着时 =
+  /// 点「显示答案」（与按钮同一条 [_showAnswer] 路径）；否则和上方空白一样切换顶栏。
+  void _onCardTapBelowContent() {
     if (_lookup.isOpen) return;
     if (!_showingAnswer && ref.read(srsReviewTapToRevealProvider)) {
       _showAnswer();
@@ -1632,6 +1638,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       autoplayMedia: _autoplayEnabled,
       onPlayAudio: _playNames,
       onTapEmpty: _onCardTapEmpty,
+      onTapBelowContent: _onCardTapBelowContent,
     );
     // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
     final Widget built = rendered?.fushiCardDefinitions != null

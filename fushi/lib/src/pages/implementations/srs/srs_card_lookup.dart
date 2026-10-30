@@ -1037,6 +1037,8 @@ class SrsBlankTapRegion extends StatefulWidget {
     required this.onTapEmpty,
     required this.tapTookLookup,
     required this.child,
+    this.onTapBelowContent,
+    this.contentRect,
   });
 
   /// 圈出一块「点按不归原生区判空白」的子树。
@@ -1044,6 +1046,13 @@ class SrsBlankTapRegion extends StatefulWidget {
       MetaData(metaData: _kSrsBlankTapExcluded, child: child);
 
   final VoidCallback? onTapEmpty;
+
+  /// 落点在 [contentRect] 下沿**以下**时改调它（而不是 [onTapEmpty]）。
+  final VoidCallback? onTapBelowContent;
+
+  /// 当前内容块的全局矩形（null = 没有可比的内容边界，一律走 [onTapEmpty]）。抬起时读，
+  /// 所以滚动后的位置也是新的。
+  final Rect? Function()? contentRect;
 
   /// 这一下点按是否已被原生取词用掉。
   final bool Function() tapTookLookup;
@@ -1114,6 +1123,12 @@ class _SrsBlankTapRegionState extends State<SrsBlankTapRegion> {
     if (e.pointer != _pointer) return;
     _pointer = null;
     if (_moved || widget.tapTookLookup()) return;
+    final Rect? content = widget.contentRect?.call();
+    final VoidCallback? below = widget.onTapBelowContent;
+    if (below != null && content != null && e.position.dy > content.bottom) {
+      below();
+      return;
+    }
     widget.onTapEmpty?.call();
   }
 

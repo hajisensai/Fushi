@@ -64,6 +64,7 @@ class SrsCardFace {
     this.autoplayMedia = false,
     this.onPlayAudio,
     this.onTapEmpty,
+    this.onTapBelowContent,
     this.onImageTap,
   });
 
@@ -139,6 +140,11 @@ class SrsCardFace {
   /// 收起悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同一口径）。null = 不响应。
   final VoidCallback? onTapEmpty;
 
+  /// 同 [onTapEmpty]，但落点在正面内容（词条 / 例句 / 提示 / 音频键）**下方**的空白。只有
+  /// 原生 Fushi 卡面知道内容边界、会调它；复习页据此在「点空白显示答案」开着时翻面，上方
+  /// 的空白仍走 [onTapEmpty] 切换顶栏。null / 不会被调 = 一律走 [onTapEmpty]。
+  final VoidCallback? onTapBelowContent;
+
   /// 卡面正文里点了图片（`src` 是页内地址：媒体库虚拟域 / 自定义 scheme / `data:`）：
   /// 宿主据此全屏查看（[srsMediaNameFromUrl] 换回媒体名）。null = 图片点击不拦。
   final void Function(String src)? onImageTap;
@@ -165,6 +171,7 @@ class SrsCardFace {
         autoplayMedia: autoplayMedia,
         onPlayAudio: onPlayAudio,
         onTapEmpty: onTapEmpty,
+        onTapBelowContent: onTapBelowContent,
         onImageTap: onImageTap,
       );
 }

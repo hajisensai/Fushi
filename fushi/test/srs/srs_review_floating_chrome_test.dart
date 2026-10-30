@@ -182,54 +182,46 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('正面点空白：显示答案，不动顶栏；背面再点空白才切换顶栏', (WidgetTester tester) async {
+  testWidgets('开着「点空白显示答案」：上方空白切换顶栏，内容下方空白才显示答案', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
     await _addLapis(tester, store);
     final List<SrsCardFace> faces = <SrsCardFace>[];
     await _pumpReview(tester, store: store, faces: faces, tapToReveal: true);
 
     expect(faces.last.showingAnswer, isFalse);
-    final VoidCallback? tapEmpty = faces.last.onTapEmpty;
-    expect(tapEmpty, isNotNull, reason: '复习页要接卡面的空白点按');
-    tapEmpty!();
+    expect(faces.last.onTapEmpty, isNotNull);
+    expect(faces.last.onTapBelowContent, isNotNull);
+    faces.last.onTapEmpty!(); // 上方 / 不确定位置的空白
     await _animate(tester);
-    expect(faces.last.showingAnswer, isTrue, reason: '正面点空白 = 显示答案');
-    expect(_floatingBar, findsNothing, reason: '正面这一下不切换顶栏');
+    expect(faces.last.showingAnswer, isFalse, reason: '不在内容下方：不翻面');
+    expect(_floatingBar, findsOneWidget, reason: '切换顶栏');
+    faces.last.onTapEmpty!();
+    await _animate(tester);
+    expect(_floatingBar, findsNothing);
+
+    faces.last.onTapBelowContent!();
+    await _animate(tester);
+    expect(faces.last.showingAnswer, isTrue, reason: '内容下方空白 = 显示答案');
+    expect(_floatingBar, findsNothing, reason: '这一下不切换顶栏');
     expect(find.byKey(const ValueKey<String>('srs-show-answer')), findsNothing);
+    // 背面：下方空白也只切换顶栏。
+    faces.last.onTapBelowContent!();
+    await _animate(tester);
+    expect(_floatingBar, findsOneWidget);
     await _unmount(tester);
   });
 
-  testWidgets('默认（点空白显示答案关闭）：正面点空白沿用旧行为——切换顶栏、不显示答案', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('默认（点空白显示答案关闭）：内容下方空白也只切换顶栏、不显示答案', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
     await _addLapis(tester, store);
     final List<SrsCardFace> faces = <SrsCardFace>[];
     await _pumpReview(tester, store: store, faces: faces);
 
-    faces.last.onTapEmpty!();
+    faces.last.onTapBelowContent!();
     await _animate(tester);
     expect(faces.last.showingAnswer, isFalse);
     expect(_floatingBar, findsOneWidget);
-    faces.last.onTapEmpty!();
-    await _animate(tester);
-    expect(_floatingBar, findsNothing);
-    await _unmount(tester);
-  });
-
-  testWidgets('卡面回报点空白：背面切换顶栏', (WidgetTester tester) async {
-    final SrsDbStore store = await _openStore(tester);
-    await _addLapis(tester, store);
-    final List<SrsCardFace> faces = <SrsCardFace>[];
-    await _pumpReview(tester, store: store, faces: faces, tapToReveal: true);
-
-    faces.last.onTapEmpty!(); // 正面：显示答案
-    await _animate(tester);
-    expect(faces.last.showingAnswer, isTrue);
-    faces.last.onTapEmpty!();
-    await _animate(tester);
-    expect(_floatingBar, findsOneWidget);
-    faces.last.onTapEmpty!();
+    faces.last.onTapBelowContent!();
     await _animate(tester);
     expect(_floatingBar, findsNothing);
     await _unmount(tester);
@@ -246,7 +238,7 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('原生 Fushi 卡面：正面点空白显示答案，背面点空白切换顶栏', (WidgetTester tester) async {
+  testWidgets('原生 Fushi 卡面：内容上方空白切换顶栏，内容下方空白显示答案', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
     await _addFushiCard(tester, store);
     await _pumpReview(tester, store: store, tapToReveal: true);
@@ -254,19 +246,31 @@ void main() {
     final Finder showAnswer = find.byKey(
       const ValueKey<String>('srs-show-answer'),
     );
+    final Finder front = find.byKey(const ValueKey<String>('srs-fushi-front'));
     expect(_floatingBar, findsNothing);
     expect(showAnswer, findsOneWidget);
-    // 卡面右下角、底栏上沿以上：正面内容居中，这里是空白。原生卡面铺到底栏背后，
-    // 卡面自己的右下角落在底栏那条里（归底栏，见下一条）。
-    Offset blankAt() => Offset(
-      tester.getBottomRight(_surface).dx - 24,
-      tester.getTopLeft(_bottomBar).dy - 24,
-    );
-    await tester.tapAt(blankAt());
+    // 正面内容居中：上方 / 下方各有一段空白。原生卡面铺到底栏背后，卡面自己的底边
+    // 落在底栏那条里（归底栏，见下一条），所以「下方」取底栏上沿以上。
+    final double dx = tester.getBottomRight(_surface).dx - 24;
+    // 离顶边远一点：顶栏唤出后会盖住顶边那一条，第二下得落在顶栏下面的空白里。
+    final Offset above = Offset(dx, tester.getTopLeft(front).dy - 40);
+    final Offset below = Offset(dx, tester.getTopLeft(_bottomBar).dy - 24);
+    expect(above.dy, lessThan(tester.getTopLeft(front).dy));
+    expect(below.dy, greaterThan(tester.getBottomLeft(front).dy));
+
+    await tester.tapAt(above);
     await _animate(tester);
-    expect(showAnswer, findsNothing, reason: '正面点空白 = 显示答案');
-    expect(_floatingBar, findsNothing, reason: '正面这一下不切换顶栏');
-    // 背面内容更高，底栏上沿附近可能落在答案块上：改点卡面左缘中部的页边空白。
+    expect(showAnswer, findsOneWidget, reason: '上方空白不翻面');
+    expect(_floatingBar, findsOneWidget, reason: '上方空白切换顶栏');
+    await tester.tapAt(above);
+    await _animate(tester);
+    expect(_floatingBar, findsNothing);
+
+    await tester.tapAt(below);
+    await _animate(tester);
+    expect(showAnswer, findsNothing, reason: '下方空白 = 显示答案');
+    expect(_floatingBar, findsNothing, reason: '这一下不切换顶栏');
+    // 背面：空白点按只切换顶栏（背面内容更高，改点卡面左缘中部的页边空白）。
     final Offset backBlank = Offset(
       tester.getTopLeft(_surface).dx + 8,
       tester.getCenter(_surface).dy,
@@ -277,6 +281,25 @@ void main() {
     await tester.tapAt(backBlank);
     await _animate(tester);
     expect(_floatingBar, findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('原生 Fushi 卡面：默认关闭时，内容下方空白也只切换顶栏', (WidgetTester tester) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addFushiCard(tester, store);
+    await _pumpReview(tester, store: store);
+
+    final Offset below = Offset(
+      tester.getBottomRight(_surface).dx - 24,
+      tester.getTopLeft(_bottomBar).dy - 24,
+    );
+    await tester.tapAt(below);
+    await _animate(tester);
+    expect(
+      find.byKey(const ValueKey<String>('srs-show-answer')),
+      findsOneWidget,
+    );
+    expect(_floatingBar, findsOneWidget);
     await _unmount(tester);
   });
 

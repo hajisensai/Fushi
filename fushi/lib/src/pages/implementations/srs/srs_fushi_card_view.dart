@@ -425,6 +425,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
         child: SrsBlankTapRegion(
           onTapEmpty: widget.face.onTapEmpty,
+          onTapBelowContent: widget.face.onTapBelowContent,
+          contentRect: _frontContentRect,
           tapTookLookup: () => _tapTookLookup,
           child: SrsNativeLookupRegion(
             key: _lookupRegion,
@@ -466,6 +468,18 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   }
 
   // ---------------------------------------------------------------- 正面
+
+  /// 正面内容列（词条 / 例句 / 提示 / 音频键）。「点内容下方空白」的边界。
+  final GlobalKey _frontContentKey = GlobalKey();
+
+  /// 正面内容列的全局矩形；翻到背面或还没布局时为 null。
+  Rect? _frontContentRect() {
+    if (widget.face.showingAnswer) return null;
+    final RenderObject? box = _frontContentKey.currentContext
+        ?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
 
   Widget _buildFront(BuildContext context, _SrsCardStyle s, BoxConstraints c) {
     final Map<String, String> f = widget.fields;
@@ -513,6 +527,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           s.pad,
         ).copyWith(top: s.pad + widget.topInset, bottom: s.pad + _bottomInset),
         child: Column(
+          key: _frontContentKey,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             for (int i = 0; i < blocks.length; i++)
