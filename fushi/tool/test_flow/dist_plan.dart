@@ -310,6 +310,23 @@ class DistSpeed {
   }
 }
 
+/// What `flutter test --coverage` costs a test process on top of its tests:
+/// the collector asks the VM for a `forceCompile` source report of every
+/// loaded library of the app (2185 for one small suite) and the flutter tool
+/// merges it, at 100% of one core (2026-10-30: 9.5 min on the coordinator,
+/// 7.3 min on the M4 Mac, past the 10 min a batch used to get). Paid by the
+/// first suite of a process only: later ones reuse its coverable-line cache
+/// ([kDistCoverageConcurrency]). Twice the slowest measurement.
+const Duration kDistCoverageProcessCost = Duration(minutes: 20);
+
+/// `flutter test --concurrency` of a coverage batch. The tool merges each
+/// suite's report in its one main isolate, and a suite whose collection
+/// starts before the first one's is done still finds the cache empty and
+/// pays the whole cost again (measured on the Mac, 2026-10-30: two suites
+/// one at a time 7.5 min, the second in 2 s; two at once over 10 min). One
+/// at a time, only the first suite pays.
+const int kDistCoverageConcurrency = 1;
+
 /// Weight of the newest batch in [DistSpeed]'s moving average.
 const double kDistSpeedAlpha = 0.6;
 
@@ -319,16 +336,25 @@ const double kDistSpeedAlpha = 0.6;
 /// [minWall] (a process start costs seconds) and [maxWall] (bounded loss when
 /// a machine drops out); a worker with no measurement yet takes a
 /// [probeWall] batch first.
+///
+/// With [coverage] every test process pays [kDistCoverageProcessCost] up
+/// front, so a worker takes its whole share at once, uncapped.
 int distChunkBudgetMs({
   required int remainingEligibleMs,
   required DistSpeed speed,
   required double liveSpeedSum,
+  bool coverage = false,
   Duration minWall = const Duration(seconds: 20),
   Duration maxWall = const Duration(minutes: 4),
   Duration probeWall = const Duration(minutes: 1),
 }) {
   final double factor = speed.factor;
   final double share = liveSpeedSum <= 0 ? 1 : (1 / factor) / liveSpeedSum;
+  if (coverage) {
+    final double lo = minWall.inMilliseconds / factor;
+    final double whole = remainingEligibleMs * share;
+    return (whole < lo ? lo : whole).round();
+  }
   final double wanted = remainingEligibleMs * share / 2;
   final Duration cap = speed.measured ? maxWall : probeWall;
   final double lo = minWall.inMilliseconds / factor;

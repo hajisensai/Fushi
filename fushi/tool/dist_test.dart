@@ -434,6 +434,17 @@ class _Scheduler {
 
   /// lcov of every batch that ran to the end (`--coverage`), unchecked.
   final List<String> coverage = <String>[];
+
+  bool get _coverage => flutterArgs.contains('--coverage');
+
+  /// Three times what [worker]'s own speed predicts, plus slack, plus the
+  /// fixed coverage cost of every test process the batch runs as there.
+  Duration _batchTimeout(DistWorker worker, DistBatch batch, DistSpeed speed) =>
+      Duration(milliseconds: (batch.weightMs * speed.factor * 3).round()) +
+      const Duration(minutes: 10) +
+      (_coverage
+          ? kDistCoverageProcessCost * worker.processCount(batch)
+          : Duration.zero);
   final Directory out;
   final String runId;
   final DistSnapshot snapshot;
@@ -523,6 +534,7 @@ class _Scheduler {
           remainingEligibleMs: queue.remainingMs(worker.eligible),
           speed: speed,
           liveSpeedSum: _liveSpeedSum,
+          coverage: _coverage,
         ),
       );
       if (batch == null) {
@@ -542,12 +554,7 @@ class _Scheduler {
           package: package,
           flutterArgs: flutterArgs,
           stderrLog: errLog,
-          // Three times what this machine's own speed predicts, plus slack.
-          timeout:
-              Duration(
-                milliseconds: (batch.weightMs * speed.factor * 3).round(),
-              ) +
-              const Duration(minutes: 10),
+          timeout: _batchTimeout(worker, batch, speed),
         );
       } on Object catch (e) {
         run = DistBatchRun(
@@ -772,12 +779,7 @@ class _Scheduler {
                 package: package,
                 flutterArgs: flutterArgs,
                 stderrLog: errLog,
-                timeout:
-                    Duration(
-                      milliseconds:
-                          (batch.weightMs * _speeds[e.key]!.factor * 3).round(),
-                    ) +
-                    const Duration(minutes: 10),
+                timeout: _batchTimeout(e.key, batch, _speeds[e.key]!),
               );
             } on Object catch (err) {
               run = DistBatchRun(

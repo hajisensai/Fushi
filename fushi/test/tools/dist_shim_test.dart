@@ -325,6 +325,62 @@ void main() {
     },
   );
 
+  test(
+    'worker_kill.sh takes down a batch whose processes ignore TERM',
+    () async {
+      // The flutter tool merging coverage handles TERM only minutes later; a
+      // timed-out batch must not run on at the owner's expense.
+      final Directory co = Directory('${home.path}/co');
+      Directory('${co.path}/fushi/tool/dist_test').createSync(recursive: true);
+      final Directory state = Directory('${co.path}/.git/fushi-dist')
+        ..createSync(recursive: true);
+      File(
+        'tool/dist_test/worker_kill.sh',
+      ).copySync('${co.path}/fushi/tool/dist_test/worker_kill.sh');
+      // Like worker_run.sh: pid files, a TERM trap that removes run.pid; the
+      // test tree under it ignores TERM (and so does its child).
+      File('${co.path}/runner.sh').writeAsStringSync('''
+state=\$1
+echo \$\$ > "\$state/runner.pid"
+bash -c 'trap "" TERM; sleep 600; :' &
+pid=\$!
+echo "\$pid" > "\$state/run.pid"
+trap 'kill -TERM "\$pid"; rm -f "\$state/run.pid"; exit 143' TERM
+wait "\$pid"
+''');
+      final Process runner = await Process.start(bash, <String>[
+        '${co.path}/runner.sh',
+        state.path,
+      ]);
+      final File runPid = File('${state.path}/run.pid');
+      while (!runPid.existsSync() || runPid.readAsStringSync().trim().isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      final String leaf = runPid.readAsStringSync().trim();
+      final String sleeper =
+          '${Process.runSync('pgrep', <String>['-P', leaf]).stdout}'.trim();
+      expect(sleeper, isNotEmpty);
+
+      final ProcessResult r = Process.runSync(bash, <String>[
+        '${co.path}/fushi/tool/dist_test/worker_kill.sh',
+      ]);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      await runner.exitCode.timeout(const Duration(seconds: 5));
+      for (final String pid in <String>[leaf, sleeper]) {
+        expect(
+          Process.runSync('kill', <String>['-0', pid]).exitCode,
+          isNot(0),
+          reason: 'pid $pid outlived worker_kill.sh',
+        );
+      }
+      expect(state.listSync(), isEmpty);
+    },
+    skip: Platform.isWindows
+        ? 'the POSIX branch; on Windows it ends the tree with taskkill /F'
+        : false,
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
+
   group('worker_analyze.sh', () {
     /// Runs it in this checkout with [paths] on stdin; it must refuse before
     /// flutter starts.

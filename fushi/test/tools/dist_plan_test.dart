@@ -339,6 +339,32 @@ void main() {
         );
       },
     );
+
+    test('with coverage a worker takes its whole share at once, uncapped', () {
+      // Every coverage test process pays kDistCoverageProcessCost first, so
+      // more batches only add more of it.
+      final DistSpeed fast = measured(0.5);
+      const double sum = 1 / 0.5 + 1 / 2.0;
+      const int remaining = 1000000000;
+      expect(
+        distChunkBudgetMs(
+          remainingEligibleMs: remaining,
+          speed: fast,
+          liveSpeedSum: sum,
+          coverage: true,
+        ),
+        (remaining * (2 / sum)).round(),
+      );
+      expect(
+        distChunkBudgetMs(
+          remainingEligibleMs: 10,
+          speed: fast,
+          liveSpeedSum: sum,
+          coverage: true,
+        ),
+        (20000 / 0.5).round(),
+      );
+    });
   });
 
   test('isSafeDistTestPath', () {
