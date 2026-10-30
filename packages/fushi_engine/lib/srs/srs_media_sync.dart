@@ -52,6 +52,11 @@ class SrsMediaSyncReport {
   /// 本机持有原文、把位置上被记为可疑的内容对象覆盖重传的份数。
   int repaired = 0;
 
+  /// 加密位置上用这把密钥解不开（第一块就认证不过，密钥证明不了是对的）而没有落地的名字（也在 [rejected] 里）。
+  /// 这些**不记可疑**：持有者覆盖重传修不好密钥的问题，记了只会让读者每轮记、持有者每轮覆盖。调用方按口令不对
+  /// 提示（`kSrsSync2WrongKey`，srs_sync_scheduler.dart）。
+  final Set<String> undecryptable = <String>{};
+
   /// 这一轮列了位置上的整个媒体目录（没有日志投影可用：本地文件夹位置，或这个位置第一次对账）。
   bool listedRemote = false;
 
@@ -441,7 +446,8 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       if (got != sha) return false;
       final String path = srsMediaContentPath(folder, sha);
       if (content.stateOf(sha) == _Remote.suspect) {
-        await location.put(path, await staged.readAsBytes());
+        // 覆盖写也从文件流式传（大媒体不整份进内存）。
+        await srsLocationPutFile(location, path, staged);
         if (content.key == null) {
           await location.delete(srsMediaSuspectMarkerPath(folder, sha));
         }
@@ -473,6 +479,15 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     await upload(name, sha);
   }
 
+  /// 把内容 [sha] 记为可疑（位置上那份对不上）：不记日志的位置另在旁边写标记文件（只写一次），持有者下一轮列目录
+  /// 时看到。
+  Future<void> markSuspectContent(String sha) async {
+    if (content.key == null && content.stateOf(sha) != _Remote.suspect) {
+      await location.put(srsMediaSuspectMarkerPath(folder, sha), Uint8List(0));
+    }
+    content.markSuspect(sha);
+  }
+
   /// 拿内容 [sha] 落到 [dst]：内容目录 → 旧的按名字目录 → 写入者目录。[sha] 为 null（没有绑定）时只能信兜底拿到
   /// 的。落地的明文一律按 sha256 校验，返回它的 sha256；拿不到 / 对不上返回 null，且不留 [dst]。
   Future<String?> fetchTo(String name, String? sha, File dst) async {
@@ -483,26 +498,28 @@ Future<SrsMediaSyncReport> srsSyncMedia({
         if (!await srsLocationGetFile(location, path, stored)) {
           content.markAbsent(sha);
         } else {
-          final String? got = cipher == null
-              ? await srsMediaSha256File(dst)
+          final SrsMediaOpened opened = cipher == null
+              ? (sha256: await srsMediaSha256File(dst), failure: null)
               : await cipher.openFile(sha, stored, dst);
-          if (got == sha) {
+          if (opened.sha256 == sha) {
             content.markPresent(sha);
             return sha;
           }
-          // 下载到的内容对不上（截断的响应 / 网盘占位或同步中的半截文件 / 被改 / 解不开）：不落地，也不删——读者
-          // 分不清是位置上那份真坏了还是这次传输坏了，删了可能就删掉了唯一的一份。只记可疑，持有原文件（本机哈希
-          // 对得上）的设备看到后覆盖重传（[putContent]）；下一轮读者仍会再试。
           await drop(dst);
           report.rejected.add(name);
-          if (content.key == null && content.stateOf(sha) != _Remote.suspect) {
-            // 不记日志的位置：可疑写成位置上的标记文件，持有者下一轮列目录时看到。
-            await location.put(
-              srsMediaSuspectMarkerPath(folder, sha),
-              Uint8List(0),
-            );
+          final SrsMediaOpenFailure? failure = opened.failure;
+          if (failure == SrsMediaOpenFailure.unauthenticated) {
+            // 密钥证明不了是对的（口令 / 密钥的问题，或第一块就坏了，AEAD 分不出）：不怪对象、不记可疑——覆盖重传
+            // 修不好密钥，记了就是读者每轮记、持有者每轮覆盖。调用方按口令不对提示。
+            report.undecryptable.add(name);
+          } else if (failure == SrsMediaOpenFailure.local) {
+            // 本机读写出错：这一轮没拿到，下一轮再试；对象没有可疑之处。
+          } else {
+            // 内容哈希对不上 / 密钥对而对象坏了（截断的响应 / 网盘占位或同步中的半截文件 / 被改）：不落地，也不删——
+            // 读者分不清是位置上那份真坏了还是这次传输坏了，删了可能就删掉了唯一的一份。只记可疑，持有原文件（本机
+            // 哈希对得上）的设备看到后覆盖重传（[putContent]）；下一轮读者仍会再试。
+            await markSuspectContent(sha);
           }
-          content.markSuspect(sha);
         }
       } finally {
         if (cipher != null) await drop(stored);

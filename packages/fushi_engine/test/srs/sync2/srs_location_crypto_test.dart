@@ -307,6 +307,86 @@ void main() {
     expect(File('${mb.path}/clip.mp4').readAsBytesSync(), movie);
   });
 
+  // 读者这把密钥解不开（第一块就认证不过，密钥证明不了是对的）：不怪对象——不记可疑、不写标记，持有者也不覆盖重传；
+  // 读者按口令不对提示（undecryptable）。以前一律记可疑：密钥出问题的读者每轮记、持有者每轮覆盖，来回不停。
+  test('加密位置：解不开（密钥证明不了）不记可疑、持有者不覆盖；每轮都不来回', () async {
+    final Directory root = Directory.systemTemp.createTempSync('srs_loc_key_');
+    final SrsDirectoryLocationStore loc = SrsDirectoryLocationStore(root);
+    final SrsDbStore a = await device('A');
+    final SrsDbStore b = await device('B');
+    final Directory ma = Directory.systemTemp.createTempSync('srs_media_a_');
+    final Directory mb = Directory.systemTemp.createTempSync('srs_media_b_');
+    addTearDown(() {
+      for (final Directory d in <Directory>[root, ma, mb]) {
+        try {
+          d.deleteSync(recursive: true);
+        } on FileSystemException {
+          // 句柄滞后。
+        }
+      }
+    });
+    final List<int> picture = utf8.encode('PNG-plain-bytes-marker');
+    File('${ma.path}/pic.png').writeAsBytesSync(picture);
+    await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '絵<img src="pic.png">',
+      },
+    );
+    final SrsLocationKey ka = await srsDeriveLocationKey(
+      a,
+      'pw',
+      pendingEnable: true,
+    );
+    await round(a, loc, key: ka);
+    final SrsMediaCipher ca = SrsMediaCipher(a, ka.keyHex);
+    expect(
+      (await srsSyncMedia(
+        location: loc,
+        store: a,
+        mediaRoot: ma,
+        cipher: ca,
+      )).uploaded,
+      1,
+    );
+    await round(a, loc, key: ka.enabled());
+    await round(b, loc, key: ka.enabled());
+    // 位置上那份换成不是按这个名字（AAD）封的密文：读者的密钥对它证明不了。
+    final String sha = srsMediaSha256(picture);
+    final File object = File(
+      '${root.path}/${srsMediaContentPath(ca.folder, sha)}',
+    );
+    final Uint8List foreign = await ca.seal(
+      'not-$sha',
+      Uint8List.fromList(picture),
+    );
+    object.writeAsBytesSync(foreign);
+    final File marker = File(
+      '${root.path}/${srsMediaSuspectMarkerPath(ca.folder, sha)}',
+    );
+    for (int i = 0; i < 2; i++) {
+      final SrsMediaSyncReport rb = await srsSyncMedia(
+        location: loc,
+        store: b,
+        mediaRoot: mb,
+        cipher: SrsMediaCipher(b, ka.keyHex),
+      );
+      expect(rb.rejected, contains('pic.png'), reason: 'round $i');
+      expect(rb.undecryptable, <String>{'pic.png'}, reason: 'round $i');
+      expect(rb.downloaded, 0);
+      expect(File('${mb.path}/pic.png').existsSync(), isFalse);
+      expect(marker.existsSync(), isFalse, reason: 'not suspect: round $i');
+      final SrsMediaSyncReport ra = await srsSyncMedia(
+        location: loc,
+        store: a,
+        mediaRoot: ma,
+        cipher: ca,
+      );
+      expect(ra.repaired, 0, reason: 'the holder does not overwrite: round $i');
+      expect(object.readAsBytesSync(), foreign);
+    }
+  });
+
   test('S-9：内存版 seal / open 与文件版同一格式，互相解得开', () async {
     final SrsDbStore a = await device('A');
     final SrsLocationKey ka = await srsDeriveLocationKey(
@@ -324,7 +404,7 @@ void main() {
     expect(ascii.decode(sealed.sublist(0, 4)), 'FSM2');
     final File src = File('${dir.path}/s')..writeAsBytesSync(sealed);
     final File out = File('${dir.path}/o');
-    expect(await c.openFile('n', src, out), srsMediaSha256(plain));
+    expect((await c.openFile('n', src, out)).sha256, srsMediaSha256(plain));
     expect(out.readAsBytesSync(), plain);
     final File plainFile = File('${dir.path}/p')..writeAsBytesSync(plain);
     final File sealedFile = File('${dir.path}/q');
@@ -333,7 +413,9 @@ void main() {
     // AAD 绑定名字：换名解不开，文件版不留目标。
     expect(await c.open('m', sealed), isNull);
     final File none = File('${dir.path}/none');
-    expect(await c.openFile('m', src, none), isNull);
+    final SrsMediaOpened wrongName = await c.openFile('m', src, none);
+    expect(wrongName.sha256, isNull);
+    expect(wrongName.failure, SrsMediaOpenFailure.unauthenticated);
     expect(none.existsSync(), isFalse);
   });
 }

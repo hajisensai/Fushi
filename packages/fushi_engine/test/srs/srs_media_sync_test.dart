@@ -457,6 +457,70 @@ void main() {
     },
   );
 
+  // 覆盖重传走按文件覆盖写（[SrsLocationFileStore.putFile]）：流式、不整份读进内存；文件夹位置先写临时名再改名。
+  test('持有者覆盖重传可疑内容：按文件覆盖写（不经内存字节），文件夹位置原子替换、不留临时文件', () async {
+    final Directory locRoot = Directory(p.join(root.path, 'loc'))
+      ..createSync(recursive: true);
+    final _StreamOnlyDirectory loc = _StreamOnlyDirectory(locRoot);
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final Directory mediaA = mediaDir('a');
+    final Directory mediaB = mediaDir('b');
+    final List<int> bytes = List<int>.generate(70000, (int i) => i * 7 & 0xff);
+    writeMedia(mediaA, 'cat.png', bytes);
+    await addNote(a, '猫', '<img src="cat.png">');
+    expect((await media(a, loc, mediaA)).uploaded, 1);
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
+    final File object = File(p.join(locRoot.path, at(bytes)));
+    object.writeAsBytesSync(bytes.sublist(0, 100));
+    expect((await media(b, loc, mediaB)).rejected, <String>{'cat.png'});
+    final SrsMediaSyncReport fix = await media(a, loc, mediaA);
+    expect(fix.repaired, 1);
+    expect(object.readAsBytesSync(), bytes);
+    expect(
+      loc.contentPuts,
+      isEmpty,
+      reason: 'content overwrite streams from a file',
+    );
+    expect(
+      locRoot
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((File f) => p.basename(f.path))
+          .where(
+            (String n) =>
+                n.startsWith('.srs2tmp-') || n.endsWith(kSrsMediaSuspectSuffix),
+          ),
+      isEmpty,
+    );
+    final SrsMediaSyncReport again = await media(b, loc, mediaB);
+    expect(again.downloaded, 1);
+    expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), bytes);
+  });
+
+  test('文件夹位置 putFile：同名覆盖、中间目录按需建；源文件不动', () async {
+    final Directory locRoot = Directory(p.join(root.path, 'loc2'));
+    final SrsDirectoryLocationStore loc = SrsDirectoryLocationStore(locRoot);
+    final File src = File(p.join(root.path, 'src.bin'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    await loc.putFile('x/y/z.bin', src);
+    expect(await loc.get('x/y/z.bin'), <int>[1, 2, 3]);
+    src.writeAsBytesSync(<int>[4, 5]);
+    await loc.putFile('x/y/z.bin', src);
+    expect(await loc.get('x/y/z.bin'), <int>[4, 5]);
+    expect(src.readAsBytesSync(), <int>[4, 5]);
+    expect(
+      Directory(
+        p.join(locRoot.path, 'x', 'y'),
+      ).listSync().map((FileSystemEntity e) => p.basename(e.path)),
+      <String>['z.bin'],
+    );
+    final SrsMemoryLocationStore mem = SrsMemoryLocationStore();
+    await mem.putFile('a/b', src);
+    await mem.putFile('a/b', src);
+    expect(mem.files['a/b'], <int>[4, 5]);
+  });
+
   // 同上，记日志的位置（给了 locationId，不列目录）：可疑经日志传到持有者，持有者覆盖重传后记回「在」。
   test('记日志的位置：读者把坏内容记为可疑（不删、不落地），可疑随日志传到持有者，持有者覆盖重传修复', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
@@ -560,6 +624,23 @@ void main() {
     expect(rb.downloaded, 1);
     expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), <int>[5, 5]);
   });
+}
+
+/// 文件夹位置：内容对象（`media/<2>/<sha256>`）若按内存字节写（[put]）就记下来——覆盖重传应当走 [putFile]。
+class _StreamOnlyDirectory extends SrsDirectoryLocationStore {
+  _StreamOnlyDirectory(super.root);
+
+  final List<String> contentPuts = <String>[];
+
+  @override
+  Future<void> put(String path, Uint8List bytes) {
+    if (path.startsWith('$kSrsMediaFolder/') &&
+        path.split('/').length == 3 &&
+        !path.endsWith(kSrsMediaSuspectSuffix)) {
+      contentPuts.add(path);
+    }
+    return super.put(path, bytes);
+  }
 }
 
 /// 记下写入顺序的内存位置。

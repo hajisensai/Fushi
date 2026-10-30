@@ -529,6 +529,59 @@ void main() {
     }
   });
 
+  // 媒体对账报有内容对象这把密钥解不开（undecryptable，不记可疑）：调度器按口令不对提示，与握手报的是同一条。
+  test('媒体对账有对象解不开：位置的加密状态记成口令不对', () async {
+    final SrsLocationKey key = await srsDeriveLocationKey(
+      store,
+      'correct horse',
+      pendingEnable: true,
+    );
+    SrsLocationKey current = key;
+    final Directory media = Directory(p.join(root.path, '_media_k'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc_k'))
+      ..createSync();
+    bool undecryptable = false;
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc_k',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      locationKey: (String id) => id == 'local:loc_k' ? current : null,
+      onEncryptionEnabled: (String id, SrsLocationKey k) async => current = k,
+      readMediaRoot: () async => media,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            final SrsMediaSyncReport r = SrsMediaSyncReport();
+            if (undecryptable) r.undecryptable.add('pic.png');
+            return r;
+          },
+    );
+    await s.syncWithBackend(LocalDirectoryAssetStore(location));
+    expect(s.locationCrypto['local:loc_k']?.error, isNull);
+    expect(s.locationCrypto['local:loc_k']?.encrypted, isTrue);
+    undecryptable = true;
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '絵',
+      },
+    );
+    await s.syncWithBackend(LocalDirectoryAssetStore(location));
+    expect(s.locationCrypto['local:loc_k']?.error, kSrsSync2WrongKey);
+    expect(s.locationCrypto['local:loc_k']?.encrypted, isTrue);
+  });
+
   test('支持服务器时间的后端：同步成功、上传段与 head、校时；不提示', () async {
     final SrsSync2Report r = await scheduler().syncWithBackend(
       LocalDirectoryAssetStore(root),
