@@ -252,12 +252,17 @@ Future<bool> _mergeInto(Directory src, Directory dst) async {
 Future<void> srsRemoveEmptyV1FolderDirs(Directory v1Root) async {
   Future<bool> prune(Directory d) async {
     bool empty = true;
-    await for (final FileSystemEntity e in d.list(followLinks: false)) {
-      if (e is Directory) {
-        if (!await prune(e)) empty = false;
-      } else {
-        empty = false;
+    try {
+      await for (final FileSystemEntity e in d.list(followLinks: false)) {
+        if (e is Directory) {
+          if (!await prune(e)) empty = false;
+        } else {
+          empty = false;
+        }
       }
+    } on PathNotFoundException {
+      // 另一台设备同时在收尾，已经删掉了。
+      return true;
     }
     if (!empty || d.path == v1Root.path) return false;
     try {
