@@ -204,7 +204,7 @@ mod tests {
         }
         w.execute("INSERT INTO srs_local_state (profile_uid, json) VALUES (?1, '{}')", [profile]).unwrap();
         w.execute_batch(
-            "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (profile_uid TEXT NOT NULL, pos INTEGER NOT NULL, \
+            "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (profile_uid UUIDTEXT NOT NULL, pos INTEGER NOT NULL, \
              phase INTEGER NOT NULL, src TEXT NOT NULL, PRIMARY KEY (profile_uid, pos)) WITHOUT ROWID;",
         )
         .unwrap();

@@ -19,6 +19,7 @@ pub(crate) mod browse;
 pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
+pub(crate) mod ids;
 pub mod rows;
 mod profile_data;
 mod projections;
@@ -205,11 +206,21 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
     Ok(rows::encode(n, &out))
 }
 
+/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）。
+#[cfg(test)]
+impl Drop for SrsCore {
+    fn drop(&mut self) {
+        ids::audit::check();
+    }
+}
+
 fn configure(conn: &Connection) -> Result<(), String> {
     conn.busy_timeout(Duration::from_millis(5000))
         .map_err(|e| e.to_string())?;
     // 摘要桶触发器用的 SQL 函数（store/sync2/digest.rs，审查 S-7）：三张投影表的每次写入都经它们增减桶值。
     sync2::digest::register(conn).map_err(|e| e.to_string())?;
+    // ID 列编码（store/ids.rs）：`srs_id` / `srs_idt`，Rust 与 Dart 的 SQL 都用。
+    ids::register(conn).map_err(|e| e.to_string())?;
     // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
     // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
     // 上限 256 MB；WAL 模式下 SQLite 照常处理。
@@ -231,6 +242,8 @@ impl SrsCore {
         )
         .map_err(|e| format!("open {}: {e}", path.display()))?;
         configure(&writer)?;
+        #[cfg(test)]
+        ids::audit::install(&mut writer);
         let mode: String = writer
             .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
@@ -243,18 +256,22 @@ impl SrsCore {
         compact::run(&writer, path.parent().unwrap_or(Path::new(".")), compact::free_bytes(path), now);
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
-        let reader = Connection::open_with_flags(
+        let mut reader = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open reader {}: {e}", path.display()))?;
         configure(&reader)?;
-        let drift_reader = Connection::open_with_flags(
+        #[cfg(test)]
+        ids::audit::install(&mut reader);
+        let mut drift_reader = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
         configure(&drift_reader)?;
+        #[cfg(test)]
+        ids::audit::install(&mut drift_reader);
         Ok(Self {
             writer: Mutex::new(Some(writer)),
             reader: Mutex::new(Some(reader)),
@@ -666,12 +683,14 @@ impl SrsCore {
     /// 把关库后可能已被删换的库文件重新打开。会话开好之后与本对象无关，关库不结束它。
     pub fn read_session(&self) -> Result<Arc<ReadSession>, String> {
         let _open = self.reader()?;
-        let conn = Connection::open_with_flags(
+        let mut conn = Connection::open_with_flags(
             &self.path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
         configure(&conn)?;
+        #[cfg(test)]
+        ids::audit::install(&mut conn);
         conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
             .map_err(|e| e.to_string())?;
