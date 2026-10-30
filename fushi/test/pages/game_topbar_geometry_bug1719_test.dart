@@ -3,7 +3,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart'
+    show gameSectionGroupOf;
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart'
+    show LibrarySectionGroup;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/utils.dart';
@@ -27,22 +31,22 @@ import '../helpers/test_platform_services.dart';
 /// 用户可见结果，与用什么控件实现无关，换控件后同样必须成立。
 ///
 /// 守卫两条不变式（zh-CN，多档窗宽）：
-/// 1. 六个子区的分区导航 top 与 height 完全一致（切页签顶栏纹丝不动）；
-/// 2. 「工作台」（monitor 页签）标签永远单行（任何分支都不允许把段挤到折行）。
+/// 1. 各子区的一级分区导航 top 与 height 完全一致（切页签顶栏纹丝不动）；
+///    「游戏库」组内子区的二级胶囊同样一致（2026-10-30 起两级页签）；
+/// 2. 「工作台」（monitor 页签，现在二级胶囊里）标签永远单行（任何分支都不允许
+///    把段挤到折行）。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
 Widget _stubLibrary(
   BuildContext _,
   GalHookSessionController __,
   VoidCallback ___,
-) =>
-    const Center(child: Icon(Icons.sports_esports_outlined));
+) => const Center(child: Icon(Icons.sports_esports_outlined));
 
 /// 发现子区桩：FushiPageHeader.customTitle 包分段导航，不构建需要 provider 的
 /// 发现正文（「设置」子区已于 2026-10-09 移除，几何守卫改由发现子区补位）。
-Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
-      children: <Widget>[FushiPageHeader.customTitle(title: navigation)],
-    );
+Widget _stubDiscover(BuildContext _, Widget navigation) =>
+    Column(children: <Widget>[FushiPageHeader.customTitle(title: navigation)]);
 
 void main() {
   setUp(() {
@@ -57,7 +61,16 @@ void main() {
     LocaleSettings.setLocaleRaw('en');
   });
 
-  Future<Rect> stripRectIn(
+  /// 一级（「游戏库 / 发现」两组）或二级（组内子区胶囊）分区导航。
+  Finder strip({required bool secondary, bool skipOffstage = true}) =>
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is FushiSectionTabBar<GameSection> && w.secondary == secondary,
+        skipOffstage: skipOffstage,
+      );
+
+  /// 切到 [section]，返回（一级导航 rect，二级导航 rect 或 null）。
+  Future<(Rect, Rect?)> stripRectsIn(
     WidgetTester tester,
     GameSection section,
     Key sectionKey,
@@ -65,13 +78,14 @@ void main() {
     gameSectionNotifier.value = section;
     await tester.pump();
     await tester.pump();
-    // 2026-10-06 起分区页签由外壳浮动工具栏统一画一份（ad8496b2b86，
-    // [GameSectionTabsHostScope]）：子区页头里那一份在外壳下留空。全树（含
-    // offstage 子区）必须恰好只有这一份，子区里不许再冒出第二份。
+    // 2026-10-06 起分区页签由外壳浮动工具栏统一画（ad8496b2b86，
+    // [GameSectionTabsHostScope]）：子区页头里那一份在外壳下留空。2026-10-30
+    // 起一级只放两组、组内子区在顶栏下方的二级胶囊里——全树（含 offstage 子区）
+    // 一级恰好一份，二级至多一份，子区里不许再冒出自己的。
     expect(
-      find.byType(FushiSectionTabBar<GameSection>, skipOffstage: false),
+      strip(secondary: false, skipOffstage: false),
       findsOneWidget,
-      reason: '子区 $section 时全树应恰好一份分区导航（外壳那份）',
+      reason: '子区 $section 时全树应恰好一份一级分区导航（外壳那份）',
     );
     expect(
       find.descendant(
@@ -84,17 +98,26 @@ void main() {
       findsNothing,
       reason: '子区 $section 的页头不该再画自己的分区导航',
     );
-    final Finder f = find.byType(FushiSectionTabBar<GameSection>);
-    expect(f, findsOneWidget, reason: '子区 $section 应有分区导航');
-    // 「工作台」在该子区的分段条里必须单行（高度 = 一行行高）。折行是
-    // BUG-1719 的直接症状：段被钳到比最长标签窄。
+    final bool inLibraryGroup =
+        gameSectionGroupOf(section) == LibrarySectionGroup.library;
+    final Finder sub = strip(secondary: true, skipOffstage: false);
+    expect(
+      sub,
+      inLibraryGroup ? findsOneWidget : findsNothing,
+      reason: '「游戏库」组内（首页 / 全部游戏 / 工作台 / 串流）才有二级胶囊',
+    );
+    final Rect top = tester.getRect(strip(secondary: false));
+    if (!inLibraryGroup) return (top, null);
+    // 「工作台」在二级胶囊里必须单行（高度 = 一行行高）。折行是 BUG-1719 的
+    // 直接症状：段被钳到比最长标签窄。
     final Finder label = find.descendant(
-      of: f,
+      of: strip(secondary: true),
       matching: find.text('工作台'),
     );
     expect(label, findsOneWidget);
-    final RenderParagraph paragraph =
-        tester.renderObject<RenderParagraph>(label);
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      label,
+    );
     final double lineHeight =
         (paragraph.text.style!.height ?? 1.0) * paragraph.text.style!.fontSize!;
     expect(
@@ -102,12 +125,13 @@ void main() {
       moreOrLessEquals(lineHeight, epsilon: 1.0),
       reason: '子区 $section 的「工作台」标签折行了（段宽被钳到比最长标签窄）',
     );
-    return tester.getRect(f);
+    return (top, tester.getRect(strip(secondary: true)));
   }
 
   for (final double width in <double>[1000, 1440, 2560]) {
-    testWidgets('BUG-1719 顶栏分段条几何跨六个子区一致 @${width.toInt()}px',
-        (WidgetTester tester) async {
+    testWidgets('BUG-1719 顶栏分段条几何跨子区一致 @${width.toInt()}px', (
+      WidgetTester tester,
+    ) async {
       await tester.binding.setSurfaceSize(Size(width, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -132,22 +156,35 @@ void main() {
         GameSection.importGames: HomeGamePage.importKey,
         GameSection.discover: HomeGamePage.discoverKey,
       };
-      final Map<GameSection, Rect> rects = <GameSection, Rect>{
-        for (final MapEntry<GameSection, Key> entry in sections.entries)
-          entry.key: await stripRectIn(tester, entry.key, entry.value),
-      };
+      final Map<GameSection, (Rect, Rect?)> rects =
+          <GameSection, (Rect, Rect?)>{
+            for (final MapEntry<GameSection, Key> entry in sections.entries)
+              entry.key: await stripRectsIn(tester, entry.key, entry.value),
+          };
 
-      final Rect reference = rects[GameSection.library]!;
-      for (final MapEntry<GameSection, Rect> entry in rects.entries) {
+      final (Rect reference, Rect? subReference) = rects[GameSection.library]!;
+      for (final MapEntry<GameSection, (Rect, Rect?)> entry in rects.entries) {
         expect(
-          entry.value.top,
+          entry.value.$1.top,
           reference.top,
-          reason: '子区 ${entry.key} 的分段条 top 与库页不一致（顶栏跳动）',
+          reason: '子区 ${entry.key} 的一级分段条 top 与库页不一致（顶栏跳动）',
         );
         expect(
-          entry.value.height,
+          entry.value.$1.height,
           reference.height,
-          reason: '子区 ${entry.key} 的分段条高度与库页不一致（顶栏下沉）',
+          reason: '子区 ${entry.key} 的一级分段条高度与库页不一致（顶栏下沉）',
+        );
+        final Rect? sub = entry.value.$2;
+        if (sub == null) continue;
+        expect(
+          sub.top,
+          subReference!.top,
+          reason: '子区 ${entry.key} 的二级胶囊 top 与库页不一致（跳动）',
+        );
+        expect(
+          sub.height,
+          subReference.height,
+          reason: '子区 ${entry.key} 的二级胶囊高度与库页不一致（下沉）',
         );
       }
     });

@@ -13,6 +13,8 @@ import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart'
     show kMusicSearchDebounce;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart'
+    show FushiIconButton;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
 import 'package:material_ui/material_ui.dart';
@@ -150,6 +152,23 @@ void main() {
     await tester.tap(find.text(t.music_section_artists));
     await tester.pumpAndSettle();
     expect(find.text('Singer'), findsOneWidget);
+
+    // 没有推荐时一级只剩「曲库」一组：不画一级页签（分区全在二级胶囊里）。
+    expect(find.text(t.music_library_tab), findsNothing);
+    // 加文件夹 / 管理文件夹 / 加光盘不再占顶栏动作位，收在工具栏右端导入钮的
+    // 菜单里（2026-10-30 库页两级页签）。
+    for (final String key in <String>[
+      'music_add_folder',
+      'music_manage_sources',
+      'music_add_disc',
+    ]) {
+      expect(find.byKey(ValueKey<String>(key)), findsNothing);
+    }
+    final FushiIconButton importButton = tester.widget(
+      find.byKey(const ValueKey<String>('music-library-view-import')),
+    );
+    expect(importButton.tooltip, t.library_view_import);
+    expect(importButton.selected, isFalse, reason: '音乐没有导入页，导入钮恒不选中、点开是菜单');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
