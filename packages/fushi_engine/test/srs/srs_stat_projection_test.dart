@@ -305,7 +305,7 @@ void main() {
         .customSelect(
           'SELECT occurred_at, duration_ms FROM srs_stat_reviews '
           'WHERE log_id = ?',
-          variables: <Variable<Object>>[Variable<String>(again.id)],
+          variables: <Variable<Object>>[Variable<String>(again.id, srsIdType)],
         )
         .getSingle();
     expect(row.read<int>('occurred_at'), now);
