@@ -62,11 +62,6 @@ const double _kIconSize = 24;
 /// 高亮多边形（与墨滴）的边长：比格子小一圈，留出相邻多边形之间的呼吸。
 const double _kShapeSize = 46;
 
-/// 底标（高亮下方的短横，沿用圆柱滚筒的底标）的尺寸与离胶囊底边的距离。
-const double _kMarkerWidth = 16;
-const double _kMarkerHeight = 3;
-const double _kMarkerBottom = 2;
-
 /// 两端渐隐带占胶囊宽度的比例（只在那一侧还有藏着的项时画）。
 const double _kEdgeFade = 0.16;
 
@@ -410,9 +405,6 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     final double presence = _presence.value.clamp(0.0, 1.0).toDouble();
 
     final double top = (spec.height - _kItemHeight) / 2;
-    // 底标跟着高亮的视觉位置走（墨滴流动时一起滑，过冲同步）。
-    final double markerCenter = offset + hl * slot + slot / 2;
-
     // 流动中画液态墨滴；落定后由目标项的多边形接手（圆 → 多边形）。
     final Rect blob = _liquidRect(
       _shapeRect(_hlFrom, top),
@@ -472,23 +464,6 @@ class _NavModeStripBarState extends State<NavModeStripBar>
                         ),
                       ),
                     ),
-            ),
-          ),
-        ),
-        Positioned(
-          left: markerCenter - _kMarkerWidth / 2,
-          bottom: _kMarkerBottom,
-          width: _kMarkerWidth,
-          height: _kMarkerHeight,
-          child: IgnorePointer(
-            child: Opacity(
-              opacity: presence,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: palette.content.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
             ),
           ),
         ),
