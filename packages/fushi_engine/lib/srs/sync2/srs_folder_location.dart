@@ -7,7 +7,8 @@
 /// - **归档**：接收全部段 / head / 媒体，**永不删除任何东西**（不清旧 head、不清媒体；只有用户确认的
 ///   彻底清除会重写段），默认不开。
 ///
-/// 目录布局与云盘的集合根相同（`<文件夹>/fushi-srs/<profileUid>/v2/`），所以归档位置随时能改成同步位置直接用。
+/// 目录布局与云盘的集合根相同（`<文件夹>/fushi-srs/<profileUid>/v3/`），所以归档位置随时能改成同步位置直接用。
+/// 协议 1 的旧根 `v2/` 只剩围栏（srs_location_migration.dart）：每一轮先 [srsPrepareLocation]，旧根上有数据就迁过来。
 library;
 
 import 'dart:io';
@@ -15,6 +16,7 @@ import 'dart:io';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:path/path.dart' as p;
@@ -69,7 +71,7 @@ class SrsFolderLocation {
   };
 }
 
-/// [location] 在磁盘上的集合根（`<文件夹>/fushi-srs/<profileUid>/v2/`）。
+/// [location] 在磁盘上的集合根（`<文件夹>/fushi-srs/<profileUid>/v3/`）。
 Directory srsFolderCollectionRoot(
   SrsFolderLocation location,
   String profileUid,
@@ -77,9 +79,17 @@ Directory srsFolderCollectionRoot(
   p.join(location.path, kSrsSync2Namespace, profileUid, kSrsSync2Folder),
 );
 
+/// [location] 上协议 1 的旧集合根（`<文件夹>/fushi-srs/<profileUid>/v2/`，迁移之后只剩围栏）。
+Directory srsFolderV1CollectionRoot(
+  SrsFolderLocation location,
+  String profileUid,
+) => Directory(
+  p.join(location.path, kSrsSync2Namespace, profileUid, kSrsSync2V1Folder),
+);
+
 /// 一个文件夹位置这一轮的结果（[ops] 里带加密握手的结论：kdf / encryptionEnabled / 口令错误）。
 class SrsFolderSyncReport {
-  SrsFolderSyncReport({this.ops, this.media, this.handshake});
+  SrsFolderSyncReport({this.ops, this.media, this.handshake, this.prepared});
 
   /// 操作同步这一轮的结果（只做媒体的位置：握手没过时带着错误，否则为 null）。
   final SrsSync2Report? ops;
@@ -87,6 +97,9 @@ class SrsFolderSyncReport {
 
   /// 只做媒体的位置的 `meta.json` 握手结论（kdf / 本机刚开的加密已写上 / 用没用密钥）。
   final SrsSync2Report? handshake;
+
+  /// 这一轮开头的位置准备 / v1 迁移结论（[srsPrepareLocation]）。
+  final SrsLocationPrepared? prepared;
 
   /// 这个位置这一轮的加密结论（调度器据此记加密状态、把本机刚开的加密标成已生效）。
   SrsSync2Report? get crypto => ops ?? handshake;
@@ -99,6 +112,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   required SrsDbStore store,
   Directory? mediaRoot,
   SrsLocationKey? key,
+  SrsLocationMigrationMemo? migrationMemo,
 }) async {
   if (location.idle) return SrsFolderSyncReport();
   if (!Directory(location.path).existsSync()) {
@@ -107,6 +121,29 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   final SrsLocationStore root = SrsDirectoryLocationStore(
     srsFolderCollectionRoot(location, store.profileUid),
   );
+  final Directory v1Dir = srsFolderV1CollectionRoot(location, store.profileUid);
+  // 先立围栏、迁走 v1 数据（每一轮都做：旧版本绝不能在旧根上重新建一个 v1 集合）。没过的（口令 / 更新的版本 /
+  // meta 读不到）整个位置都不碰，结论照握手的样子交回。
+  final SrsLocationPrepared prepared = await srsPrepareLocation(
+    host: store,
+    v1: SrsDirectoryLocationStore(v1Dir),
+    current: root,
+    locationId: location.locationId,
+    key: key,
+    nowMs: () => store.now().$1,
+    removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+    memo: migrationMemo,
+    archive: location.archive,
+  );
+  if (prepared.needsUpgrade || prepared.error != null) {
+    return SrsFolderSyncReport(
+      ops: SrsSync2Report()
+        ..needsUpgrade = prepared.needsUpgrade
+        ..error = prepared.error
+        ..kdf = prepared.kdf,
+      prepared: prepared,
+    );
+  }
   SrsSync2Report? ops;
   // 发段之前那一步传上去的媒体数（并进下面完整对账的结果）。
   int uploadedEarly = 0;
@@ -142,7 +179,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     // 同样整个位置都不碰：以前这里只看 error，needsUpgrade 时照样按明文跑媒体对账（往 `media/` 写、按过期清），
     // 旧版本就不能靠提高最低读者版本把自己挡在新格式的位置之外。
     if (ops.error != null || ops.needsUpgrade) {
-      return SrsFolderSyncReport(ops: ops);
+      return SrsFolderSyncReport(ops: ops, prepared: prepared);
     }
   }
   String? mediaKey = (ops?.encrypted ?? false) ? key!.keyHex : null;
@@ -169,7 +206,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       ..encryptionEnabled = h.encryptionEnabled
       ..encrypted = h.keyHex != null;
     if (h.needsUpgrade || h.error != null) {
-      return SrsFolderSyncReport(ops: handshake);
+      return SrsFolderSyncReport(ops: handshake, prepared: prepared);
     }
     mediaKey = h.keyHex;
   }
@@ -184,5 +221,24 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     );
   }
   media?.uploaded += uploadedEarly;
-  return SrsFolderSyncReport(ops: ops, media: media, handshake: handshake);
+  // 按名字存的旧文件：这一轮把补上的绑定发布出去之后才删（同步用途按本位置的上传水位，只做媒体的按任一位置）。
+  final bool roundOk = ops == null || (ops.error == null && !ops.needsUpgrade);
+  if (roundOk && !location.archive) {
+    final String? keyHex = (ops?.encrypted ?? false) ? key!.keyHex : null;
+    await srsFinishLocationMigration(
+      host: store,
+      v1: SrsDirectoryLocationStore(v1Dir),
+      prepared: prepared,
+      progressId: ops == null
+          ? null
+          : srsLocationProgressId(location.locationId, keyHex),
+      removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+    );
+  }
+  return SrsFolderSyncReport(
+    ops: ops,
+    media: media,
+    handshake: handshake,
+    prepared: prepared,
+  );
 }

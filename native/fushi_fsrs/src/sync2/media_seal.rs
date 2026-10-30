@@ -11,12 +11,12 @@
 //! 就是末块。截断在块边界上 → 读到的「末块」带的是非末块的 tag，解密失败；块被挪位 / 换序 → nonce 计数对不上，
 //! 失败；换头（改块大小 / 前缀）→ AAD 不同，失败。即 STREAM 构造（Hoang–Reyhanitabar–Rogaway–Vizár 2015）。
 //!
-//! 旧格式（S-9 之前 [CollectionKey::seal]）：`24 字节 nonce | 整份密文 + tag`，没有魔数。读者按魔数分流；魔数对上
-//! 却解不开时再按旧格式试一次（旧格式的随机 nonce 恰好以 `FSM2` 开头的概率 2^-32），所以旧设备封的媒体照样能读。
-//! 旧格式只能整份读入解密——那是旧文件本身的限制；新写的一律是新格式。
+//! 存储位置上只有这一种格式（协议 2，2026-10-30 断代）。S-9 之前的整份格式（[CollectionKey::seal]：`24 字节 nonce |
+//! 整份密文 + tag`，AAD 是文件名）只出现在 v1 位置的按名字目录里，只有一次性迁移（Dart
+//! `srs_location_migration.dart`）经 [open_v1] 读它，读出的明文按内容哈希重新封成本格式；正常收发路径不认它。
 
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
@@ -100,11 +100,11 @@ pub fn seal_stream(key: &CollectionKey, r: &mut impl Read, w: &mut impl Write, a
 /// 来回不停），本机读写出错更不该怪对象。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpenError {
-    /// 第一块就认证不过（旧格式：整份认证不过）：密钥不对，或不是按这个名字（AAD）封的。AEAD 分不出这两种，也分不出
+    /// 第一块就认证不过：密钥不对，或不是按这个名字（AAD）封的。AEAD 分不出这两种，也分不出
     /// 第一块被改坏——都证明不了密钥是对的。
     Unauthenticated,
-    /// 前面的块已经认证通过（密钥与名字都对），后面的块认证不过 / 截断 / 被挪位，或者头的块大小不合法、长度短到不可能
-    /// 是任何一种封装：位置上的对象（或这次下载）坏了。
+    /// 前面的块已经认证通过（密钥与名字都对），后面的块认证不过 / 截断 / 被挪位，或者没有魔数 / 头的块大小不合法 /
+    /// 短到连头都不够：位置上的对象（或这次下载）坏了。
     Corrupt,
     /// 本机读写失败（打不开源文件、写不了目标）。
     Io(String),
@@ -171,56 +171,33 @@ fn open_chunked(
     Ok(Sealed { plain_len: total, sha256: sha.finalize().into() })
 }
 
-/// [open_stream] 的结果。
-#[derive(Debug)]
-pub enum Opened {
-    /// 新格式：明文已经流式写进了调用方的 writer。
-    Chunked(Sealed),
-    /// 旧格式（整份解出的明文）。writer 里**没有**有效内容——魔数碰撞时可能有新格式解了一半的垃圾，调用方截断后
-    /// 改写这一份。
-    Legacy(Vec<u8>),
-}
-
-/// 解封任一格式：新格式边读边解边写 [w]；旧格式（或魔数碰撞的旧文件）整份解出返回。解不开 → Err（原因见
-/// [OpenError]：两种格式都试过才下结论，新格式的结论优先——魔数对上的文件几乎不可能是旧格式）。
-pub fn open_stream(key: &CollectionKey, r: &mut (impl Read + Seek), w: &mut impl Write, aad: &[u8]) -> Result<Opened, OpenError> {
-    let io = |e: io::Error| OpenError::Io(e.to_string());
+/// 流式解封：边读边解边写 [w]。失败时 [w] 里可能已有部分明文，调用方丢弃。
+pub fn open_stream(key: &CollectionKey, r: &mut impl Read, w: &mut impl Write, aad: &[u8]) -> Result<Sealed, OpenError> {
     let mut head = [0u8; HEADER_LEN];
-    let n = read_full(r, &mut head).map_err(io)?;
-    let chunked_err = if n == HEADER_LEN && &head[..4] == MEDIA_MAGIC {
-        match open_chunked(key, &head, r, w, aad) {
-            Ok(s) => return Ok(Opened::Chunked(s)),
-            Err(e @ OpenError::Io(_)) => return Err(e),
-            Err(e) => Some(e),
-        }
-    } else {
-        None
-    };
-    r.seek(SeekFrom::Start(0)).map_err(io)?;
-    let mut whole = Vec::new();
-    r.read_to_end(&mut whole).map_err(io)?;
-    match key.open(&whole, aad) {
-        Some(pt) => Ok(Opened::Legacy(pt)),
-        // 比最短的旧格式封装（nonce + tag）还短：什么格式都不是，是对象坏了（截断 / 占位的空文件）。
-        None if chunked_err.is_none() && whole.len() < NONCE_LEN + TAG_LEN => Err(OpenError::Corrupt),
-        None => Err(chunked_err.unwrap_or(OpenError::Unauthenticated)),
+    let n = read_full(r, &mut head).map_err(|e| OpenError::Io(e.to_string()))?;
+    if n < HEADER_LEN || &head[..4] != MEDIA_MAGIC {
+        return Err(OpenError::Corrupt);
     }
+    open_chunked(key, &head, r, w, aad)
 }
 
-/// 内存里封（小内容：兜底拿到的明文补传）。输出与 [seal_stream] 同格式。
+/// v1 位置上按名字存的整份封装（S-9 之前的 [CollectionKey::seal]）：只给一次性迁移用（见模块注释）。解不开为 None。
+pub fn open_v1(key: &CollectionKey, sealed: &[u8], aad: &[u8]) -> Option<Vec<u8>> {
+    key.open(sealed, aad)
+}
+
+/// 内存里封（小内容）。输出与 [seal_stream] 同格式。
 pub fn seal_bytes(key: &CollectionKey, plain: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = Vec::with_capacity(HEADER_LEN + plain.len() + (plain.len() / MEDIA_CHUNK + 1) * TAG_LEN);
     seal_stream(key, &mut io::Cursor::new(plain), &mut out, aad)?;
     Ok(out)
 }
 
-/// 内存里解（两种格式）。
+/// 内存里解。
 pub fn open_bytes(key: &CollectionKey, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>, OpenError> {
     let mut out = Vec::new();
-    match open_stream(key, &mut io::Cursor::new(sealed), &mut out, aad)? {
-        Opened::Chunked(_) => Ok(out),
-        Opened::Legacy(pt) => Ok(pt),
-    }
+    open_stream(key, &mut io::Cursor::new(sealed), &mut out, aad)?;
+    Ok(out)
 }
 
 /// 文件到文件地封：[src] 明文 → [dst] 新格式（先写同目录临时文件再改名，读者看不到半截）。
@@ -230,18 +207,11 @@ pub fn seal_file(key: &CollectionKey, src: &Path, dst: &Path, aad: &[u8]) -> Res
     write_atomically(dst, |w| seal_stream(key, &mut r, w, aad))
 }
 
-/// 文件到文件地解（两种格式）：解不开不留下 [dst]，也不留临时文件。
+/// 文件到文件地解：解不开不留下 [dst]，也不留临时文件。
 pub fn open_file(key: &CollectionKey, src: &Path, dst: &Path, aad: &[u8]) -> Result<Sealed, OpenError> {
     let file = File::open(src).map_err(|e| OpenError::Io(format!("open {}: {e}", src.display())))?;
     let mut r = io::BufReader::with_capacity(MEDIA_CHUNK, file);
-    write_atomically(dst, |w| match open_stream(key, &mut r, w, aad)? {
-        Opened::Chunked(s) => Ok(s),
-        Opened::Legacy(pt) => {
-            w.truncate()?;
-            w.write_all(&pt).map_err(|e| e.to_string())?;
-            Ok(Sealed { plain_len: pt.len() as u64, sha256: Sha256::digest(&pt).into() })
-        }
-    })
+    write_atomically(dst, |w| open_stream(key, &mut r, w, aad))
 }
 
 /// 写 [dst] 同目录的临时文件 → 成功才改名到 [dst]；失败删掉临时文件。
@@ -271,18 +241,8 @@ fn write_atomically<E: From<String>>(
     renamed
 }
 
-/// 临时输出文件：能截断重写（旧格式碰撞回退用）。
+/// 临时输出文件。
 pub struct TempOut(io::BufWriter<File>);
-
-impl TempOut {
-    fn truncate(&mut self) -> Result<(), String> {
-        self.0.flush().map_err(|e| e.to_string())?;
-        let f = self.0.get_mut();
-        f.set_len(0).map_err(|e| e.to_string())?;
-        f.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-        Ok(())
-    }
-}
 
 impl Write for TempOut {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -363,9 +323,6 @@ mod tests {
         assert_eq!(open(&size, &key(), b"aad"), OpenError::Corrupt, "bad chunk size");
         assert_eq!(open(&[], &key(), b"aad"), OpenError::Corrupt, "empty placeholder");
         assert_eq!(open(&sealed[..10], &key(), b"aad"), OpenError::Corrupt, "shorter than any envelope");
-        // 旧格式整份认证不过：同样证明不了密钥。
-        let legacy = key().seal(&plain, b"aad");
-        assert_eq!(open(&legacy, &CollectionKey([8u8; 32]), b"aad"), OpenError::Unauthenticated);
         // 本机读写失败不是对象的错。
         let missing = std::env::temp_dir().join("fushi_media_seal_no_such_file");
         assert!(matches!(
@@ -374,19 +331,16 @@ mod tests {
         ));
     }
 
-    /// 旧格式（S-9 之前 [CollectionKey::seal] 的 `nonce | 整份密文`）照样解得开，包括 nonce 恰好以魔数开头的。
+    /// S-9 之前的整份封装（v1 位置的按名字目录）：正常解封路径不认（没有魔数 = 对象坏了），只有迁移用的 [open_v1]
+    /// 解得开，且 AAD（文件名）照样绑定。
     #[test]
-    fn legacy_envelopes_still_open() {
+    fn v1_envelopes_open_only_through_the_migrator() {
         let plain = b"old media".repeat(1000);
-        let legacy = key().seal(&plain, b"aad");
-        assert_eq!(open_bytes(&key(), &legacy, b"aad").unwrap(), plain);
-        let cipher = XChaCha20Poly1305::new((&key().0).into());
-        let mut n = [0u8; NONCE_LEN];
-        n[..4].copy_from_slice(MEDIA_MAGIC);
-        let ct = cipher.encrypt(&XNonce::from(n), Payload { msg: &plain[..], aad: b"aad" }).unwrap();
-        let mut colliding = n.to_vec();
-        colliding.extend_from_slice(&ct);
-        assert_eq!(open_bytes(&key(), &colliding, b"aad").unwrap(), plain);
+        let v1 = key().seal(&plain, b"aad");
+        assert_eq!(open_bytes(&key(), &v1, b"aad").unwrap_err(), OpenError::Corrupt);
+        assert_eq!(open_v1(&key(), &v1, b"aad").unwrap(), plain);
+        assert!(open_v1(&key(), &v1, b"other").is_none());
+        assert!(open_v1(&CollectionKey([8u8; 32]), &v1, b"aad").is_none());
     }
 
     #[test]
@@ -399,11 +353,6 @@ mod tests {
         let s = seal_file(&key(), &src, &sealed, b"aad").unwrap();
         let want: [u8; 32] = Sha256::digest(&plain).into();
         assert_eq!(s, Sealed { plain_len: plain.len() as u64, sha256: want });
-        assert_eq!(open_file(&key(), &sealed, &back, b"aad").unwrap(), s);
-        assert_eq!(std::fs::read(&back).unwrap(), plain);
-        // 旧格式文件：同样解到文件。
-        std::fs::write(&sealed, key().seal(&plain, b"aad")).unwrap();
-        std::fs::remove_file(&back).unwrap();
         assert_eq!(open_file(&key(), &sealed, &back, b"aad").unwrap(), s);
         assert_eq!(std::fs::read(&back).unwrap(), plain);
         // 解不开：不留目标、不留临时文件。

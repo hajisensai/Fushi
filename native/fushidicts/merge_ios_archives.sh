@@ -28,5 +28,48 @@ for a in "${deps[@]}"; do
   fi
 done
 
-libtool -static -o "$out" "${deps[@]}"
-echo "merged fushidicts iOS archive -> $out"
+# One archive alone is not enough: the vendored zstd / libdeflate / utf8proc keep
+# their global C names, and the Runner also force_loads the Rust umbrella
+# (native/fushi_ios_umbrella), whose zstd-sys carries another zstd. Two copies of
+# ZSTD_* in one static link = "duplicate symbols". So prelink everything into a
+# single relocatable object per architecture (what Xcode calls single-object
+# prelink): only the Dart FFI entry points (fushidicts_*) stay global, every
+# other symbol becomes local to this object and can never collide again.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+libtool -static -o "$work/all.a" "${deps[@]}"
+echo '_fushidicts_*' > "$work/exports.txt"
+
+archs="$(lipo -archs "$work/all.a")"
+thin=()
+for arch in $archs; do
+  src="$work/all.a"
+  if [[ "$(echo "$archs" | wc -w)" -gt 1 ]]; then
+    src="$work/all-$arch.a"
+    lipo -thin "$arch" "$work/all.a" -output "$src"
+  fi
+  xcrun ld -r -arch "$arch" -exported_symbols_list "$work/exports.txt" \
+    -force_load "$src" -o "$work/fushidicts-$arch.o"
+  libtool -static -o "$work/fushidicts-$arch.a" "$work/fushidicts-$arch.o"
+  thin+=("$work/fushidicts-$arch.a")
+done
+rm -f "$out"
+if [[ "${#thin[@]}" -gt 1 ]]; then
+  lipo -create "${thin[@]}" -output "$out"
+else
+  cp "${thin[0]}" "$out"
+fi
+
+# Gate: the merged archive must export exactly the FFI surface, at least the
+# entry points the Dart bindings look up, and nothing else (no ZSTD_*, deflate_*).
+leaked="$(nm -gU "$out" 2>/dev/null | awk 'NF >= 3 { print $NF }' | grep -v '^_fushidicts_' | sort -u || true)"
+if [[ -n "$leaked" ]]; then
+  echo "error: fushidicts iOS archive still exports non-FFI symbols: $(echo "$leaked" | head -n 20 | tr '\n' ' ')" >&2
+  exit 1
+fi
+count="$(nm -gU "$out" 2>/dev/null | awk 'NF >= 3 { print $NF }' | grep -c '^_fushidicts_' || true)"
+if [[ "$count" -lt 30 ]]; then
+  echo "error: fushidicts iOS archive exports only $count fushidicts_* symbols (<30)" >&2
+  exit 1
+fi
+echo "merged fushidicts iOS archive -> $out ($count fushidicts_* symbols global, everything else local)"

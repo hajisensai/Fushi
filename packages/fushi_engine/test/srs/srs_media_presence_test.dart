@@ -178,36 +178,4 @@ void main() {
     expect((await media(c, loc, mediaC)).downloaded, 1);
     expect(loc.mediaLists, 1);
   });
-
-  test('投影不认识的名字（老版本设备传的）逐个查一次，结果记进日志', () async {
-    final _CountingLocation loc = _CountingLocation();
-    final SrsDbStore a = await device('a');
-    final Directory mediaA = mediaDir('a');
-    await note(a, '鳥', '<img src="bird.png">');
-    await srsSyncPeers(<SrsDbStore>[a], loc.inner);
-    // 位置先被列举（空），之后老版本设备把 bird.png 直接放了上去、没记日志。
-    expect((await media(a, loc, mediaA)).missing, <String>{'bird.png'});
-    await loc.inner.put(
-      '$kSrsMediaFolder/bird.png',
-      Uint8List.fromList(<int>[9]),
-    );
-    // 已记为不在的名字不再逐个查——要等持有它的新版本设备记「在」。这里换成本机认不得的新名字验证逐个查。
-    await note(a, '魚', '<img src="fish.png">');
-    await loc.inner.put(
-      '$kSrsMediaFolder/fish.png',
-      Uint8List.fromList(<int>[5]),
-    );
-    final SrsMediaSyncReport r = await media(a, loc, mediaA);
-    expect(r.listedRemote, isFalse);
-    expect(r.downloaded, 1);
-    expect(File(p.join(mediaA.path, 'fish.png')).readAsBytesSync(), <int>[5]);
-    expect(r.missing, <String>{'bird.png'});
-    expect(loc.mediaLists, 1);
-
-    // fish.png 已记为在：下一轮不再查。
-    final int before = loc.mediaExists;
-    File(p.join(mediaA.path, 'fish.png')).deleteSync();
-    await media(a, loc, mediaA);
-    expect(loc.mediaExists, before);
-  });
 }

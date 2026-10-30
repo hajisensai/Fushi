@@ -376,9 +376,15 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
     let mut rejected = Vec::new();
     let mut fork = false;
     let mut best: BTreeMap<Id, (Head, &[u8])> = BTreeMap::new();
+    // 有设备的 head 要更新的读者（`minReader` 比本机协议新）：不收它，整轮报需要升级（Dart 据此停写，设计 §8）。
+    let mut needs_upgrade = false;
     for bytes in heads {
         let Ok(h) = Head::decode(bytes) else { continue };
         if h.collection != local.collection {
+            continue;
+        }
+        if h.min_reader > segment::PROTOCOL {
+            needs_upgrade = true;
             continue;
         }
         if best.get(&h.device).is_none_or(|b| b.0.gen < h.gen) {
@@ -470,7 +476,7 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
     }
     // 上一次收段会话没收尾（被打断）留下的待重放卡 / 已找到的分叉点：这一轮没段可拉也要开会话收个尾（S-4 / S-12）。
     let finish = replay_is_pending(c, profile)? || (fork && known_fork.is_some());
-    Ok(Some(json!({"fetch": fetch, "fork": fork, "rejected": rejected, "finishPending": finish})))
+    Ok(Some(json!({"fetch": fetch, "fork": fork, "rejected": rejected, "finishPending": finish, "needsUpgrade": needs_upgrade})))
 }
 
 /// 一条等着投递的远端操作：本轮刚收的（已解码），或在缓冲表里的（内存里只有链值，轮到它才从表里读出解码）。

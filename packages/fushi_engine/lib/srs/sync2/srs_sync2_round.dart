@@ -68,9 +68,13 @@ const String kSrsSync2Stopped = 'srs sync round stopped';
 /// 发件的一批在上传与确认之间被内核改切（并发的另一轮跑了小段合并）：这一轮不写 head，下一轮从水位续发。
 const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 
-/// 本协议版本（`meta.json` 的 `v`）与能读它的最低读者版本。
-const int kSrsSync2Protocol = 1;
-const int kSrsSync2MinReader = 1;
+/// 本协议版本（`meta.json` 的 `v`）与能读它的最低读者版本（与内核 segment.rs `PROTOCOL` / `MIN_READER` 同值）。
+///
+/// 2 = 2026-10-30 断代：集合根从 `v2/` 挪到 `v3/`（srs_location_store.dart [kSrsSync2Folder]），媒体只剩内容寻址；
+/// 协议 1 的位置由一次性迁移搬过来（srs_location_migration.dart），旧根上只留一份 `minReader` = 2 的 `meta.json`
+/// 让旧版本停下。
+const int kSrsSync2Protocol = 2;
+const int kSrsSync2MinReader = 2;
 
 /// 一轮的结果。
 class SrsSync2Report {
@@ -171,93 +175,19 @@ Future<SrsSync2Report> srsSync2Round({
   // 传过的密文段，本机全部按当前密钥重传一遍（同名覆盖）。
   final String progressId = srsLocationProgressId(locationId, keyHex);
 
-  // 1. 全部设备的 head：每台设备取代号最大的（同一代号的都要）。
-  final List<String> deviceDirs = <String>[
-    for (final SrsLocationEntry d in await location.list('devices'))
-      if (d.isFolder) 'devices/${d.name}',
-  ];
-  final List<List<String>> headPaths = await srsRunPooled(
-    deviceDirs,
-    kSrsSync2Concurrency,
-    (String dir) async {
-      int top = -1;
-      final Map<String, int> genOf = <String, int>{};
-      for (final SrsLocationEntry f in await location.list(dir)) {
-        final int? g = _headGen(f.name);
-        if (g == null) continue;
-        genOf[f.name] = g;
-        if (g > top) top = g;
-      }
-      return <String>[
-        for (final MapEntry<String, int> e in genOf.entries)
-          if (e.value == top) '$dir/${e.key}',
-      ];
-    },
-  );
-  final List<Uint8List> heads = <Uint8List>[
-    for (final Uint8List? b in await srsRunPooled(
-      <String>[for (final List<String> p in headPaths) ...p],
-      kSrsSync2Concurrency,
-      location.get,
-    ))
-      ?b,
-  ];
-
-  // 2. 定要拉的段 → 拉 → 收。
-  // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
-  final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
-    'op': 'plan',
-    'location': progressId,
-  }, blobs: heads)).map;
-  // 本机身份的段只用来比链找分叉点：内核在收段会话里跨批累积、收尾才换身份（[SrsSync2Host.sync2IngestBegin]），
-  // 所以它们和别的段一样受字节预算约束。
-  final List<String> wanted = <String>[
-    for (final Object? f in (plan['fetch'] as List?) ?? const <Object?>[])
-      for (final Object? name
-          in ((f! as Map)['files'] as List?) ?? const <Object?>[])
-        name! as String,
-  ];
-  // 分批拉、分批收（首次同步一台老设备可能是几千个段）：每批独立提交，中途断网 / 被杀 / 关库都只丢在途
-  // 那一批（已收的进了本机投影或因果缓冲，plan 下一轮不再要它们）；写锁每批只占一小会儿，复习写入不被
-  // 整轮挡住；返回给 Dart 的投影变化也按批解析，不会一次把几十万条事件压在 UI isolate 上。中途收手不收尾：
-  // 分叉点可能还没看全，不换身份，下一轮 plan 照样再要本机身份的段。
-  void absorb(Map<String, Object?> r) {
-    report.applied += (r['applied'] as int?) ?? 0;
-    report.pending = (r['pending'] as int?) ?? 0;
-    report.fork = report.fork || r['fork'] == true;
-    report.changed =
-        report.changed ||
-        (((r['marks'] as Map?)?['landed'] as int?) ?? 0) > 0 ||
-        ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
-        ((r['changed'] as List?)?.isNotEmpty ?? false);
-    report.errors.addAll(<String>[
-      for (final Object? x in (r['errors'] as List?) ?? const <Object?>[]) '$x',
-    ]);
-  }
-
-  if (wanted.isNotEmpty) {
-    int done = 0;
-    onFetchProgress?.call(0, wanted.length);
-    await host.sync2IngestBegin();
-    await for (final SrsFetchedBatch batch in srsFetchInBatches(
-      wanted,
-      fetch: (String path) => srsFetchSegment(location, path),
-      budgetBytes: ingestBudgetBytes,
-      concurrency: fetchConcurrency,
-    )) {
-      // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
-      if (batch.segments.isNotEmpty) {
-        absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
-      }
-      done += batch.covered;
-      onFetchProgress?.call(done, wanted.length);
-      if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
-    }
-    absorb(await host.sync2IngestFinish());
-  } else if (plan['finishPending'] == true) {
-    // 上一轮收段被打断在收尾之前：受影响的卡还在内核的待重放集合里（审查 S-4），这一轮没段可拉也收个尾。
-    await host.sync2IngestBegin();
-    absorb(await host.sync2IngestFinish());
+  // 1–2. 读全部 head → 拉缺的段 → 收。需要更新的读者（有设备的 head 要求）就停在这里，一个字节也不写（§8）。
+  if (!await srsSync2Pull(
+    host: host,
+    location: location,
+    progressId: progressId,
+    keyHex: keyHex,
+    report: report,
+    onFetchProgress: onFetchProgress,
+    shouldStop: shouldStop,
+    ingestBudgetBytes: ingestBudgetBytes,
+    fetchConcurrency: fetchConcurrency,
+  )) {
+    return report;
   }
 
   // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs
@@ -386,6 +316,121 @@ Future<SrsSync2Report> srsSync2Round({
   }
   await srsRunPooled(stale, kSrsSync2Concurrency, location.delete);
   return report;
+}
+
+/// 一轮的读半边（§6.2 第 1–3 步）：读 [location] 上全部设备的 head（每台取代号最大的，同一代号的都要）→ 内核定要拉
+/// 的段 → 分批拉、分批收。结果累加进 [report]。返回 false = 这一轮到此为止：中途收手（[report] 的 error 是
+/// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。v1 位置的
+/// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定；迁移传 [progressId] = null：
+/// 不按位置记 head / 转发账（旧根不是一个同步位置，记了会清掉同一位置新根的转发记账）。
+Future<bool> srsSync2Pull({
+  required SrsSync2Host host,
+  required SrsLocationStore location,
+  required String? progressId,
+  required String? keyHex,
+  required SrsSync2Report report,
+  void Function(int done, int total)? onFetchProgress,
+  bool Function()? shouldStop,
+  int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
+  int fetchConcurrency = kSrsSync2Concurrency,
+}) async {
+  // 1. 全部设备的 head：每台设备取代号最大的（同一代号的都要）。
+  final List<String> deviceDirs = <String>[
+    for (final SrsLocationEntry d in await location.list('devices'))
+      if (d.isFolder) 'devices/${d.name}',
+  ];
+  final List<List<String>> headPaths = await srsRunPooled(
+    deviceDirs,
+    kSrsSync2Concurrency,
+    (String dir) async {
+      int top = -1;
+      final Map<String, int> genOf = <String, int>{};
+      for (final SrsLocationEntry f in await location.list(dir)) {
+        final int? g = _headGen(f.name);
+        if (g == null) continue;
+        genOf[f.name] = g;
+        if (g > top) top = g;
+      }
+      return <String>[
+        for (final MapEntry<String, int> e in genOf.entries)
+          if (e.value == top) '$dir/${e.key}',
+      ];
+    },
+  );
+  final List<Uint8List> heads = <Uint8List>[
+    for (final Uint8List? b in await srsRunPooled(
+      <String>[for (final List<String> p in headPaths) ...p],
+      kSrsSync2Concurrency,
+      location.get,
+    ))
+      ?b,
+  ];
+
+  // 2. 定要拉的段 → 拉 → 收。
+  // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
+  final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
+    'op': 'plan',
+    if (progressId != null) 'location': progressId,
+  }, blobs: heads)).map;
+  if (plan['needsUpgrade'] == true) {
+    // 有设备的 head 声明的最低读者版本比本机新：内核没收它，这一轮整个停下（不收、不发、不写 head）。
+    report.needsUpgrade = true;
+    return false;
+  }
+  // 本机身份的段只用来比链找分叉点：内核在收段会话里跨批累积、收尾才换身份（[SrsSync2Host.sync2IngestBegin]），
+  // 所以它们和别的段一样受字节预算约束。
+  final List<String> wanted = <String>[
+    for (final Object? f in (plan['fetch'] as List?) ?? const <Object?>[])
+      for (final Object? name
+          in ((f! as Map)['files'] as List?) ?? const <Object?>[])
+        name! as String,
+  ];
+  // 分批拉、分批收（首次同步一台老设备可能是几千个段）：每批独立提交，中途断网 / 被杀 / 关库都只丢在途
+  // 那一批（已收的进了本机投影或因果缓冲，plan 下一轮不再要它们）；写锁每批只占一小会儿，复习写入不被
+  // 整轮挡住；返回给 Dart 的投影变化也按批解析，不会一次把几十万条事件压在 UI isolate 上。中途收手不收尾：
+  // 分叉点可能还没看全，不换身份，下一轮 plan 照样再要本机身份的段。
+  void absorb(Map<String, Object?> r) {
+    report.applied += (r['applied'] as int?) ?? 0;
+    report.pending = (r['pending'] as int?) ?? 0;
+    report.fork = report.fork || r['fork'] == true;
+    report.changed =
+        report.changed ||
+        (((r['marks'] as Map?)?['landed'] as int?) ?? 0) > 0 ||
+        ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
+        ((r['changed'] as List?)?.isNotEmpty ?? false);
+    report.errors.addAll(<String>[
+      for (final Object? x in (r['errors'] as List?) ?? const <Object?>[]) '$x',
+    ]);
+  }
+
+  if (wanted.isNotEmpty) {
+    int done = 0;
+    onFetchProgress?.call(0, wanted.length);
+    await host.sync2IngestBegin();
+    await for (final SrsFetchedBatch batch in srsFetchInBatches(
+      wanted,
+      fetch: (String path) => srsFetchSegment(location, path),
+      budgetBytes: ingestBudgetBytes,
+      concurrency: fetchConcurrency,
+    )) {
+      // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
+      if (batch.segments.isNotEmpty) {
+        absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
+      }
+      done += batch.covered;
+      onFetchProgress?.call(done, wanted.length);
+      if (shouldStop?.call() ?? false) {
+        report.error = kSrsSync2Stopped;
+        return false;
+      }
+    }
+    absorb(await host.sync2IngestFinish());
+  } else if (plan['finishPending'] == true) {
+    // 上一轮收段被打断在收尾之前：受影响的卡还在内核的待重放集合里（审查 S-4），这一轮没段可拉也收个尾。
+    await host.sync2IngestBegin();
+    absorb(await host.sync2IngestFinish());
+  }
+  return true;
 }
 
 List<String> _pathsOf(Object? list) => <String>[
