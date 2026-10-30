@@ -282,6 +282,30 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
             await controller.stopPlayRange();
           }
         },
+        // 本机文件才画波形（在线流 / 远端没有可随机读的本机字节，沿用区间条 + 微调）。
+        // 只读 [startMs, endMs) 这一小段音频（ffmpeg 输入端 seek），当前选中的音轨。
+        loadWaveform: localSource == null
+            ? null
+            : (int startMs, int endMs) async {
+                if (!identical(_controller, controller)) return null;
+                final List<double> frames = await extractAudioEnergyEnvelope(
+                  videoPath: localSource,
+                  windowMs: kSubtitleWaveformWindowMs,
+                  audioStreamIndex: controller.currentAudioStreamIndex,
+                  audioStreamCount: controller.realAudioStreamCount,
+                  limitMs: endMs - startMs,
+                  startMs: startMs,
+                );
+                if (frames.isEmpty) return null;
+                return AdvancedMiningWaveform(
+                  startMs: startMs,
+                  endMs: endMs,
+                  buckets: downsampleEnergyEnvelope(
+                    frames,
+                    kAdvancedMiningWaveformBuckets,
+                  ),
+                );
+              },
       ),
       videoImage: AdvancedMiningVideoImageSection(
         modes: modes,

@@ -110,6 +110,7 @@ List<String> buildFfmpegPcmEnvelopeArgs({
   int? audioStreamIndex,
   int? audioStreamCount,
   int? limitSeconds,
+  int? startMs,
   String? metadataFilePath,
 }) {
   final int win = windowMs <= 0 ? kAudioEnergyWindowMs : windowMs;
@@ -122,6 +123,11 @@ List<String> buildFfmpegPcmEnvelopeArgs({
     audioStreamCount: audioStreamCount,
   );
   final List<String> args = <String>['-hide_banner', '-nostats'];
+  // 只读从 startMs 起的一段（高级制卡的句子波形：整部片不必读）。输入端 seek，与 `-t`
+  // 同属输入选项；包络第 i 帧覆盖 `startMs + i * windowMs`。
+  if (startMs != null && startMs > 0) {
+    args.addAll(<String>['-ss', (startMs / 1000).toStringAsFixed(3)]);
+  }
   // 性能截断：只读前 limitSeconds 秒。必须是输入选项（-i 之前），作输出选项会被末尾
   // 大帧 asetnsamples 拖过上界、包络比时间窗长，见上方文档。
   if (limitSeconds != null && limitSeconds > 0) {
@@ -248,6 +254,7 @@ Future<List<double>> extractAudioEnergyEnvelope({
   int? audioStreamIndex,
   int? audioStreamCount,
   int? limitMs = kSubtitleAutoAlignProbeLimitMs,
+  int? startMs,
 }) async {
   // 没有本机媒体字节的路径（网络流 / `.strm` / DVD title）不碰文件系统，与
   // video_member_file.dart 的 hasLocalMediaFile 同一判据；其余一次 async stat 拿
@@ -279,6 +286,7 @@ Future<List<double>> extractAudioEnergyEnvelope({
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: audioStreamCount,
         limitSeconds: limitSeconds,
+        startMs: startMs,
         metadataFilePath: metadataFile.path,
       ),
       timeout,

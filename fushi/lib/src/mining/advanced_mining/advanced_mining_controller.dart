@@ -409,6 +409,28 @@ class AdvancedMiningController extends ChangeNotifier {
     unawaited(refreshAudioWindow());
   }
 
+  /// 句子音频的最短选区（毫秒）：波形上拖到比这还短就拒绝，免得拖出一段空音频。
+  static const int kMinAudioWindowMs = 200;
+
+  /// 把音频区间直接设成 [startMs, endMs)（宿主时间轴毫秒，波形上拖动的结果）。
+  ///
+  /// 与 [nudgeAudioEdge] 同一对偏移：差值并进 [audioStartDeltaMs] / [audioEndDeltaMs]，
+  /// 试听、区间条、写卡都按这一对走（BUG-2196 ②），所以拖动与微调按钮可以混用。没有
+  /// 已知区间（这句没音频）/ 已锁定 / 选区短于 [kMinAudioWindowMs] 不动。
+  void setAudioWindow({required int startMs, required int endMs}) {
+    if (locked) return;
+    final AdvancedMiningAudioWindow? w = audioWindow;
+    if (w == null || endMs - startMs < kMinAudioWindowMs) return;
+    final int startDelta = startMs - w.startMs;
+    final int endDelta = endMs - w.endMs;
+    if (startDelta == 0 && endDelta == 0) return;
+    audioStartDeltaMs += startDelta;
+    audioEndDeltaMs += endDelta;
+    audioWindow = AdvancedMiningAudioWindow(startMs: startMs, endMs: endMs);
+    _notify();
+    unawaited(refreshAudioWindow());
+  }
+
   /// 试听 / 停止。返回 false = 宿主说这段没有可试听的音频（调用方如实提示）。
   ///
   /// 每次都把**当前**偏移交给宿主重新算区间，而不是复用打开时的那一段：用户在这里

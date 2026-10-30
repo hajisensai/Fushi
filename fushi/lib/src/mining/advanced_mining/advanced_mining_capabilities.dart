@@ -83,6 +83,24 @@ class AdvancedMiningAudioWindow {
   int get durationMs => endMs - startMs;
 }
 
+/// 句子音频区间周围的一段音频能量包络，供对话框画波形、让用户直接拖起止点。
+///
+/// [startMs] / [endMs] 是这段包络覆盖的宿主时间轴区间（与 [AdvancedMiningAudioWindow]
+/// 同一根轴）；[buckets] 是均分这段区间的 0..1 归一化柱高。
+class AdvancedMiningWaveform {
+  const AdvancedMiningWaveform({
+    required this.startMs,
+    required this.endMs,
+    required this.buckets,
+  });
+
+  final int startMs;
+  final int endMs;
+  final List<double> buckets;
+
+  bool get isUsable => buckets.isNotEmpty && endMs > startMs;
+}
+
 /// 句子音频分区。所有回调都收**本次的起止偏移**（对话框持有，确认时并进覆盖项），
 /// 宿主据此算出与写卡完全一致的区间——试听与写卡同源（BUG-2196 ②）。
 class AdvancedMiningAudioSection {
@@ -91,6 +109,7 @@ class AdvancedMiningAudioSection {
     required this.preview,
     required this.stopPreview,
     this.nudgeStepMs = 250,
+    this.loadWaveform,
   });
 
   /// 当前会写进卡片的区间；null = 这句没有可用音频（对话框显示「无音频」，不给微调）。
@@ -114,6 +133,12 @@ class AdvancedMiningAudioSection {
 
   /// 起止微调的步长。
   final int nudgeStepMs;
+
+  /// 取 [startMs, endMs)（宿主时间轴毫秒）的音频能量波形；null 回调 = 这个来源画不出
+  /// 波形（远端流 / 没有本机文件），对话框沿用区间条 + 微调按钮；回调返回 null 或空
+  /// 波形（ffmpeg 不可用 / 超时）同样降级，不报错。
+  final Future<AdvancedMiningWaveform?> Function(int startMs, int endMs)?
+  loadWaveform;
 }
 
 /// 视频图片分区。

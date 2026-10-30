@@ -8,6 +8,7 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_waveform.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -796,6 +797,11 @@ class _AudioDetails extends StatelessWidget {
         ),
       ],
     );
+    final Widget rangeBar = AdvancedMiningRangeBar(
+      window: w,
+      startDeltaMs: c.audioStartDeltaMs,
+      endDeltaMs: c.audioEndDeltaMs,
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -808,11 +814,13 @@ class _AudioDetails extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: AdvancedMiningRangeBar(
-                window: w,
-                startDeltaMs: c.audioStartDeltaMs,
-                endDeltaMs: c.audioEndDeltaMs,
-              ),
+              child: c.audioSection!.loadWaveform == null
+                  ? rangeBar
+                  // 本机文件：画波形、直接拖起止点；抽不出来时自己退回区间条。
+                  : AdvancedMiningWaveformSelector(
+                      controller: c,
+                      fallback: rangeBar,
+                    ),
             ),
           ],
         ),
