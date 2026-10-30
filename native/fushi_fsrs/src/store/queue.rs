@@ -204,8 +204,9 @@ impl StudyHub {
         let h = Arc::clone(hub);
         c.create_scalar_function("srs_study_touch", 3, FunctionFlags::SQLITE_UTF8, move |ctx| {
             let kind = ctx.get::<i64>(0)?;
-            let profile = ctx.get::<String>(1)?;
-            let id = ctx.get::<String>(2)?;
+            // ID 列存编码后的值（store/ids.rs）：这里要文本。
+            let profile = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
+            let id = crate::store::ids::text(ctx.get_raw(2)).unwrap_or_default();
             let mut t = lock(&h.touched);
             // 卡两边都要；日志只有复习队列要；笔记只有浏览要。
             if kind != TOUCH_NOTE {
