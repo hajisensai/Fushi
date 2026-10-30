@@ -34,12 +34,28 @@ fn footprint_upgrade_file() {
             (n, h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>())
         })
     };
+    let t = std::time::Instant::now();
     let before = digest();
+    println!("FOOTPRINT read all projection json before in {} ms", t.elapsed().as_millis());
     let t = std::time::Instant::now();
     let core = SrsCore::open(Path::new(&path)).unwrap();
     drop(core);
     println!("FOOTPRINT upgraded {path} in {} ms", t.elapsed().as_millis());
+    let t = std::time::Instant::now();
     assert_eq!(digest(), before, "projection json changed by the upgrade");
+    println!("FOOTPRINT read all projection json after in {} ms", t.elapsed().as_millis());
+    // 拼回本身的开销：同样扫一遍、只读存储列。
+    let c = rusqlite::Connection::open(&path).unwrap();
+    let t = std::time::Instant::now();
+    let mut n = 0usize;
+    for table in ["srs_review_logs", "srs_field_edits"] {
+        let mut s = c.prepare(&format!("SELECT jslim FROM {table} ORDER BY rowid")).unwrap();
+        let mut rows = s.query([]).unwrap();
+        while let Some(r) = rows.next().unwrap() {
+            n += r.get_ref(0).unwrap().as_str().unwrap().len();
+        }
+    }
+    println!("FOOTPRINT read all stored jslim in {} ms ({n} bytes)", t.elapsed().as_millis());
     println!("FOOTPRINT json digests {before:?}");
 }
 

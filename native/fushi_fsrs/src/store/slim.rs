@@ -45,13 +45,49 @@ pub(crate) const EDIT_KEYS: [(&str, &str); 7] = [
     ("s", "seq"),
 ];
 
-/// 列值 → 它在 JSON 里的文本（字符串转义同 serde_json；ID 列的 BLOB 先解码）。NULL / 浮点 / 别的类型不参与。
-fn frag(v: ValueRef<'_>) -> Option<String> {
+/// 列值在 JSON 里的文本接到 [out] 末尾（字符串转义同 serde_json；ID 列的 BLOB 先解码）。NULL / 浮点 / 别的类型不参与，
+/// 返回 false。一行的各列写进同一个缓冲（每行每列都走这里，不逐列分配）。
+fn write_frag(out: &mut String, v: ValueRef<'_>) -> bool {
     match v {
-        ValueRef::Integer(i) => Some(i.to_string()),
-        ValueRef::Text(_) | ValueRef::Blob(_) => super::ids::text(v).map(|s| serde_json::to_string(&s).expect("string")),
-        _ => None,
+        ValueRef::Integer(i) => {
+            use std::fmt::Write;
+            write!(out, "{i}").expect("string");
+            true
+        }
+        ValueRef::Text(t) => {
+            write_quoted(out, &String::from_utf8_lossy(t));
+            true
+        }
+        // 编码的 ID：十六进制与连字符不用转义。
+        ValueRef::Blob(b) => match <&[u8; 16]>::try_from(b) {
+            Ok(b) => {
+                out.push('"');
+                super::ids::unpack_into(b, out);
+                out.push('"');
+                true
+            }
+            Err(_) => false,
+        },
+        _ => false,
     }
+}
+
+/// JSON 字符串字面量（逐字节同 serde_json）：没有要转义的字符就直接加引号。
+fn write_quoted(out: &mut String, s: &str) {
+    if s.bytes().all(|c| c >= 0x20 && c != b'"' && c != b'\\') {
+        out.push('"');
+        out.push_str(s);
+        out.push('"');
+    } else {
+        out.push_str(&serde_json::to_string(s).expect("string"));
+    }
+}
+
+#[cfg(test)]
+fn quote(s: &str) -> String {
+    let mut out = String::new();
+    write_quoted(&mut out, s);
+    out
 }
 
 /// 顶层对象的成员：(键原文（不含引号）, 成员全文 `"k":v`)。不是紧凑的对象就 None。
@@ -115,7 +151,7 @@ fn members(s: &str) -> Option<Vec<(&str, &str)>> {
 
 /// 拼回：瘦 JSON 的成员与列的成员按键的字节序归并（列的键在瘦 JSON 里已有、或记为原文没有时不插）。不是瘦 JSON
 /// 原样返回。
-pub(crate) fn expand(stored: &str, keys: &[&str], frags: &[Option<String>]) -> String {
+pub(crate) fn expand<F: AsRef<str>>(stored: &str, keys: &[&str], frags: &[Option<F>]) -> String {
     let Some(rest) = stored.strip_prefix(SLIM) else { return stored.to_owned() };
     let Some(brace) = rest.find('{') else { return rest.to_owned() };
     let (absent, slim) = rest.split_at(brace);
@@ -123,36 +159,44 @@ pub(crate) fn expand(stored: &str, keys: &[&str], frags: &[Option<String>]) -> S
     let mut add: Vec<(&str, &str)> = keys
         .iter()
         .zip(frags)
-        .filter_map(|(k, f)| f.as_deref().map(|f| (*k, f)))
+        .filter_map(|(k, f)| f.as_ref().map(|f| (*k, f.as_ref())))
         .filter(|(k, _)| !have.iter().any(|(h, _)| h == k) && !absent.split(',').any(|a| a == *k))
         .collect();
     add.sort_by(|a, b| a.0.cmp(b.0));
     let mut out = String::with_capacity(slim.len() + add.iter().map(|(k, f)| k.len() + f.len() + 4).sum::<usize>());
     out.push('{');
     let mut first = true;
-    let mut push = |out: &mut String, m: &str| {
+    let mut sep = |out: &mut String| {
         if !first {
             out.push(',');
         }
         first = false;
-        out.push_str(m);
+    };
+    let member = |out: &mut String, k: &str, f: &str| {
+        out.push('"');
+        out.push_str(k);
+        out.push_str("\":");
+        out.push_str(f);
     };
     let mut a = add.into_iter().peekable();
     for (k, m) in have {
         while let Some((ak, af)) = a.next_if(|(ak, _)| *ak < k) {
-            push(&mut out, &format!("\"{ak}\":{af}"));
+            sep(&mut out);
+            member(&mut out, ak, af);
         }
-        push(&mut out, m);
+        sep(&mut out);
+        out.push_str(m);
     }
     for (ak, af) in a {
-        push(&mut out, &format!("\"{ak}\":{af}"));
+        sep(&mut out);
+        member(&mut out, ak, af);
     }
     out.push('}');
     out
 }
 
 /// 原文 → 存储值：去掉与列逐字节相同的键；拼回与原文不同（非规范 / 不一致）就存原文。
-pub(crate) fn pack(full: &str, keys: &[&str], frags: &[Option<String>]) -> String {
+pub(crate) fn pack<F: AsRef<str>>(full: &str, keys: &[&str], frags: &[Option<F>]) -> String {
     let Some(have) = members(full) else { return full.to_owned() };
     let mut slim = String::with_capacity(full.len());
     slim.push(SLIM);
@@ -167,7 +211,7 @@ pub(crate) fn pack(full: &str, keys: &[&str], frags: &[Option<String>]) -> Strin
     let mut first = true;
     let mut dropped = false;
     for (k, m) in have {
-        let same = keys.iter().zip(frags).any(|(kk, f)| *kk == k && f.as_deref().is_some_and(|f| m.len() == k.len() + 3 + f.len() && m.ends_with(f)));
+        let same = keys.iter().zip(frags).any(|(kk, f)| *kk == k && f.as_ref().map(AsRef::as_ref).is_some_and(|f| m.len() == k.len() + 3 + f.len() && m.ends_with(f)));
         if same {
             dropped = true;
             continue;
@@ -206,7 +250,14 @@ pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
                 ValueRef::Null => return Ok(None),
                 _ => return Err(rusqlite::Error::UserFunctionError("json must be text".into())),
             };
-            let frags: Vec<Option<String>> = (1..=keys.len()).map(|i| frag(ctx.get_raw(i))).collect();
+            let mut buf = String::with_capacity(160);
+            let spans: Vec<Option<(usize, usize)>> = (1..=keys.len())
+                .map(|i| {
+                    let start = buf.len();
+                    write_frag(&mut buf, ctx.get_raw(i)).then(|| (start, buf.len()))
+                })
+                .collect();
+            let frags: Vec<Option<&str>> = spans.iter().map(|x| x.map(|(a, b)| &buf[a..b])).collect();
             Ok(Some(if unpack { expand(s, &keys, &frags) } else { pack(s, &keys, &frags) }))
         })?;
     }
@@ -322,6 +373,13 @@ mod tests {
         assert!(slim.starts_with('~') && slim.len() < full.len() / 2 + 60, "{slim}");
         assert_eq!(slim, r#"~{"fv":1,"hlc":"1:0:dart","res":{"ivl":0,"q":[1,{"x":"}"}]},"ts":"anchored","utcOff":0}"#);
         assert_eq!(expand(&slim, &keys, &frags), full);
+    }
+
+    #[test]
+    fn quoting_matches_serde_json() {
+        for s in ["", "abc", "a\"b", "a\\b", "tab\there", "\u{1}", "例文", "\u{7f}", "0193a1b2-0000-7000-8000-00000000beef"] {
+            assert_eq!(quote(s), serde_json::to_string(s).unwrap(), "{s:?}");
+        }
     }
 
     #[test]
