@@ -1067,10 +1067,10 @@ impl Session {
             let mut stmt = c.prepare_cached(q).map_err(sql)?;
             let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
             let mut cur: Option<String> = None;
-            let mut edits: Vec<(String, Option<i64>)> = Vec::new();
-            let flush = |id: Option<String>, edits: &mut Vec<(String, Option<i64>)>, s: &mut Session| -> Result<(), String> {
+            let mut edits: Vec<(String, Option<i64>, Option<registers::EditCols>)> = Vec::new();
+            let flush = |id: Option<String>, edits: &mut Vec<(String, Option<i64>, Option<registers::EditCols>)>, s: &mut Session| -> Result<(), String> {
                 let Some(id) = id else { return Ok(()) };
-                let stored: Vec<StoredEdit<'_>> = edits.iter().map(|(j, t)| (j.as_str(), *t)).collect();
+                let stored: Vec<StoredEdit<'_>> = edits.iter().map(|(j, t, c)| (j.as_str(), *t, c.as_ref())).collect();
                 let (values, modified) = registers::note_browse_values(&stored)?;
                 edits.clear();
                 let Some(&slot) = s.note_at.get(&id) else { return Ok(()) };
@@ -1089,11 +1089,14 @@ impl Session {
                     flush(cur.take(), &mut edits, s)?;
                     cur = Some(id);
                 }
-                edits.push((r.get(1).map_err(sql)?, r.get(2).map_err(sql)?));
+                let (j, cols) = super::slim::edit_row(r, 2).map_err(sql)?;
+                edits.push((j, r.get(1).map_err(sql)?, cols));
             }
             flush(cur.take(), &mut edits, s)
         };
-        const SELECT: &str = "SELECT srs_idt(f.entity_id) AS entity_id, f.json, s.server_time FROM srs_field_edits f \
+        // 修改记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`。
+        const SELECT: &str = "SELECT srs_idt(f.entity_id) AS entity_id, s.server_time, \
+             f.jslim, f.id, f.profile_uid, f.entity_kind, f.entity_id, f.field_key, f.writer_id, f.seq FROM srs_field_edits f \
              LEFT JOIN srs_event_local s ON s.event_id = f.id WHERE f.entity_kind = 'note'";
         match notes {
             None => {

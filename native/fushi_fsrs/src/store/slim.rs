@@ -264,6 +264,105 @@ pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// 热路径读修改记录不经生成列 `json`（逐行拼回再整段解析）：读存储的 `jslim` 与这些列，`registers` 解析瘦 JSON 后
+/// 从列补去掉的键。SELECT 里写在别名 `f` 的表上，[edit_row] 从第 [at] 列起取。
+pub(crate) const EDIT_READ: &str = "f.jslim, f.id, f.profile_uid, f.entity_kind, f.entity_id, f.field_key, f.writer_id, f.seq";
+
+/// 日志同 [EDIT_READ]（别名 `l`），[log_row] 从第 [at] 列起取。
+pub(crate) const LOG_READ: &str =
+    "l.jslim, l.id, l.profile_uid, l.card_id, l.kind, l.rating, l.occurred_at, l.review_type, l.origin, l.duration_ms";
+
+/// 一列在拼回里的取值：整数 / 文本（ID 的 BLOB 已解码）/ 不参与（NULL 等，与 [write_frag] 同一判据）。
+enum Col {
+    Int(i64),
+    Str(String),
+    None,
+    /// 拼回会写成别的样子（浮点、长度不对的 BLOB……）：不按类型读，整条拼回原文。
+    Odd,
+}
+
+fn col(v: ValueRef<'_>) -> Col {
+    match v {
+        ValueRef::Integer(i) => Col::Int(i),
+        ValueRef::Null => Col::None,
+        ValueRef::Text(_) | ValueRef::Blob(_) => super::ids::text(v).map_or(Col::Odd, Col::Str),
+        ValueRef::Real(_) => Col::Odd,
+    }
+}
+
+/// 一行的存储值与 [n] 个列（从第 [at] 列起）；有列不是读者预期的类型时直接拼回原文（返回的列是 None）。
+fn read_row<T>(
+    r: &rusqlite::Row<'_>,
+    at: usize,
+    n: usize,
+    keys: &[&str],
+    typed: impl FnOnce(&mut Vec<Col>) -> Option<T>,
+) -> rusqlite::Result<(String, Option<T>)> {
+    let stored: String = r.get(at)?;
+    if !stored.starts_with(SLIM) {
+        return Ok((stored, None));
+    }
+    let mut cols: Vec<Col> = (1..=n).map(|i| r.get_ref(at + i).map(col)).collect::<rusqlite::Result<_>>()?;
+    if let Some(t) = typed(&mut cols) {
+        return Ok((stored, Some(t)));
+    }
+    let mut buf = String::new();
+    let spans: Vec<Option<(usize, usize)>> = (1..=n)
+        .map(|i| {
+            let start = buf.len();
+            write_frag(&mut buf, r.get_ref(at + i).expect("column")).then(|| (start, buf.len()))
+        })
+        .collect();
+    let frags: Vec<Option<&str>> = spans.iter().map(|x| x.map(|(a, b)| &buf[a..b])).collect();
+    Ok((expand(&stored, keys, &frags), None))
+}
+
+fn take_str(c: &mut Col) -> Option<String> {
+    match std::mem::replace(c, Col::None) {
+        Col::Str(s) => Some(s),
+        _ => None,
+    }
+}
+
+fn int(c: &Col) -> Option<i64> {
+    match c {
+        Col::Int(i) => Some(*i),
+        _ => None,
+    }
+}
+
+/// [EDIT_READ] 那 8 列 → (存储值, 列)；列为 None 时存储值已是原文。
+pub(crate) fn edit_row(r: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<(String, Option<crate::registers::EditCols>)> {
+    read_row(r, at, 7, &keys_of(&EDIT_KEYS), |c| {
+        Some(crate::registers::EditCols {
+            id: take_str(&mut c[0])?,
+            k: take_str(&mut c[2])?,
+            e: take_str(&mut c[3])?,
+            f: take_str(&mut c[4])?,
+            w: take_str(&mut c[5])?,
+            s: int(&c[6])?,
+        })
+    })
+}
+
+/// [LOG_READ] 那 10 列 → (存储值, 列)；列为 None 时存储值已是原文。
+pub(crate) fn log_row(r: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<(String, Option<crate::history::LogCols>)> {
+    read_row(r, at, 9, &keys_of(&LOG_KEYS), |c| {
+        if !matches!(c[1], Col::Str(_)) || !matches!(c[2], Col::Str(_)) || !matches!(c[4], Col::Int(_) | Col::None) {
+            return None;
+        }
+        Some(crate::history::LogCols {
+            id: take_str(&mut c[0])?,
+            kind: take_str(&mut c[3])?,
+            rating: int(&c[4]),
+            at: int(&c[5])?,
+            rtype: take_str(&mut c[6])?,
+            origin: take_str(&mut c[7])?,
+            dur: int(&c[8])?,
+        })
+    })
+}
+
 /// 生成列的表达式。
 fn json_expr(table: &str) -> Option<String> {
     let (f, keys): (&str, &[(&str, &str)]) = match table {
@@ -375,6 +474,56 @@ mod tests {
         assert_eq!(expand(&slim, &keys, &frags), full);
     }
 
+    /// 热路径读者从「瘦存 + 列」解析（registers `EditCols`），与解析拼回的原文得到同一个寄存器值；原文缺的键
+    /// （这里的 `id`）不从列补。
+    #[test]
+    fn registers_read_slim_edits_with_their_columns() {
+        use crate::registers::{register_value, EditCols};
+        let keys = keys_of(&EDIT_KEYS);
+        let cols = EditCols { id: "e1".into(), k: "deck".into(), e: "D\"1".into(), f: "retention".into(), w: "w1".into(), s: 7 };
+        let s = |x: &str| Some(serde_json::to_string(x).unwrap());
+        let frags = vec![s(&cols.id), s("p"), s(&cols.k), s(&cols.e), s(&cols.f), s(&cols.w), Some("7".into())];
+        let full = r#"{"e":"D\"1","f":"retention","hlc":"1700000000000:0:w1","k":"deck","p":"p","s":7,"ts":"anchored","v":0.85,"w":"w1"}"#;
+        let slim = pack(full, &keys, &frags);
+        assert_eq!(slim, r#"~id{"hlc":"1700000000000:0:w1","ts":"anchored","v":0.85}"#);
+        assert_eq!(expand(&slim, &keys, &frags), full);
+        let a = register_value(&[(full, None, None)], "retention").unwrap();
+        let b = register_value(&[(slim.as_str(), None, Some(&cols))], "retention").unwrap();
+        assert_eq!(a, b);
+        assert_eq!(b, serde_json::json!(0.85));
+        // 瘦存却没给列：报错，不当成缺键的原文。
+        assert!(register_value(&[(slim.as_str(), None, None)], "retention").is_err());
+    }
+
+    /// 日志同理：历史状态与统计投影从「瘦存 + 列」算，与从原文算相同。
+    #[test]
+    fn history_reads_slim_logs_with_their_columns() {
+        use crate::history::{state_from_json, state_from_stored, stats_from_json, stats_from_stored, LogCols};
+        let keys = keys_of(&LOG_KEYS);
+        let s = |x: &str| Some(serde_json::to_string(x).unwrap());
+        let day = 86_400_000i64;
+        let mk = |id: &str, at: i64, rating: i64, res: &str| {
+            let full = format!(
+                r#"{{"at":{at},"card":"c1","dur":1500,"hlc":"{at}:0:w","id":"{id}","kind":"review","p":"p","rating":{rating},"res":{res},"rtype":"review","utcOff":540}}"#
+            );
+            let cols = LogCols { id: id.into(), kind: "review".into(), rating: Some(rating), at, rtype: "review".into(), origin: "local".into(), dur: 1500 };
+            let frags = vec![s(id), s("p"), s("c1"), s("review"), Some(rating.to_string()), Some(at.to_string()), s("review"), s("local"), Some("1500".into())];
+            let slim = pack(&full, &keys, &frags);
+            assert!(slim.starts_with("~origin{"), "{slim}");
+            assert_eq!(expand(&slim, &keys, &frags), full);
+            (full, slim, cols)
+        };
+        let logs = [
+            mk("a", day, 3, r#"{"queue":"review","ivl":5,"dueDay":105}"#),
+            mk("b", 2 * day, 1, r#"{"queue":"review","ivl":30,"dueDay":130}"#),
+        ];
+        let full: Vec<&str> = logs.iter().map(|l| l.0.as_str()).collect();
+        let stored: Vec<crate::history::StoredLog<'_>> = logs.iter().map(|l| (l.1.as_str(), None, Some(&l.2))).collect();
+        assert_eq!(state_from_json(&full, &[None, None]).unwrap(), state_from_stored(&stored).unwrap());
+        assert_eq!(stats_from_json(&full, &[None, None]).unwrap(), stats_from_stored(&stored).unwrap());
+        assert!(state_from_stored(&[(logs[0].1.as_str(), None, None)]).is_err());
+    }
+
     #[test]
     fn quoting_matches_serde_json() {
         for s in ["", "abc", "a\"b", "a\\b", "tab\there", "\u{1}", "例文", "\u{7f}", "0193a1b2-0000-7000-8000-00000000beef"] {
@@ -416,3 +565,4 @@ mod tests {
         assert_eq!(pack(r#"{"id":"a1","at":5}"#, &keys, &frags), r#"{"id":"a1","at":5}"#);
     }
 }
+

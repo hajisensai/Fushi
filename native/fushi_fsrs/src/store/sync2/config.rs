@@ -61,8 +61,8 @@ pub fn edits_of(conn: &Connection, kind: &str, ids: &[String]) -> Result<HashMap
     Ok(out)
 }
 
-fn stored(v: &[(String, Option<i64>)]) -> Vec<(&str, Option<i64>)> {
-    v.iter().map(|(j, s)| (j.as_str(), *s)).collect()
+fn stored(v: &[(String, Option<i64>)]) -> Vec<crate::registers::StoredEdit<'_>> {
+    v.iter().map(|(j, s)| (j.as_str(), *s, None)).collect()
 }
 
 impl DeckTree {
@@ -225,7 +225,7 @@ pub fn card_deck(conn: &Connection, tree: &DeckTree, card: &str, note: Option<&s
         }
         None => None,
     };
-    let cards: Vec<(String, Vec<(&str, Option<i64>)>)> =
+    let cards: Vec<(String, Vec<crate::registers::StoredEdit<'_>>)> =
         lineage.iter().map(|c| (c.clone(), stored(by_card.get(c).map(Vec::as_slice).unwrap_or(&[])))).collect();
     let flags = card_lineage_flags(&cards, &[(card.to_owned(), note_deck, tree.default_deck.clone())])?;
     let dk = flags.first().and_then(|(_, f)| f["dk"].as_str().map(str::to_owned)).unwrap_or_else(|| tree.default_deck.clone());

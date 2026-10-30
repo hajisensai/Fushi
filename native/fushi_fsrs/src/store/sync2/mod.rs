@@ -764,19 +764,24 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
 pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, server: Option<i64>, now: i64, t: &mut Touched) -> Result<(), String> {
     let (eid, row) = edit_row(conn, profile, op, e)?;
     let ent = e.entity.text();
-    let existing: Vec<(String, String, Option<i64>)> = conn
+    // 现存记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`：每收一条修改记录都读一遍。
+    let existing: Vec<(String, String, Option<i64>, Option<crate::registers::EditCols>)> = conn
         .prepare_cached(
-            "SELECT srs_idt(f.id) AS id, f.json, l.server_time FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
+            "SELECT srs_idt(f.id) AS id, l.server_time, f.jslim, f.id, f.profile_uid, f.entity_kind, f.entity_id, f.field_key, f.writer_id, f.seq \
+             FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
              WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2)",
         )
         .map_err(sql)?
-        .query_map(params![e.kind.wire(), ent], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .query_map(params![e.kind.wire(), ent], |r| {
+            let (j, cols) = crate::store::slim::edit_row(r, 2)?;
+            Ok((r.get(0)?, j, r.get(1)?, cols))
+        })
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     let row_text = canonical(&row);
-    let mut items: Vec<(&str, Option<i64>)> = existing.iter().map(|(_, j, s)| (j.as_str(), *s)).collect();
-    items.push((&row_text, server));
+    let mut items: Vec<crate::registers::StoredEdit<'_>> = existing.iter().map(|(_, j, s, c)| (j.as_str(), *s, c.as_ref())).collect();
+    items.push((&row_text, server, None));
     let (landed, deleted) = crate::registers::land_stored(&items, existing.len())?;
     if landed.first().copied() != Some(true) {
         return Ok(());
