@@ -9,6 +9,10 @@ license = "GPL-3.0-only"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# 测试构建之外也装 ID 绑定审计（store/ids.rs `audit`）：Dart 经桥跑的语句绑了文本 UUID 就报错。只给测试用的库。
+id_audit = ["rusqlite/trace"]
+
 [dependencies]
 # FSRS-7 还没发版：钉 fsrs-rs 主干的 git rev（Cargo.lock 锁死）。
 # 这个 rev 的 Cargo.toml 版本号仍写 6.6.2；FSRS-6 的数值要与 6.6.2 / Anki 26.09.3 一致（第 0 步对拍）。

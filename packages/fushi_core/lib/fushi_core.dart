@@ -23,6 +23,7 @@ export 'src/database/source_library_kind.dart';
 export 'src/database/stat_source_kind.dart';
 export 'src/database/sync_tombstone_kind.dart';
 export 'src/database/srs_database.dart';
+export 'src/database/srs_id_type.dart';
 export 'src/database/srs_tables.dart';
 export 'src/database/tables.dart';
 export 'src/database/tag_host_kind.dart';
