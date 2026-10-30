@@ -41,7 +41,7 @@ pub struct DeckTree {
 pub fn edits_of(conn: &Connection, kind: &str, ids: &[String]) -> Result<HashMap<String, Vec<(String, Option<i64>)>>, String> {
     let mut out: HashMap<String, Vec<(String, Option<i64>)>> = HashMap::new();
     for chunk in ids.chunks(400) {
-        let marks = vec!["?"; chunk.len()].join(",");
+        let marks = vec!["srs_id(?)"; chunk.len()].join(",");
         let sql = format!(
             "SELECT srs_idt(f.entity_id) AS entity_id, f.json, e.server_time FROM srs_field_edits f \
              LEFT JOIN srs_event_local e ON e.event_id = f.id \

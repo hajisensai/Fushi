@@ -222,7 +222,7 @@ pub(crate) const COLUMNS: &[(&str, &[&str])] = &[
     ("srs_unknown_events", &["id", "profile_uid"]),
     ("sync2_card_deck", &["card_id", "profile_uid", "deck_id"]),
     ("sync2_checkpoints", &["profile_uid"]),
-    ("sync2_conflicts", &["profile_uid", "entity"]),
+    ("sync2_conflicts", &["id", "profile_uid", "entity"]),
     ("sync2_devices", &["profile_uid"]),
     ("sync2_digest_buckets", &["profile_uid"]),
     ("sync2_edit_ops", &["edit_id", "profile_uid"]),

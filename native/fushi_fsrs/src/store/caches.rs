@@ -349,7 +349,7 @@ fn dupe_norm_of(n: &NoteInfo, t: Option<&TypeInfo>) -> String {
 pub(crate) fn backfill_dupe_norms(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<usize, String> {
     let ids = strings(c, "SELECT srs_idt(id) AS id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND dupe_norm IS NULL", &[profile])?;
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
-    let mut up = c.prepare_cached("UPDATE srs_notes_cache SET dupe_norm = ?1 WHERE id = ?2").map_err(sql)?;
+    let mut up = c.prepare_cached("UPDATE srs_notes_cache SET dupe_norm = ?1 WHERE id = srs_id(?2)").map_err(sql)?;
     for chunk in ids.chunks(CHUNK) {
         let views = note_infos(c, chunk)?;
         load_types(c, cfg, views.iter().map(|v| &v.note_type), &mut types)?;
@@ -771,7 +771,7 @@ impl Links {
             let q = format!(
                 "SELECT srs_idt(entity_id) AS entity_id, field_key FROM srs_field_edits WHERE field_key IN ({}) \
                  AND substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
-                marks(chunk.len())
+                plain_marks(chunk.len())
             );
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
@@ -975,7 +975,13 @@ fn refresh_stats(
 // ---------------------------------------------------------------- 读
 
 fn marks(n: usize) -> String {
-    vec!["?"; n].join(",")
+    // ID 列表（store/ids.rs）：srs_id 对非 UUID 的值原样返回。
+    vec!["srs_id(?)"; n].join(", ")
+}
+
+/// 非 ID 列的占位符列表。
+fn plain_marks(n: usize) -> String {
+    vec!["?"; n].join(", ")
 }
 
 fn wall_now() -> i64 {

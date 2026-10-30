@@ -438,7 +438,8 @@ impl LogState {
 }
 
 fn marks(n: usize) -> String {
-    vec!["?"; n].join(", ")
+    // ID 列表（store/ids.rs）：srs_id 对非 UUID 的值原样返回。
+    vec!["srs_id(?)"; n].join(", ")
 }
 
 // ------------------------------------------------------------------ 卡

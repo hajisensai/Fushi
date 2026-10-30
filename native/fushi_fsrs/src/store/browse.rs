@@ -128,7 +128,7 @@ impl Card {
     }
 }
 
-const CARD_COLUMNS: &str = "id, note_id, template_id, cloze_ord, deck_id, suspended, buried_until_day, flag, queue, \
+const CARD_COLUMNS: &str = "srs_idt(id), srs_idt(note_id), srs_idt(template_id), cloze_ord, srs_idt(deck_id), suspended, buried_until_day, flag, queue, \
      due_day, due_at, scheduled_days, reps, lapses, stability, difficulty, last_reviewed_at, anki_id";
 
 fn card_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Card> {
@@ -188,7 +188,7 @@ impl Note {
     }
 }
 
-const NOTE_COLUMNS: &str = "id, note_type_id, created_at, sort_field, tags_json, pending_decision, anki_id";
+const NOTE_COLUMNS: &str = "srs_idt(id), srs_idt(note_type_id), created_at, sort_field, tags_json, pending_decision, anki_id";
 
 fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     let tags: String = r.get(4)?;
@@ -2034,7 +2034,7 @@ mod tests {
             // 写连接上自动提交一条改动：COMMIT 已对读连接可见，守卫还没释放（没 settle）。浏览命令不在写连接上读
             // （没有挂着的 Drift 事务），所以持着守卫也照样走读连接。
             let w = d.core.writer().unwrap();
-            w.execute("UPDATE srs_notes_cache SET tags_json = '[\"zz\"]' WHERE id = ?1", [N1]).unwrap();
+            w.execute("UPDATE srs_notes_cache SET tags_json = '[\"zz\"]' WHERE id = srs_id(?1)", [N1]).unwrap();
             assert!(w.is_autocommit());
             assert_eq!(tags(&d), json!(["B", "t1", "zz"]), "the committed write is visible and must be reread");
             // 未提交的改动：读快照重读到的是旧值。

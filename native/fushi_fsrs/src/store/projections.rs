@@ -19,7 +19,7 @@ type LogsByCard = HashMap<String, Vec<(String, Option<i64>)>>;
 pub(super) fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
     let mut logs: LogsByCard = HashMap::with_capacity(cards.len());
     for chunk in cards.chunks(500) {
-        let marks = vec!["?"; chunk.len()].join(", ");
+        let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
         let sql = format!(
             "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
              LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks}) ORDER BY l.rowid"

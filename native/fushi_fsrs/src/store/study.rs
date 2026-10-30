@@ -186,7 +186,8 @@ const NEW_BY_POSITION: &str = "new_position IS NULL, new_position, note_created_
 const NEW_BY_FREQUENCY: &str = "freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id";
 
 fn marks(n: usize) -> String {
-    vec!["?"; n].join(", ")
+    // ID 列表（store/ids.rs）：srs_id 对非 UUID 的值原样返回。
+    vec!["srs_id(?)"; n].join(", ")
 }
 
 /// RWKV-Instant 合格的复习卡（按 R 升序，同 R 按 id）。与旧 Dart `_instantReviews` 同口径：
@@ -916,7 +917,7 @@ mod tests {
                         3 => ("hidden", Sql::Integer(rng.below(2) as i64)),
                         _ => ("stability", Sql::Real(rng.below(30) as f64 + 0.5)),
                     };
-                    exec(&core, &format!("UPDATE srs_cards_cache SET {col} = ? WHERE id = ?"), vec![v, Sql::Text(id)]);
+                    exec(&core, &format!("UPDATE srs_cards_cache SET {col} = ? WHERE id = srs_id(?)"), vec![v, Sql::Text(id)]);
                 }
                 38..=42 => {
                     let id = format!("c{:04}", cards.len());
@@ -925,7 +926,7 @@ mod tests {
                 }
                 43..=45 => {
                     let id = rng.pick(&cards).clone();
-                    exec(&core, "DELETE FROM srs_cards_cache WHERE id = ?", vec![Sql::Text(id)]);
+                    exec(&core, "DELETE FROM srs_cards_cache WHERE id = srs_id(?)", vec![Sql::Text(id)]);
                 }
                 46..=60 => {
                     // 作答：今天的日志（第一次学 / 复习），偶尔是别的种类或很久以前的。
@@ -936,7 +937,7 @@ mod tests {
                 }
                 61..=63 => {
                     let id = format!("l{}", 1 + rng.below(logs as u64));
-                    exec(&core, "DELETE FROM srs_review_logs WHERE id = ?", vec![Sql::Text(id)]);
+                    exec(&core, "DELETE FROM srs_review_logs WHERE id = srs_id(?)", vec![Sql::Text(id)]);
                 }
                 64..=66 => {
                     let d = *rng.pick(&DECKS);
@@ -1117,7 +1118,7 @@ mod tests {
             if ex.len() % 2 == 0 {
                 ex.push(expected.clone());
             } else {
-                exec(&core, "DELETE FROM srs_cards_cache WHERE id = ?", vec![Sql::Text(expected.clone())]);
+                exec(&core, "DELETE FROM srs_cards_cache WHERE id = srs_id(?)", vec![Sql::Text(expected.clone())]);
             }
         }
         core.close();
