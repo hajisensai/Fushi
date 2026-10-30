@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176324 (10372 per locale)
+/// Strings: 176341 (10373 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4877,6 +4877,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   String get game_library => 'Game library';
+  String get game_library_all => 'All games';
   String get game_library_download_queued => 'Queued';
   String get game_library_download_retrying => 'Retrying';
   String get game_library_downloading => 'Downloading';
@@ -6513,7 +6514,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get library_view_import => 'Import';
   String get library_view_media => 'Library';
   String get library_view_media_servers => 'Media servers';
-  String get library_view_mine => 'Library';
   String get library_view_online => 'Online';
   String get library_view_shelf => 'Shelf';
   String get library_view_sources => 'Sources';
@@ -7889,6 +7889,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get music_library_rescan => 'Rescan library';
   String get music_library_search_empty => 'No matches';
   String get music_library_search_hint => 'Search music';
+  String get music_library_tab => 'Library';
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   String get music_liked_title => 'Liked songs';
   String music_liked_unavailable({required Object name}) =>
@@ -22854,6 +22855,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get game_library => 'مكتبة الألعاب';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'في قائمة الانتظار';
   @override
   String get game_library_download_retrying => 'جارٍ إعادة المحاولة';
@@ -25595,8 +25598,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'الرف';
@@ -27956,6 +27957,8 @@ class _StringsAr extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -48116,6 +48119,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get game_library => 'Spielebibliothek';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'In Warteschlange';
   @override
   String get game_library_download_retrying => 'Erneuter Versuch';
@@ -50922,8 +50927,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Regal';
@@ -53329,6 +53332,8 @@ class _StringsDe extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -73657,6 +73662,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get game_library => 'Biblioteca de juegos';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'En cola';
   @override
   String get game_library_download_retrying => 'Reintentando';
@@ -76467,8 +76474,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Estante';
@@ -78877,6 +78882,8 @@ class _StringsEs extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -99263,6 +99270,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get game_library => 'Ludothèque';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'En file d\'attente';
   @override
   String get game_library_download_retrying => 'Nouvelle tentative';
@@ -102085,8 +102094,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Étagère';
@@ -104504,6 +104511,8 @@ class _StringsFr extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -124807,6 +124816,8 @@ class _StringsId extends _StringsEn {
   @override
   String get game_library => 'Pustaka game';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'Diantrikan';
   @override
   String get game_library_download_retrying => 'Mencoba ulang';
@@ -127585,8 +127596,6 @@ class _StringsId extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Rak';
@@ -129967,6 +129976,8 @@ class _StringsId extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -150172,6 +150183,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get game_library => 'Libreria giochi';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'In coda';
   @override
   String get game_library_download_retrying => 'Nuovo tentativo';
@@ -152972,8 +152985,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Scaffale';
@@ -155381,6 +155392,8 @@ class _StringsIt extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -175329,6 +175342,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get game_library => 'ゲームライブラリ';
   @override
+  String get game_library_all => 'すべてのゲーム';
+  @override
   String get game_library_download_queued => '待機中';
   @override
   String get game_library_download_retrying => '再試行中';
@@ -177977,8 +177992,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'ライブラリ';
-  @override
   String get library_view_online => 'オンライン';
   @override
   String get library_view_shelf => '本棚';
@@ -180275,6 +180288,8 @@ class _StringsJa extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'ライブラリ';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -199784,6 +199799,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get game_library => '게임 라이브러리';
   @override
+  String get game_library_all => '모든 게임';
+  @override
   String get game_library_download_queued => '대기 중';
   @override
   String get game_library_download_retrying => '재시도 중';
@@ -202429,8 +202446,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => '보관함';
-  @override
   String get library_view_online => '온라인';
   @override
   String get library_view_shelf => '서재';
@@ -204739,6 +204754,8 @@ class _StringsKo extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => '보관함';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -224593,6 +224610,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get game_library => 'Spelbibliotheek';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'In wachtrij';
   @override
   String get game_library_download_retrying => 'Opnieuw proberen';
@@ -227386,8 +227405,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Plank';
@@ -229775,6 +229792,8 @@ class _StringsNl extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -250049,6 +250068,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get game_library => 'Biblioteca de jogos';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'Na fila';
   @override
   String get game_library_download_retrying => 'Tentando novamente';
@@ -252854,8 +252875,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Estante';
@@ -255253,6 +255272,8 @@ class _StringsPtBr extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -275514,6 +275535,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get game_library => 'Библиотека игр';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'В очереди';
   @override
   String get game_library_download_retrying => 'Повторная попытка';
@@ -278311,8 +278334,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Полка';
@@ -280705,6 +280726,8 @@ class _StringsRu extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -300861,6 +300884,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get game_library => 'คลังเกม';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'อยู่ในคิว';
   @override
   String get game_library_download_retrying => 'กำลังลองใหม่';
@@ -303603,8 +303628,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'ชั้นหนังสือ';
@@ -305967,6 +305990,8 @@ class _StringsTh extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -326055,6 +326080,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get game_library => 'Oyun kütüphanesi';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'Sırada';
   @override
   String get game_library_download_retrying => 'Yeniden deneniyor';
@@ -328836,8 +328863,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Raf';
@@ -331217,6 +331242,8 @@ class _StringsTr extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -351362,6 +351389,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get game_library => 'Thư viện trò chơi';
   @override
+  String get game_library_all => 'All games';
+  @override
   String get game_library_download_queued => 'Đang chờ';
   @override
   String get game_library_download_retrying => 'Đang thử lại';
@@ -354127,8 +354156,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => 'Library';
-  @override
   String get library_view_online => 'Online';
   @override
   String get library_view_shelf => 'Kệ';
@@ -356500,6 +356527,8 @@ class _StringsVi extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => 'Library';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -375926,6 +375955,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get game_library => '游戏库';
   @override
+  String get game_library_all => '全部游戏';
+  @override
   String get game_library_download_queued => '排队中';
   @override
   String get game_library_download_retrying => '重试中';
@@ -378449,8 +378480,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get library_view_media_servers => '媒体服务器';
   @override
-  String get library_view_mine => '我的';
-  @override
   String get library_view_online => '在线';
   @override
   String get library_view_shelf => '书架';
@@ -380636,6 +380665,8 @@ class _StringsZhCn extends _StringsEn {
   String get music_library_search_empty => '没有匹配项';
   @override
   String get music_library_search_hint => '搜索音乐';
+  @override
+  String get music_library_tab => '曲库';
   @override
   String music_liked_login_hint({required Object name}) => '登录${name}后可用';
   @override
@@ -399228,6 +399259,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get game_library => '遊戲庫';
   @override
+  String get game_library_all => '全部遊戲';
+  @override
   String get game_library_download_queued => '排隊中';
   @override
   String get game_library_download_retrying => '重試中';
@@ -401790,8 +401823,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get library_view_media_servers => 'Media servers';
   @override
-  String get library_view_mine => '我的';
-  @override
   String get library_view_online => '線上';
   @override
   String get library_view_shelf => '書架';
@@ -404033,6 +404064,8 @@ class _StringsZhHk extends _StringsEn {
   String get music_library_search_empty => 'No matches';
   @override
   String get music_library_search_hint => 'Search music';
+  @override
+  String get music_library_tab => '曲庫';
   @override
   String music_liked_login_hint({required Object name}) => 'Sign in to ${name}';
   @override
@@ -422301,6 +422334,8 @@ extension on _StringsEn {
         return 'Launching games is only supported on Windows';
       case 'game_library':
         return 'Game library';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'Queued';
       case 'game_library_download_retrying':
@@ -424626,8 +424661,6 @@ extension on _StringsEn {
         return 'Library';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -426696,6 +426729,8 @@ extension on _StringsEn {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -443852,6 +443887,8 @@ extension on _StringsAr {
         return 'تشغيل الألعاب مدعوم فقط على Windows';
       case 'game_library':
         return 'مكتبة الألعاب';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'في قائمة الانتظار';
       case 'game_library_download_retrying':
@@ -446173,8 +446210,6 @@ extension on _StringsAr {
         return 'المكتبة';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -448243,6 +448278,8 @@ extension on _StringsAr {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -465431,6 +465468,8 @@ extension on _StringsDe {
         return 'Spiele starten wird nur unter Windows unterstützt';
       case 'game_library':
         return 'Spielebibliothek';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'In Warteschlange';
       case 'game_library_download_retrying':
@@ -467761,8 +467800,6 @@ extension on _StringsDe {
         return 'Bibliothek';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -469841,6 +469878,8 @@ extension on _StringsDe {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -487043,6 +487082,8 @@ extension on _StringsEs {
         return 'Iniciar juegos solo está soportado en Windows';
       case 'game_library':
         return 'Biblioteca de juegos';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'En cola';
       case 'game_library_download_retrying':
@@ -489370,8 +489411,6 @@ extension on _StringsEs {
         return 'Biblioteca';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -491449,6 +491488,8 @@ extension on _StringsEs {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -508660,6 +508701,8 @@ extension on _StringsFr {
         return 'Le lancement de jeux n\'est pris en charge que sous Windows';
       case 'game_library':
         return 'Ludothèque';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'En file d\'attente';
       case 'game_library_download_retrying':
@@ -510989,8 +511032,6 @@ extension on _StringsFr {
         return 'Bibliothèque';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -513067,6 +513108,8 @@ extension on _StringsFr {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -530258,6 +530301,8 @@ extension on _StringsId {
         return 'Meluncurkan game hanya didukung di Windows';
       case 'game_library':
         return 'Pustaka game';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'Diantrikan';
       case 'game_library_download_retrying':
@@ -532583,8 +532628,6 @@ extension on _StringsId {
         return 'Perpustakaan';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -534654,6 +534697,8 @@ extension on _StringsId {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -551834,6 +551879,8 @@ extension on _StringsIt {
         return 'L\'avvio dei giochi è supportato solo su Windows';
       case 'game_library':
         return 'Libreria giochi';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'In coda';
       case 'game_library_download_retrying':
@@ -554161,8 +554208,6 @@ extension on _StringsIt {
         return 'Libreria';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -556238,6 +556283,8 @@ extension on _StringsIt {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -573391,6 +573438,8 @@ extension on _StringsJa {
         return 'ゲームの起動は Windows でのみサポートされています';
       case 'game_library':
         return 'ゲームライブラリ';
+      case 'game_library_all':
+        return 'すべてのゲーム';
       case 'game_library_download_queued':
         return '待機中';
       case 'game_library_download_retrying':
@@ -575704,8 +575753,6 @@ extension on _StringsJa {
         return 'ライブラリ';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'ライブラリ';
       case 'library_view_online':
         return 'オンライン';
       case 'library_view_shelf':
@@ -577770,6 +577817,8 @@ extension on _StringsJa {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'ライブラリ';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -594861,6 +594910,8 @@ extension on _StringsKo {
         return '게임 실행은 Windows에서만 지원됩니다';
       case 'game_library':
         return '게임 라이브러리';
+      case 'game_library_all':
+        return '모든 게임';
       case 'game_library_download_queued':
         return '대기 중';
       case 'game_library_download_retrying':
@@ -597175,8 +597226,6 @@ extension on _StringsKo {
         return '라이브러리';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return '보관함';
       case 'library_view_online':
         return '온라인';
       case 'library_view_shelf':
@@ -599239,6 +599288,8 @@ extension on _StringsKo {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return '보관함';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -616384,6 +616435,8 @@ extension on _StringsNl {
         return 'Spellen starten wordt alleen ondersteund op Windows';
       case 'game_library':
         return 'Spelbibliotheek';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'In wachtrij';
       case 'game_library_download_retrying':
@@ -618712,8 +618765,6 @@ extension on _StringsNl {
         return 'Bibliotheek';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -620792,6 +620843,8 @@ extension on _StringsNl {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -637980,6 +638033,8 @@ extension on _StringsPtBr {
         return 'Iniciar jogos é suportado apenas no Windows';
       case 'game_library':
         return 'Biblioteca de jogos';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'Na fila';
       case 'game_library_download_retrying':
@@ -640306,8 +640361,6 @@ extension on _StringsPtBr {
         return 'Biblioteca';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -642384,6 +642437,8 @@ extension on _StringsPtBr {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -659576,6 +659631,8 @@ extension on _StringsRu {
         return 'Запуск игр поддерживается только на Windows';
       case 'game_library':
         return 'Библиотека игр';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'В очереди';
       case 'game_library_download_retrying':
@@ -661902,8 +661959,6 @@ extension on _StringsRu {
         return 'Библиотека';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -663980,6 +664035,8 @@ extension on _StringsRu {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -681146,6 +681203,8 @@ extension on _StringsTh {
         return 'การเปิดเกมรองรับบน Windows เท่านั้น';
       case 'game_library':
         return 'คลังเกม';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'อยู่ในคิว';
       case 'game_library_download_retrying':
@@ -683471,8 +683530,6 @@ extension on _StringsTh {
         return 'คลัง';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -685541,6 +685598,8 @@ extension on _StringsTh {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -702713,6 +702772,8 @@ extension on _StringsTr {
         return 'Oyun başlatma yalnızca Windows\'ta desteklenir';
       case 'game_library':
         return 'Oyun kütüphanesi';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'Sırada';
       case 'game_library_download_retrying':
@@ -705040,8 +705101,6 @@ extension on _StringsTr {
         return 'Kütüphane';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -707115,6 +707174,8 @@ extension on _StringsTr {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -724287,6 +724348,8 @@ extension on _StringsVi {
         return 'Khởi chạy trò chơi chỉ được hỗ trợ trên Windows';
       case 'game_library':
         return 'Thư viện trò chơi';
+      case 'game_library_all':
+        return 'All games';
       case 'game_library_download_queued':
         return 'Đang chờ';
       case 'game_library_download_retrying':
@@ -726611,8 +726674,6 @@ extension on _StringsVi {
         return 'Thư viện';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return 'Library';
       case 'library_view_online':
         return 'Online';
       case 'library_view_shelf':
@@ -728681,6 +728742,8 @@ extension on _StringsVi {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return 'Library';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':
@@ -745747,6 +745810,8 @@ extension on _StringsZhCn {
         return '启动游戏仅支持 Windows 桌面';
       case 'game_library':
         return '游戏库';
+      case 'game_library_all':
+        return '全部游戏';
       case 'game_library_download_queued':
         return '排队中';
       case 'game_library_download_retrying':
@@ -748054,8 +748119,6 @@ extension on _StringsZhCn {
         return '媒体库';
       case 'library_view_media_servers':
         return '媒体服务器';
-      case 'library_view_mine':
-        return '我的';
       case 'library_view_online':
         return '在线';
       case 'library_view_shelf':
@@ -750101,6 +750164,8 @@ extension on _StringsZhCn {
         return '没有匹配项';
       case 'music_library_search_hint':
         return '搜索音乐';
+      case 'music_library_tab':
+        return '曲库';
       case 'music_liked_login_hint':
         return ({required Object name}) => '登录${name}后可用';
       case 'music_liked_title':
@@ -767074,6 +767139,8 @@ extension on _StringsZhHk {
         return '啟動遊戲僅支持 Windows 桌面';
       case 'game_library':
         return '遊戲庫';
+      case 'game_library_all':
+        return '全部遊戲';
       case 'game_library_download_queued':
         return '排隊中';
       case 'game_library_download_retrying':
@@ -769384,8 +769451,6 @@ extension on _StringsZhHk {
         return '媒體庫';
       case 'library_view_media_servers':
         return 'Media servers';
-      case 'library_view_mine':
-        return '我的';
       case 'library_view_online':
         return '線上';
       case 'library_view_shelf':
@@ -771445,6 +771510,8 @@ extension on _StringsZhHk {
         return 'No matches';
       case 'music_library_search_hint':
         return 'Search music';
+      case 'music_library_tab':
+        return '曲庫';
       case 'music_liked_login_hint':
         return ({required Object name}) => 'Sign in to ${name}';
       case 'music_liked_title':

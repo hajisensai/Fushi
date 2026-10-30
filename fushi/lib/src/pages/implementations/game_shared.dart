@@ -233,7 +233,7 @@ class GameSectionTabs extends StatelessWidget {
   /// 页签的用户可读标签（顺序真相在 [kGameSectionTabOrder]）。
   static String _labelFor(GameSection section) => switch (section) {
     GameSection.dashboard => t.game_dashboard,
-    GameSection.library => t.game_library,
+    GameSection.library => t.game_library_all,
     // 页签用短标签「工作台」（中文顶栏标签 ≤4 字，TODO-2937 拍板）；
     // 页标题 / 设置导航项仍用全称 [game_capture_workbench]「捕获工作台」。
     GameSection.monitor => t.game_capture_workbench_tab,
@@ -326,7 +326,7 @@ class GameSectionTabs extends StatelessWidget {
         LibrarySectionTab<GameSection>(
           value: value,
           label: switch (candidate) {
-            LibrarySectionGroup.library => t.library_view_mine,
+            LibrarySectionGroup.library => t.game_library,
             LibrarySectionGroup.online =>
               members.length == 1
                   ? _labelFor(members.single)
