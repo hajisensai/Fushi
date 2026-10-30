@@ -768,7 +768,7 @@ mod tests {
         let json = json!({"p": P, "k": "deck", "e": entity, "f": key, "w": "w", "s": *n, "v": v, "hlc": format!("{}:0:w", 1_700_000_000_000i64 + *n)}).to_string();
         exec(
             core,
-            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) VALUES (?, ?, 'deck', ?, ?, 'w', ?, ?)",
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) VALUES (srs_id(?), srs_id(?), 'deck', srs_id(?), ?, 'w', ?, ?)",
             vec![Sql::Text(format!("e{n}")), Sql::Text(P.into()), Sql::Text(entity.into()), Sql::Text(key.into()), Sql::Integer(*n), Sql::Text(json)],
         );
     }
@@ -813,13 +813,13 @@ mod tests {
 
     const CARD_UPSERT: &str = "INSERT OR REPLACE INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, suspended, buried_until_day, \
          hidden, queue, due_day, due_at, stability, last_reviewed_at, scheduler, note_created_at, new_position, freq_rank) \
-         VALUES (?1, ?2, ?1, 't', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)";
+         VALUES (srs_id(?1), srs_id(?2), srs_id(?1), 't', srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)";
 
     fn log(core: &SrsCore, n: &mut i64, card: &str, at: i64, ty: &str, reps: i64, kind: &str) {
         *n += 1;
         exec(
             core,
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) VALUES (?, ?, ?, ?, 3, ?, ?, 'local', ?)",
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, 3, ?, ?, 'local', ?)",
             vec![
                 Sql::Text(format!("l{n}")),
                 Sql::Text(P.into()),
@@ -874,7 +874,7 @@ mod tests {
         let mut n = 0i64;
         let mut logs = 0i64;
         for d in DECKS {
-            exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (?, ?, 'deck', '{}')", vec![Sql::Text(d.into()), Sql::Text(P.into())]);
+            exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')", vec![Sql::Text(d.into()), Sql::Text(P.into())]);
         }
         for (d, parent) in [("RA", "R"), ("RA1", "RA"), ("RB", "R")] {
             edit(&core, &mut n, d, "parent", json!(parent));
@@ -1014,11 +1014,11 @@ mod tests {
         let path = dir.join("srs.db");
         let _ = std::fs::remove_file(&path);
         let core = SrsCore::open(&path).unwrap();
-        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', ?, 'deck', '{}')", vec![Sql::Text(P.into())]);
+        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', srs_id(?), 'deck', '{}')", vec![Sql::Text(P.into())]);
         for (id, stab) in [("weak", 0.5), ("strong", 90.0)] {
             exec(
                 &core,
-                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (?, ?, 'n', 't', 'O', 'review', 0, ?, ?)",
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (srs_id(?), srs_id(?), 'n', 't', 'O', 'review', 0, ?, ?)",
                 vec![Sql::Text(id.into()), Sql::Text(P.into()), Sql::Real(stab), Sql::Integer(now - 10 * 86_400_000)],
             );
         }
@@ -1061,7 +1061,7 @@ mod tests {
         let path = dir.join("srs.db");
         let _ = std::fs::remove_file(&path);
         let core = SrsCore::open(&path).unwrap();
-        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', ?, 'deck', '{}')", vec![Sql::Text(P.into())]);
+        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', srs_id(?), 'deck', '{}')", vec![Sql::Text(P.into())]);
         let mut want: Vec<(Option<f64>, String)> = Vec::new();
         for i in 0..3000 {
             let id = format!("d{:05}", rng.below(1_000_000));
@@ -1081,7 +1081,7 @@ mod tests {
             };
             exec(
                 &core,
-                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (?, ?, 'n', 't', 'O', 'review', 0, ?, ?)",
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (srs_id(?), srs_id(?), 'n', 't', 'O', 'review', 0, ?, ?)",
                 vec![Sql::Text(id.clone()), Sql::Text(P.into()), stab.map_or(Sql::Null, Sql::Real), last.map_or(Sql::Null, Sql::Integer)],
             );
             want.push((crate::store::queue::sql_r(now, last, stab), id));

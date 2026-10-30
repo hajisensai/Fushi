@@ -2006,7 +2006,7 @@ mod tests {
             w.execute_batch("UPDATE srs_notes_cache SET dupe_norm = NULL").unwrap();
             // 缓存孤行（身份记录已不在）：补成空串。
             w.execute(
-                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at) VALUES ('orphan', ?1, 'A', 'g', 1)",
+                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at) VALUES ('orphan', srs_id(?1), 'A', 'g', 1)",
                 [P],
             )
             .unwrap();

@@ -134,7 +134,7 @@ pub(crate) fn note_heads(
         }
         let changed = c
             .prepare_cached(
-                "INSERT INTO sync2_relay_heads (profile_uid, device, gen, seq, segments, bytes) VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                "INSERT INTO sync2_relay_heads (profile_uid, device, gen, seq, segments, bytes) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6) \
                  ON CONFLICT(profile_uid, device) DO UPDATE SET gen = excluded.gen, seq = excluded.seq, \
                  segments = excluded.segments, bytes = excluded.bytes WHERE excluded.gen > sync2_relay_heads.gen",
             )
@@ -171,7 +171,7 @@ pub(crate) fn note_heads(
     c.execute("DELETE FROM sync2_location_heads WHERE profile_uid = srs_id(?1) AND location = ?2", params![profile, location]).map_err(sql)?;
     for (h, _) in heads.iter().filter(|(h, _)| h.device != local.device) {
         c.prepare_cached(
-            "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
         )
         .map_err(sql)?
         .execute(params![profile, location, h.device.0.to_vec(), h.gen as i64, h.seq as i64, names_of(h)])
@@ -261,7 +261,7 @@ pub(crate) fn keep(c: &Connection, profile: &str, local: &Local, header: &Segmen
         return Ok(());
     }
     let (orig, plain) = segment::relay_parts(bytes, key).map_err(|e| e.to_string())?;
-    c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_segs (profile_uid, device, name, orig, plain) VALUES (?1, ?2, ?3, ?4, ?5)")
+    c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_segs (profile_uid, device, name, orig, plain) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
         .map_err(sql)?
         .execute(params![profile, header.device.0.to_vec(), name, orig, plain])
         .map_err(sql)?;
@@ -386,7 +386,7 @@ impl SrsCore {
                 let Some((device, file)) = split_path(path) else { continue };
                 if let Some(rest) = file.strip_prefix("rly-") {
                     c.prepare_cached(
-                        "INSERT OR IGNORE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (?1, ?2, ?3, ?4, 0)",
+                        "INSERT OR IGNORE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (srs_id(?1), ?2, ?3, ?4, 0)",
                     )
                     .map_err(sql)?
                     .execute(params![profile, location, device.0.to_vec(), format!("seg-{rest}")])
@@ -409,7 +409,7 @@ impl SrsCore {
                 let names = parse_names(&row.2);
                 // 这个位置现在有这份 head 了（下一轮看 head 时以看到的为准）。
                 c.prepare_cached(
-                    "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
                 )
                 .map_err(sql)?
                 .execute(params![profile, location, device.0.to_vec(), row.0, row.1, row.2])
@@ -434,7 +434,7 @@ impl SrsCore {
                     if gone {
                         // 两段式：先记进待删表，Dart 删成功后 `obsolete_ack` 才移除（删到一半失败的下一轮再删）。
                         let file = format!("{dir}/{}", if n.starts_with("head-") { n.clone() } else { segment::relay_file_name(n) });
-                        c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_gone (profile_uid, location, path) VALUES (?1, ?2, ?3)")
+                        c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_gone (profile_uid, location, path) VALUES (srs_id(?1), ?2, ?3)")
                             .map_err(sql)?
                             .execute(params![profile, location, file])
                             .map_err(sql)?;
@@ -449,7 +449,7 @@ impl SrsCore {
                     .execute(params![profile, location, device.0.to_vec(), gen as i64])
                     .map_err(sql)?;
                 c.prepare_cached(
-                    "INSERT OR REPLACE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT OR REPLACE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)",
                 )
                 .map_err(sql)?
                 .execute(params![profile, location, device.0.to_vec(), file, gen as i64])

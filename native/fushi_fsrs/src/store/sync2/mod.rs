@@ -150,14 +150,14 @@ impl Local {
             name: String::new(),
         };
         conn.execute(
-            "INSERT INTO sync2_self (profile_uid, collection, device, key_seed, next_seq, chain) VALUES (?1, ?2, ?3, ?4, 1, ?5) \
+            "INSERT INTO sync2_self (profile_uid, collection, device, key_seed, next_seq, chain) VALUES (srs_id(?1), ?2, ?3, ?4, 1, ?5) \
              ON CONFLICT(profile_uid) DO UPDATE SET collection = excluded.collection, device = excluded.device, \
              key_seed = excluded.key_seed, next_seq = 1, chain = excluded.chain, hlc_wall = 0, hlc_logical = 0, head_gen = 0",
             params![profile, local.collection.0.to_vec(), device.0.to_vec(), local.key.seed().to_vec(), CHAIN_ZERO.to_vec()],
         )
         .map_err(sql)?;
         conn.execute(
-            "INSERT OR REPLACE INTO sync2_devices (profile_uid, device, public, applied, chain) VALUES (?1, ?2, ?3, 0, ?4)",
+            "INSERT OR REPLACE INTO sync2_devices (profile_uid, device, public, applied, chain) VALUES (srs_id(?1), ?2, ?3, 0, ?4)",
             params![profile, device.0.to_vec(), local.key.public().to_vec(), CHAIN_ZERO.to_vec()],
         )
         .map_err(sql)?;
@@ -209,7 +209,7 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
     let (payload, sc, sc_at) = snapshots::pack_payload(conn, op.kind, &op.payload)?;
     conn.prepare_cached(
         "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at, sc, sc_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
     )
     .map_err(sql)?
     .execute(params![
@@ -314,7 +314,7 @@ fn note_legacy(conn: &Connection, profile: &str, device: &Id, seq: u64, l: &Lega
     let mut d = cur.map(|c| Dvv::parse(&c)).unwrap_or_default();
     d.merge(&Dvv::parse(&l.ctx_json));
     d.add(&l.writer, l.seq);
-    conn.prepare_cached("INSERT OR REPLACE INTO sync2_legacy (profile_uid, device, upto, ctx) VALUES (?1, ?2, ?3, ?4)")
+    conn.prepare_cached("INSERT OR REPLACE INTO sync2_legacy (profile_uid, device, upto, ctx) VALUES (srs_id(?1), ?2, ?3, ?4)")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64, d.to_json().to_string()])
         .map_err(sql)?;
@@ -528,7 +528,7 @@ pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) 
 fn upsert_server_time(conn: &Connection, profile: &str, id: &str, s: Option<i64>, now: i64) -> Result<(), String> {
     let Some(s) = s else { return Ok(()) };
     conn.prepare_cached(
-        "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) VALUES (?1, ?2, NULL, ?3, ?4) \
+        "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) VALUES (srs_id(?1), srs_id(?2), NULL, ?3, ?4) \
          ON CONFLICT(event_id) DO UPDATE SET server_time = MIN(COALESCE(server_time, excluded.server_time), excluded.server_time)",
     )
     .map_err(sql)?
@@ -580,7 +580,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
         }
         Body::Checkpoint { name, reason } => {
             conn.prepare_cached(
-                "INSERT OR IGNORE INTO sync2_checkpoints (profile_uid, device, seq, wall, name, reason) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR IGNORE INTO sync2_checkpoints (profile_uid, device, seq, wall, name, reason) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
             )
             .map_err(sql)?
             .execute(params![profile, op.id.device.0.to_vec(), op.id.seq as i64, op.hlc.wall, name, reason])
@@ -596,7 +596,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
             if project {
                 let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
                 let id = v["x"]["id"].as_str().map(str::to_owned).unwrap_or_else(|| json.clone());
-                conn.prepare_cached("INSERT OR IGNORE INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)")
+                conn.prepare_cached("INSERT OR IGNORE INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), srs_id(?2), ?3)")
                     .map_err(sql)?
                     .execute(params![id, profile, json])
                     .map_err(sql)?;
@@ -623,7 +623,7 @@ pub(crate) fn land_media_binding(conn: &Connection, profile: &str, name: &str, w
         return Ok(());
     };
     conn.prepare_cached(
-        "INSERT OR REPLACE INTO sync2_media (profile_uid, name, sha256, size, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT OR REPLACE INTO sync2_media (profile_uid, name, sha256, size, wall, logical, device) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7)",
     )
     .map_err(sql)?
     .execute(params![profile, name, sha256.to_vec(), size as i64, win.wall, win.logical, win.id.device.0.to_vec()])
@@ -696,7 +696,7 @@ fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, da
     };
     if write {
         conn.prepare_cached(
-            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5) \
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, ?5) \
              ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, kind = excluded.kind, \
              payload_json = excluded.payload_json, created_at = excluded.created_at",
         )
@@ -713,7 +713,7 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
         note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
     }
     let (eid, _) = edit_row(conn, profile, op, e)?;
-    conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (?1, ?2, ?3, ?4)")
+    conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (srs_id(?1), srs_id(?2), ?3, ?4)")
         .map_err(sql)?
         .execute(params![eid, profile, op.id.device.0.to_vec(), op.id.seq as i64])
         .map_err(sql)?;
@@ -788,7 +788,7 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     }
     conn.prepare_cached(
         "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, srs_id(?6), ?7, ?8)",
     )
     .map_err(sql)?
     .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
@@ -814,7 +814,7 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
     let card = l.card.text();
     conn.prepare_cached(
         "INSERT OR IGNORE INTO sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         VALUES (srs_id(?1), srs_id(?2), srs_id(?3), srs_id(?4), ?5, ?6, ?7, ?8)",
     )
     .map_err(sql)?
     .execute(params![lid, profile, card, l.note.as_ref().map(Key::text), intent, arg, op.id.device.0.to_vec(), op.id.seq as i64])
@@ -835,7 +835,7 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         let row = log_row(profile, op, l);
         conn.prepare_cached(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )
         .map_err(sql)?
         .execute(params![lid, profile, card, l.kind, l.rating, l.at, l.rtype, l.origin, l.dur, canonical(&row)])

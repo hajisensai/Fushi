@@ -161,7 +161,7 @@ pub fn rebuild(c: &Connection) -> Result<(), String> {
         }
     }
     let mut ins = c
-        .prepare("INSERT INTO sync2_digest_buckets (profile_uid, bucket, sum, n) VALUES (?1, ?2, ?3, ?4)")
+        .prepare("INSERT INTO sync2_digest_buckets (profile_uid, bucket, sum, n) VALUES (srs_id(?1), ?2, ?3, ?4)")
         .map_err(sql)?;
     for ((profile, bucket), (s, n)) in acc {
         ins.execute(params![profile, bucket, bytes_of(&s), n]).map_err(sql)?;

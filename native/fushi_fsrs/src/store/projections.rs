@@ -394,7 +394,7 @@ mod tests {
     fn insert(c: &SrsCore, id: &str, card: &str, kind: &str, at: i64, json: &str) {
         c.exec(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-             VALUES (?1, 'p', ?2, ?3, NULL, ?4, 'r', 'fushi', 0, ?5)",
+             VALUES (srs_id(?1), 'p', srs_id(?2), ?3, NULL, ?4, 'r', 'fushi', 0, ?5)",
             &[
                 Value::Text(id.into()),
                 Value::Text(card.into()),

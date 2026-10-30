@@ -700,7 +700,7 @@ fn delete_cards(c: &Connection, ids: &[String]) -> Result<(), String> {
 const NOTE_UPSERT: &str = "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deck_id, \
      deleted_at, term_key, reading_key, sort_field, tags_json, pending_decision, updated_at, media_refs, source_kind, \
      source_title, anki_id, dupe_norm) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18) ON CONFLICT(id) DO UPDATE SET \
+     VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, srs_id(?6), ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18) ON CONFLICT(id) DO UPDATE SET \
      profile_uid = excluded.profile_uid, note_type_id = excluded.note_type_id, guid = excluded.guid, \
      created_at = excluded.created_at, deck_id = excluded.deck_id, deleted_at = excluded.deleted_at, \
      term_key = excluded.term_key, reading_key = excluded.reading_key, sort_field = excluded.sort_field, \
@@ -711,7 +711,7 @@ const NOTE_UPSERT: &str = "INSERT INTO srs_notes_cache (id, profile_uid, note_ty
 const CARD_UPSERT: &str = "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, cloze_ord, deck_id, \
      suspended, buried_until_day, flag, hidden, queue, due_day, due_at, scheduled_days, reps, lapses, stability, \
      difficulty, last_reviewed_at, last_log_id, scheduler, note_created_at, new_position, freq_rank, anki_id) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, \
+     VALUES (srs_id(?1), srs_id(?2), srs_id(?3), srs_id(?4), ?5, srs_id(?6), ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, srs_id(?20), ?21, ?22, ?23, \
      ?24, ?25) \
      ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, note_id = excluded.note_id, \
      template_id = excluded.template_id, cloze_ord = excluded.cloze_ord, deck_id = excluded.deck_id, \
@@ -932,7 +932,7 @@ fn refresh_stats(
     let mut ins = c
         .prepare_cached(
             "INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, utc_offset_min, rating, kind, \
-             duration_ms, prev_due_day, maturity_delta) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+             duration_ms, prev_due_day, maturity_delta) VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
              ON CONFLICT(log_id) DO UPDATE SET profile_uid = excluded.profile_uid, card_id = excluded.card_id, \
              occurred_at = excluded.occurred_at, utc_offset_min = excluded.utc_offset_min, rating = excluded.rating, \
              kind = excluded.kind, duration_ms = excluded.duration_ms, prev_due_day = excluded.prev_due_day, \
@@ -1125,7 +1125,7 @@ mod link_tests {
         *n += 1;
         c.execute(
             "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-             VALUES (?1, 'p', ?2, ?3, ?4, 'w', ?5, '{}')",
+             VALUES (srs_id(?1), 'p', ?2, srs_id(?3), ?4, 'w', ?5, '{}')",
             rusqlite::params![format!("e{n}"), kind, entity, key, *n],
         )
         .unwrap();
@@ -1205,7 +1205,7 @@ mod link_tests {
             })
             .to_string();
             w.execute(
-                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json)                  VALUES (?1, 'p', ?2, ?3, ?4, 'w', ?5, ?6)",
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json)                  VALUES (srs_id(?1), 'p', ?2, srs_id(?3), ?4, 'w', ?5, ?6)",
                 rusqlite::params![format!("e{n}"), kind, entity, key, n, json],
             )
             .unwrap();
