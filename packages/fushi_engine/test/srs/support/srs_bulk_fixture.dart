@@ -156,13 +156,17 @@ Future<Map<String, List<String>>> dumpSrsState(SrsDatabase db) async {
     for (final QueryRow r in await db.customSelect(sql).get())
       r.data.values.join('|'),
   ];
-  final List<String> devices = await rows('SELECT device FROM sync2_self');
+  final List<String> devices = await rows(
+    'SELECT srs_idt(device) AS device FROM sync2_self',
+  );
   final String device = devices.isEmpty
       ? '\u0000'
-      : _uuidText(
-          (await db.customSelect('SELECT device FROM sync2_self').getSingle())
-              .read<Uint8List>('device'),
-        );
+      : (await db
+                .customSelect(
+                  'SELECT srs_idt(device) AS device FROM sync2_self',
+                )
+                .getSingle())
+            .read<String>('device');
 
   // 排序键不能含 ID 本身（随机）：按 (卡, 抹掉 ID 的规范 JSON) 排。
   final List<(String, String)> logs = <(String, String)>[
@@ -252,12 +256,4 @@ void expectSameState(
     }
     expect(a.length, e.length, reason: '$label$table row count');
   }
-}
-
-String _uuidText(Uint8List b) {
-  final String h = <String>[
-    for (final int x in b) x.toRadixString(16).padLeft(2, '0'),
-  ].join();
-  return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-'
-      '${h.substring(16, 20)}-${h.substring(20)}';
 }

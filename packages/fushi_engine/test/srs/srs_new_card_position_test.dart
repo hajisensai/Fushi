@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -179,7 +180,7 @@ void main() {
     // 本机状态里也没有缓存版本。
     Future<void> asPreV123() async {
       await a.db.customStatement(
-        'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = ?',
+        'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = srs_id(?)',
         <Object>[kPosProfile],
       );
       final String json =
@@ -187,7 +188,7 @@ void main() {
                   .customSelect(
                     'SELECT json FROM srs_local_state WHERE profile_uid = ?',
                     variables: <Variable<Object>>[
-                      Variable<String>(kPosProfile),
+                      Variable<String>(kPosProfile, srsIdType),
                     ],
                   )
                   .getSingle())
@@ -195,7 +196,7 @@ void main() {
       final Map<String, Object?> j =
           (jsonDecode(json) as Map).cast<String, Object?>()..remove('cacheRev');
       await a.db.customStatement(
-        'UPDATE srs_local_state SET json = ? WHERE profile_uid = ?',
+        'UPDATE srs_local_state SET json = ? WHERE profile_uid = srs_id(?)',
         <Object>[jsonEncode(j), kPosProfile],
       );
     }
@@ -225,7 +226,7 @@ void main() {
 
     // 记下了缓存版本：之后再打开不再扫修改记录表（手动清掉的值不会被补回）。
     await a.db.customStatement(
-      'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = ?',
+      'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = srs_id(?)',
       <Object>[kPosProfile],
     );
     final SrsDbStore again = await reopen();

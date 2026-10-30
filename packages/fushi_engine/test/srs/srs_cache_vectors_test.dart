@@ -24,6 +24,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
+import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -37,6 +38,14 @@ const List<String> kRawTables = <String>[
   'srs_review_logs',
   'srs_event_local',
 ];
+
+/// 原始表里的 ID 列（与内核 store/ids.rs 的列清单一致）：导入向量时绑成存储编码。
+const Map<String, Set<String>> _kIdColumns = <String, Set<String>>{
+  'srs_entities': <String>{'id', 'profile_uid'},
+  'srs_field_edits': <String>{'id', 'profile_uid', 'entity_id', 'writer_id'},
+  'srs_review_logs': <String>{'id', 'profile_uid', 'card_id'},
+  'srs_event_local': <String>{'event_id', 'profile_uid'},
+};
 
 const List<String> kCacheTables = <String>[
   'srs_notes_cache',
@@ -126,9 +135,10 @@ void main() {
       for (final String name in kRawTables) {
         final Table tb = _table(raw[name]);
         await s.db.customStatement('DELETE FROM $name');
+        final Set<String> idCols = _kIdColumns[name]!;
         final String sql =
             'INSERT INTO $name (${tb.columns.map((String c) => '"$c"').join(', ')}) '
-            'VALUES (${List<String>.filled(tb.columns.length, '?').join(', ')})';
+            'VALUES (${tb.columns.map((String c) => idCols.contains(c) ? 'srs_id(?)' : '?').join(', ')})';
         for (final List<Object?> r in tb.rows) {
           await s.db.customStatement(sql, <Object?>[
             for (final Object? v in r) _cellIn(v),
@@ -155,7 +165,7 @@ void main() {
         .customSelect(
           'SELECT ${want.columns.map((String c) => '"$c"').join(', ')} FROM $name '
           'WHERE profile_uid = ? ORDER BY ${want.pk.map((String c) => '"$c"').join(', ')}',
-          variables: <Variable<Object>>[Variable<String>(profile)],
+          variables: <Variable<Object>>[Variable<String>(profile, srsIdType)],
         )
         .get();
     return <List<Object?>>[
@@ -220,7 +230,7 @@ void main() {
     Future<void> corrupt({List<String>? noteIds, List<String>? cardIds}) async {
       String where(String c, List<String>? ids) => ids == null
           ? ''
-          : ' AND $c IN (${ids.map((String i) => "'$i'").join(',')})';
+          : ' AND $c IN (${ids.map((String i) => "srs_id('$i')").join(',')})';
       await s.db.customStatement(
         "UPDATE srs_notes_cache SET guid = '#', created_at = -1, deck_id = '#', deleted_at = -1, "
         "term_key = '#', reading_key = '#', sort_field = '#', tags_json = '[\"#\"]', "
@@ -255,7 +265,7 @@ void main() {
         if (!want.contains(note) || !done.add(note)) continue;
         await s.db.customStatement(
           'INSERT INTO srs_cards_cache ("id", $rest) '
-          'SELECT ?, $rest FROM srs_cards_cache WHERE id = ?',
+          'SELECT srs_id(?), $rest FROM srs_cards_cache WHERE id = srs_id(?)',
           <Object?>['stale-$note', c[col(cards, 'id')]],
         );
       }
@@ -321,7 +331,7 @@ void main() {
     final QueryRow ls = await s.db
         .customSelect(
           'SELECT json FROM srs_local_state WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(profile)],
+          variables: <Variable<Object>>[Variable<String>(profile, srsIdType)],
         )
         .getSingle();
     final Map<String, Object?> j =
@@ -330,7 +340,7 @@ void main() {
     expect(j['cacheRev'], isA<int>());
     j['cacheRev'] = 0;
     await s.db.customStatement(
-      'UPDATE srs_local_state SET json = ? WHERE profile_uid = ?',
+      'UPDATE srs_local_state SET json = ? WHERE profile_uid = srs_id(?)',
       <Object?>[jsonEncode(j), profile],
     );
     final SrsDbStore reopened = await openOn(st);
