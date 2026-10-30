@@ -6,11 +6,13 @@
 /// 等搜索 / 排序真用到时才分块读（见 srs_browse_query.dart）。
 library;
 
-import 'package:fushi_anki/fushi_anki_core.dart' show ankiStripHtml;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show FushiCardFields, ankiStripHtml;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_browse_query.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 
 export 'package:fushi_engine/srs/srs_browse_query.dart'
@@ -121,6 +123,24 @@ String srsFieldContainsQuery(String field, String text) {
 /// （`*` `_`）、反斜杠与引号转义成字面量；层级分隔符 `::` 在引号内照原样保留。
 String srsDeckQuery(String deckFullName) =>
     'deck:"${deckFullName.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
+
+/// 搜索语料的字段别名（[SrsSearchFieldAliases]）：内置 Fushi 卡片改过名的 9 个字段带上改名前后的
+/// 另一个名字（[FushiCardFields]），`Expression:食べる`（Yomitan 查重的 findNotes）仍查到 `Term` 字段；
+/// 字段定义记录里还是旧名时 `Term:…` 也认。其它笔记类型（含 Lapis、自建）没有别名。
+Map<String, String> srsCardSearchFieldAliases(SrsSearchSubject subject) {
+  final SrsNoteTypeView type = (subject as SrsCardSearchSubject).noteType;
+  if (type.builtinKey != kSrsBuiltinFushiCardKey) {
+    return const <String, String>{};
+  }
+  return _aliasesByType[type] ??= <String, String>{
+    for (final SrsFieldDef f in type.fields)
+      if (FushiCardFields.aliasOf(f.name) case final String alias)
+        f.name: alias,
+  };
+}
+
+final Expando<Map<String, String>> _aliasesByType =
+    Expando<Map<String, String>>('srsCardSearchFieldAliases');
 
 /// 一张卡（连同笔记、笔记类型）作为 Anki 搜索的求值对象。
 class SrsCardSearchSubject implements SrsSearchSubject {
@@ -470,6 +490,7 @@ class SrsBrowseSnapshot {
   SrsSearchCorpus get _corpus => _corpusOrNull ??= SrsSearchCorpus(
     cards,
     fieldLoader: _store == null ? null : _BrowseFieldLoader(_store),
+    fieldAliases: srsCardSearchFieldAliases,
   );
 
   /// 已备好（字段值已传进内核、要的改动时刻已装）的查询。

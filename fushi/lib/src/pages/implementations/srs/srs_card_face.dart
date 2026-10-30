@@ -2208,11 +2208,17 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             },
         onLoadStop: (InAppWebViewController controller, _) {
           // 死亡处置已丢弃 controller：等重建后的新平台视图自己的 onLoadStop。
-          if (_controller == null) return;
+          final InAppWebViewController? current = _controller;
+          if (current == null) return;
+          // 插件每次回调都给同一平台视图新包一只 [InAppWebViewController]，这里的参数与
+          // onWebViewCreated 存下的 [_controller] 永远不 identical：一律用存下的那只，
+          // [_installLookup] 的「注入期间视图换了」判断才认得出是同一视图（以前直接传参数，
+          // 判断恒假、取词门控从不下发，整面 WebView 卡面点词 / 点空白全失灵）。
+          if (!identical(current.platform, controller.platform)) return;
           _sync.shellLoaded();
           _lookupInstalled = false;
           unawaited(
-            _injectBridge(controller).then((_) => _installLookup(controller)),
+            _injectBridge(current).then((_) => _installLookup(current)),
           );
         },
         // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。

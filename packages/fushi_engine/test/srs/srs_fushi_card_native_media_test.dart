@@ -26,9 +26,9 @@ void main() {
       ]) {
         expect(
           srsFushiCardMediaIsNative(<String, String>{
-            'Picture': coverMediaRef(name),
+            'Media': coverMediaRef(name),
             'SentenceAudio': '[sound:s.aac]',
-            'ExpressionAudio': '[sound:w.mp3]',
+            'TermAudio': '[sound:w.mp3]',
           }),
           isTrue,
           reason: name,
@@ -36,7 +36,7 @@ void main() {
       }
       expect(
         srsFushiCardMediaIsNative(<String, String>{
-          'Picture': '<div><img src="a.png"><br></div>',
+          'Media': '<div><img src="a.png"><br></div>',
         }),
         isTrue,
       );
@@ -48,16 +48,16 @@ void main() {
       // 句子音频，原生卡面用片段播放器与音频按钮画全。
       expect(
         srsFushiCardMediaIsNative(<String, String>{
-          'Picture': coverMediaRef('clip.webm'),
+          'Media': coverMediaRef('clip.webm'),
           'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
-          'ExpressionAudio': inlineVideoWordAudioHtml('w.mp3'),
+          'TermAudio': inlineVideoWordAudioHtml('w.mp3'),
         }),
         isTrue,
       );
       // MP4 片段是 Picture 里的 [sound:clip.mp4]。
       expect(
         srsFushiCardMediaIsNative(<String, String>{
-          'Picture': coverMediaRef('clip.mp4'),
+          'Media': coverMediaRef('clip.mp4'),
         }),
         isTrue,
       );
@@ -77,7 +77,7 @@ void main() {
           '<img alt="no source">',
         ]) {
           expect(
-            srsFushiCardMediaIsNative(<String, String>{'Picture': picture}),
+            srsFushiCardMediaIsNative(<String, String>{'Media': picture}),
             isFalse,
             reason: picture,
           );
@@ -116,23 +116,23 @@ void main() {
       );
 
       final SrsRenderedCard still = await render(s, <String, String>{
-        'Picture': coverMediaRef('still.jpg'),
+        'Media': coverMediaRef('still.jpg'),
         'SentenceAudio': '[sound:s.aac]',
       });
       expect(still.fushiCardDefinitions, isNotNull);
 
       final SrsRenderedCard clip = await render(s, <String, String>{
-        'Picture': coverMediaRef('clip.webm'),
+        'Media': coverMediaRef('clip.webm'),
         'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
       });
       expect(clip.fushiCardDefinitions, isNotNull, reason: '片段卡走原生卡面');
       expect(
-        clip.fields['Picture'],
+        clip.fields['Media'],
         contains('<video class="fushi-inline-video"'),
       );
 
       final SrsRenderedCard anim = await render(s, <String, String>{
-        'Picture': coverMediaRef('anim.avif'),
+        'Media': coverMediaRef('anim.avif'),
       });
       expect(anim.fushiCardDefinitions, isNotNull, reason: '动图 AVIF 由原生逐帧解码播放');
     });

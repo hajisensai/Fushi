@@ -12,6 +12,7 @@ export 'src/image/fushi_compute_bitmap_subtitle.dart';
 export 'src/image/fushi_compute_image.dart';
 export 'src/linked_crates.dart';
 export 'src/ocr/fushi_compute_ocr.dart';
+export 'src/pano/fushi_compute_pano.dart';
 export 'src/parse/anidb.dart';
 export 'src/parse/anki_media.dart';
 export 'src/parse/bencode.dart';

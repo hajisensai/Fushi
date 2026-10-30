@@ -772,11 +772,17 @@ EdgeInsets videoTopBarMargin({
   required EdgeInsets systemPadding,
   required EdgeInsets systemViewPadding,
   required bool systemBarsVisible,
+  double desktopCaptionInset = 0,
 }) {
   return EdgeInsets.only(
     left: math.max(16.0, math.max(systemPadding.left, systemViewPadding.left)),
     right:
         math.max(16.0, math.max(systemPadding.right, systemViewPadding.right)),
-    top: systemBarsVisible ? systemViewPadding.top : 0.0,
+    // 桌面自绘顶栏在播放页悬停才浮出、画面铺满整窗：顶栏胶囊仍排在窗口按钮
+    // 下面，不被浮出的按钮压住（[desktopCaptionInset]，用户 2026-10-30）。
+    top: math.max(
+      systemBarsVisible ? systemViewPadding.top : 0.0,
+      desktopCaptionInset,
+    ),
   );
 }

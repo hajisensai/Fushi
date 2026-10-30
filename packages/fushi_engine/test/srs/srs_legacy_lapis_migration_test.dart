@@ -4,6 +4,7 @@ import 'package:fushi_engine/srs/srs_builtin_migration.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -28,8 +29,13 @@ void main() {
   Future<SrsNoteTypeView> type(SrsDbStore s, String id) async =>
       (await s.noteType(id))!;
 
-  String fieldNamed(SrsNoteTypeView v, String name) =>
-      v.fields.firstWhere((SrsFieldDef f) => f.name == name).id;
+  /// 按名字找字段；Fushi 卡片的 9 个字段改过名（FushiCardFields），旧名作别名也认。
+  String fieldNamed(SrsNoteTypeView v, String name) {
+    final String alias = FushiCardFields.canonical(name);
+    return v.fields
+        .firstWhere((SrsFieldDef f) => f.name == name || f.name == alias)
+        .id;
+  }
 
   /// 「从 Anki 导入的 Lapis」形状：非内置、字段名同 Lapis、ID 全新。
   Future<String> importedLapis(SrsDbStore s, String name) =>
@@ -46,7 +52,10 @@ void main() {
         for (final SrsFieldDef f in to.fields)
           f.id: from.fields
               .where(
-                (SrsFieldDef x) => x.name.toLowerCase() == f.name.toLowerCase(),
+                // 旧实现只认同名；Fushi 卡片 9 个字段改名前与 Lapis 同名，这里按旧名模拟。
+                (SrsFieldDef x) =>
+                    x.name.toLowerCase() ==
+                    FushiCardFields.legacyNameOf(f.name).toLowerCase(),
               )
               .firstOrNull
               ?.id,
@@ -355,7 +364,7 @@ void main() {
       'fills only empty fields from the pre-migration note, idempotently',
       () async {
         final SrsDbStore s = await device();
-        final String src = await s.addField(s.lapisNoteTypeId, 'Source');
+        final String src = await s.addField(s.lapisNoteTypeId, 'SourceInfo');
         final String lost = await s.createNote(
           noteTypeId: s.lapisNoteTypeId,
           fieldsById: <String, String>{lapis('Expression'): '一', src: 'Book A'},
@@ -386,7 +395,7 @@ void main() {
       'a field the user cleared after migrating is never filled back',
       () async {
         final SrsDbStore s = await device();
-        final String src = await s.addField(s.lapisNoteTypeId, 'Source');
+        final String src = await s.addField(s.lapisNoteTypeId, 'SourceInfo');
         final String n = await s.createNote(
           noteTypeId: s.lapisNoteTypeId,
           fieldsById: <String, String>{lapis('Expression'): '四', src: 'Book D'},

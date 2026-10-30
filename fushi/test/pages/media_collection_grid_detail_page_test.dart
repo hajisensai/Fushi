@@ -166,11 +166,12 @@ void main() {
     );
   });
 
-  testWidgets('继续阅读随 memberInfoRefresh 重算：读完另一本回来，目标换成最近在读的那本'
+  testWidgets('hero 随 memberInfoRefresh 重算：读了另一本回来，整体进度跟着变'
       '（4h4uGUck4k）', (WidgetTester tester) async {
+    // hero 的「继续」按钮已砍（2026-10-28）；重算链路仍由整体进度钉住。
     useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
-    final Map<String, int> lastRead = <String, int>{'k1': 200, 'k2': 100};
+    final Map<String, double> progress = <String, double>{'k1': 0.3};
     final ChangeNotifier refresh = ChangeNotifier();
     addTearDown(refresh.dispose);
     await tester.pumpWidget(
@@ -185,7 +186,7 @@ void main() {
             memberInfoOf: (String mediaType, String entryKey) =>
                 CollectionMemberInfo(
                   title: 'T-$entryKey',
-                  lastReadAt: lastRead[entryKey],
+                  progress: progress[entryKey],
                 ),
             memberInfoRefresh: refresh,
           ),
@@ -193,20 +194,22 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('T-k1'), findsWidgets);
+    final Finder percent = find.byKey(
+      const ValueKey<String>('collection_detail_hero_percent'),
+    );
+    expect(tester.widget<Text>(percent).data, '10%');
 
     // 在阅读器里读了 k2（详情页压在阅读器之下，没有任何重建）；回来后调用方通知。
-    lastRead['k2'] = 300;
+    progress['k2'] = 0.6;
     // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
     refresh.notifyListeners();
     await tester.pumpAndSettle();
 
     expect(
-      find.textContaining('T-k2'),
-      findsWidgets,
-      reason: '继续阅读目标应换成最近在读的 k2',
+      tester.widget<Text>(percent).data,
+      '30%',
+      reason: '整体进度应随 memberInfoRefresh 重算',
     );
-    expect(find.textContaining('T-k1'), findsNothing);
   });
 
   testWidgets('菜单「打开」真回调 onOpenMember', (WidgetTester tester) async {
@@ -670,20 +673,15 @@ void main() {
       expect(percent.data, '50%');
     });
 
-    testWidgets('读完第二卷后「继续」指向最后读的第二卷，不回落第一卷', (WidgetTester tester) async {
+    testWidgets('hero 不再有「继续」按钮（2026-10-28 砍掉，点成员卡读）', (
+      WidgetTester tester,
+    ) async {
       useDesktopView(tester);
       await tester.pumpWidget(seriesPage(await seedSeries()));
       await tester.pumpAndSettle();
 
-      final Finder button = find.byKey(
-        const ValueKey<String>('collection_detail_continue'),
-      );
       expect(
-        find.descendant(of: button, matching: find.textContaining('T-k2')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: button, matching: find.textContaining('T-k1')),
+        find.byKey(const ValueKey<String>('collection_detail_continue')),
         findsNothing,
       );
     });

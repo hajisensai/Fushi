@@ -93,9 +93,17 @@ void main() {
     final String cargo = read('../native/fushi_ios_umbrella/Cargo.toml');
     expect(
       cargo,
-      contains('fushi_music = { path = "../fushi_music" }'),
+      // default-features = false：iOS 不编 plugin 特性（在线音源插件的 JS 运行时，App Store 合规，
+      // StoreRestrictedCapability.onlineMusicSource）；其余 ffm_* 照样是硬依赖。
+      contains(
+        'fushi_music = { path = "../fushi_music", default-features = false }',
+      ),
       reason: '伞形库不依赖 fushi_music，iOS Runner 里就没有 ffm_*',
     );
+    // 不带 plugin 特性的产物，符号核对必须排除插件绑定（否则 ffm_plugin_* 缺失把 iOS 构建打红）；
+    // 但只排除插件目录，其余 ffm_* 一个不少。
+    final String verifyAbi = read('../native/fushi_music/verify_abi.sh');
+    expect(verifyAbi, contains('PLUGIN_EXCLUDE=(--exclude-dir=plugin)'));
     final String lib = read('../native/fushi_ios_umbrella/src/lib.rs');
     expect(lib, contains('extern crate fushi_music;'));
     final String build = read(
@@ -297,7 +305,7 @@ void main() {
         'runner\\Debug\\fushi_music.dll',
         'native/fushi_music/build_macos_dylib.sh',
         'Contents/Frameworks/libfushi_music.dylib',
-        'bash ../native/fushi_music/verify_abi.sh "\$bin" nm',
+        'bash ../native/fushi_music/verify_abi.sh --no-plugin "\$bin" nm',
         'uses: ./.github/actions/setup-fushi-music',
       ],
       'release.yml': <String>[
@@ -309,8 +317,8 @@ void main() {
         'runner\\Release\\fushi_music.dll',
         'native/fushi_music/build_macos_dylib.sh',
         'Contents/Frameworks/libfushi_music.dylib',
-        'bash native/fushi_music/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm',
-        'bash native/fushi_music/verify_abi.sh "\$runner" nm',
+        'bash native/fushi_music/verify_abi.sh --no-plugin fushi/build/ios/iphoneos/Runner.app/Runner nm',
+        'bash native/fushi_music/verify_abi.sh --no-plugin "\$runner" nm',
       ],
     };
     for (final MapEntry<String, List<String>> e in required.entries) {

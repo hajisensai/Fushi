@@ -100,6 +100,7 @@ class FushiLinearProgressIndicator extends StatelessWidget {
     this.trackGap,
     this.year2023,
     this.controller,
+    this.wavy = true,
   });
 
   final double? value;
@@ -115,6 +116,11 @@ class FushiLinearProgressIndicator extends StatelessWidget {
   final double? trackGap;
   final bool? year2023;
   final AnimationController? controller;
+
+  /// MD3 确定态的 M3E 形态：true = 波浪（大面积进度）；false = 平直静止（封面 /
+  /// 卡片上的小进度条），仍保留 M3E 的轨道间隙与末端停止点、不跑动画，高度恰为
+  /// [minHeight]。
+  final bool wavy;
 
   @override
   Widget build(BuildContext context) {
@@ -139,20 +145,26 @@ class FushiLinearProgressIndicator extends StatelessWidget {
       return _followValueColor(valueColor, (BuildContext context) {
         final ThemeData theme = Theme.of(context);
         final ProgressIndicatorThemeData it = theme.progressIndicatorTheme;
-        return FushiWavyLinearProgress(
+        final double stroke = minHeight ?? it.linearMinHeight ?? 4;
+        final Widget bar = FushiWavyLinearProgress(
           value: value,
           color: _md3IndicatorColor(context, color, valueColor),
           trackColor:
               backgroundColor ??
               it.linearTrackColor ??
               theme.colorScheme.secondaryContainer,
-          strokeWidth: minHeight ?? it.linearMinHeight ?? 4,
+          strokeWidth: stroke,
           trackGap: trackGap ?? it.trackGap ?? 4,
           stopIndicatorColor: stopIndicatorColor ?? it.stopIndicatorColor,
           stopIndicatorRadius: stopIndicatorRadius ?? it.stopIndicatorRadius,
           semanticsLabel: semanticsLabel,
           semanticsValue: semanticsValue,
+          waving: wavy,
         );
+        // 平直形态：高度钉成线宽，画家按实际高度把振幅收成 0（不留波浪的上下余量）。
+        return wavy || value == null
+            ? bar
+            : SizedBox(height: stroke, child: bar);
       });
     }
     return _followValueColor(valueColor, (BuildContext context) {

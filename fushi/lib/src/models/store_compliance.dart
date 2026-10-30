@@ -50,6 +50,11 @@ enum StoreRestrictedCapability {
   /// 的内容源，且插件是任意 JS）。iOS 只保留本地导入 + 阅读。
   onlineNovelSource,
 
+  /// 在线音源插件宿主：用户安装的 JS 插件接入第三方音乐平台（搜索 / 取流 / 歌词）。同一条
+  /// 合规理由——运行时加载并执行第三方代码、接入未授权来源的媒体；iOS 伞形静态库也不编入
+  /// JS 引擎。iOS 只保留本地曲库与用户自配的服务器曲库（docs/specs/2026-10-28-music-plugins.md）。
+  onlineMusicSource,
+
   /// 统一下载中心（torrent / 磁力 / 任意直链队列），含外接 qBittorrent 后端。
   ///
   /// 只指**下载中心**这一形态：用户贴任意链接 / 种子、由本 app 代为下载第三方

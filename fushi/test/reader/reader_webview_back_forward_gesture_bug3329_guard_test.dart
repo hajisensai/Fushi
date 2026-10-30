@@ -43,6 +43,8 @@ void main() {
         '浏览器类页面（站点验证），历史对应真实网页跳转',
     'lib/src/media/manga/mihon/mihon_web_login_page.dart':
         '浏览器类页面（站点登录），历史对应真实网页跳转',
+    'lib/src/pages/implementations/music/music_plugin_login.dart':
+        '浏览器类页面（音乐插件网页登录），历史对应真实网页跳转',
     'lib/src/media/novel/online/lnreader_runtime.dart': '无头运行时 WebView，不可见、无手势',
     'lib/src/media/audiobook/audiobook_clip_webview_render.dart':
         '离屏渲染用 WebView，不可见、无手势',

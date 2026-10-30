@@ -5,6 +5,7 @@ import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
@@ -3053,61 +3054,45 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     await _markEpisodes(targets, watched: watched);
   }
 
-  /// 多选态底栏：已选数 + 全选本季 + 标记已看 / 未看 + 取消。
+  /// 多选态底栏：已选数 + 全选本季 + 标记已看 / 未看 + 取消。走共享底部动作条
+  /// （MD3 贴底 surfaceContainer 条 / Apple 悬浮玻璃面）；按钮放进可换行的 Wrap，
+  /// 窄屏放不下一行时折到下一行。
   Widget? _buildSelectionBar() {
     if (!_selecting) return null;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerHigh,
-      elevation: 3,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 4,
-            children: <Widget>[
-              Text(
-                t.collection_selected_count(n: _selection.length),
-                key: const ValueKey<String>('collection-selection-count'),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  FushiTextButton(
-                    onPressed: _selectAllInSeason,
-                    child: Text(t.collection_select_all_in_season),
-                  ),
-                  FushiTextButton(
-                    key: const ValueKey<String>(
-                      'collection-selection-unwatched',
-                    ),
-                    onPressed: _selection.isEmpty
-                        ? null
-                        : () => unawaited(_markSelected(watched: false)),
-                    child: Text(t.video_mark_unwatched),
-                  ),
-                  FushiFilledButton(
-                    key: const ValueKey<String>('collection-selection-watched'),
-                    onPressed: _selection.isEmpty
-                        ? null
-                        : () => unawaited(_markSelected(watched: true)),
-                    child: Text(t.video_mark_watched),
-                  ),
-                  FushiTextButton(
-                    onPressed: _exitSelection,
-                    child: Text(t.dialog_cancel),
-                  ),
-                ],
-              ),
-            ],
+    return FushiBottomActionBar(
+      message: Text(
+        t.collection_selected_count(n: _selection.length),
+        key: const ValueKey<String>('collection-selection-count'),
+      ),
+      leading: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          FushiTextButton(
+            onPressed: _selectAllInSeason,
+            child: Text(t.collection_select_all_in_season),
           ),
-        ),
+          FushiTextButton(
+            key: const ValueKey<String>('collection-selection-unwatched'),
+            onPressed: _selection.isEmpty
+                ? null
+                : () => unawaited(_markSelected(watched: false)),
+            child: Text(t.video_mark_unwatched),
+          ),
+          FushiFilledButton(
+            key: const ValueKey<String>('collection-selection-watched'),
+            onPressed: _selection.isEmpty
+                ? null
+                : () => unawaited(_markSelected(watched: true)),
+            child: Text(t.video_mark_watched),
+          ),
+          FushiTextButton(
+            onPressed: _exitSelection,
+            child: Text(t.dialog_cancel),
+          ),
+        ],
       ),
     );
   }

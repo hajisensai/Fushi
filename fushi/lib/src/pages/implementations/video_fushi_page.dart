@@ -1,5 +1,3 @@
-import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
-import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -24,7 +22,7 @@ import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
-import 'dart:convert' show jsonDecode, jsonEncode, utf8;
+import 'dart:convert' show jsonEncode, utf8;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -165,6 +163,7 @@ import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
@@ -371,8 +370,6 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
     show writeDictionaryMediaCache;
-import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
-    show safeDictionaryMediaPath;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
@@ -597,8 +594,8 @@ int resolveMiningCueIndexForPosition({
 /// 音频/封面整体偏移 `delayMs`（裁的是字幕原始窗而非用户实际听到/看到的播放窗）。
 ///
 /// 与 [VideoPlayerController.cueSeekTargetMs]（句子 seek 的逆变换）同一方向、同一真相源，
-/// 只是这里作用于制卡裁剪区间。下界 clamp 到 0（播放时间不为负）。
-@visibleForTesting
+/// 只是这里作用于制卡裁剪区间。下界 clamp 到 0（播放时间不为负）。手机遥控的网页播放器页
+/// 也按它换算。
 int miningClipTimeMs(int subtitleTimeMs, int delayMs) =>
     (subtitleTimeMs + delayMs).clamp(0, 1 << 30);
 
@@ -3105,7 +3102,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
   VideoRemotePlaybackBinding? _videoRemoteBinding;
-  final _VideoRemoteCueCache _videoRemoteCueCache = _VideoRemoteCueCache();
+  final VideoRemoteCueCache _videoRemoteCueCache = VideoRemoteCueCache();
 
   /// 手机遥控「在线搜索字幕」的执行体（候选按 id 记在里面，随本页释放）。
   late final RemoteOnlineSubtitleSearch _remoteOnlineSubtitles =
@@ -9826,10 +9823,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : lastTopRightSegment && _webMode
         ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
-    final List<VideoBarEntry> askAi = lastTopRightSegment
-        ? _askAiBarEntries(desktop: desktop)
-        : const <VideoBarEntry>[];
-    if (items.isEmpty && folded.isEmpty && disc.isEmpty && askAi.isEmpty) {
+    if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -9894,7 +9888,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               cluster: VideoBarCluster.start,
               child: buttonFor(item),
             ),
-          ...askAi,
           ...folded,
         ],
       );
@@ -9907,39 +9900,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : EdgeInsets.zero,
       child: buttonGroup(),
     );
-  }
-
-  /// 右上角按钮组的「问 AI」（D4 ③）：本页的顶栏动作体系是 [VideoControlBar]
-  /// （按 [VideoBarEntry.priority] 收进组尾「⋯」，不是 FushiFloatingTopBar），
-  /// 优先级 5 低于全部布局按钮（最冷门的逐帧是 10）= 空间不够时最先收起。上下文
-  /// 与悬浮球同一个 [_videoAiContext]。AI 模块关着时不出。
-  List<VideoBarEntry> _askAiBarEntries({required bool desktop}) {
-    if (!isAiModuleEnabled(appModel.moduleVisibility)) {
-      return const <VideoBarEntry>[];
-    }
-    void run() =>
-        openAiAgentForPage(context, scene: 'video', read: _videoAiContext);
-    return <VideoBarEntry>[
-      VideoBarEntry(
-        priority: 5,
-        menuAction: VideoBarMenuAction(
-          icon: kAiAgentAskIcon,
-          label: aiAgentAskLabel,
-          onSelected: run,
-        ),
-        child: FushiTooltip(
-          message: aiAgentAskLabel,
-          child: KeyedSubtree(
-            key: kAiAgentAskKey,
-            child: _chromeIconButton(
-              icon: kAiAgentAskIcon,
-              desktop: desktop,
-              onPressed: run,
-            ),
-          ),
-        ),
-      ),
-    ];
   }
 
   String get _clipExportTooltip {
@@ -10733,6 +10693,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     systemPadding: MediaQuery.of(context).padding,
     systemViewPadding: MediaQuery.of(context).viewPadding,
     systemBarsVisible: _systemBarsVisible,
+    desktopCaptionInset: FushiDesktopTitleBar.immersiveCaptionInset,
   );
 
   /// 字幕动态避让的「进度条上缘」高度（BUG-238 / BUG-901）：控制条可见时字幕底缘对它取
@@ -12082,6 +12043,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （解析/连接超时、网络错误、视频不可用/受限）各给出可指导的说明；无法归类时回退
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
+    // 来源已给出用户可读的原因（音乐插件 MV「需要会员」等）：原样显示。
+    if (error is RemoteVideoStreamRefusedException) return error.message;
     if (error is TimeoutException) return t.video_load_failed_timeout;
     // YouTube 兜底链每个 client 都死在传输层（连不上 / 超时）：出口问题（没走代理、
     // DNS 被污染），不是视频不可用。消息里的「manifest failed」不能再被下面的子串

@@ -198,6 +198,15 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           .getSingle();
       return row.read(cnt) ?? 0;
     }
+    if (mediaKind == 'music') {
+      // 软删的曲目（文件已不在 / 来源被移除）不算。
+      final TypedResult row = await (selectOnly(musicTracks)
+            ..where(musicTracks.sourceId.equals(sourceId) &
+                musicTracks.deletedAt.isNull())
+            ..addColumns(<Expression<Object>>[cnt]))
+          .getSingle();
+      return row.read(cnt) ?? 0;
+    }
     return 0;
   }
 

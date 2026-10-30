@@ -11,9 +11,12 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show MusicFloatingBarHost;
+import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -62,16 +65,8 @@ const double kMusicAlbumDetailCoverSize = 200;
 
 /// 专辑详情页大封面：与网格同一份「唱片」材质（regular 密度：投影 + 接触阴影 +
 /// 光泽），墨水屏退回描边封面框。本地专辑页与服务器专辑页共用。
-Widget musicAlbumDetailCover(Widget cover) => ShelfCoverMaterialScope(
-  material: ShelfCoverMaterial.glossyAlbum,
-  child: SizedBox.square(
-    dimension: kMusicAlbumDetailCoverSize,
-    child: AspectRatio(
-      aspectRatio: kShelfAlbumAspectRatio,
-      child: ShelfCoverFrame(child: cover),
-    ),
-  ),
-);
+Widget musicAlbumDetailCover(Widget cover) =>
+    musicMaterialCover(cover, size: kMusicAlbumDetailCoverSize, tilt: true);
 
 /// 服务器曲目 → 播放项（按设置的码率上限）。
 List<MusicPlayItem> _playItems(
@@ -100,7 +95,8 @@ List<MusicPlayItem> _playItems(
 }
 
 /// 统一的页面外壳：MD3 用悬浮顶栏（动作默认平铺、放不下才收），Apple 用系统页头。
-Widget _scaffold(
+/// 服务器曲库与插件音源（`music_plugin_pages.dart`）共用。
+Widget musicBrowseScaffold(
   BuildContext context, {
   required String title,
   required Widget body,
@@ -108,52 +104,58 @@ Widget _scaffold(
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final NavigatorState? navigator = Navigator.maybeOf(context);
-  return FushiPageScaffold(
-    title: title,
-    bottomNavigationBar: const MusicNowPlayingBar(),
-    header: isGlassDesign(context)
-        ? null
-        : Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.gap,
+  return MusicFloatingBarHost(
+    child: FushiPageScaffold(
+      title: title,
+      header: isGlassDesign(context)
+          ? null
+          : Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.gap,
+              ),
+              child: FushiFloatingTopBar(
+                title: title,
+                leading: <FushiToolbarItem>[
+                  if (navigator != null && navigator.canPop())
+                    FushiToolbarItem(
+                      icon: FushiIcons.back,
+                      label: MaterialLocalizations.of(
+                        context,
+                      ).backButtonTooltip,
+                      onPressed: () => unawaited(navigator.maybePop()),
+                    ),
+                ],
+                actions: <List<FushiToolbarItem>>[
+                  if (actions.isNotEmpty) actions,
+                ],
+              ),
             ),
-            child: FushiFloatingTopBar(
-              title: title,
-              leading: <FushiToolbarItem>[
-                if (navigator != null && navigator.canPop())
-                  FushiToolbarItem(
-                    icon: FushiIcons.back,
-                    label: MaterialLocalizations.of(context).backButtonTooltip,
-                    onPressed: () => unawaited(navigator.maybePop()),
-                  ),
-              ],
-              actions: <List<FushiToolbarItem>>[
-                if (actions.isNotEmpty) actions,
-              ],
-            ),
-          ),
-    body: body,
+      body: body,
+    ),
   );
 }
 
-Widget _errorView(BuildContext context, Object error, VoidCallback retry) =>
-    Center(
-      child: FushiPlaceholderMessage(
-        icon: FushiIcons.cloudOff,
-        message: t.music_server_load_failed,
-        detail: '$error',
-        action: FushiFilledButton.icon(
-          onPressed: retry,
-          icon: const FushiIcon(FushiIcons.refresh),
-          label: Text(t.music_server_retry),
-        ),
-      ),
-    );
+Widget musicBrowseErrorView(
+  BuildContext context,
+  Object error,
+  VoidCallback retry,
+) => Center(
+  child: FushiPlaceholderMessage(
+    icon: FushiIcons.cloudOff,
+    message: t.music_server_load_failed,
+    detail: '$error',
+    action: FushiFilledButton.icon(
+      onPressed: retry,
+      icon: const FushiIcon(FushiIcons.refresh),
+      label: Text(t.music_server_retry),
+    ),
+  ),
+);
 
-EdgeInsets _pagePadding(BuildContext context) {
+EdgeInsets musicBrowsePagePadding(BuildContext context) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   return withBottomSafeInset(
     context,
@@ -184,9 +186,14 @@ class _MusicServerListPageState extends ConsumerState<MusicServerListPage> {
   Future<List<MusicServerBrowser>> _load() =>
       widget.loader?.call() ?? loadMusicServerBrowsers(ref.read(appProvider));
 
+  /// 插件音源在这里只是管理入口（安装 / 启停 / 登录）；浏览走音乐页的推荐与搜索。
+  /// 合规门没过的平台（iOS）不出现。
+  bool get _showPlugins =>
+      widget.loader == null && isMusicPluginSourcesAvailable;
+
   @override
   Widget build(BuildContext context) {
-    return _scaffold(
+    return musicBrowseScaffold(
       context,
       title: t.music_servers_title,
       body: FutureBuilder<List<MusicServerBrowser>>(
@@ -197,15 +204,18 @@ class _MusicServerListPageState extends ConsumerState<MusicServerListPage> {
               AsyncSnapshot<List<MusicServerBrowser>> snap,
             ) {
               if (snap.hasError) {
-                return _errorView(
+                return musicBrowseErrorView(
                   context,
                   snap.error!,
-                  () => setState(() => _servers = _load()),
+                  () => setState(() {
+                    _servers = _load();
+                  }),
                 );
               }
               final List<MusicServerBrowser>? servers = snap.data;
               if (servers == null) return const FushiLoadingView();
-              if (servers.isEmpty) {
+              final int count = servers.length + (_showPlugins ? 1 : 0);
+              if (count == 0) {
                 return Center(
                   child: FushiPlaceholderMessage(
                     icon: FushiIcons.server,
@@ -216,18 +226,47 @@ class _MusicServerListPageState extends ConsumerState<MusicServerListPage> {
               }
               return FushiEntranceScope(
                 child: ListView.builder(
-                  padding: _pagePadding(context),
-                  itemCount: servers.length,
+                  padding: musicBrowsePagePadding(context),
+                  itemCount: count,
                   itemBuilder: fushiStaggeredItemBuilder((
                     BuildContext context,
                     int i,
                   ) {
+                    if (i >= servers.length) {
+                      return FushiPressScale(
+                        child: FushiGroupedListItem(
+                          key: const ValueKey<String>(
+                            'music-plugin-management',
+                          ),
+                          index: i,
+                          count: count,
+                          onTap: () => unawaited(
+                            openMusicPluginManagement(
+                              context,
+                              appModel: ref.read(appProvider),
+                            ),
+                          ),
+                          child: FushiListItem(
+                            leading: const FushiListLeadingIcon(
+                              FushiIcons.browserExtension,
+                            ),
+                            title: Text(t.music_plugins_title),
+                            subtitle: Text(
+                              t.music_plugins_entry_hint,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const FushiIcon(FushiIcons.chevronRight),
+                          ),
+                        ),
+                      );
+                    }
                     final MusicServerBrowser s = servers[i];
                     return FushiPressScale(
                       child: FushiGroupedListItem(
                         key: ValueKey<String>('music-server-${s.serverId}'),
                         index: i,
-                        count: servers.length,
+                        count: count,
                         onTap: () => unawaited(
                           Navigator.of(context).push<void>(
                             adaptivePageRoute<void>(
@@ -353,10 +392,12 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
               AsyncSnapshot<List<MusicServerArtist>> snap,
             ) {
               if (snap.hasError) {
-                return _errorView(
+                return musicBrowseErrorView(
                   context,
                   snap.error!,
-                  () => setState(() => _artists = widget.browser.listArtists()),
+                  () => setState(() {
+                    _artists = widget.browser.listArtists();
+                  }),
                 );
               }
               final List<MusicServerArtist>? artists = snap.data;
@@ -365,7 +406,7 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
             },
       ),
     };
-    return _scaffold(
+    return musicBrowseScaffold(
       context,
       title: widget.browser.displayName,
       actions: <FushiToolbarItem>[
@@ -420,7 +461,7 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
   }
 
   Widget _albumsErrorView(BuildContext context) =>
-      _errorView(context, _error!, () {
+      musicBrowseErrorView(context, _error!, () {
         setState(() => _next = 0);
         unawaited(_loadMore());
       });
@@ -506,6 +547,7 @@ class MusicServerAlbumCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FushiHoverLift(
+      scale: kMusicHoverLiftScale,
       builder: (BuildContext context, bool _) => shelfCoverCard(
         onTap: () => unawaited(
           Navigator.of(context).push<void>(
@@ -558,7 +600,7 @@ class _ArtistList extends StatelessWidget {
   Widget build(BuildContext context) {
     return FushiEntranceScope(
       child: ListView.builder(
-        padding: _pagePadding(context),
+        padding: musicBrowsePagePadding(context),
         itemCount: artists.length,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           final MusicServerArtist a = artists[i];
@@ -613,7 +655,7 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
   );
 
   @override
-  Widget build(BuildContext context) => _scaffold(
+  Widget build(BuildContext context) => musicBrowseScaffold(
     context,
     title: widget.artist.name,
     body: FutureBuilder<List<MusicServerAlbum>>(
@@ -621,7 +663,7 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
       builder:
           (BuildContext context, AsyncSnapshot<List<MusicServerAlbum>> snap) {
             if (snap.hasError) {
-              return _errorView(
+              return musicBrowseErrorView(
                 context,
                 snap.error!,
                 () => setState(
@@ -678,7 +720,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MusicServerAlbum album = widget.album;
-    return _scaffold(
+    return musicBrowseScaffold(
       context,
       title: album.title,
       body: FutureBuilder<List<MusicServerTrack>>(
@@ -686,7 +728,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
         builder:
             (BuildContext context, AsyncSnapshot<List<MusicServerTrack>> snap) {
               if (snap.hasError) {
-                return _errorView(
+                return musicBrowseErrorView(
                   context,
                   snap.error!,
                   () => setState(
@@ -736,6 +778,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                             children: <Widget>[
                               FushiPressScale(
                                 child: FushiFilledButton.icon(
+                                  size: FushiButtonSize.m,
                                   key: const ValueKey<String>(
                                     'music_server_album_play',
                                   ),
@@ -747,7 +790,8 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                                 ),
                               ),
                               FushiPressScale(
-                                child: FushiOutlinedButton.icon(
+                                child: FushiFilledButton.tonalIcon(
+                                  size: FushiButtonSize.m,
                                   onPressed: tracks.isEmpty
                                       ? null
                                       : () => _play(tracks, shuffle: true),
@@ -800,7 +844,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
               ];
               return FushiEntranceScope(
                 child: ListView.separated(
-                  padding: _pagePadding(context),
+                  padding: musicBrowsePagePadding(context),
                   itemCount: children.length,
                   separatorBuilder: (_, int i) =>
                       SizedBox(height: i == 0 ? tokens.spacing.gap : 0),
@@ -840,18 +884,20 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
 
   void _submit(String q) {
     if (q.trim().isEmpty) return;
-    setState(() => _result = widget.browser.search(q));
+    setState(() {
+      _result = widget.browser.search(q);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return _scaffold(
+    return musicBrowseScaffold(
       context,
       title: t.music_server_search,
       body: Builder(
         builder: (BuildContext context) => ListView(
-          padding: _pagePadding(context),
+          padding: musicBrowsePagePadding(context),
           children: <Widget>[
             FushiSearchField(
               controller: _controller,
@@ -871,7 +917,7 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
                       AsyncSnapshot<MusicServerSearchResult> snap,
                     ) {
                       if (snap.hasError) {
-                        return _errorView(
+                        return musicBrowseErrorView(
                           context,
                           snap.error!,
                           () => _submit(_controller.text),

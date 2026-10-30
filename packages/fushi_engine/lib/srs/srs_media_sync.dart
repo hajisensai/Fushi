@@ -288,13 +288,21 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     }
   }
 
+  // 两边都有的名字（本机原样有、位置上确认在）什么都不用做：同步地一次筛掉，只把要真做 IO 的交给并发池。以前
+  // 每个名字都走一遍 syncOne，这类名字一路没有真正挂起的 IO，上万个就在一串微任务里跑完、整段不回事件循环——
+  // 同步收尾的媒体阶段 UI isolate 收不到帧（手机上卡一两秒）。
+  final Set<String> work = <String>{
+    for (final String name in wanted)
+      if (!localIndex.hasExact(name) || stateOf(name) != _Remote.present) name,
+  };
+
   try {
     await _reconcile(
       report: report,
       store: store,
       location: location,
       folder: folder,
-      wanted: wanted,
+      wanted: work,
       present: present,
       archive: archive,
       syncOne: syncOne,
@@ -391,6 +399,9 @@ class _SrsLocalMediaIndex {
       for (final String n in names) n.toLowerCase(),
     });
   }
+
+  /// 名字原样在本机（不需要复核，同步判定）。
+  bool hasExact(String name) => _names.contains(name);
 
   Future<bool> has(File local, String name) async {
     if (_names.contains(name)) return true;

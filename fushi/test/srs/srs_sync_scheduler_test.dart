@@ -284,6 +284,15 @@ void main() {
     );
     await round();
     expect(mediaRuns, 2, reason: '发出了新笔记：它可能引用新媒体');
+    // 边背卡边推送：这一轮上传了复习日志，但日志不引用媒体，不对账（以前每轮都整套对账，同步收尾卡 UI）。
+    final SrsCardCacheRow card = (await store.allCardRows()).first;
+    await store.answer(card.id, 3);
+    final SrsSync2Report pushed = await s.syncWithBackend(
+      LocalDirectoryAssetStore(location),
+    );
+    expect(pushed.error, isNull);
+    expect(pushed.uploaded, greaterThan(0), reason: '这一轮确实发出了复习日志');
+    expect(mediaRuns, 2, reason: '只有复习日志：媒体引用不可能变，跳过');
     now = now.add(kSrsMediaReconcileInterval);
     await round();
     expect(mediaRuns, 3, reason: '到期：补上次没下载成的文件');

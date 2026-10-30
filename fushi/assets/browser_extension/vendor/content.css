@@ -589,6 +589,12 @@
     display: none;
 }
 
+/* 制卡目标 = Fushi 复习：复习徽标（同样画 ↗、去同一张笔记）可见时让它独占入口；
+   徽标没状态（srs-status-hidden）时 ↗ 兜底，已制卡条目不至于没有跳转。 */
+.srs-status-badge:not(.srs-status-hidden) ~ .open-anki-button.open-anki-srs-owned {
+    display: none;
+}
+
 /* TODO-1325 #4: 内联 SVG 动作按钮共享基类。顶部发音/收藏/制卡、清空草稿、句子上下文
    步进器全部挂 .inline-action-button：图标用 currentColor 跟随各按钮 color/opacity/
    主题；SVG 尺寸随按钮 font-size 自适应（width/height:1em），故各角色类只保留自己的

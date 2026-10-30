@@ -145,18 +145,22 @@ void main() {
   test('视频首页形态：首屏主卡 + 横滚行 + 分区化媒体库墙（TODO-2486 → 2026-10 重设计）', () {
     // TODO-2486 用户拍板设计稿（2026-08-01）：hero →「继续观看」/「最近添加」横滚行
     // → 分区化媒体库墙。hero 轮播已随 #792 dashboard 化删除（2026-10-04）。
-    // 2026-10 首页重设计：继续观看第一项提成首屏主卡（竖排版上图下文 / 横排版大图
-    // 叠字 + 右侧「已更新未看」面板），「下一集」并入继续观看；行卡统一 2:3 竖封面。
-    // 撤任一接线即转红。
+    // 2026-10 首页重设计：继续观看第一项提成首屏主卡，「下一集」并入继续观看；
+    // 行卡统一 2:3 竖封面。2026-10-28 用户选定方案 F：首屏换成
+    // VideoContinueSpotlight（剧照主卡 + 16:9 小卡），它就是全部的继续观看，
+    // 下面不再另起「继续观看」行。撤任一接线即转红。
     expect(
-      homeSrc.contains('_buildHomeHeroCard('),
+      homeSrc.contains('VideoContinueSpotlight('),
       isTrue,
-      reason: '竖排版首屏主卡（继续观看第一项）',
+      reason: '首屏继续观看区（主卡 + 小卡）',
     );
+    final String spotlightSrc = File(
+      'lib/src/media/video/video_continue_spotlight.dart',
+    ).readAsStringSync();
     expect(
-      homeSrc.contains('_buildHomeHeroSplit('),
+      spotlightSrc.contains('HorizontalDragScrollable('),
       isTrue,
-      reason: '横排版首屏主卡 + 「已更新未看」面板',
+      reason: '首屏小卡横滑区也要能鼠标横拖（用户实报「好像不能横向拖动」）',
     );
     expect(
       homeSrc.contains('_buildNextEpisodeRow'),
@@ -175,8 +179,8 @@ void main() {
     );
     expect(
       homeSrc.contains('_buildContinueRow'),
-      isTrue,
-      reason: '必须有「继续观看」横滚行',
+      isFalse,
+      reason: '继续观看全在首屏，不得再长回一行（用户「这不就重复了吗」）',
     );
     expect(
       homeSrc.contains('_buildRecentlyAddedRow'),

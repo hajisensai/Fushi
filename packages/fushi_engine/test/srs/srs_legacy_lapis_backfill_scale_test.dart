@@ -13,6 +13,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -176,8 +177,13 @@ Future<void> oldStyleMigrate(SrsDbStore s, List<String> ids) async {
   });
 }
 
-String fieldNamed(SrsNoteTypeView v, String name) =>
-    v.fields.firstWhere((SrsFieldDef f) => f.name == name).id;
+/// 按名字找字段；Fushi 卡片的 9 个字段改过名（FushiCardFields），旧名作别名也认。
+String fieldNamed(SrsNoteTypeView v, String name) {
+  final String alias = FushiCardFields.canonical(name);
+  return v.fields
+      .firstWhere((SrsFieldDef f) => f.name == name || f.name == alias)
+      .id;
+}
 
 /// [notes] 条笔记：[lapisShare] 比例经「导入的 Lapis（带自加 Source 字段）」旧式迁到 Fushi 卡片
 /// （MiscInfo 留空、待补迁），其余从 Basic 直接换到 Fushi 卡片（与 Lapis 无关）。

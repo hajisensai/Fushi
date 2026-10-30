@@ -5654,9 +5654,15 @@ function createEntryHeader(entry, idx) {
     // SrsMiningAnkiRepository.openWordInAnki → 复习笔记编辑页，与上面复习状态标记
     // （「新卡」/「复习中 · 3天后」）点开的是同一张笔记：两颗按钮去同一个地方，只留
     // 带状态配色 / 提示的那颗（它同样画 ↗ 图标，见 applySrsStatusBadge）。制卡目标 = Anki 时两者去处不同（Anki / Fushi 复习），照旧都在。
-    const srsOwnsOpenCard = srsBadge !== null &&
-        window.__fushiSrsMiningTarget === true;
-    if (miningEnabled && !srsOwnsOpenCard) {
+    //
+    // 用户 10-29「制完卡跳转没了」：旧实现在渲染时就静态认定「徽标接管 ↗」而不画这颗按钮，
+    // 可徽标要 srsTermStatus 回非空才显示——回 null（状态还没取回 / 读音对不上 / 卡在别处）
+    // 时已制卡条目就一个跳转入口都没有。现在两颗都在 DOM 里，徽标可见时由 CSS 兄弟选择器
+    // 藏掉 ↗（见 popup.css `.open-anki-srs-owned`），徽标不可见时 ↗ 兜底。
+    if (miningEnabled) {
+        if (srsBadge !== null && window.__fushiSrsMiningTarget === true) {
+            openAnkiButton.classList.add('open-anki-srs-owned');
+        }
         buttonsContainer.appendChild(openAnkiButton);
     }
     // Lookup-time detection: query Anki's real card existence for THIS word as

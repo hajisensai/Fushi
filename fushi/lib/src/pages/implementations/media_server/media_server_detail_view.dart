@@ -454,7 +454,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            ListTile(
+            FushiListItem(
               key: const ValueKey<String>('media-server-episode-mark-toggle'),
               leading: FushiIcon(
                 episode.played ? FushiIcons.visibilityOff : FushiIcons.check,
@@ -468,7 +468,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
               ),
             ),
             if (index > 0)
-              ListTile(
+              FushiListItem(
                 key: const ValueKey<String>(
                   'media-server-episode-mark-through',
                 ),
@@ -477,7 +477,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
                 onTap: () => Navigator.pop(dialogContext, _EpisodeMark.through),
               ),
             if (versionCount > 1)
-              ListTile(
+              FushiListItem(
                 key: const ValueKey<String>(
                   'media-server-episode-pick-version',
                 ),

@@ -23,7 +23,12 @@ enum HomeDashboardPanel {
   /// AI 助手入口条（spec 2026-10-26 D4 ①）：点了打开 AI 浮层。默认判据（见
   /// `home_ai_agent_panel.dart` 的 `resolveHomeAiAgentPanelVisible`）：AI 模块开着且
   /// 给「AI 助手」指派了可用的提供商。
-  aiAgent('ai_agent');
+  aiAgent('ai_agent'),
+
+  /// 媒体库全景（需求 2026-10-29）：全部作品封面与制卡词组成的可操作 3D 球幕，附分享用
+  /// 16 秒开场动画。默认判据（`home_panorama_panel.dart` 的
+  /// `resolveHomePanoramaPanelVisible`）：不钉隐藏就显示，空库时面板里给引导语。
+  panorama('library_panorama');
 
   const HomeDashboardPanel(this.id);
 

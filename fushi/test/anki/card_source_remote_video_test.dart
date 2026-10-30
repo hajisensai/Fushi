@@ -41,6 +41,19 @@ void main() {
     );
   });
 
+  test('BUG-3875：host 列出但没有字节可给的条目（网络流书 / .strm）不当来源', () {
+    const List<RemoteVideoInfo> withStream = <RemoteVideoInfo>[
+      RemoteVideoInfo(id: 'uid-web', title: 'Netflix', peerPlayable: false),
+    ];
+    expect(
+      findRemoteVideoForCardSource(
+        withStream,
+        link(CardSourceKind.video, 'uid-web'),
+      ),
+      isNull,
+    );
+  });
+
   test('书 / 漫画链接绝不去匹配视频清单', () {
     final CardSourceLink book = CardSourceLink(
       kind: CardSourceKind.book,

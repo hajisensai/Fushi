@@ -210,7 +210,7 @@ void main() {
       final SrsDbStore store = await _openStore(tester);
       for (final String w in <String>['区別', '飲む']) {
         await _addFushiCard(tester, store, <String, String>{
-          'Expression': w,
+          'Term': w,
           'MainDefinition': 'x',
           'Sentence': '<b>$w</b>です',
         });
@@ -262,7 +262,7 @@ void main() {
           for (final String w in <String>['区別', '飲む', '食べる', '読む']) {
             if (native) {
               await _addFushiCard(tester, store, <String, String>{
-                'Expression': w,
+                'Term': w,
                 'MainDefinition': 'x',
                 'Sentence': '<b>$w</b>です',
               });
@@ -351,9 +351,9 @@ void main() {
     testWidgets('靠左一行，翻面前后都在底栏按钮上方；评分按钮四颗等宽铺满', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await _addFushiCard(tester, store, <String, String>{
-        'Expression': '区別',
+        'Term': '区別',
         'MainDefinition': 'x',
-        'ExpressionAudio': '[sound:w.mp3]',
+        'TermAudio': '[sound:w.mp3]',
         'Sentence': '<b>区別</b>がつかない',
         'SentenceAudio': '[sound:s.mp3]',
       });
@@ -409,11 +409,11 @@ void main() {
     ) async {
       final SrsDbStore store = await _openStore(tester);
       await _addFushiCard(tester, store, <String, String>{
-        'Expression': '～というほどではない',
+        'Term': '～というほどではない',
         // 释义里带着词典自己的发音（多段）：不是卡面上的发音键。
         'MainDefinition':
             '例文[sound:d1.mp3][sound:d2.mp3]<audio src="d3.mp3"></audio>',
-        'ExpressionAudio': '[sound:w.mp3][sound:w.mp3][sound:gone.mp3]',
+        'TermAudio': '[sound:w.mp3][sound:w.mp3][sound:gone.mp3]',
         'Sentence': '言うほどではない',
         'SentenceAudio': '[sound:s.mp3]',
       });
@@ -453,10 +453,10 @@ void main() {
     ) async {
       final SrsDbStore store = await _openStore(tester);
       await _addFushiCard(tester, store, <String, String>{
-        'Expression': 'くっつく',
+        'Term': 'くっつく',
         'MainDefinition': 'stick',
-        'Picture': inlineVideoCoverHtml('clip.webm'),
-        'ExpressionAudio': inlineVideoWordAudioHtml('w.mp3'),
+        'Media': inlineVideoCoverHtml('clip.webm'),
+        'TermAudio': inlineVideoWordAudioHtml('w.mp3'),
         'Sentence': 'コトネちゃんに <b>くっつこう</b>',
         'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
       });
@@ -494,9 +494,9 @@ void main() {
   group('原生卡面媒体清单（srsFushiCardMedia）', () {
     test('片段自带例句：例句单元 = 片段，无陪播音频', () {
       final SrsFushiCardMedia m = srsFushiCardMedia(<String, String>{
-        'Picture': inlineVideoCoverHtml('clip.webm'),
+        'Media': inlineVideoCoverHtml('clip.webm'),
         'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
-        'ExpressionAudio': inlineVideoWordAudioHtml('w.mp3'),
+        'TermAudio': inlineVideoWordAudioHtml('w.mp3'),
       }, audioCardFront: false);
       expect(m.clipCarriesSentence, isTrue);
       expect(m.back, <String>['w.mp3', 'clip.webm']);
@@ -506,7 +506,7 @@ void main() {
 
     test('例句音频是另一个文件：片段只陪播画面，不单独进序列', () {
       final SrsFushiCardMedia m = srsFushiCardMedia(<String, String>{
-        'Picture': inlineVideoCoverHtml('clip.webm'),
+        'Media': inlineVideoCoverHtml('clip.webm'),
         'SentenceAudio': '[sound:s.mp3]',
       }, audioCardFront: false);
       expect(m.clipCarriesSentence, isFalse);
@@ -518,13 +518,13 @@ void main() {
       expect(
         srsFushiCardMedia(<String, String>{
           'SentenceAudio': '[sound:s.mp3]',
-          'ExpressionAudio': '[sound:w.mp3]',
+          'TermAudio': '[sound:w.mp3]',
         }, audioCardFront: true).front,
         <String>['s.mp3'],
       );
       expect(
         srsFushiCardMedia(<String, String>{
-          'ExpressionAudio': '[sound:w.mp3]',
+          'TermAudio': '[sound:w.mp3]',
         }, audioCardFront: true).front,
         <String>['w.mp3'],
       );
@@ -684,7 +684,7 @@ void main() {
     testWidgets('卡面：例句字段没 <b> 时目标词照样用强调色', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await _addFushiCard(tester, store, <String, String>{
-        'Expression': 'くっつく',
+        'Term': 'くっつく',
         'MainDefinition': 'stick',
         'Sentence': 'コトネちゃんに くっつこう',
       });

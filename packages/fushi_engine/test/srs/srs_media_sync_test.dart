@@ -1,6 +1,7 @@
 // SRS 媒体同步（srs_media_sync.dart，docs/specs/2026-10-25-srs-sync-v2-design.md §6.4、§10.5）：集合根下一个
 // 内容寻址的 `media/` 目录；缺的从位置下载、位置缺的上传；被删笔记的媒体保留 90 天后才从位置上清，删除只凭
 // 正面证据（本机不认识的文件不删）；归档位置永不删；旧格式按写入者分目录的媒体只读兜底。
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -284,6 +285,49 @@ void main() {
       2,
     ]);
     expect(await loc.get('$kSrsMediaFolder/localonly.png'), <int>[1]);
+  });
+
+  // 同步收尾 UI 卡一两秒：两边都有的媒体没有任何真正挂起的 IO，逐个走一遍异步流程就是一长串微任务、整段不回
+  // 事件循环。它们必须在进并发池之前被同步筛掉——一轮对账的微任务数不随这类名字的数量增长。
+  test('两边都有的媒体不进逐个异步流程：微任务数与它们的数量无关', () async {
+    Future<int> microtasksWith(int both) async {
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final Directory dir = mediaDir('both$both');
+      final SrsDbStore s = await device('m$both');
+      final StringBuffer pictures = StringBuffer();
+      for (int i = 0; i < both; i++) {
+        final String name = 'shared$i.png';
+        writeMedia(dir, name, <int>[i % 256]);
+        loc.files['$kSrsMediaFolder/$name'] = Uint8List.fromList(<int>[
+          i % 256,
+        ]);
+        pictures.write('<img src="$name">');
+      }
+      await addNote(s, '多$both', pictures.toString());
+      int scheduled = 0;
+      final SrsMediaSyncReport r = await runZoned(
+        () => media(s, loc, dir),
+        zoneSpecification: ZoneSpecification(
+          scheduleMicrotask:
+              (Zone self, ZoneDelegate parent, Zone zone, void Function() f) {
+                scheduled++;
+                parent.scheduleMicrotask(zone, f);
+              },
+        ),
+      );
+      expect(r.uploaded, 0);
+      expect(r.downloaded, 0);
+      expect(r.completed, isTrue);
+      return scheduled;
+    }
+
+    final int few = await microtasksWith(20);
+    final int many = await microtasksWith(1000);
+    expect(
+      many - few,
+      lessThan(200),
+      reason: '980 个两边都有的名字多出了 ${many - few} 个微任务（$few → $many）',
+    );
   });
 }
 

@@ -158,6 +158,47 @@ void main() {
     });
   });
 
+  group('Fushi 卡片（2026-10-29 改名后导出到 Anki）', () {
+    const AnkiNoteType fushiCard = AnkiNoteType(
+      id: 11,
+      name: 'Fushi Card',
+      fields: FushiCardNoteType.fields,
+    );
+    const AnkiNoteType renamedCopy = AnkiNoteType(
+      id: 12,
+      name: 'My mining',
+      fields: FushiCardNoteType.fields,
+    );
+
+    test('新字段名的导出副本被认领，映射与内置默认一致', () {
+      expect(NoteTypePresets.of(fushiCard), same(NoteTypePresets.fushiCard));
+      expect(NoteTypePresets.of(renamedCopy), same(NoteTypePresets.fushiCard));
+      final Map<String, String> m = NoteTypePresets.applyDefaults(
+        fushiCard,
+        const <String, String>{},
+      );
+      expect(m, FushiCardNoteType.defaultFieldMappings);
+      expect(m['TermReading'], '{reading}');
+      expect(m['Media'], '{card-image}');
+      expect(m['Source'], '{source-link} {clip-timestamp}');
+    });
+
+    test('旧名导出副本仍归 Lapis（映射值相同），Lapis 先于 Fushi 卡片被默认选中', () {
+      final AnkiNoteType oldExport = AnkiNoteType(
+        id: 13,
+        name: 'Fushi Card',
+        fields: <String>[...LapisNoteType.fields, 'SentenceTranslation'],
+      );
+      expect(NoteTypePresets.of(oldExport), same(NoteTypePresets.lapis));
+      expect(
+        NoteTypePresets.preferred(<AnkiNoteType>[fushiCard, _lapis]),
+        same(_lapis),
+      );
+      expect(FushiCardPreset.matches(_lapis), isFalse);
+      expect(FushiCardPreset.matches(_basic), isFalse);
+    });
+  });
+
   group('Lapis 行为不变', () {
     test('Lapis 映射 == LapisNoteType.defaultFieldMappings', () {
       final Map<String, String> m = NoteTypePresets.applyDefaults(

@@ -140,6 +140,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // music_study_tracker_test 咬住。
   'music/Count listening as study time':
       'test/media/music/music_study_tracker_test.dart',
+  // 歌词页流体背景（动效 / 样式 / 饱和度）：生效点是歌词页的 MusicLyricsBackdrop，
+  // harness 设置页没有歌词页。静态只渲染一次 / 样式切换 / 饱和度矩阵由
+  // music_lyrics_backdrop_test 咬住。
+  'music/Background motion': 'test/pages/music_lyrics_backdrop_test.dart',
+  'music/Fluid style': 'test/pages/music_lyrics_backdrop_test.dart',
+  'music/Background saturation': 'test/pages/music_lyrics_backdrop_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、
@@ -658,6 +664,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
   // 首页「AI 助手」条显示档：显隐判据与持久化在专项测试里钉死。
   'appearance/AI assistant': 'test/pages/home_ai_agent_panel_test.dart',
+  // 首页「媒体库全景」面板显示档：显隐判据在专项测试里钉死。
+  'appearance/Library panorama': 'test/pages/home_panorama_panel_test.dart',
   // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
   'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',

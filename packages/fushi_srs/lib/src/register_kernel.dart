@@ -253,6 +253,8 @@ Map<String, Object?> srsBuiltinNoteTypeKernelValue(SrsBuiltinNoteType b) =>
             'id': f.id,
             ...f.toValue(),
             'description': f.description,
+            if (b.legacyFieldNames[f.id] case final String legacy)
+              'legacyName': legacy,
           },
       ],
       'templates': <Object?>[

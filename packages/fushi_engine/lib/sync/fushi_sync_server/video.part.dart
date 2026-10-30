@@ -514,12 +514,13 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     final String? positionId = _extractVideoId(reqPath, 'position');
     if (positionId != null) {
       final int episodeIndex = _episodeIndexFromRequest(request);
-      // 先确认该视频 id（含集下标）在 host DB 真实存在，防止任意 id 写脏 prefs。
-      final File? file = await svc.resolveVideoFile(
-        positionId,
-        episodeIndex: episodeIndex,
-      );
-      if (file == null) return shelf.Response.notFound('Video not found');
+      // 存在性闸门：该视频 id（含集下标）在 host DB 真实存在，防止任意 id 写脏
+      // prefs。与 /playback 同口径只认 DB 行，不用 [resolveVideoFile]——网络流书 /
+      // `.strm` 行 host 没有媒体字节、resolveVideoFile 恒 null，旧闸门让它们的
+      // 进度推不回 host（BUG-3875）；host 网络盘掉线时本地文件行也同样被误拒。
+      if (!await svc.videoExists(positionId, episodeIndex: episodeIndex)) {
+        return shelf.Response.notFound('Video not found');
+      }
       switch (method) {
         case 'GET':
           final ({int positionMs, int updatedAtMs}) p = await svc

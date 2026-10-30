@@ -13,6 +13,7 @@ import 'package:fushi/src/web_browser/features/extension_host/web_browser_extens
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_subtitle_panel.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_video_activity.dart';
+import 'package:fushi/src/web_browser/features/extension_host/web_browser_video_remote.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
@@ -50,6 +51,8 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
     required this.lookup,
     required this.videoActivity,
     this.openSettings,
+    WebBrowserVideoRemote Function(WebBrowserExtensionHostFeature host)?
+    videoRemote,
     Future<WebBrowserExtensionBundleParts> Function()? loadParts,
     Future<String> Function(String asset)? loadAsset,
     String? secret,
@@ -68,7 +71,12 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
             return null;
           },
         );
+    this.videoRemote = videoRemote?.call(this);
   }
+
+  /// 手机视频遥控：把前台标签页的网页正片登记成遥控播放器（状态与控制都经本宿主的
+  /// [request] 走页内扩展整栈）。null = 不接遥控。
+  late final WebBrowserVideoRemote? videoRemote;
 
   final WebBrowserExtensionStorage _storage;
   late final StreamSubscription<Map<String, WebBrowserExtensionStorageChange>>
@@ -165,6 +173,7 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
     Uri? url,
   ) async {
     _tabs[tab.id] = tab;
+    videoRemote?.tabNavigated(tab);
     // 建 WebView 时整栈还没读完：这一页没有 document-start 脚本，加载完补装（脚本自带
     // 「同文档只装一次」守卫）。主世界桥错过了页面最早的请求，但字幕仍可经 app 后端取。
     if (!_tabsWithoutStartScript.contains(tab.id)) return;
@@ -178,7 +187,24 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
   }
 
   @override
+  void onUrlChanged(
+    BuildContext context,
+    WebBrowserTab tab,
+    InAppWebViewController controller,
+    Uri? url,
+  ) {
+    videoRemote?.tabNavigated(tab);
+  }
+
+  @override
+  void onPageCoveredChanged({required bool covered}) {
+    // 盖住期间手机遥控不新登记，免得下面这页换视频后抢走上层播放器的手机。
+    videoRemote?.setCovered(covered);
+  }
+
+  @override
   void onTabClosed(WebBrowserTab tab) {
+    videoRemote?.tabClosed(tab);
     _tabs.remove(tab.id);
     _tabsWithoutStartScript.remove(tab.id);
     final _ExtensionLookupSurface? s = _surfaces.remove(tab.id);
@@ -192,6 +218,15 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
 
   @override
   void onTabActiveChanged(WebBrowserTab tab, {required bool active}) {
+    final WebBrowserVideoRemote? remote = videoRemote;
+    if (remote != null) {
+      if (active) {
+        remote.setActiveTab(tab);
+      } else {
+        // 失活紧跟着的「新前台页激活」会再报一次；这里先撤掉，免得换页间隙还控着旧页。
+        remote.tabDeactivated(tab);
+      }
+    }
     if (!active && _panelTabId == tab.id) {
       _panelTabId = null;
       _changed.notify();
@@ -316,6 +351,16 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
         },
       );
 
+  /// 以 [tab] 的身份发一条扩展后台消息（`chrome.runtime.sendMessage` 同一份路由）：
+  /// 字幕侧栏之外的 app 侧调用方（手机视频遥控的在线搜字幕）用。
+  Future<Object?> runtimeMessage(
+    WebBrowserTab tab,
+    Map<String, Object?> message,
+  ) => routeWebBrowserExtensionMessage(
+    Map<String, dynamic>.from(message),
+    _servicesFor(tab),
+  );
+
   /// 扩展资源里只开放各语言的界面字典（i18n.js 按需取）；其它路径一律不给。
   static final RegExp _kAssetAllow = RegExp(
     r'^locales/[A-Za-z]{2}(-[A-Za-z]{2})?\.json$',
@@ -439,6 +484,7 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
 
   @override
   void dispose() {
+    videoRemote?.dispose();
     unawaited(_storageChanges.cancel());
     for (final _ExtensionLookupSurface s in _surfaces.values) {
       lookup?.unregister(s);

@@ -284,7 +284,7 @@ void main() {
         // 词频明细区（srs-fushi-frequency）只在不聚合时出现。
         appearance: const SrsCardAppearance(aggregateFrequency: false),
         fields: _fields(<String, String>{
-          'ExpressionAudio': '[sound:word.mp3]',
+          'TermAudio': '[sound:word.mp3]',
           'SentenceAudio': '[sound:sentence.mp3]',
         }),
       );
@@ -368,9 +368,9 @@ void main() {
       tester,
       answer: true,
       fields: _fields(<String, String>{
-        'Picture': coverMediaRef('clip.webm'),
+        'Media': coverMediaRef('clip.webm'),
         'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
-        'ExpressionAudio': inlineVideoWordAudioHtml('word.mp3'),
+        'TermAudio': inlineVideoWordAudioHtml('word.mp3'),
       }),
     );
     final Finder clip = find.byKey(const ValueKey<String>('srs-fushi-picture'));
@@ -412,8 +412,8 @@ void main() {
       tester,
       answer: true,
       fields: _fields(<String, String>{
-        'ExpressionFurigana': '',
-        'ExpressionReading': 'かよう',
+        'TermFurigana': '',
+        'TermReading': 'かよう',
         'PitchPosition': '0, 2',
         'PitchCategories': '',
       }),
@@ -435,8 +435,8 @@ void main() {
       tester,
       answer: true,
       fields: _fields(<String, String>{
-        'ExpressionFurigana': '',
-        'ExpressionReading': 'かよう',
+        'TermFurigana': '',
+        'TermReading': 'かよう',
         'PitchPosition': '',
       }),
     );
@@ -447,7 +447,7 @@ void main() {
 
   group('词频聚合', () {
     final Map<String, String> freq = <String, String>{
-      'FreqSort': '1840',
+      'FrequencyRank': '1840',
       'Frequency':
           '<ul><li>JPDB: 100</li><li>JPDB: 2000</li><li>BCCWJ: 5</li></ul>',
     };
@@ -629,7 +629,7 @@ void main() {
       tester,
       answer: true,
       size: const Size(1280, 800),
-      fields: _fields(<String, String>{'Picture': '<img src="$_tallPng">'}),
+      fields: _fields(<String, String>{'Media': '<img src="$_tallPng">'}),
     );
     final Rect tall = await pictureRect();
     expect(tall.height, lessThanOrEqualTo(220.5));
@@ -652,7 +652,7 @@ void main() {
       tester,
       answer: true,
       store: SrsMediaStore(dir),
-      fields: _fields(<String, String>{'Picture': '<img src="clip.gif">'}),
+      fields: _fields(<String, String>{'Media': '<img src="clip.gif">'}),
     );
     final Finder images = find.descendant(
       of: find.byKey(const ValueKey<String>('srs-fushi-picture')),
@@ -706,7 +706,7 @@ void main() {
         size: const Size(1280, 800),
         store: SrsMediaStore(dir),
         fields: _fields(<String, String>{
-          'Picture': '<img src="never_synced.png">',
+          'Media': '<img src="never_synced.png">',
         }),
       );
       // 文件读取失败在真实 IO 里回调，setState 后再 pump 一帧。
@@ -734,7 +734,7 @@ void main() {
         size: const Size(1280, 800),
         store: SrsMediaStore(dir),
         fields: _fields(<String, String>{
-          'Picture': coverMediaRef('never_synced.webm'),
+          'Media': coverMediaRef('never_synced.webm'),
         }),
       );
       await tester.runAsync(
@@ -758,7 +758,7 @@ void main() {
 
   test('图片来源：光栅 data URI → 内存；SVG / 远程 / 无媒体库 → 不画', () {
     final String sample = srsImageSources(
-      srsSampleCardFields()['Picture']!,
+      srsSampleCardFields()['Media']!,
     ).single;
     expect(srsCardImageProvider(sample, null), isA<MemoryImage>());
     expect(

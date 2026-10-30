@@ -95,6 +95,16 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/media/video/web_video_hosting.dart'
+    show WebVideoHosting;
+import 'package:fushi/src/media/video/video_player_controller.dart'
+    show VideoPlayerController;
+import 'package:fushi/src/mining/web_mine_background.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart';
+import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
+    show WebVideoFushiPage;
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
@@ -463,6 +473,9 @@ class _HomePageState extends BasePageState<HomePage>
   /// 于是每次都回到第一个「首页」分区。持有 [GlobalKey] 让换布局变成同一子树换父节点。
   final GlobalKey _homeBodyKey = GlobalKey(debugLabel: 'home-tab-body');
 
+  /// 网页视频制卡队列的后台空闲自动制卡（Windows：网页播放器与静音录音只在那儿有）。
+  WebMineBackgroundRunner? _webMineBackground;
+
   /// Android games tab（串流接收端）的依赖装配；只在首次切到该 tab 时构造。
   late final GameStreamLibraryServices _gameStreamLibraryServices =
       GameStreamLibraryServices.interconnect(appModel: appModelNoUpdate);
@@ -510,6 +523,69 @@ class _HomePageState extends BasePageState<HomePage>
   static const Duration _periodicSyncInterval = Duration(minutes: 1);
   Timer? _periodicSyncTimer;
 
+  /// 用户不开播放页时，网页视频攒下的制卡队列也能在离开电脑时自动跑。停在哪一页都行
+  /// （制卡页叠在上面，跑完关掉回到原处），只在 Fushi 里有东西在播时不开：
+  /// 视频（本地 / 网页）在播、有声书 / 音乐在播，或者阅读器开着且窗口在前台（人可能
+  /// 正盯着一页在读，键鼠两分钟不动很正常）。
+  void _startWebMineBackground() {
+    // widget 测试里不起：调度器是常驻周期计时器，会让每个泵首页的测试都留下 pending timer。
+    if (!Platform.isWindows ||
+        Platform.environment.containsKey('FLUTTER_TEST')) {
+      return;
+    }
+    final VideoBookRepository repo = VideoBookRepository(
+      appModelNoUpdate.database,
+    );
+    final WebMineQueueStore store = WebMineQueueStore(
+      appModelNoUpdate.database,
+    );
+    final WebMineBackgroundRunner runner = WebMineBackgroundRunner(
+      pendingBookUids: () async {
+        final List<String> eligible = <String>[];
+        for (final String uid in await store.pendingBookUids()) {
+          final VideoBookRow? row = await repo.getByBookUid(uid);
+          if (row != null && shouldOpenInWebVideoPlayer(row.videoPath)) {
+            eligible.add(uid);
+          }
+        }
+        return eligible;
+      },
+      nothingPlaying: () {
+        if (!mounted || VideoPlayerController.anyPlaying) return false;
+        if (appModelNoUpdate
+                .audioCtrl
+                .audioHandler
+                ?.playbackState
+                .value
+                .playing ??
+            false) {
+          return false;
+        }
+        final bool focused =
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+        return !(appModelNoUpdate.isMediaOpen && focused);
+      },
+      openMiningPage: (String uid) async {
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => WebVideoFushiPage.neutralized(
+              bookUid: uid,
+              repo: repo,
+              hosting: WebVideoHosting.builtin,
+              autoRunMineQueue: true,
+              idleAutoMining: true,
+              closeAfterMining: true,
+            ),
+          ),
+        );
+      },
+    );
+    _webMineBackground = runner;
+    runner.start();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -547,6 +623,7 @@ class _HomePageState extends BasePageState<HomePage>
       return true;
     }());
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
+    _startWebMineBackground();
     // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
     // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService
     // ——spec 2026-07-10 §7 后服务由 AppModel 持有 app 级监听，消费按
@@ -906,6 +983,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _webMineBackground?.dispose();
     _appleChrome.dispose();
     _largeTitle.dispose();
     _shellActions.dispose();
@@ -1683,6 +1761,7 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.manga ||
     HomeTab.video ||
     HomeTab.games ||
+    HomeTab.music ||
     HomeTab.browse => true,
     _ => false,
   };
@@ -2073,13 +2152,19 @@ class _HomePageState extends BasePageState<HomePage>
         // 横滑切模块（只在手机底栏布局启用）。结构三套布局恒定，只翻 enabled：
         // 按布局增删这一层会让 GlobalKey 下的整棵正文重挂（BUG-2719 的那个坑）。
         Expanded(
-          child: HomeModuleSwipeDetector(
-            enabled: _moduleSwipeEnabled(),
-            tracker: _moduleRoot,
-            controller: _moduleSwipe,
-            targetFor: _moduleSwipeTarget,
-            onSwipe: _selectTab,
-            child: buildBody(),
+          // 音乐播放条真悬浮在正文之上（用户 2026-10-29：「做成真悬浮不要占住
+          // 底部」）：不再占 Column 的一行，胶囊两侧透出、点得到下面的内容。
+          child: MusicFloatingBarHost(
+            // 各 tab 自管底部留白；音乐页自己包 MusicBarReserve。
+            reserveSpace: false,
+            child: HomeModuleSwipeDetector(
+              enabled: _moduleSwipeEnabled(),
+              tracker: _moduleRoot,
+              controller: _moduleSwipe,
+              targetFor: _moduleSwipeTarget,
+              onSwipe: _selectTab,
+              child: buildBody(),
+            ),
           ),
         ),
         // 玻璃设计系统的移动布局里内容延伸到悬浮标签栏下面（extendBody），
@@ -2094,7 +2179,6 @@ class _HomePageState extends BasePageState<HomePage>
                 const RecommendedPackDownloadMiniBar(),
               if (visibility.isEnabled(ModuleId.listening))
                 const NowListeningMiniBar(),
-              const MusicNowPlayingBar(),
             ],
           ),
         ),
@@ -4182,14 +4266,11 @@ String? homeShellTitleFor(
     HomeTab.video ||
     HomeTab.games ||
     HomeTab.browse ||
-    HomeTab.dictionaries => homeNavItemFor(tab).label,
-    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）；音乐库
-    // 页同样自己画浮动顶栏（标题 + 加文件夹 / 重扫）。
-    HomeTab.home ||
-    HomeTab.web ||
-    HomeTab.srs ||
+    // 音乐库页与其他库页同一套浮动工具栏行（2026-10-30），页面名同样由外壳给。
     HomeTab.music ||
-    HomeTab.settings => null,
+    HomeTab.dictionaries => homeNavItemFor(tab).label,
+    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）。
+    HomeTab.home || HomeTab.web || HomeTab.srs || HomeTab.settings => null,
   };
 }
 

@@ -316,8 +316,8 @@ SettingsIconTone settingsIconToneForGroup(SettingsNavigationGroupId id) =>
 
 /// 分类 / 行首图标块。
 ///
-/// - M3E：色调 container 上的单色图标，静止是方圆角（边长 × 0.3），[selected]
-///   时弹簧变形成圆并换成 primary 实底（M3E 形状库「当前项」的形状对比）。
+/// - M3E：不垫底色（用户 2026-10-29），按色调强调色着色的字形；[selected] 时
+///   字形换成 primary。
 /// - Apple：不垫底色（用户 2026-10-04），iOS 系统色着色的字形；选中（行是
 ///   强调色实底时）字形换成 onAccent。
 class SettingsShapeIcon extends StatelessWidget {
@@ -339,12 +339,12 @@ class SettingsShapeIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final SettingsKitStyle style = SettingsKitStyle.of(context);
-    final (Color container, Color onContainer) = settingsToneColors(
-      context,
-      tone,
-      style: style,
-    );
     if (style == SettingsKitStyle.apple) {
+      final (Color container, Color _) = settingsToneColors(
+        context,
+        tone,
+        style: style,
+      );
       // 玻璃：图标不垫底色块（用户 2026-10-04「图标不要填充底」），只用 iOS
       // 系统色给字形着色区分分类；占位宽度与 iOS 图标位一致，文字左缘对齐。
       final double extent =
@@ -360,40 +360,34 @@ class SettingsShapeIcon extends StatelessWidget {
         ),
       );
     }
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // M3E 同样不垫色块（用户 2026-10-29「这些图标底色都去掉」，与 Apple 版和
+    // 二级导航行一致）：裸字形用该色调对应的强调色着色，组间仍能分区；占位
+    // 宽度保持原块边长，标题左缘不漂移。选中时字形换成 primary。
     final double extent = size ?? 40;
-    return SettingsSpringValue(
-      value: selected ? 1 : 0,
-      builder: (BuildContext context, double t, Widget? _) {
-        final double c = t.clamp(0.0, 1.0);
-        // 圆角越过 1 的那段 overshoot 不再增大（已经是圆），改成轻微放大，
-        // 让「变成圆」那一下有回弹。
-        final double radius = lerpDouble(extent * 0.3, extent / 2, c)!;
-        final double scale = 1 + math.max(0, t - 1) * 0.6;
-        return Transform.scale(
-          scale: scale,
-          child: SizedBox.square(
-            dimension: extent,
-            child: DecoratedBox(
-              decoration: ShapeDecoration(
-                color: Color.lerp(container, scheme.primary, c),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(radius),
-                ),
-              ),
-              child: Center(
-                child: FushiIcon(
-                  icon,
-                  size: extent * 0.55,
-                  color: Color.lerp(onContainer, scheme.onPrimary, c),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+    final Color glyph = selected
+        ? Theme.of(context).colorScheme.primary
+        : settingsToneGlyphColor(context, tone);
+    return SizedBox.square(
+      dimension: extent,
+      child: Center(
+        child: FushiIcon(icon, size: extent * 0.66, color: glyph),
+      ),
     );
   }
+}
+
+/// 无底色图标的字形色：M3E 取色调所在强调色系的实色（primary / tertiary /
+/// secondary / error），灰色调取 onSurfaceVariant；墨水屏塌缩成 onSurface。
+Color settingsToneGlyphColor(BuildContext context, SettingsIconTone tone) {
+  final ColorScheme scheme = Theme.of(context).colorScheme;
+  if (isEinkTheme(context)) return scheme.onSurface;
+  return switch (tone) {
+    SettingsIconTone.blue || SettingsIconTone.teal => scheme.primary,
+    SettingsIconTone.purple || SettingsIconTone.pink => scheme.tertiary,
+    SettingsIconTone.green || SettingsIconTone.orange => scheme.secondary,
+    SettingsIconTone.red => scheme.error,
+    SettingsIconTone.gray => scheme.onSurfaceVariant,
+  };
 }
 
 // -----------------------------------------------------------------------------
