@@ -123,6 +123,8 @@ require('./relative')   // 只能加载包内已校验的 .js
 | `searchBest` | `{ query }` | `{ artist?: Artist, playlist?: Playlist, album?: Album }` 或 `null`：平台自己的「最佳匹配」（综合搜索置顶卡）。需同时声明 `search` |
 | `stream` | `{ id, quality: 'standard'\|'high'\|'lossless'\|'hires' }` | `Stream`；不可播放时抛错（错误信息给用户看） |
 | `lyrics` | `{ id }` | `{ original?: LyricText, translation?: LyricText, romanization?: LyricText }` 或 `null` |
+| `lyricsSearch` | `{ query, title, artist?, album?, durationMs? }` | `{ items: [{ ref, title, artist, durationMs? }] }`：按本地 / 服务器曲目的标题 + 艺人搜歌词候选（不要求插件有自己的曲目）。必须与 `lyricsFetch` 同时声明；可以只声明这两个能力（纯歌词插件，详见 2026-10-30-lyrics-plugins.md） |
+| `lyricsFetch` | `{ ref }` | `{ original?: LyricText, translation?: LyricText, romanization?: LyricText }` 或 `null`：取 `lyricsSearch` 选中候选的歌词。必须与 `lyricsSearch` 同时声明 |
 | `home` | `{}` | `{ sections: [Section] }`：音乐页「推荐」页签的内容（每日推荐、推荐歌单、榜单等）；登录后可给个性化内容 |
 | `library` | `{ page: 0 起, pageSize }` | `{ items: [Playlist], hasMore: bool }`：已登录账号自己的歌单与收藏的歌单（「我喜欢」排第一）；未登录返回空页。需同时声明 `account` |
 | `like` | `{ op: 'list' }` / `{ op: 'set', id, liked: bool }` | list → `{ ids: [曲目 id], playlist?: Playlist }`（平台账号喜欢的全部曲目 + 承载它们的「喜欢」歌单），未登录返回 `null`；set → `null`，未登录或平台拒绝时抛错（消息给用户看）。需同时声明 `login` / `account` |
