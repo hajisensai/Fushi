@@ -177,6 +177,29 @@ pub(crate) mod audit {
         }
     }
 
+    /// ID 列里不许有文本形式的 UUID（经 SQL 从别处搬来、没过 `srs_id` 的值）：有就记下来。
+    pub(crate) fn check_stored(c: &rusqlite::Connection) {
+        let found = stored_text(c);
+        HITS.lock().unwrap_or_else(|e| e.into_inner()).extend(found);
+    }
+
+    pub(crate) fn stored_text(c: &rusqlite::Connection) -> Vec<String> {
+        let mut out = Vec::new();
+        for (table, cols) in super::COLUMNS {
+            for col in *cols {
+                let q = format!("SELECT srs_idt({col}) FROM {table} WHERE typeof({col}) = 'text' AND typeof(srs_id({col})) = 'blob' LIMIT 1");
+                if let Ok(v) = c.query_row(&q, [], |r| r.get::<_, String>(0)) {
+                    out.push(format!("{table}.{col} stores text UUID {v}"));
+                }
+            }
+        }
+        out
+    }
+
+    pub(crate) fn quoted(sql: &str) -> bool {
+        quoted_uuid(sql) && !allowed(sql)
+    }
+
     #[allow(deprecated)]
     pub(crate) fn install(conn: &mut rusqlite::Connection) {
         conn.trace(Some(|sql: &str| {
@@ -185,11 +208,32 @@ pub(crate) mod audit {
             }
         }));
     }
+
+    pub(crate) fn installed(mut conn: rusqlite::Connection) -> rusqlite::Connection {
+        install(&mut conn);
+        conn
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 两道测试期检查自己会响：存了文本 UUID 的列、绑了文本 UUID 的语句都能被认出来。
+    #[test]
+    fn the_audits_catch_text_uuids() {
+        let c = Connection::open_in_memory().unwrap();
+        register(&c).unwrap();
+        let u = "01928c3e-0000-7000-8000-0000000a5e01";
+        c.execute_batch("CREATE TABLE srs_local_state (profile_uid UUIDTEXT NOT NULL, json TEXT NOT NULL)").unwrap();
+        c.execute("INSERT INTO srs_local_state VALUES (srs_id(?1), '{}')", [u]).unwrap();
+        assert!(audit::stored_text(&c).is_empty());
+        c.execute("INSERT INTO srs_local_state VALUES (?1, '{}')", [u]).unwrap();
+        assert_eq!(audit::stored_text(&c), vec![format!("srs_local_state.profile_uid stores text UUID {u}")]);
+        assert!(audit::quoted(&format!("SELECT 1 FROM t WHERE profile_uid = '{u}'")));
+        assert!(!audit::quoted(&format!("SELECT 1 FROM t WHERE profile_uid = srs_id('{u}')")));
+        assert!(!audit::quoted("SELECT 1 FROM t WHERE profile_uid = x'01928c3e000070008000000000a5e01'"));
+    }
 
     #[test]
     fn round_trips_uuids_and_leaves_other_text_alone() {

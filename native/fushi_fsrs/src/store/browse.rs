@@ -947,7 +947,7 @@ impl Session {
         for chunk in ids.chunks(CHUNK) {
             let q = format!(
                 "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
-                (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+                (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
             );
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let args = std::iter::once(profile).chain(chunk.iter().map(|s| s.as_str()));
@@ -987,7 +987,7 @@ impl Session {
         for chunk in ids.chunks(CHUNK) {
             let q = format!(
                 "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND deleted_at IS NULL",
-                (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+                (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
             );
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let args = std::iter::once(profile).chain(chunk.iter().map(|s| s.as_str()));
@@ -1109,7 +1109,7 @@ impl Session {
                 for chunk in ids.chunks(CHUNK) {
                     let q = format!(
                         "{SELECT} AND f.entity_id IN ({}) AND +f.profile_uid = srs_id(?1){} ORDER BY f.entity_id",
-                        (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", "),
+                        (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", "),
                         key_filter(chunk.len() + 2, key_args.len())
                     );
                     let args: Vec<Sql> = std::iter::once(Sql::Text(profile.to_owned()))
@@ -1689,7 +1689,7 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     for chunk in deck_notes.chunks(CHUNK) {
         let q = format!(
             "SELECT srs_idt(note_id) AS note_id, srs_idt(deck_id) AS deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
-            (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+            (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let args = std::iter::once(profile).chain(chunk.iter().copied());
@@ -1957,7 +1957,7 @@ mod tests {
     /// 每条缓存行的 `dupe_norm`。
     fn dupe_norms(d: &Device) -> Vec<(String, Option<String>)> {
         let w = d.core.writer().unwrap();
-        let mut stmt = w.prepare("SELECT srs_idt(id), dupe_norm FROM srs_notes_cache ORDER BY id").unwrap();
+        let mut stmt = w.prepare("SELECT srs_idt(id), dupe_norm FROM srs_notes_cache ORDER BY srs_idt(id)").unwrap();
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
     }
 
