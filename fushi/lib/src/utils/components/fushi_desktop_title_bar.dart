@@ -138,10 +138,17 @@ class FushiDesktopTitleBar extends StatefulWidget {
   /// 内容左上角，BUG-973），沉浸页标题行隐去时也隐藏（悬停浮出时一起回来）。
   /// AppKit 进出原生全屏会重建标题栏视图、复位 `isHidden`，所以退出全屏后
   /// 调用方要再断言一次。非 macOS no-op。
+  ///
+  /// macOS **原生全屏**例外：红绿灯在系统自动隐去的全屏标题栏里，指针移到屏幕
+  /// 顶边才随菜单栏滑出、不会常驻内容上；这时把它们设成 hidden，滑出来的标题栏
+  /// 就是空的（用户 2026-10-31「全屏状态看不到交通灯」）。
   static void reassertMacTrafficLights() {
+    final bool nativeFullscreen =
+        MacosFullscreenState.instance.isFullscreen.value;
     unawaited(
       setMacOSTrafficLightsHidden(
-        _contentFullscreen.value || _immersiveCaptionConcealed,
+        (_contentFullscreen.value && !nativeFullscreen) ||
+            _immersiveCaptionConcealed,
       ),
     );
   }
@@ -619,20 +626,27 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     // 自觉。
     // 没有页面上报色 = 标题行浮在页面上、完全透明：页面背景（含详情页
     // fanart）从窗口顶端铺起，与下面的主界面是同一张，没有接缝。
-    // 沉浸页（非 macOS）的标题行悬停才浮出、盖在页面顶端：同样透明，只留按钮
+    // 沉浸页的标题行悬停才浮出、盖在页面顶端：同样透明，只留按钮
     // 组与柔光，不在画面 / 正文上压一条实色带。
     final bool immersive =
         page != null && FushiDesktopTitleBar.immersivePagesFillWindow;
-    final Color captionFill = page == null || immersive
+    // 窗口按钮按平台而不是按设计系统（用户 2026-10-04）：macOS 一律用系统原生
+    // 红绿灯（左上角，顶栏只给它们留位），Windows / Linux 一律是 MD3 那组按钮。
+    final bool trafficLights = FushiDesktopTitleBar._hostIsMacOS;
+    //
+    // macOS 的平台视图（阅读器 / 漫画的 WKWebView）是真 NSView：引擎只在 Flutter
+    // 实际画在它上面的区域截获鼠标，全透明的标题行一点就落进 WebView、拖不动
+    // 窗口。沉浸页标题行浮出时铺一层肉眼不可见（1/255）的页面底色，让这一条
+    // 归 Flutter 命中；隐去时（透明度 0 不绘制）照旧把点击交给页面。
+    final Color captionFill = page == null
         ? Colors.transparent
+        : immersive
+        ? (trafficLights ? page.background.withAlpha(1) : Colors.transparent)
         : Color.alphaBlend(page.background, colors.surface);
     // 柔光垫在页面底色上（沉浸页）或根主题表面色上（普通页）。
     final Color haloBase = page == null
         ? colors.surface
         : Color.alphaBlend(page.background, colors.surface);
-    // 窗口按钮按平台而不是按设计系统（用户 2026-10-04）：macOS 一律用系统原生
-    // 红绿灯（左上角，顶栏只给它们留位），Windows / Linux 一律是 MD3 那组按钮。
-    final bool trafficLights = FushiDesktopTitleBar._hostIsMacOS;
     return Container(
       height: FushiDesktopTitleBar.height,
       // 底色是不透明命中层（ColoredBox），接管模式下改由不吃指针的底层画。
