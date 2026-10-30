@@ -34,7 +34,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
-use rusqlite::types::Value;
+use rusqlite::types::{Value, ValueRef};
 use rusqlite::{Connection, OpenFlags};
 
 const LEGACY_KEY: &str = "legacy_import";
@@ -151,7 +151,10 @@ impl ReadSession {
     /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
     pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         let conn = Conn::of(self.conn.lock().map_err(|_| "srs read session poisoned".to_string())?)?;
-        query_rows(&conn, sql, params)
+        let out = query_rows(&conn, sql, params);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&conn, sql)?;
+        out
     }
 
     /// 回滚读事务并关闭连接（幂等）。会等别的线程上在途的查询跑完；之后的查询报「已关闭」。
@@ -192,6 +195,7 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
         .map(|n| Value::Text((*n).to_string()))
         .collect();
     let n = names.len();
+    let id_cols = ids::id_columns(&stmt);
     let mut out: Vec<Vec<Value>> = vec![names];
     let mut q = stmt
         .query(rusqlite::params_from_iter(params.iter()))
@@ -199,7 +203,11 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
     while let Some(row) = q.next().map_err(|e| e.to_string())? {
         let mut vals = Vec::with_capacity(n);
         for i in 0..n {
-            vals.push(row.get::<_, Value>(i).map_err(|e| e.to_string())?);
+            let v = row.get_ref(i).map_err(|e| e.to_string())?;
+            vals.push(match ids::outward(&id_cols, i, v) {
+                Some(t) => Value::Text(t),
+                None => v.into(),
+            });
         }
         out.push(vals);
     }
@@ -245,7 +253,7 @@ impl SrsCore {
         )
         .map_err(|e| format!("open {}: {e}", path.display()))?;
         configure(&writer)?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "id_audit"))]
         ids::audit::install(&mut writer);
         let mode: String = writer
             .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
@@ -265,7 +273,7 @@ impl SrsCore {
         )
         .map_err(|e| format!("open reader {}: {e}", path.display()))?;
         configure(&reader)?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "id_audit"))]
         let reader = ids::audit::installed(reader);
         let drift_reader = Connection::open_with_flags(
             path,
@@ -273,7 +281,7 @@ impl SrsCore {
         )
         .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
         configure(&drift_reader)?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "id_audit"))]
         let drift_reader = ids::audit::installed(drift_reader);
         Ok(Self {
             writer: Mutex::new(Some(writer)),
@@ -509,6 +517,8 @@ impl SrsCore {
         let w = self.writer()?;
         let out = Self::exec_on(&w, sql, params, select);
         self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&w, sql)?;
         out
     }
 
@@ -531,7 +541,10 @@ impl SrsCore {
             let r = self.drift_reader()?;
             let readonly = r.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?.readonly();
             if readonly {
-                return Self::exec_on(&r, sql, params, true);
+                let out = Self::exec_on(&r, sql, params, true);
+                #[cfg(feature = "id_audit")]
+                ids::audit::take(&r, sql)?;
+                return out;
             }
         }
         self.exec(sql, params, true)
@@ -557,6 +570,7 @@ impl SrsCore {
             .iter()
             .map(|c| Value::Text((*c).to_string()))
             .collect();
+        let id_cols = ids::id_columns(&stmt);
         let mut out = Vec::with_capacity(4096);
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&(n as u32).to_le_bytes());
@@ -569,7 +583,11 @@ impl SrsCore {
             .map_err(|e| format!("{e} in {sql}"))?;
         while let Some(row) = q.next().map_err(|e| e.to_string())? {
             for i in 0..n {
-                rows::push_value(&mut out, row.get_ref(i).map_err(|e| e.to_string())?);
+                let v = row.get_ref(i).map_err(|e| e.to_string())?;
+                match ids::outward(&id_cols, i, v) {
+                    Some(t) => rows::push_value(&mut out, ValueRef::Text(t.as_bytes())),
+                    None => rows::push_value(&mut out, v),
+                }
             }
             count += 1;
         }
@@ -596,6 +614,8 @@ impl SrsCore {
         };
         let out = run();
         self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&w, "")?;
         out
     }
 
@@ -694,7 +714,7 @@ impl SrsCore {
         )
         .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
         configure(&conn)?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "id_audit"))]
         let conn = ids::audit::installed(conn);
         conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))

@@ -116,6 +116,24 @@ pub(crate) fn col_opt(r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<Optio
     Ok(r.get::<_, Option<Id>>(i)?.map(|x| x.0))
 }
 
+/// 给 Dart 的结果里哪几列是 ID 列（声明类型 [DECLTYPE]；表达式列没有声明类型，SQL 里自己套 `srs_idt`）。
+pub(crate) fn id_columns(stmt: &rusqlite::Statement<'_>) -> Vec<bool> {
+    stmt.columns().iter().map(|c| c.decl_type() == Some(DECLTYPE)).collect()
+}
+
+/// 结果第 [i] 列的值交给 Dart 前：ID 列的 16 字节 BLOB 还原成 ID 文本（Dart 看到的格式与 v17 之前相同）。
+pub(crate) fn outward(id_cols: &[bool], i: usize, v: ValueRef<'_>) -> Option<String> {
+    match v {
+        ValueRef::Blob(b) if b.len() == 16 && id_cols[i] => Some(unpack(b.try_into().expect("16 bytes"))),
+        #[cfg(feature = "id_audit")]
+        ValueRef::Blob(b) if b.len() == 16 => {
+            audit::HITS.lock().unwrap_or_else(|e| e.into_inner()).push(format!("ID blob returned to Dart in column {i}"));
+            None
+        }
+        _ => None,
+    }
+}
+
 /// `srs_id(x)`：ID 文本 → 存储值（BLOB / NULL 原样）；`srs_idt(x)`：存储值 → ID 文本。SQL 里拼 ID、Dart 原生 SQL
 /// 绑定 ID、从 JSON 里取出 ID 再和列比较时用。确定性、无副作用（SQLite 把常量参数的调用提到循环外）。
 pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
@@ -140,7 +158,7 @@ pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
 
 /// 测试构建：每条语句跑之前看扩展 SQL，绑了 UUID 形状的文本参数（`'xxxxxxxx-xxxx-…'`）就记下来——ID 列存的是
 /// BLOB，这样的绑定查不到也写错形状。只有 [allowed] 里的语句例外（比较 JSON 里的值、元数据表）。
-#[cfg(test)]
+#[cfg(any(test, feature = "id_audit"))]
 pub(crate) mod audit {
     use std::sync::Mutex;
 
@@ -207,6 +225,19 @@ pub(crate) mod audit {
                 HITS.lock().unwrap().push(sql.to_owned());
             }
         }));
+    }
+
+    /// Dart 经桥跑的一条语句之后：这期间记下的绑定 / 存储问题转成错误返回（`id_audit` 构建的库）。
+    #[cfg(feature = "id_audit")]
+    pub(crate) fn take(c: &rusqlite::Connection, sql: &str) -> Result<(), String> {
+        if c.is_autocommit() && !sql.trim_start().to_ascii_uppercase().starts_with("SELECT") {
+            check_stored(c);
+        }
+        let hits = std::mem::take(&mut *HITS.lock().unwrap_or_else(|e| e.into_inner()));
+        if hits.is_empty() {
+            return Ok(());
+        }
+        Err(format!("id audit: {}", hits.join("\n---\n")))
     }
 
     pub(crate) fn installed(mut conn: rusqlite::Connection) -> rusqlite::Connection {
