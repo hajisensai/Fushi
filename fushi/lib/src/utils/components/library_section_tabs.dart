@@ -143,6 +143,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required this.focusIdPrefix,
     this.secondary = false,
     this.fill = true,
+    this.overflowMenu = true,
     this.floating = false,
     this.orderKey,
     super.key,
@@ -162,6 +163,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required this.focusIdPrefix,
     this.secondary = false,
     this.fill = true,
+    this.overflowMenu = true,
     this.floating = false,
     super.key,
   }) : selected = null,
@@ -184,9 +186,14 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   final bool secondary;
 
   /// 摆得下时铺满整行（各段等分可用宽度、不滚动）；摆不下（窄窗 / 界面缩放 /
-  /// 长译文）自动退回贴左可滚动的常规形态，不会把段挤到截字。用于页面内的
-  /// 二级分区（如「浏览」各页签里的小说 / 漫画 / 视频），顶栏页签不用。
+  /// 长译文）先收紧内边距 / 字号再铺满，仍放不下时按 [overflowMenu] 收进末尾
+  /// 「更多」下拉或退回贴左可滚动，不会把段挤到截字。false = 一律贴左可滚动。
   final bool fill;
+
+  /// [fill] 收紧到最小仍摆不下时，是否把排不下的段收进末尾「更多」下拉。false =
+  /// 退回贴左横向滚动，每段始终是直接可点的页签（播放器设置的七个分类都是一级
+  /// 入口，不许藏进菜单，TODO-556 / TODO-1351）。
+  final bool overflowMenu;
 
   /// 仅自持形态；[LibrarySectionTabs.controlled] 下为 null（真相在 [controller]）。
   final T? selected;
@@ -244,13 +251,16 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
               onChanged: onSelect,
               secondary: secondary,
               fill: fill,
+              overflowMenu: overflowMenu,
               floating: floating,
             ),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => _buildBody(context);
+
+  Widget _buildBody(BuildContext context) {
     final TabController? host = controller;
     if (host == null) {
       final String? key = orderKey;
@@ -288,6 +298,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
                   controller: host,
                   secondary: secondary,
                   fill: fill,
+                  overflowMenu: overflowMenu,
                   floating: floating,
                 ),
         );
@@ -538,13 +549,19 @@ class _AppleSectionSegments<T extends Object> extends StatelessWidget {
           for (final int i in all)
             if (!visible.contains(i)) i,
         ];
+        // 铺满档溢出时同样占满整行（2026-10-30「二级菜单要做成全宽的」）：
+        // 可见段吃掉「更多」钮以外的全部宽度。
+        final Widget control = _control(visible, expand: true);
         return Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
           children: <Widget>[
-            SizedBox(
-              width: _controlWidth(cell, visible.length),
-              child: _control(visible, expand: true),
-            ),
+            if (fill)
+              Expanded(child: control)
+            else
+              SizedBox(
+                width: _controlWidth(cell, visible.length),
+                child: control,
+              ),
             Builder(
               builder: (BuildContext anchorContext) => _SectionTabMoreButton(
                 onTap: () => _showOverflow(anchorContext, hidden),
@@ -571,6 +588,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required ValueChanged<T> this.onChanged,
     this.secondary = false,
     this.fill = true,
+    this.overflowMenu = true,
     this.floating = false,
     super.key,
   }) : controller = null;
@@ -582,6 +600,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required TabController this.controller,
     this.secondary = false,
     this.fill = true,
+    this.overflowMenu = true,
     this.floating = false,
     super.key,
   }) : selected = null,
@@ -597,6 +616,9 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
 
   /// 见 [LibrarySectionTabs.fill]。
   final bool fill;
+
+  /// 见 [LibrarySectionTabs.overflowMenu]。
+  final bool overflowMenu;
 
   /// 见 [LibrarySectionTabs.floating]。
   final bool floating;
@@ -1137,6 +1159,10 @@ class _FushiSectionTabBarState<T extends Object>
       }
     }
 
+    if (!widget.overflowMenu) {
+      return const _SectionTabLayout(fit: _SectionTabFit.scroll);
+    }
+
     // ③ 溢出：最小字号、最小内边距下能排几段（末位要容得下溢出区里最宽的那段，
     // 因为选中段可能被替换上来）。
     final double room = available - _kSectionTabMoreWidth;
@@ -1301,9 +1327,10 @@ class _FushiSectionTabBarState<T extends Object>
             // 也不 rebuild），得靠这次校正把它拉回来。
             _scheduleProjection();
           };
-    // 二级内容域的浮动形态（[_compactSecondary]）矮一档：36 高的页签装进
-    // 44 高的扁平分段胶囊，与上面 56 高的悬浮一级页签胶囊层级分明。
-    final double? tabHeight = _compactSecondary
+    // 二级页签都矮一档（36）：浮动形态（[_compactSecondary]）装进 44 高的扁平
+    // 分段胶囊；库页二级下划线页签（非浮动 secondary）直接 36 高，不占 TabBar
+    // 默认的 46，与上面 56 高的悬浮一级页签胶囊层级分明。
+    final double? tabHeight = widget.secondary
         ? _kCompactSecondaryTabHeight
         : null;
     final List<Widget> tabs = <Widget>[
@@ -1375,11 +1402,13 @@ class _FushiSectionTabBarState<T extends Object>
         unselectedLabelStyle: unselectedLabelStyle,
         labelPadding: labelPadding,
         onTap: onTap,
-        // M3E：选中段是一枚 secondaryContainer 全胶囊，切换时弹性拉伸着滑过去
-        // （elastic = 先伸长够到目标段、再收回，形状随位移变形）。
+        // M3E：选中段是一枚 primaryContainer 全胶囊，切换时弹性拉伸着滑过去
+        // （elastic = 先伸长够到目标段、再收回，形状随位移变形）。用 primary 系
+        // 而不是 secondaryContainer：后者与轨道（surfaceContainer）太接近，
+        // 一级选中项不够跳（2026-10-30 用户截图）。
         indicator: ShapeDecoration(
           shape: const StadiumBorder(),
-          color: cs.secondaryContainer,
+          color: cs.primaryContainer,
         ),
         // 选中胶囊 = 整个页签格（不再上下各缩 4）：悬停 / 按下的 state layer
         // （splashBorderRadius 全圆角、整格）与命中区就是这一格，三者同形同大
@@ -1387,7 +1416,7 @@ class _FushiSectionTabBarState<T extends Object>
         indicatorSize: TabBarIndicatorSize.tab,
         indicatorPadding: EdgeInsets.zero,
         indicatorAnimation: TabIndicatorAnimation.elastic,
-        labelColor: cs.onSecondaryContainer,
+        labelColor: cs.onPrimaryContainer,
         unselectedLabelColor: cs.onSurfaceVariant,
         splashBorderRadius: const BorderRadius.all(Radius.circular(999)),
         tabs: tabs,
@@ -1396,12 +1425,13 @@ class _FushiSectionTabBarState<T extends Object>
     // 非浮动形态的调用方都已按页边内缩（页头 / 页面内容同一条页边），轨道
     // 不再自己多缩 12：左缘与页面大标题、内容卡对齐。
     if (widget.secondary) {
+      // M3 secondary tabs（2026-10-30 用户拍板方案 B）：文字 + 横贯整个页签的
+      // 细下划线 + 整排淡分隔线，与一级的按钮组胶囊拉开层级；不再是分段胶囊。
       return FushiTabBar.secondary(
         controller: controller,
-        trackInset: 0,
+        segmented: false,
         isScrollable: scrollable,
         tabAlignment: alignment,
-        dividerHeight: 0,
         labelStyle: labelStyle,
         unselectedLabelStyle: unselectedLabelStyle,
         labelPadding: labelPadding,

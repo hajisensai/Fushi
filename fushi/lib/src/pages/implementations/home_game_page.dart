@@ -385,15 +385,16 @@ class _HomeGamePageState extends State<HomeGamePage> {
                 // [FushiFloatingChromeOverlay] 读同一个作用域，子区的顶部让位
                 // 自动累加两行）。
                 child: FushiFloatingChromeOverlay(
+                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                  nestedGap: 0,
+                  opaqueChrome: true,
                   chrome: !hasSubNavigation
                       ? const SizedBox.shrink()
                       : Padding(
-                          // 与顶栏胶囊、页面内容同一条页边；两级页签之间 12。
-                          padding: EdgeInsets.fromLTRB(
-                            tokens.spacing.page,
-                            tokens.spacing.gap,
-                            tokens.spacing.page,
-                            tokens.spacing.gap,
+                          // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
+                          // 由嵌套层统一给，这里不再叠竖向留白。
+                          padding: EdgeInsets.symmetric(
+                            horizontal: tokens.spacing.page,
                           ),
                           child: Align(
                             alignment: AlignmentDirectional.centerStart,

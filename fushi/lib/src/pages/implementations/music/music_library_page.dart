@@ -580,13 +580,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       return const SizedBox.shrink();
     }
     return Padding(
-      // 与顶栏胶囊、页面内容同一条页边；两级页签之间 12。
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        0,
-      ),
+      // 与顶栏胶囊、页面内容同一条页边；二级下划线页签贴着顶栏（与书架 / 视频 /
+      // 游戏库同一间距）。
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
         child: LibrarySectionTabs<MusicLibrarySection>(
@@ -602,7 +598,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           onChanged: _selectSection,
           focusIdPrefix: 'music-library-subview',
           secondary: true,
-          floating: true,
+          // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+          // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
           // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义曲库分区顺序。
           orderKey: 'music-library',
         ),

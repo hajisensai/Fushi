@@ -402,16 +402,19 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                   // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
                   // 让位自动累加两行），收放不改页面视口。
                   child: FushiFloatingChromeOverlay(
+                    // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                    nestedGap: 0,
+                    opaqueChrome: true,
                     chrome: subTabs.length < 2
                         ? const SizedBox.shrink()
                         : Padding(
-                            // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4
-                            // = 两级页签之间 12（同浏览页二级内容域）。
-                            padding: EdgeInsets.fromLTRB(
-                              FushiDesignTokens.of(context).spacing.page,
-                              FushiDesignTokens.of(context).spacing.gap,
-                              FushiDesignTokens.of(context).spacing.page,
-                              FushiDesignTokens.of(context).spacing.gap,
+                            // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
+                            // 由嵌套层统一给（[kFushiFloatingChromeGap] + 顶栏
+                            // 底边 4），这里不再叠竖向留白。
+                            padding: EdgeInsets.symmetric(
+                              horizontal: FushiDesignTokens.of(
+                                context,
+                              ).spacing.page,
                             ),
                             child: Align(
                               alignment: AlignmentDirectional.centerStart,
@@ -426,7 +429,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                                 onChanged: _select,
                                 focusIdPrefix: 'video-library-subview',
                                 secondary: true,
-                                floating: true,
+                                // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+                                // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
                                 // 反馈 ndQ5eXLcqp：自定义页签顺序落在组内的
                                 // 二级胶囊上（一级恒为两组）。
                                 orderKey: 'video-${currentGroup?.name}',

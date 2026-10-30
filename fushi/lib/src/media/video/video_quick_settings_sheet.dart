@@ -244,27 +244,24 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
               end: tabsInset,
               top: compact ? 0 : tokens.spacing.gap,
             ),
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: LibrarySectionTabs<String>.controlled(
-                key: const ValueKey<String>('video-settings-tabs'),
-                tabs: <LibrarySectionTab<String>>[
-                  for (final ({String id, String label}) cat in _categories())
-                    LibrarySectionTab<String>(
-                      value: cat.id,
-                      label: cat.label,
-                      // 稳定 key：测试 / 焦点驱动靠 id 命中分类（不依赖标签文案）。
-                      labelKey: ValueKey<String>(
-                        'video-settings-cat-${cat.id}',
-                      ),
-                    ),
-                ],
-                controller: tabController,
-                focusIdPrefix: 'video-settings-tab',
-                // 放不下时横向滚动（选中段自动滚入可见区），不收进「更多」菜单：七个
-                // 分类都是一级入口，横滑一下就能看到。
-                fill: false,
-              ),
+            child: LibrarySectionTabs<String>.controlled(
+              key: const ValueKey<String>('video-settings-tabs'),
+              tabs: <LibrarySectionTab<String>>[
+                for (final ({String id, String label}) cat in _categories())
+                  LibrarySectionTab<String>(
+                    value: cat.id,
+                    label: cat.label,
+                    // 稳定 key：测试 / 焦点驱动靠 id 命中分类（不依赖标签文案）。
+                    labelKey: ValueKey<String>('video-settings-cat-${cat.id}'),
+                  ),
+              ],
+              controller: tabController,
+              focusIdPrefix: 'video-settings-tab',
+              // 摆得下时铺满面板宽度、各段等分（2026-10-30 用户「顶部栏改为全宽」）；
+              // 放不下时退回横向滚动（选中段自动滚入可见区），不收进「更多」菜单：
+              // 七个分类都是一级入口，横滑一下就能看到。
+              fill: true,
+              overflowMenu: false,
             ),
           ),
         if (isEinkTheme(context))

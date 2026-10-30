@@ -424,6 +424,9 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                 // [FushiFloatingChromeOverlay] 读同一个作用域，视图的顶部让位
                 // 自动累加两行）；当前组只有一个视图（或在导入页）时不占高度。
                 child: FushiFloatingChromeOverlay(
+                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                  nestedGap: 0,
+                  opaqueChrome: true,
                   chrome: _buildSubNavigation(context, views),
                   child: sections,
                 ),
@@ -533,14 +536,9 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     if (members.length < 2) return const SizedBox.shrink();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
-      // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4 = 两级页签之间 12
-      // （同浏览页二级内容域）。
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-      ),
+      // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12 由嵌套层统一给
+      // （[kFushiFloatingChromeGap] + 顶栏底边 4），这里不再叠竖向留白。
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
         child: LibrarySectionTabs<MediaLibraryViewKind>(
@@ -557,7 +555,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
           onChanged: _select,
           focusIdPrefix: '${widget.focusIdPrefix}-${group.name}',
           secondary: true,
-          floating: true,
+          // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+          // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
           // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义页签顺序。一级恒为两组，排序
           // 落在组内的二级胶囊上（书 / 漫画各组各一份）。
           orderKey: '${widget.focusIdPrefix}-${group.name}',
