@@ -62,6 +62,20 @@ class RemoteDownloadCancelled implements Exception {
   String toString() => 'RemoteDownloadCancelled: $message';
 }
 
+/// 来源自己说清了原因的取流失败（如音乐插件回答「需要会员」）：播放页失败态原样显示
+/// [message]，不再按异常文本去猜「网络 / 不可用」。[message] 已是给用户看的文字。
+class RemoteVideoStreamRefusedException implements Exception {
+  const RemoteVideoStreamRefusedException(this.message, [this.cause]);
+
+  final String message;
+
+  /// 原始异常（只留证，不参与文案）。
+  final Object? cause;
+
+  @override
+  String toString() => 'RemoteVideoStreamRefusedException: $message ($cause)';
+}
+
 /// 具备实时流播 / 外挂字幕 / 跨端断点的远端视频源——只有互联 host 的 live 库有这些
 /// 端点（云盘目录只是一堆静态资产，没有服务端能回答这些请求）。
 abstract class RemoteVideoClient extends RemoteVideoSource {

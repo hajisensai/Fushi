@@ -8,6 +8,17 @@
 **硬依赖，没有 Dart 回退**：Dart 侧加载失败抛 `FushiMusicUnavailableError`，测试找不到库判红、
 不 skip。`tool/native_libs.ps1` 负责本机备库（兄弟 worktree 同源码产物直接拷，否则 cargo 编）。
 
+## 在线音源插件运行时（`src/plugin/`，`plugin` 特性）
+
+QuickJS（rquickjs ≥0.14）沙箱跑用户安装的 `.fushiplug` JS 插件：包校验（`files.json` 逐文件
+sha256 + 可选 Ed25519 签名）、原子安装、每次加载重新哈希、清单网络授权（默认拒绝、拒私网）、
+同步 crypto / encoding 原生函数、`ffm_plugin_step` 步进式驱动（宿主调用 http / storage 交回 Dart
+执行）。契约与边界见 `docs/specs/2026-10-28-music-plugins.md`；Dart 侧在
+`packages/fushi_music/lib/src/plugin/`。`plugin` 是默认特性，**iOS 伞形库以
+`default-features = false` 依赖本 crate，不编入 JS 引擎**（App Store 合规，守卫
+`fushi/test/build/ios_store_compliance_guard_test.dart`）。rquickjs 0.9 在 CPU 预算中断后释放运行时
+会触发 QuickJS 引用计数断言（实测），不要回退版本。
+
 ## ABI
 
 | 符号 | 作用 |
@@ -104,4 +115,6 @@ App 打包（Windows CMake 已接；Linux CMake / Android Gradle / macOS / iOS �
 encoding_rs（(Apache-2.0 OR MIT) AND BSD-3-Clause）、quick-xml（MIT）、flate2（MIT OR Apache-2.0）、data-encoding（MIT）、
 rusty-chromaprint（MIT；其依赖 rubato /
 realfft MIT、rustfft MIT OR Apache-2.0）。rusty-chromaprint 与 realfft 上游仓库在发版提交上都没有
-LICENSE 文件，许可页按 SPDX 标准 MIT 文本收录（`pendingUpstreamLicense`）。
+LICENSE 文件，许可页按 SPDX 标准 MIT 文本收录（`pendingUpstreamLicense`）。`plugin` 特性另带：
+rquickjs / rquickjs-sys（MIT；编入 QuickJS-ng C 源码，MIT）、serde / serde_json、zip、sha2 / md-5 /
+hmac / aes / cbc / ecb、num-bigint、ed25519-dalek、getrandom、url（均 MIT OR Apache-2.0 或更宽）。

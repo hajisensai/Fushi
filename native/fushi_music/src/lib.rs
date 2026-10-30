@@ -18,6 +18,8 @@ pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
 pub mod lyrics;
+#[cfg(feature = "plugin")]
+pub mod plugin;
 pub mod scan;
 pub mod tag_write;
 pub mod tags;
@@ -371,7 +373,11 @@ pub unsafe extern "C" fn ffm_cd_list_drives(out_ptr: *mut *mut u8, out_len: *mut
         if out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
-        hand_over_bytes(cd::encode_drives(&cd::device::list_drives()), out_ptr, out_len);
+        hand_over_bytes(
+            cd::encode_drives(&cd::device::list_drives()),
+            out_ptr,
+            out_len,
+        );
         status::OK
     })
 }

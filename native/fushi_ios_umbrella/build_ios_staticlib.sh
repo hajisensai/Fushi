@@ -66,7 +66,7 @@ build_target() {
 # 每项 = 前缀:规模哨兵下界:绑定文件或目录（目录递归扫其中所有 .dart，fushi_compute 各域分文件）。
 # 下界与各 crate 自己的 verify_abi.sh 保持一致。
 verify_archive() {
-  local archive="$1" entry prefix rest min bindings expected exported missing
+  local archive="$1" entry prefix rest min bindings expected exported missing excl
   # nm 的退出码不作数：rustc 的 compiler_builtins 成员是 bitcode，Xcode 自带 nm 的 LLVM 比
   # rustc 的旧时读不了（"Unknown attribute kind"）、整体退出 1，pipefail 下脚本会静默挂掉。
   # 那些成员里没有 fp2p_* / ffsrs_* / ffc_*；真正的门是下面的「期望符号一个不缺」。
@@ -82,7 +82,11 @@ verify_archive() {
     rest="${entry#*:}"
     min="${rest%%:*}"
     bindings="${rest#*:}"
-    expected="$({ grep -rhoE --include='*.dart' "'${prefix}_[a-z0-9_]+'" "$bindings" || true; } | tr -d "'" | sort -u)"
+    # fushi_music 在伞形库里按 default-features = false 编（不带 plugin 特性：在线音源插件的
+    # JS 运行时，iOS 合规不上），期望集排除插件绑定目录 lib/src/plugin/（同 verify_abi.sh --no-plugin）。
+    excl=()
+    [[ "$prefix" == ffm ]] && excl=(--exclude-dir=plugin)
+    expected="$({ grep -rhoE --include='*.dart' ${excl[@]+"${excl[@]}"} "'${prefix}_[a-z0-9_]+'" "$bindings" || true; } | tr -d "'" | sort -u)"
     [[ "$(echo "$expected" | grep -c .)" -ge "$min" ]] || { echo "::error::expected ${prefix}_* set collapsed (<$min)" >&2; exit 1; }
     missing="$(comm -23 <(echo "$expected") <(echo "$exported"))"
     if [[ -n "$missing" ]]; then

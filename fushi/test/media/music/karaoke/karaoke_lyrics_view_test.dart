@@ -172,6 +172,102 @@ void main() {
       l.dispose();
     });
 
+    test('折行的当前行：逐字裁剪 / 辉光不越到同一句的另一视觉行', () {
+      // "And I'm here every night and / day"：窄宽度下折成多行（测试字体每字宽 = 字号）。
+      final LyricLine line = _syllables(0, <(String, int)>[
+        ('And ', 210),
+        ("I'm ", 330),
+        ('here ', 630),
+        ('every ', 330),
+        ('night ', 270),
+        ('and ', 90),
+        ('day', 570),
+      ]);
+      final KaraokeResolvedStyle style = KaraokeResolvedStyle(
+        main: const TextStyle(fontSize: 20, height: 1.25),
+        background: _style().background,
+        ruby: _style().ruby,
+        sub: _style().sub,
+        active: _style().active,
+        inactive: _style().inactive,
+        secondary: _style().secondary,
+        textScaler: TextScaler.noScaling,
+        showRuby: true,
+        showTranslation: true,
+        showRomanization: true,
+        glow: true,
+      );
+      final KaraokeLineLayout l = KaraokeLineLayout.build(
+        line: line,
+        width: 400,
+        style: style.main,
+        resolved: style,
+        align: TextAlign.left,
+        lineLevel: false,
+      );
+      final List<Rect> boxes = <Rect>[
+        for (final KaraokeSyllableGeometry g in l.syllables) ...g.boxes,
+      ];
+      final Set<double> visualLines = <double>{
+        for (final Rect b in boxes) b.top,
+      };
+      expect(visualLines.length, greaterThan(1), reason: '前提：这一句确实折行了');
+      for (final Rect a in boxes) {
+        final Rect clip = l.debugPaintClipOf(a);
+        for (final Rect b in boxes) {
+          if (b.top == a.top) continue;
+          // 另一视觉行的字形框（去掉 0.5 px 浮点边）不得落进本字的绘制裁剪区。
+          expect(
+            clip.overlaps(b.deflate(0.5)),
+            isFalse,
+            reason: '$a 的裁剪 $clip 越到了另一行的 $b',
+          );
+        }
+        // 本字自己的字形框整个都在裁剪区内（不把自己裁掉）。
+        expect(
+          clip.contains(a.topLeft) &&
+              clip.contains(a.bottomRight - const Offset(0.01, 0.01)),
+          isTrue,
+        );
+      }
+      final PictureRecorder rec = PictureRecorder();
+      final Canvas c = Canvas(rec);
+      for (int t = 0; t < 2600; t += 16) {
+        l.paintActive(
+          c,
+          timeMs: t,
+          motion: true,
+          lineLevelSweep: true,
+          liftPx: 3,
+        );
+      }
+      rec.endRecording().dispose();
+      l.dispose();
+    });
+
+    test('karaokeLineBands：相邻视觉行以间隙中线为界，首尾不设界', () {
+      final TextPainter p = TextPainter(
+        text: const TextSpan(
+          text: 'aaaa bbbb cccc',
+          style: TextStyle(fontSize: 20, height: 1.5),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: 100);
+      final List<(double, double)> bands = karaokeLineBands(
+        p.computeLineMetrics(),
+        textTop: 7,
+      );
+      expect(bands.length, 3);
+      expect(bands.first.$1, double.negativeInfinity);
+      expect(bands.last.$2, double.infinity);
+      for (int i = 0; i + 1 < bands.length; i++) {
+        expect(bands[i].$2, bands[i + 1].$1, reason: '带首尾相接、不重叠');
+      }
+      // 第 1 行带的下界落在两行行框之间（行高 30 → 界在 7 + 30）。
+      expect(bands[0].$2, closeTo(37, 0.5));
+      p.dispose();
+    });
+
     test('绘制不触发重排（每帧只改裁剪 / 渐变）', () {
       final LyricLine line = _syllables(0, <(String, int)>[
         ('ab', 500),
@@ -333,6 +429,35 @@ void main() {
         _host(timeline: _timeline(), clock: clock, playing: false),
       );
       await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('折行的当前行（带翻译副行）与下一行在布局上不重叠', (WidgetTester tester) async {
+      const String longText = "And I'm here every night and day, every night";
+      final LyricTimeline t = LyricTimeline(
+        format: 'ttml',
+        timingQuality: LyricTimingQuality.syllable,
+        lines: <LyricLine>[
+          LyricLine(
+            startMs: 1000,
+            endMs: 4000,
+            syllables: const <LyricSyllable>[
+              LyricSyllable(text: longText, startMs: 1000, endMs: 4000),
+            ],
+            translations: const <LyricTranslation>[
+              LyricTranslation('zh-Hans', '我没日没夜的在这里'),
+            ],
+          ),
+          _syllables(4200, <(String, int)>[('next', 800)]),
+        ],
+      );
+      final _Clock clock = _Clock()..ms = 2000;
+      await tester.pumpWidget(_host(timeline: t, clock: clock, playing: false));
+      await tester.pump(const Duration(seconds: 2));
+      final Rect cur = tester.getRect(_row(longText));
+      final Rect next = tester.getRect(_row('next'));
+      // 字宽 24、可用宽 752：这一句至少折成两行。
+      expect(cur.height, greaterThan(24 * 1.25 * 2));
+      expect(cur.bottom, lessThanOrEqualTo(next.top), reason: '当前行不得压到下一行');
     });
 
     testWidgets('无时间歌词：静态显示、点行不跳转', (WidgetTester tester) async {

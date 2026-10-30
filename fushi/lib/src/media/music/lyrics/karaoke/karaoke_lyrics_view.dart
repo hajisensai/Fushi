@@ -469,9 +469,16 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
     final bool isCurrent = synced && i == _current;
     final bool isFocus = !synced || i == focus;
     final int distance = focus < 0 ? i + 1 : (i - focus).abs();
+    // 离当前行越远越糊、越淡（参考图：相邻行还看得清，往下逐行沉进背景）。
     final double sigma = blur && synced && !isFocus
-        ? (distance.clamp(1, 3) * 0.9).toDouble()
+        ? (distance.clamp(1, 4) * 1.1).toDouble()
         : 0;
+    final double fadeOpacity = !synced || isFocus
+        ? 1
+        : (widget.appearance.inactiveOpacity - 0.07 * (distance - 1)).clamp(
+            0.12,
+            1.0,
+          );
     Widget row = Builder(
       builder: (BuildContext rowContext) => GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -508,7 +515,7 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
     );
     return AnimatedOpacity(
       key: ValueKey<int>(i),
-      opacity: isFocus ? 1 : widget.appearance.inactiveOpacity,
+      opacity: fadeOpacity,
       duration: fade,
       child: row,
     );

@@ -1,6 +1,6 @@
-/// 首页「媒体库全景」面板（[HomeDashboardPanel.panorama]）：全部作品封面与制卡词组成的
-/// 可操作 3D 球幕（默认可操作，不自动播动画）。拖拽 / 缩放 / 点封面打开；「全屏」进
-/// [PanoramaPage]，「分享动画」播 16 秒开场动画（只用于分享）。
+/// 首页「媒体库全景」面板（[HomeDashboardPanel.panorama]）：只是入口，不默认渲染 3D 预览
+/// （不建图集、不跑帧循环）。点面板 / 「全屏」进可操作的 [PanoramaPage]；「分享动画」先选
+/// 最后锁定的作品，再播 16 秒开场动画（只用于分享）。
 library;
 
 import 'dart:async';
@@ -8,10 +8,11 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/panorama/panorama_library.dart';
 import 'package:fushi/src/media/panorama/panorama_page.dart';
-import 'package:fushi/src/media/panorama/panorama_stage.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -35,7 +36,8 @@ class HomePanoramaPanel extends ConsumerWidget {
 
   final PanoramaOpenWork onOpen;
 
-  static const double stageHeight = 280;
+  /// 入口横幅高度（原先是 280 的实时预览）。
+  static const double bannerHeight = 112;
 
   void _openFullscreen(BuildContext context) {
     unawaited(
@@ -68,9 +70,11 @@ class HomePanoramaPanel extends ConsumerWidget {
     final Color fill = apple
         ? appleColorsOf(context).secondaryGroupedBackground
         : tokens.surfaces.group;
-    final AsyncValue<PanoramaAssets> assets = ref.watch(panoramaAssetsProvider);
-    final PanoramaAssets? ready = assets.valueOrNull;
-    final bool hasWorks = ready != null && !ready.library.isEmpty;
+    final AsyncValue<PanoramaLibrary> library = ref.watch(
+      panoramaLibraryProvider,
+    );
+    final PanoramaLibrary? ready = library.valueOrNull;
+    final bool hasWorks = ready != null && !ready.isEmpty;
 
     Widget action({
       required String id,
@@ -87,32 +91,38 @@ class HomePanoramaPanel extends ConsumerWidget {
       onTap: onPressed,
     );
 
-    final Widget stage;
-    if (hasWorks) {
-      stage = PanoramaStage(
-        key: const ValueKey<String>('home-panorama-stage'),
-        assets: ready,
-        onOpen: onOpen,
-      );
-    } else {
-      stage = ColoredBox(
-        color: const Color(0xFF05070F),
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(tokens.spacing.card),
-            child: Text(
-              assets.hasError
-                  ? t.panorama_load_failed
-                  : assets.isLoading
-                  ? t.panorama_loading
-                  : t.panorama_empty,
-              textAlign: TextAlign.center,
-              style: tokens.type.metadata.copyWith(color: Colors.white70),
+    final Widget banner = FushiPressScale(
+      enabled: hasWorks,
+      child: GestureDetector(
+        key: const ValueKey<String>('home-panorama-banner'),
+        behavior: HitTestBehavior.opaque,
+        onTap: hasWorks ? () => _openFullscreen(context) : null,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              radius: 1.4,
+              colors: <Color>[Color(0xFF2A1E3A), Color(0xFF05070F)],
+            ),
+          ),
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(tokens.spacing.card),
+              child: Text(
+                library.hasError
+                    ? t.panorama_load_failed
+                    : library.isLoading
+                    ? t.panorama_loading
+                    : hasWorks
+                    ? t.home_panel_panorama_hint
+                    : t.panorama_empty,
+                textAlign: TextAlign.center,
+                style: tokens.type.metadata.copyWith(color: Colors.white70),
+              ),
             ),
           ),
         ),
-      );
-    }
+      ),
+    );
 
     return FushiHoverLift(
       scale: 1.005,
@@ -159,7 +169,7 @@ class HomePanoramaPanel extends ConsumerWidget {
                         ),
                         if (ready != null)
                           Text(
-                            panoramaSummary(ready.library),
+                            panoramaSummary(ready),
                             key: const ValueKey<String>(
                               'home-panorama-summary',
                             ),
@@ -189,7 +199,7 @@ class HomePanoramaPanel extends ConsumerWidget {
                 ],
               ),
             ),
-            SizedBox(height: stageHeight, child: stage),
+            SizedBox(height: bannerHeight, child: banner),
           ],
         ),
       ),

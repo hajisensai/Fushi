@@ -1,4 +1,4 @@
-// TODO-817 M1c / TODO-1274 来源库管理视图：列出某媒体种类（'video' | 'book' |
+// TODO-817 M1c / TODO-1274 来源库管理视图：列出某媒体种类（'video' | 'book' | 'music' |
 // 'manga'）的来源库，支持添加本地文件夹、添加网络来源、重新扫描、打开文件夹
 // （仅 Windows 本地）、移除来源、拖拽重排。
 //
@@ -80,7 +80,7 @@ class MediaSourcesView extends ConsumerStatefulWidget {
     this.onLibraryChanged,
   });
 
-  /// 'video' | 'book' | 'manga' —— 决定统计文案与 mediaKind 过滤。
+  /// 'video' | 'book' | 'manga' | 'music' —— 决定统计文案与 mediaKind 过滤。
   final String mediaKind;
 
   /// true = 自带纵向滚动（页面语境，外层给的是 Expanded 无界高度）；
@@ -155,9 +155,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 本域可选的网络传输：书/漫画四 transport 全通（远端文件下载后导入）；
   /// 视频是 SFTP、WebDAV 与 AList/OpenList（条目原地流播——AList 起播前经 fs/get
   /// 换签名直链，SFTP 经回环中继按偏移读；FTP 读不了区间，扫描器会拒）。
-  List<String> get _networkTransports => widget.mediaKind == 'video'
-      ? const <String>['sftp', 'webdav', 'alist']
-      : const <String>['sftp', 'ftp', 'webdav', 'alist'];
+  /// 音乐只认本地文件夹（扫描器对非 local 来源直接报错，见 `_scanMusicSource`）。
+  List<String> get _networkTransports => switch (widget.mediaKind) {
+        'video' => const <String>['sftp', 'webdav', 'alist'],
+        'music' => const <String>[],
+        _ => const <String>['sftp', 'ftp', 'webdav', 'alist'],
+      };
 
   /// 页面页头与所有行级 mutation 共用的忙状态。
   bool get isBusy =>
@@ -689,6 +692,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String count = switch (widget.mediaKind) {
       'book' => t.media_source_count_book(n: total),
       'manga' => t.media_source_count_manga(n: total),
+      'music' => t.media_source_count_music(n: total),
       _ => t.media_source_count_video(n: total),
     };
     final DateTime? scannedAt = row.lastScannedAt;
@@ -777,6 +781,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 公开给外层的唯一动作入口（对话框页脚 / 页面页头按钮都调它）。
   Future<void> addSource() async {
     if (isBusy) return;
+    // 本域没有网络传输（音乐）：不弹二选一，直接选本地文件夹。
+    if (_networkTransports.isEmpty) {
+      await addLocalFolder();
+      return;
+    }
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
       builder: (BuildContext ctx) => FushiSimpleDialog(
@@ -1045,6 +1054,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   t.media_source_count_book(n: summary.importedMediaCount),
                 'manga' =>
                   t.media_source_count_manga(n: summary.importedMediaCount),
+                'music' =>
+                  t.media_source_count_music(n: summary.importedMediaCount),
                 _ => t.media_source_count_video(n: summary.importedMediaCount),
               },
               severity: ToastSeverity.success,

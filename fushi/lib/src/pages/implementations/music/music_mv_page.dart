@@ -20,7 +20,10 @@
 /// CD+G 下就是音频位置。MV 偏移来自绑定（声纹对齐求得），页内 ±100 ms 微调并写回绑定。
 ///
 /// 进入时暂停音乐播放引擎（同一首歌不该两路同时出声）；画布 / CD+G 离开时把引擎拨到本页
-/// 的位置（同一首）。iOS 在线 MV 不受限（D5）。
+/// 的位置（同一首）。
+///
+/// 在线 MV（插件音源的 `mvStream`）不走本页：[openMusicOnlineMvPage] 交给视频播放页
+/// 播（iOS 不受限，D5）。
 library;
 
 import 'dart:async';
@@ -37,11 +40,13 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_video_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart'
     show musicEdlUri;
+import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/video/video_mpv_config.dart'
     show resolvePlatformHwdec;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock, formatFushiPlaybackTime;
@@ -52,6 +57,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoInfo;
 import 'package:fushi_music/fushi_music.dart'
     show AssRawScript, FushiLyricsAsync, LyricTimeline;
 import 'package:material_ui/material_ui.dart';
@@ -152,6 +159,54 @@ Future<void> openMusicMvPage({
         track: MusicKaraokeTrack.fromRow(track),
         picture: MusicKaraokePicture.mv,
         binding: binding,
+      ),
+    ),
+  );
+}
+
+/// 在线 MV（插件音源的 `mvStream`）：不绑定曲库曲目，只给一个取流函数。进页时才取流
+/// （地址有时效），失败时播放页失败态显示 [describeError] 的文字。
+class MusicOnlineMv {
+  const MusicOnlineMv({required this.resolve, this.describeError});
+
+  /// 取流：播放地址与请求头（插件宿主已按网络授权核对过地址）。
+  final Future<({String url, Map<String, String> headers})> Function() resolve;
+
+  /// 取流失败时给用户看的文字（如插件说「需要会员」）；null 交给视频页按异常归类。
+  final String Function(Object error)? describeError;
+}
+
+/// 打开在线 MV：在视频播放页里播（字幕查词 / 制卡 / 倍速 / 小窗等与其它在线视频一致），
+/// 走视频源扩展同一条远端起播路径（[MusicOnlineMvVideoClient]，不进视频库）。进入时
+/// 暂停音乐播放引擎（同一首歌不该两路同时出声）。
+Future<void> openMusicOnlineMvPage({
+  required BuildContext context,
+  required String key,
+  required String title,
+  String? artist,
+  String? coverUrl,
+  required MusicOnlineMv source,
+}) async {
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  unawaited(app.musicSession.engine.pause());
+  final MusicOnlineMvVideoClient client = MusicOnlineMvVideoClient(
+    resolve: source.resolve,
+    describeError: source.describeError,
+  );
+  await Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralizedRemote(
+        info: RemoteVideoInfo(
+          id: '$kMusicOnlineMvVideoIdPrefix$key',
+          title: musicOnlineMvVideoTitle(title, artist),
+          coverUrl: coverUrl,
+        ),
+        repo: VideoBookRepository(app.database),
+        client: client,
       ),
     ),
   );

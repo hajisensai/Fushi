@@ -1,5 +1,3 @@
-import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
-import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -9820,10 +9818,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : lastTopRightSegment && _webMode
         ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
-    final List<VideoBarEntry> askAi = lastTopRightSegment
-        ? _askAiBarEntries(desktop: desktop)
-        : const <VideoBarEntry>[];
-    if (items.isEmpty && folded.isEmpty && disc.isEmpty && askAi.isEmpty) {
+    if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -9888,7 +9883,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               cluster: VideoBarCluster.start,
               child: buttonFor(item),
             ),
-          ...askAi,
           ...folded,
         ],
       );
@@ -9901,39 +9895,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : EdgeInsets.zero,
       child: buttonGroup(),
     );
-  }
-
-  /// 右上角按钮组的「问 AI」（D4 ③）：本页的顶栏动作体系是 [VideoControlBar]
-  /// （按 [VideoBarEntry.priority] 收进组尾「⋯」，不是 FushiFloatingTopBar），
-  /// 优先级 5 低于全部布局按钮（最冷门的逐帧是 10）= 空间不够时最先收起。上下文
-  /// 与悬浮球同一个 [_videoAiContext]。AI 模块关着时不出。
-  List<VideoBarEntry> _askAiBarEntries({required bool desktop}) {
-    if (!isAiModuleEnabled(appModel.moduleVisibility)) {
-      return const <VideoBarEntry>[];
-    }
-    void run() =>
-        openAiAgentForPage(context, scene: 'video', read: _videoAiContext);
-    return <VideoBarEntry>[
-      VideoBarEntry(
-        priority: 5,
-        menuAction: VideoBarMenuAction(
-          icon: kAiAgentAskIcon,
-          label: aiAgentAskLabel,
-          onSelected: run,
-        ),
-        child: FushiTooltip(
-          message: aiAgentAskLabel,
-          child: KeyedSubtree(
-            key: kAiAgentAskKey,
-            child: _chromeIconButton(
-              icon: kAiAgentAskIcon,
-              desktop: desktop,
-              onPressed: run,
-            ),
-          ),
-        ),
-      ),
-    ];
   }
 
   String get _clipExportTooltip {
@@ -10727,6 +10688,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     systemPadding: MediaQuery.of(context).padding,
     systemViewPadding: MediaQuery.of(context).viewPadding,
     systemBarsVisible: _systemBarsVisible,
+    desktopCaptionInset: FushiDesktopTitleBar.immersiveCaptionInset,
   );
 
   /// 字幕动态避让的「进度条上缘」高度（BUG-238 / BUG-901）：控制条可见时字幕底缘对它取
@@ -12076,6 +12038,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （解析/连接超时、网络错误、视频不可用/受限）各给出可指导的说明；无法归类时回退
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
+    // 来源已给出用户可读的原因（音乐插件 MV「需要会员」等）：原样显示。
+    if (error is RemoteVideoStreamRefusedException) return error.message;
     if (error is TimeoutException) return t.video_load_failed_timeout;
     // YouTube 兜底链每个 client 都死在传输层（连不上 / 超时）：出口问题（没走代理、
     // DNS 被污染），不是视频不可用。消息里的「manifest failed」不能再被下面的子串

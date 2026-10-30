@@ -59,7 +59,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 138);
+    expect(migrated.schemaVersion, 139);
     await migrated.writeMusicScanBatch(
       MusicScanBatchWrite(
         tracks: <MusicTracksCompanion>[_track('t1', album: 'a1')],
@@ -71,7 +71,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 138);
+    expect(probe.select('PRAGMA user_version').first.values.first, 139);
     for (final String table in musicTables) {
       expect(tableExists(probe, table), isTrue, reason: table);
     }
@@ -197,6 +197,26 @@ void main() {
           (MusicTrackRow t) => t.trackUid,
         ),
         <String>['t1', 't2'],
+      );
+    });
+
+    test('最近播放只算曲库曲目、过滤不占 limit 名额（在线曲最新也拿得到本地那首）', () async {
+      await db.writeMusicScanBatch(
+        MusicScanBatchWrite(
+          tracks: <MusicTracksCompanion>[_track('t1', album: 'a1')],
+          albums: <MusicAlbumsCompanion>[_album('a1')],
+          artists: const <MusicArtistsCompanion>[],
+          credits: const <MusicTrackCreditsCompanion>[],
+        ),
+      );
+      await db.startMusicPlayEvent(trackUid: 't1', startedAt: 1);
+      // 在线插件曲目：不在 music_tracks 里，但时刻更新。
+      await db.startMusicPlayEvent(trackUid: 'plugin:x:42', startedAt: 9);
+      expect(
+        (await db.listRecentlyPlayedMusicTracks(
+          limit: 1,
+        )).map((MusicTrackRow t) => t.trackUid),
+        <String>['t1'],
       );
     });
   });
