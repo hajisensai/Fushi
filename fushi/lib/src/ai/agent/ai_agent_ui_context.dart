@@ -17,7 +17,7 @@ AgentUiContext aiAgentUiContextFromScene(FloatingBallSceneSnapshot? scene) {
   return aiAgentUiContextFromMap(sceneName, scene?.aiContext);
 }
 
-/// 页面键值 → AI 助手的界面上下文（悬浮球与各页顶栏「问 AI」共用这一份归一）。
+/// 页面键值 → AI 助手的界面上下文（悬浮球与快捷键共用这一份归一）。
 ///
 /// [read] 是页面的上下文求值（与 [FloatingBallScene.aiContext] 同形）：`page` /
 /// `itemKind` / `itemId` / `itemTitle` / `position` 落进对应字段，其余键原样进

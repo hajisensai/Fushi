@@ -1,4 +1,3 @@
-import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
@@ -1011,13 +1010,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           overflowPriority: 10,
           onTap: () =>
               unawaited(_appModel.prefsRepo.setGamesLibraryListLayout(!list)),
-        ),
-        // 「问 AI」（D4 ③）：最低优先级，宽度不够时最先收进「⋯」；AI 模块关着
-        // 时为空。
-        ...aiAgentAskHeaderActions(
-          context,
-          visibility: _appModel.moduleVisibility,
-          page: 'games_library',
         ),
       ],
     );

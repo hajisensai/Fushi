@@ -242,7 +242,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'vol. ${number}';
   String get adaptation_progress_unit_volume_label => 'Volume';
   String get add_to_collection => 'Add to collection';
-  String get ai_agent_ask_action => 'Ask AI';
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
   String get ai_agent_attach_screen_text => 'Attach screen text';
@@ -8854,6 +8853,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get panorama_loading => 'Building your panorama…';
   String get panorama_open_fullscreen => 'Full screen';
   String get panorama_share_animation => 'Play share animation';
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -15072,8 +15077,6 @@ class _StringsAr extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'إضافة إلى مجموعة';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -29621,6 +29624,16 @@ class _StringsAr extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -40207,8 +40220,6 @@ class _StringsDe extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Zur Sammlung hinzufügen';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -55019,6 +55030,16 @@ class _StringsDe extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -65734,8 +65755,6 @@ class _StringsEs extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Añadir a colección';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -80564,6 +80583,16 @@ class _StringsEs extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -91317,8 +91346,6 @@ class _StringsFr extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Ajouter à la collection';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -106202,6 +106229,16 @@ class _StringsFr extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -116981,8 +117018,6 @@ class _StringsId extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Tambah ke koleksi';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -131647,6 +131682,16 @@ class _StringsId extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -142300,8 +142345,6 @@ class _StringsIt extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Aggiungi alla raccolta';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -157068,6 +157111,16 @@ class _StringsIt extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -167782,8 +167835,6 @@ class _StringsJa extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'コレクションに追加';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -181916,6 +181967,16 @@ class _StringsJa extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -192226,8 +192287,6 @@ class _StringsKo extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => '컬렉션에 추가';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -206385,6 +206444,16 @@ class _StringsKo extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -216737,8 +216806,6 @@ class _StringsNl extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Aan collectie toevoegen';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -231472,6 +231539,16 @@ class _StringsNl extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -242169,8 +242246,6 @@ class _StringsPtBr extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Adicionar à coleção';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -256951,6 +257026,16 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -267669,8 +267754,6 @@ class _StringsRu extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Добавить в коллекцию';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -282411,6 +282494,16 @@ class _StringsRu extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -293114,8 +293207,6 @@ class _StringsTh extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'เพิ่มในคอลเลกชัน';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -307652,6 +307743,16 @@ class _StringsTh extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -318237,8 +318338,6 @@ class _StringsTr extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Koleksiyona ekle';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -332915,6 +333014,16 @@ class _StringsTr extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -343564,8 +343673,6 @@ class _StringsVi extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => 'Thêm vào bộ sưu tập';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -358192,6 +358299,16 @@ class _StringsVi extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -368813,8 +368930,6 @@ class _StringsZhCn extends _StringsEn {
   String get adaptation_progress_unit_volume_label => '卷';
   @override
   String get add_to_collection => '加入合集';
-  @override
-  String get ai_agent_ask_action => '问 AI';
   @override
   String get ai_agent_attach_screen_image => '附上屏幕截图和文字';
   @override
@@ -382198,6 +382313,14 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get panorama_share_animation => '播放分享动画';
   @override
+  String get panorama_share_pick_message => '动画会穿过整个媒体库，最后飞到并打开这部作品。';
+  @override
+  String get panorama_share_pick_title => '分享动画：选择结尾的作品';
+  @override
+  String get panorama_stage_to_galaxy => '切换到星系视图';
+  @override
+  String get panorama_stage_to_sphere => '切换到球幕视图';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -391913,8 +392036,6 @@ class _StringsZhHk extends _StringsEn {
   String get adaptation_progress_unit_volume_label => 'Volume';
   @override
   String get add_to_collection => '加入合集';
-  @override
-  String get ai_agent_ask_action => 'Ask AI';
   @override
   String get ai_agent_attach_screen_image =>
       'Attach a screenshot and screen text';
@@ -405655,6 +405776,16 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get panorama_share_animation => 'Play share animation';
   @override
+  String get panorama_share_pick_message =>
+      'The animation flies through your library and ends by opening this work.';
+  @override
+  String get panorama_share_pick_title =>
+      'Share animation: pick the ending work';
+  @override
+  String get panorama_stage_to_galaxy => 'Switch to galaxy view';
+  @override
+  String get panorama_stage_to_sphere => 'Switch to sphere view';
+  @override
   String panorama_summary({
     required Object works,
     required Object mined,
@@ -415720,8 +415851,6 @@ extension on _StringsEn {
         return 'Volume';
       case 'add_to_collection':
         return 'Add to collection';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -428155,6 +428284,14 @@ extension on _StringsEn {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -437274,8 +437411,6 @@ extension on _StringsAr {
         return 'Volume';
       case 'add_to_collection':
         return 'إضافة إلى مجموعة';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -449705,6 +449840,14 @@ extension on _StringsAr {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -458822,8 +458965,6 @@ extension on _StringsDe {
         return 'Volume';
       case 'add_to_collection':
         return 'Zur Sammlung hinzufügen';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -471309,6 +471450,14 @@ extension on _StringsDe {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -480446,8 +480595,6 @@ extension on _StringsEs {
         return 'Volume';
       case 'add_to_collection':
         return 'Añadir a colección';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -492917,6 +493064,14 @@ extension on _StringsEs {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -502052,8 +502207,6 @@ extension on _StringsFr {
         return 'Volume';
       case 'add_to_collection':
         return 'Ajouter à la collection';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -514539,6 +514692,14 @@ extension on _StringsFr {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -523676,8 +523837,6 @@ extension on _StringsId {
         return 'Volume';
       case 'add_to_collection':
         return 'Tambah ke koleksi';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -536123,6 +536282,14 @@ extension on _StringsId {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -545244,8 +545411,6 @@ extension on _StringsIt {
         return 'Volume';
       case 'add_to_collection':
         return 'Aggiungi alla raccolta';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -557711,6 +557876,14 @@ extension on _StringsIt {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -566848,8 +567021,6 @@ extension on _StringsJa {
         return 'Volume';
       case 'add_to_collection':
         return 'コレクションに追加';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -579239,6 +579410,14 @@ extension on _StringsJa {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -588317,8 +588496,6 @@ extension on _StringsKo {
         return 'Volume';
       case 'add_to_collection':
         return '컬렉션에 추가';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -600711,6 +600888,14 @@ extension on _StringsKo {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -609802,8 +609987,6 @@ extension on _StringsNl {
         return 'Volume';
       case 'add_to_collection':
         return 'Aan collectie toevoegen';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -622271,6 +622454,14 @@ extension on _StringsNl {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -631401,8 +631592,6 @@ extension on _StringsPtBr {
         return 'Volume';
       case 'add_to_collection':
         return 'Adicionar à coleção';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -643865,6 +644054,14 @@ extension on _StringsPtBr {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -652992,8 +653189,6 @@ extension on _StringsRu {
         return 'Volume';
       case 'add_to_collection':
         return 'Добавить в коллекцию';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -665463,6 +665658,14 @@ extension on _StringsRu {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -674588,8 +674791,6 @@ extension on _StringsTh {
         return 'Volume';
       case 'add_to_collection':
         return 'เพิ่มในคอลเลกชัน';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -687023,6 +687224,14 @@ extension on _StringsTh {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -696140,8 +696349,6 @@ extension on _StringsTr {
         return 'Volume';
       case 'add_to_collection':
         return 'Koleksiyona ekle';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -708599,6 +708806,14 @@ extension on _StringsTr {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -717723,8 +717938,6 @@ extension on _StringsVi {
         return 'Volume';
       case 'add_to_collection':
         return 'Thêm vào bộ sưu tập';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -730168,6 +730381,14 @@ extension on _StringsVi {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -739288,8 +739509,6 @@ extension on _StringsZhCn {
         return '卷';
       case 'add_to_collection':
         return '加入合集';
-      case 'ai_agent_ask_action':
-        return '问 AI';
       case 'ai_agent_attach_screen_image':
         return '附上屏幕截图和文字';
       case 'ai_agent_attach_screen_text':
@@ -751576,6 +751795,14 @@ extension on _StringsZhCn {
         return '全屏';
       case 'panorama_share_animation':
         return '播放分享动画';
+      case 'panorama_share_pick_message':
+        return '动画会穿过整个媒体库，最后飞到并打开这部作品。';
+      case 'panorama_share_pick_title':
+        return '分享动画：选择结尾的作品';
+      case 'panorama_stage_to_galaxy':
+        return '切换到星系视图';
+      case 'panorama_stage_to_sphere':
+        return '切换到球幕视图';
       case 'panorama_summary':
         return ({
           required Object works,
@@ -760584,8 +760811,6 @@ extension on _StringsZhHk {
         return 'Volume';
       case 'add_to_collection':
         return '加入合集';
-      case 'ai_agent_ask_action':
-        return 'Ask AI';
       case 'ai_agent_attach_screen_image':
         return 'Attach a screenshot and screen text';
       case 'ai_agent_attach_screen_text':
@@ -772932,6 +773157,14 @@ extension on _StringsZhHk {
         return 'Full screen';
       case 'panorama_share_animation':
         return 'Play share animation';
+      case 'panorama_share_pick_message':
+        return 'The animation flies through your library and ends by opening this work.';
+      case 'panorama_share_pick_title':
+        return 'Share animation: pick the ending work';
+      case 'panorama_stage_to_galaxy':
+        return 'Switch to galaxy view';
+      case 'panorama_stage_to_sphere':
+        return 'Switch to sphere view';
       case 'panorama_summary':
         return ({
           required Object works,

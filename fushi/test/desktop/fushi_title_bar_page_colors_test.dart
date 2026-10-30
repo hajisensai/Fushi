@@ -245,6 +245,36 @@ void main() {
       expect(captionOpacity(tester), 0);
     });
 
+    testWidgets('触摸没有悬停：带子里按下浮出，带子外按下收起', (WidgetTester tester) async {
+      await pumpShell(tester, reader());
+      expect(captionOpacity(tester), 0);
+
+      final TestGesture touch = await tester.startGesture(
+        const Offset(200, 8),
+        kind: PointerDeviceKind.touch,
+      );
+      await touch.up();
+      await tester.pumpAndSettle();
+      expect(captionOpacity(tester), 1, reason: '纯触屏也要够得着窗口按钮');
+
+      // 浮出后再点带子里（窗口按钮所在处）不收起。
+      final TestGesture again = await tester.startGesture(
+        const Offset(300, 10),
+        kind: PointerDeviceKind.touch,
+      );
+      await again.up();
+      await tester.pumpAndSettle();
+      expect(captionOpacity(tester), 1);
+
+      final TestGesture outside = await tester.startGesture(
+        const Offset(200, 300),
+        kind: PointerDeviceKind.touch,
+      );
+      await outside.up();
+      await tester.pumpAndSettle();
+      expect(captionOpacity(tester), 0);
+    });
+
     testWidgets('普通页（未上报配色）顶栏常显', (WidgetTester tester) async {
       await pumpShell(tester, const Scaffold());
       expect(captionOpacity(tester), 1);
