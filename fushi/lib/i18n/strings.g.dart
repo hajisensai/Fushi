@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176494 (10382 per locale)
+/// Strings: 176562 (10386 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11098,6 +11098,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   String get srs_settings_rwkv_min_reviews_hint =>
       'If fewer cards than this have been reviewed in this deck today, top up with the cards RWKV is least sure you remember, even above the desired retention. 0 turns it off.';
@@ -11122,8 +11125,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_settings_rwkv_repeat_seconds => 'Minimum seconds in between';
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
   String get srs_settings_save => 'Save';
   String get srs_settings_saved => 'Deck settings saved';
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
   String get srs_settings_steps_invalid =>
@@ -33535,6 +33542,11 @@ class _StringsAr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -33574,9 +33586,15 @@ class _StringsAr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -58995,6 +59013,11 @@ class _StringsDe extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -59034,9 +59057,15 @@ class _StringsDe extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -84577,6 +84606,11 @@ class _StringsEs extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -84616,9 +84650,15 @@ class _StringsEs extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -110247,6 +110287,11 @@ class _StringsFr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -110286,9 +110331,15 @@ class _StringsFr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -135681,6 +135732,11 @@ class _StringsId extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -135720,9 +135776,15 @@ class _StringsId extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -161156,6 +161218,11 @@ class _StringsIt extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -161195,9 +161262,15 @@ class _StringsIt extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -185921,6 +185994,11 @@ class _StringsJa extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -185960,9 +186038,15 @@ class _StringsJa extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -210421,6 +210505,11 @@ class _StringsKo extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -210460,9 +210549,15 @@ class _StringsKo extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -235628,6 +235723,11 @@ class _StringsNl extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -235667,9 +235767,15 @@ class _StringsNl extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -261135,6 +261241,11 @@ class _StringsPtBr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -261174,9 +261285,15 @@ class _StringsPtBr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -286619,6 +286736,11 @@ class _StringsRu extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -286658,9 +286780,15 @@ class _StringsRu extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -311855,6 +311983,11 @@ class _StringsTh extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -311894,9 +312027,15 @@ class _StringsTh extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -337156,6 +337295,11 @@ class _StringsTr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -337195,9 +337339,15 @@ class _StringsTr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -362452,6 +362602,11 @@ class _StringsVi extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -362491,9 +362646,15 @@ class _StringsVi extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -386179,6 +386340,11 @@ class _StringsZhCn extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV 用神经网络根据整个复习历史估计每张卡此刻的回忆率；复习卡在估计回忆率降到目标保留率时出现，不看到期日。稳定性、难度与存下的到期日仍由 FSRS-7 维护。';
   @override
+  String get srs_settings_rwkv_ignore_limit => '忽略每日复习上限';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      '回忆率降到目标保留率的复习卡全部出，不受每日复习上限截断。';
+  @override
   String get srs_settings_rwkv_min_reviews => '每天最少复习数';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -386217,9 +386383,14 @@ class _StringsZhCn extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV 估计的回忆率从你的整体通过率附近开始，而不是从 100% 开始：目标保留率高于这个通过率时卡片几乎马上又会出现，远低于它时复习会很少。';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'RWKV 牌组建议把学习步长和重学步长留空：答错的卡直接回到复习队列，由 RWKV 按回忆率决定什么时候再出（当天也会再出）。';
+  @override
   String get srs_settings_save => '保存';
   @override
   String get srs_settings_saved => '牌组设置已保存';
+  @override
+  String get srs_settings_steps_empty_hint => '留空 = 不用步长，卡片直接进入复习。';
   @override
   String get srs_settings_steps_hint => '用空格分隔，如 1 10；每一步都要短于一天';
   @override
@@ -409847,6 +410018,11 @@ class _StringsZhHk extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -409886,9 +410062,15 @@ class _StringsZhHk extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -432010,6 +432192,10 @@ extension on _StringsEn {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -432041,10 +432227,14 @@ extension on _StringsEn {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -453580,6 +453770,10 @@ extension on _StringsAr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -453611,10 +453805,14 @@ extension on _StringsAr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -475206,6 +475404,10 @@ extension on _StringsDe {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -475237,10 +475439,14 @@ extension on _StringsDe {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -496836,6 +497042,10 @@ extension on _StringsEs {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -496867,10 +497077,14 @@ extension on _StringsEs {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -518477,6 +518691,10 @@ extension on _StringsFr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -518508,10 +518726,14 @@ extension on _StringsFr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -540078,6 +540300,10 @@ extension on _StringsId {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -540109,10 +540335,14 @@ extension on _StringsId {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -561688,6 +561918,10 @@ extension on _StringsIt {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -561719,10 +561953,14 @@ extension on _StringsIt {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -583232,6 +583470,10 @@ extension on _StringsJa {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -583263,10 +583505,14 @@ extension on _StringsJa {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -604725,6 +604971,10 @@ extension on _StringsKo {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -604756,10 +605006,14 @@ extension on _StringsKo {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -626308,6 +626562,10 @@ extension on _StringsNl {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -626339,10 +626597,14 @@ extension on _StringsNl {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -647922,6 +648184,10 @@ extension on _StringsPtBr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -647953,10 +648219,14 @@ extension on _StringsPtBr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -669540,6 +669810,10 @@ extension on _StringsRu {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -669571,10 +669845,14 @@ extension on _StringsRu {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -691118,6 +691396,10 @@ extension on _StringsTh {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -691149,10 +691431,14 @@ extension on _StringsTh {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -712714,6 +713000,10 @@ extension on _StringsTr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -712745,10 +713035,14 @@ extension on _StringsTr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -734305,6 +734599,10 @@ extension on _StringsVi {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -734336,10 +734634,14 @@ extension on _StringsVi {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -755693,6 +755995,10 @@ extension on _StringsZhCn {
             'RWKV 不可用：${error}。在此之前复习按 FSRS-7 存下的到期日排队。';
       case 'srs_settings_rwkv_hint':
         return 'RWKV 用神经网络根据整个复习历史估计每张卡此刻的回忆率；复习卡在估计回忆率降到目标保留率时出现，不看到期日。稳定性、难度与存下的到期日仍由 FSRS-7 维护。';
+      case 'srs_settings_rwkv_ignore_limit':
+        return '忽略每日复习上限';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return '回忆率降到目标保留率的复习卡全部出，不受每日复习上限截断。';
       case 'srs_settings_rwkv_min_reviews':
         return '每天最少复习数';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -755724,10 +756030,14 @@ extension on _StringsZhCn {
         return '间隔至少几秒';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV 估计的回忆率从你的整体通过率附近开始，而不是从 100% 开始：目标保留率高于这个通过率时卡片几乎马上又会出现，远低于它时复习会很少。';
+      case 'srs_settings_rwkv_steps_note':
+        return 'RWKV 牌组建议把学习步长和重学步长留空：答错的卡直接回到复习队列，由 RWKV 按回忆率决定什么时候再出（当天也会再出）。';
       case 'srs_settings_save':
         return '保存';
       case 'srs_settings_saved':
         return '牌组设置已保存';
+      case 'srs_settings_steps_empty_hint':
+        return '留空 = 不用步长，卡片直接进入复习。';
       case 'srs_settings_steps_hint':
         return '用空格分隔，如 1 10；每一步都要短于一天';
       case 'srs_settings_steps_invalid':
@@ -777102,6 +777412,10 @@ extension on _StringsZhHk {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -777133,10 +777447,14 @@ extension on _StringsZhHk {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':

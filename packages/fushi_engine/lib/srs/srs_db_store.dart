@@ -2588,6 +2588,14 @@ class SrsDbStore implements SrsSync2Host {
   Future<SrsSchedulingConfig> schedulingConfigFor(String deckId) async =>
       _schedulingConfigIn(await deckTree(), deckId);
 
+  /// 牌组是 RWKV 排程且（参数归属的 own 祖先上）开了「忽略每日复习上限」。
+  bool _ignoresReviewLimit(SrsDeckTree tree, String deckId) =>
+      _schedulingConfigIn(tree, deckId).algorithm.usesRwkv &&
+      tree
+          .paramsOwner(tree.effectiveDeckOf(deckId, fallback: defaultDeckId))
+          .rwkvQueue
+          .ignoreReviewLimit;
+
   SrsSchedulingConfig _schedulingConfigIn(SrsDeckTree tree, String deckId) {
     final String id = tree.effectiveDeckOf(deckId, fallback: defaultDeckId);
     return tree.schedulingConfig(id, defaultsOf: engine?.defaultParams);
@@ -3072,6 +3080,9 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 卡「可出」的 SQL 条件：可见、未暂停、归 Fushi 排程、没埋或埋到期（绑定一个参数：今天）。
+  /// 「忽略每日复习上限」时的剩余复习额度（实际出卡数由按 R 合格的卡数决定）。
+  static const int _unlimitedReviews = 1 << 30;
+
   static const String _liveSql =
       "hidden = 0 AND suspended = 0 AND scheduler = '${SrsScheduler.fushi}' "
       'AND (buried_until_day IS NULL OR buried_until_day <= ?)';
@@ -3257,7 +3268,10 @@ class SrsDbStore implements SrsSync2Host {
         plan: d.newCardPlan,
       );
       final int newRemaining = max(0, budget.allowed - sub.newDone);
-      final int reviewRemaining = max(0, d.reviewsPerDay - sub.reviewDone);
+      // RWKV 牌组开了「忽略每日复习上限」：按 R 合格的卡全部出（上游 Anki 的 Ignore review limit）。
+      final int reviewRemaining = _ignoresReviewLimit(ctx.tree, id)
+          ? _unlimitedReviews
+          : max(0, d.reviewsPerDay - sub.reviewDone);
       final _DeckCount r = _DeckCount(
         subtree: sub,
         budget: budget,
