@@ -731,40 +731,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _conflictNote(context, SrsFieldKeys.deckLimits),
       ]),
       _group(context, <Widget?>[
-        Text(
-          t.srs_settings_new_plan,
-          style: context.fushiType.titleSmallEmphasized,
-        ),
-        _numberField(
-          _newPerWeek,
-          t.srs_settings_new_per_week,
-          helper: t.srs_settings_new_per_week_hint,
-          key: const ValueKey<String>('srs-settings-new-per-week'),
-        ),
-        AdaptiveSettingsSwitchRow(
-          key: const ValueKey<String>('srs-settings-new-load-auto'),
-          title: t.srs_settings_new_load_auto,
-          subtitle: t.srs_settings_new_load_auto_hint,
-          value: _newLoadAuto,
-          onChanged: (bool v) => setState(() => _newLoadAuto = v),
-        ),
-        if (_newLoadAuto) ...<Widget?>[
-          _numberField(
-            _newLoadBudget,
-            t.srs_settings_new_load_budget,
-            helper: t.srs_settings_new_load_budget_hint,
-            key: const ValueKey<String>('srs-settings-new-load-budget'),
-          ),
-          _numberField(
-            _newLoadBoost,
-            t.srs_settings_new_load_boost,
-            helper: t.srs_settings_new_load_boost_hint,
-            key: const ValueKey<String>('srs-settings-new-load-boost'),
-          ),
-        ],
-        _conflictNote(context, SrsFieldKeys.deckNewPlan),
-      ]),
-      _group(context, <Widget?>[
         if (ownsParams) ...<Widget?>[
           Text(
             t.srs_settings_retention_value(p: (_retention * 100).round()),
@@ -866,6 +832,41 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             t.srs_settings_inherited_from(name: _owner?.name ?? ''),
             style: context.fushiType.bodyMedium,
           ),
+      ]),
+      // 新卡计划与每日上限一样是牌组自己的值（不随继承），放在新卡顺序之后。
+      _group(context, <Widget?>[
+        Text(
+          t.srs_settings_new_plan,
+          style: context.fushiType.titleSmallEmphasized,
+        ),
+        _numberField(
+          _newPerWeek,
+          t.srs_settings_new_per_week,
+          helper: t.srs_settings_new_per_week_hint,
+          key: const ValueKey<String>('srs-settings-new-per-week'),
+        ),
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('srs-settings-new-load-auto'),
+          title: t.srs_settings_new_load_auto,
+          subtitle: t.srs_settings_new_load_auto_hint,
+          value: _newLoadAuto,
+          onChanged: (bool v) => setState(() => _newLoadAuto = v),
+        ),
+        if (_newLoadAuto) ...<Widget?>[
+          _numberField(
+            _newLoadBudget,
+            t.srs_settings_new_load_budget,
+            helper: t.srs_settings_new_load_budget_hint,
+            key: const ValueKey<String>('srs-settings-new-load-budget'),
+          ),
+          _numberField(
+            _newLoadBoost,
+            t.srs_settings_new_load_boost,
+            helper: t.srs_settings_new_load_boost_hint,
+            key: const ValueKey<String>('srs-settings-new-load-boost'),
+          ),
+        ],
+        _conflictNote(context, SrsFieldKeys.deckNewPlan),
       ]),
     ];
   }
