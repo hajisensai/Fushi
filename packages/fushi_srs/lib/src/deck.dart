@@ -154,6 +154,76 @@ class SrsRwkvQueueSettings {
   );
 }
 
+/// 新卡计划（[SrsFieldKeys.deckNewPlan]）：每周新卡任务与按复习量自动调整新卡。
+/// 与每日上限一样只看牌组自己的值（不随参数继承）；缺省 = 不设每周任务、按复习量只减不增，
+/// 与加这项设置之前的行为相同。
+class SrsNewCardPlan {
+  const SrsNewCardPlan({
+    this.perWeek = 0,
+    this.autoLoad = true,
+    this.budgetPercent = defaultBudgetPercent,
+    this.boostPercent = 0,
+  });
+
+  /// 每周新卡任务（周一起算）。0 = 不启用。
+  final int perWeek;
+
+  /// 按复习量自动调整新卡（[srsComputeNewCardBudget]）。
+  final bool autoLoad;
+
+  /// 复习预算 = 最近 30 天日均复习数 × [budgetPercent]%。
+  final int budgetPercent;
+
+  /// 到期复习不到预算一半时，新卡最多增加的百分比。0 = 不增加。
+  final int boostPercent;
+
+  static const int defaultBudgetPercent = 150;
+  static const int minBudgetPercent = 50;
+  static const int maxBudgetPercent = 1000;
+  static const int maxBoostPercent = 200;
+  static const int maxPerWeek = 99999;
+
+  /// 缺项 / 坏值回落到默认值，越界的夹到合法范围。
+  static SrsNewCardPlan fromValue(Object? v) {
+    const SrsNewCardPlan d = SrsNewCardPlan();
+    if (v is! Map) return d;
+    int read(String key, int fallback, int min, int max) => switch (v[key]) {
+      final int n => n.clamp(min, max),
+      _ => fallback,
+    };
+    return SrsNewCardPlan(
+      perWeek: read('week', d.perWeek, 0, maxPerWeek),
+      autoLoad: v['auto'] != false,
+      budgetPercent: read(
+        'budget',
+        d.budgetPercent,
+        minBudgetPercent,
+        maxBudgetPercent,
+      ),
+      boostPercent: read('boost', d.boostPercent, 0, maxBoostPercent),
+    );
+  }
+
+  Map<String, Object?> toValue() => <String, Object?>{
+    'week': perWeek,
+    'auto': autoLoad,
+    'budget': budgetPercent,
+    'boost': boostPercent,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsNewCardPlan &&
+      other.perWeek == perWeek &&
+      other.autoLoad == autoLoad &&
+      other.budgetPercent == budgetPercent &&
+      other.boostPercent == boostPercent;
+
+  @override
+  int get hashCode =>
+      Object.hash(perWeek, autoLoad, budgetPercent, boostPercent);
+}
+
 /// 物化后的牌组。
 class SrsDeckView {
   SrsDeckView({
@@ -176,6 +246,7 @@ class SrsDeckView {
     this.replayQuestionAudio = true,
     this.rwkvQueue = const SrsRwkvQueueSettings(),
     this.newCardOrder = SrsNewCardOrder.frequency,
+    this.newCardPlan = const SrsNewCardPlan(),
     required this.optimizeBaselineAt,
     required this.optimizeBaselineCount,
     required this.deletedAt,
@@ -237,6 +308,9 @@ class SrsDeckView {
 
   /// 新卡出卡顺序。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
   final SrsNewCardOrder newCardOrder;
+
+  /// 每周新卡任务与按复习量自动调整。牌组自己的值（同 [newPerDay]）。
+  final SrsNewCardPlan newCardPlan;
   final int? optimizeBaselineAt;
   final int? optimizeBaselineCount;
   final int? deletedAt;
