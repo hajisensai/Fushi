@@ -388,6 +388,7 @@ SrsDeckView _deckView(SrsEntitySource s, Map<String, Object?> r) {
     replayQuestionAudio: v['rq'] == true,
     rwkvQueue: SrsRwkvQueueSettings.fromValue(v['rw']),
     newCardOrder: SrsNewCardOrder.fromWire(v['no'] as String?),
+    newCardPlan: SrsNewCardPlan.fromValue(v['npl']),
     optimizeBaselineAt: v['ba'] as int?,
     optimizeBaselineCount: v['bn'] as int?,
     deletedAt: v['da'] as int?,

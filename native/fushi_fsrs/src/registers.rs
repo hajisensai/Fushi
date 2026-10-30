@@ -836,6 +836,7 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "no": as_str(ent.value("newOrder"), "newOrder")?,
         "rq": *ent.value("replayQuestion") != Value::Bool(false),
         "rw": ent.value("rwkvQueue"),
+        "npl": ent.value("newPlan"),
         "ba": baseline_at,
         "bn": baseline_n,
         "da": ent.deleted_at(),
