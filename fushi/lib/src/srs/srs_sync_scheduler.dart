@@ -46,6 +46,7 @@ import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -127,8 +128,12 @@ int? srsMaxConcurrentWritesOf(SyncAssetStore backend) {
   return inner is DropboxSyncBackend ? 1 : null;
 }
 
-/// 生产实现：现有同步后端上的 v2 集合根（`fushi-srs/<profileUid>/v2/`）跑一轮同步 v2。[directoryKey] 就是
-/// 这个位置的稳定身份（本机按它记每个位置传到了哪）。
+/// 本进程里已经确认旧集合根扫干净的位置（进程重启后的第一轮再扫一遍，接住围栏那一刻还在跑的旧版本晚到的写入）。
+final SrsLocationMigrationMemo _srsMigrationMemo = SrsLocationMigrationMemo();
+
+/// 生产实现：现有同步后端上的集合根（`fushi-srs/<profileUid>/v3/`）跑一轮同步 v2。先 [srsPrepareLocation]：立住
+/// 旧根 `v2/` 上让旧版本停下的围栏，旧根上有协议 1 的数据就迁过来。[directoryKey] 就是这个位置的稳定身份（本机按
+/// 它记每个位置传到了哪）。
 Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
@@ -139,13 +144,37 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
 }) async {
-  final SrsSync2Report r = await srsSync2Round(
+  final SrsLocationStore location = SrsAssetLocationStore(
+    store: backend,
+    profileUid: store.profileUid,
+    maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+  );
+  final SrsLocationPrepared prepared = await srsPrepareLocation(
     host: store,
-    location: SrsAssetLocationStore(
+    v1: SrsAssetLocationStore(
       store: backend,
       profileUid: store.profileUid,
       maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+      folder: kSrsSync2V1Folder,
     ),
+    current: location,
+    locationId: directoryKey,
+    key: locationKey,
+    nowMs: () => store.now().$1,
+    recordPresence: true,
+    writers: SrsAssetV1Writers(backend, store.profileUid),
+    memo: _srsMigrationMemo,
+  );
+  if (prepared.needsUpgrade || prepared.error != null) {
+    final SrsSync2Report r = SrsSync2Report()
+      ..needsUpgrade = prepared.needsUpgrade
+      ..error = prepared.needsUpgrade ? kSrsSyncNeedsUpgrade : prepared.error
+      ..kdf = prepared.kdf;
+    return r;
+  }
+  final SrsSync2Report r = await srsSync2Round(
+    host: store,
+    location: location,
     locationId: directoryKey,
     nowMs: () => store.now().$1,
     key: locationKey,
@@ -198,7 +227,6 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   ),
   store: store,
   mediaRoot: mediaRoot,
-  legacy: srsLegacyMediaReader(backend, store.profileUid),
 );
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
@@ -959,6 +987,7 @@ class SrsSyncScheduler {
           store: store,
           mediaRoot: mediaRoot,
           key: _locationKey?.call(l.locationId),
+          migrationMemo: _srsMigrationMemo,
         );
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
