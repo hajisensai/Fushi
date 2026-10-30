@@ -8,7 +8,19 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show kFushiFloatingCapsuleScale;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+
+/// Material 下浮动胶囊整体按 [kFushiFloatingCapsuleScale] 缩：胶囊在屏幕上
+/// （带缩放变换的全局坐标）的高度。
+const double _kScaledChromeExtent =
+    kFushiPageChromeExtent * kFushiFloatingCapsuleScale;
+
+/// [finder] 在屏幕上的高度（走 localToGlobal，含缩放变换；`getSize` 只给缩放
+/// 前的局部尺寸）。
+double _screenHeight(WidgetTester tester, Finder finder) =>
+    tester.getRect(finder).height;
 
 void main() {
   Future<void> pumpBar(WidgetTester tester, Widget title) async {
@@ -38,13 +50,15 @@ void main() {
     expect(capsule, findsOneWidget);
     final Rect capsuleRect = tester.getRect(capsule);
     final Rect barRect = tester.getRect(find.byType(AppBar));
-    expect(capsuleRect.height, kFushiPageChromeExtent);
+    expect(capsuleRect.height, moreOrLessEquals(_kScaledChromeExtent));
     expect(capsuleRect.top, greaterThanOrEqualTo(barRect.top));
     expect(capsuleRect.bottom, lessThanOrEqualTo(barRect.bottom));
 
     final Finder circle = find.byType(FushiPageChromeCircle);
     expect(circle, findsOneWidget);
-    expect(tester.getSize(circle), const Size.square(kFushiPageChromeExtent));
+    final Rect circleRect = tester.getRect(circle);
+    expect(circleRect.width, moreOrLessEquals(_kScaledChromeExtent));
+    expect(circleRect.height, moreOrLessEquals(_kScaledChromeExtent));
     expect(tester.getRect(circle).bottom, lessThanOrEqualTo(barRect.bottom));
     expect(tester.takeException(), isNull);
   });
@@ -55,8 +69,8 @@ void main() {
       const Text('作品资料', style: TextStyle(fontSize: 22, height: 2.4)),
     );
     expect(
-      tester.getSize(find.byType(FushiPageChromeTitle)).height,
-      kFushiPageChromeExtent,
+      _screenHeight(tester, find.byType(FushiPageChromeTitle)),
+      moreOrLessEquals(_kScaledChromeExtent),
     );
 
     await tester.pumpWidget(
@@ -72,8 +86,8 @@ void main() {
       ),
     );
     expect(
-      tester.getSize(find.byType(FushiPageChromeTitle)).height,
-      kFushiPageChromeExtent,
+      _screenHeight(tester, find.byType(FushiPageChromeTitle)),
+      moreOrLessEquals(_kScaledChromeExtent),
     );
     expect(tester.takeException(), isNull);
   });
@@ -127,8 +141,8 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
       expect(
-        tester.getSize(find.byType(FushiPageChromeTitle)).height,
-        kFushiPageChromeExtent,
+        _screenHeight(tester, find.byType(FushiPageChromeTitle)),
+        moreOrLessEquals(_kScaledChromeExtent),
       );
       expect(find.text('统计中心'), findsOneWidget);
       if (scale <= 1.3) {
@@ -177,7 +191,7 @@ void main() {
         find.byType(FushiPageChromeTitle),
       );
       final Rect barRect = tester.getRect(find.byType(AppBar));
-      expect(capsuleRect.height, kFushiPageChromeExtent);
+      expect(capsuleRect.height, moreOrLessEquals(_kScaledChromeExtent));
       // 安全区（状态栏）之下、栏底之上。
       expect(capsuleRect.top, greaterThanOrEqualTo(barRect.top + 24));
       expect(capsuleRect.bottom, lessThanOrEqualTo(barRect.bottom));

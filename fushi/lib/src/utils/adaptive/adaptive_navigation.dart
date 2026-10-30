@@ -27,6 +27,8 @@ import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiCapsuleScale;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiWavyLinearProgress;
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
@@ -1016,8 +1018,13 @@ class _MaterialNavCluster extends StatelessWidget {
                           glassBottom,
                         ),
                   child: glassDesign
-                      ? _buildGlassTabBar(context)
-                      : _buildMaterialFloatingBar(context),
+                      // 底部浮动胶囊与查词圆钮同样按全局胶囊比例缩
+                      // （[kFushiFloatingCapsuleScale]，2026-10-30 用户「胶囊
+                      // 最好就是所有地方都要生效」）。
+                      ? FushiCapsuleScale(child: _buildGlassTabBar(context))
+                      : FushiCapsuleScale(
+                          child: _buildMaterialFloatingBar(context),
+                        ),
                 ),
               ),
             ),

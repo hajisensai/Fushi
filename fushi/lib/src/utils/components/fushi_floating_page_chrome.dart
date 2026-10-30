@@ -85,8 +85,12 @@ class FushiPageChromeCircle extends StatelessWidget {
 
   final Widget child;
 
+  // 顶部浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildChrome(context));
+
+  Widget _buildChrome(BuildContext context) {
     return SizedBox.square(
       dimension: kFushiPageChromeExtent,
       child: FushiFloatingPill(
@@ -146,8 +150,12 @@ class FushiPageChromeCapsule extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
 
+  // 顶部浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildChrome(context));
+
+  Widget _buildChrome(BuildContext context) {
     final EdgeInsets resolved = padding.resolve(Directionality.of(context));
     return SizedBox(
       height: kFushiPageChromeExtent,
@@ -261,8 +269,12 @@ class FushiPageChromeTitle extends StatelessWidget {
     );
   }
 
+  // 顶部浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildChrome(context));
+
+  Widget _buildChrome(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool apple = isGlassDesign(context);
     final TextStyle subtitleStyle = apple
@@ -608,7 +620,7 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
           _shown.animation,
           _fade.animation,
         ]),
-        child: widget.child,
+        child: FushiCapsuleScale(child: widget.child),
         builder: (BuildContext context, Widget? child) {
           final double v = widget.enabled ? _shown.value : 1;
           final double factor = v.clamp(0.0, 1.0);
