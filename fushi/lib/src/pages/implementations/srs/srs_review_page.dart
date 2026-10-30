@@ -1342,8 +1342,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   /// 卡面空白处被点（WebView 卡面经页内取词脚本、原生卡面经 [SrsBlankTapRegion] 回报）。
   /// 查词弹窗开着时这一下是关弹窗，不切换顶栏。
+  /// 正面点空白 = 点「显示答案」（与按钮同一条 [_showAnswer] 路径）；背面才切换悬浮顶栏。
   void _onCardTapEmpty() {
     if (_lookup.isOpen) return;
+    if (!_showingAnswer) {
+      _showAnswer();
+      return;
+    }
     _toggleChrome();
   }
 
