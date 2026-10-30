@@ -1248,7 +1248,7 @@ pub(crate) fn replay_pending(c: &Connection, profile: &str, budget: &mut CommitB
     let mut changed = BTreeSet::new();
     loop {
         let ids: Vec<String> = c
-            .prepare_cached("SELECT card_id FROM sync2_replay_pending WHERE profile_uid = srs_id(?1) ORDER BY card_id LIMIT ?2")
+            .prepare_cached("SELECT srs_idt(card_id) AS card_id FROM sync2_replay_pending WHERE profile_uid = srs_id(?1) ORDER BY card_id LIMIT ?2")
             .map_err(sql)?
             .query_map(params![profile, REPLAY_PENDING_CHUNK as i64], |r| r.get(0))
             .map_err(sql)?

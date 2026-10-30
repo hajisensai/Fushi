@@ -101,7 +101,7 @@ pub(crate) fn write(conn: &Connection, profile: &str, reg: &str, op: &Op) -> Res
 pub(crate) fn rebuild(conn: &Connection) -> Result<(), String> {
     use crate::sync2::op::{Body, KIND_MEDIA, KIND_MEDIA_AT};
     let profiles: Vec<String> = conn
-        .prepare("SELECT profile_uid FROM sync2_self")
+        .prepare("SELECT srs_idt(profile_uid) AS profile_uid FROM sync2_self")
         .map_err(sql)?
         .query_map([], |r| r.get(0))
         .map_err(sql)?

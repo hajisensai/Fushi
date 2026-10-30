@@ -200,7 +200,7 @@ pub(crate) fn applied_vv(conn: &Connection, profile: &str) -> Result<Vv, String>
 fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
     let bytes = deps.encode();
     conn.prepare_cached("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)").map_err(sql)?.execute([&bytes]).map_err(sql)?;
-    conn.prepare_cached("SELECT id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([&bytes], |r| r.get(0)).map_err(sql)
+    conn.prepare_cached("SELECT srs_idt(id) AS id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([&bytes], |r| r.get(0)).map_err(sql)
 }
 
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
@@ -766,7 +766,7 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     let ent = e.entity.text();
     let existing: Vec<(String, String, Option<i64>)> = conn
         .prepare_cached(
-            "SELECT f.id, f.json, l.server_time FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
+            "SELECT srs_idt(f.id) AS id, f.json, l.server_time FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
              WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2)",
         )
         .map_err(sql)?
@@ -928,7 +928,7 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
     for c in &lineage {
         let mut stmt = conn
             .prepare_cached(
-                "SELECT l.id, l.json, e.server_time, m.intent, m.arg, m.note_id FROM srs_review_logs l \
+                "SELECT srs_idt(l.id) AS id, l.json, e.server_time, m.intent, m.arg, srs_idt(m.note_id) AS note_id FROM srs_review_logs l \
                  LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN sync2_log_meta m ON m.log_id = l.id \
                  WHERE l.card_id = srs_id(?1)",
             )
@@ -1125,7 +1125,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
             // 笔记 ID 取缓存行（迁移时卡都已物化过）。
             let row: Option<(String, Option<i64>, Option<String>)> = c
                 .prepare_cached(
-                    "SELECT l.json, e.server_time, cc.note_id FROM srs_review_logs l \
+                    "SELECT l.json, e.server_time, srs_idt(cc.note_id) AS note_id FROM srs_review_logs l \
                      LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN srs_cards_cache cc ON cc.id = l.card_id \
                      WHERE l.id = ?1",
                 )
@@ -1457,7 +1457,7 @@ impl SrsCore {
         let r = self.reader()?;
         let mut stmt = r
             .prepare(
-                "SELECT id, kind, entity_kind, entity, device, other_count, at FROM sync2_conflicts \
+                "SELECT srs_idt(id) AS id, kind, entity_kind, srs_idt(entity) AS entity, device, other_count, at FROM sync2_conflicts \
                  WHERE profile_uid = srs_id(?1) ORDER BY at, id",
             )
             .map_err(sql)?;
@@ -1485,7 +1485,7 @@ impl SrsCore {
         let (kind, entity): (String, String) = {
             let r = self.reader()?;
             r.query_row(
-                "SELECT entity_kind, entity FROM sync2_conflicts WHERE profile_uid = srs_id(?1) AND id = ?2",
+                "SELECT entity_kind, srs_idt(entity) AS entity FROM sync2_conflicts WHERE profile_uid = srs_id(?1) AND id = ?2",
                 params![profile, conflict],
                 |x| Ok((x.get(0)?, x.get(1)?)),
             )
@@ -1539,7 +1539,7 @@ impl SrsCore {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let cards: BTreeSet<String> = c
-                .prepare("SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)")
+                .prepare("SELECT DISTINCT srs_idt(card_id) AS card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)")
                 .map_err(sql)?
                 .query_map([profile], |r| r.get(0))
                 .map_err(sql)?
@@ -1584,7 +1584,7 @@ impl SrsCore {
             let looked_up: Option<String> = match note {
                 Some(_) => None,
                 None => c
-                    .prepare_cached("SELECT note_id FROM srs_cards_cache WHERE id = ?1")
+                    .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = ?1")
                     .map_err(sql)?
                     .query_row([card], |r| r.get(0))
                     .optional()

@@ -282,9 +282,9 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
     ];
     let (rows, mut cols) = read_cols(
         c,
-        "SELECT c.id, c.note_id, c.deck_id, c.queue, c.scheduled_days, c.suspended, c.buried_until_day, c.scheduler, \
+        "SELECT srs_idt(c.id) AS id, srs_idt(c.note_id) AS note_id, srs_idt(c.deck_id) AS deck_id, c.queue, c.scheduled_days, c.suspended, c.buried_until_day, c.scheduler, \
          c.due_day, c.due_at, c.stability, c.difficulty, c.last_reviewed_at, c.lapses, c.reps, \
-         COALESCE(n.created_at, c.note_created_at), c.last_log_id, n.source_kind, n.source_title \
+         COALESCE(n.created_at, c.note_created_at), srs_idt(c.last_log_id) AS last_log_id, n.source_kind, n.source_title \
          FROM srs_cards_cache c LEFT JOIN srs_notes_cache n ON n.id = c.note_id \
          WHERE c.profile_uid = srs_id(?1) AND c.hidden = 0",
         &[&profile],
@@ -338,7 +338,7 @@ pub fn stats_bundle(c: &Connection, profile: &str, files: &mut Vec<(String, Vec<
     // 复习投影。
     let mut stmt = c
         .prepare_cached(
-            "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
+            "SELECT srs_idt(card_id) AS card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
              FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
         )
         .map_err(sql)?;
@@ -437,7 +437,7 @@ pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Val
             views.insert(v.id.clone(), v);
         }
         let q = format!(
-            "SELECT note_id, anki_id, template_id, cloze_ord FROM srs_cards_cache              WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
+            "SELECT srs_idt(note_id) AS note_id, anki_id, srs_idt(template_id) AS template_id, cloze_ord FROM srs_cards_cache              WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
             (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;

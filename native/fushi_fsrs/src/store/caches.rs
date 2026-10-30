@@ -131,7 +131,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
         let types: Vec<&String> = dirty.note_types.iter().collect();
         for chunk in types.chunks(500) {
             let q = format!(
-                "SELECT id FROM srs_notes_cache WHERE profile_uid = srs_id(?) AND note_type_id IN ({})",
+                "SELECT srs_idt(id) AS id FROM srs_notes_cache WHERE profile_uid = srs_id(?) AND note_type_id IN ({})",
                 marks(chunk.len())
             );
             let mut args: Vec<&str> = vec![profile];
@@ -140,7 +140,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
         }
     }
     if dirty.all_notes {
-        notes.extend(strings(c, "SELECT id FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'note'", &[profile])?);
+        notes.extend(strings(c, "SELECT srs_idt(id) AS id FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'note'", &[profile])?);
     }
     let now = wall_now();
     let mut stat_seeds: BTreeSet<String> = BTreeSet::new();
@@ -165,7 +165,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
     stat_seeds.extend(out.cards.iter().cloned());
     stat_seeds.extend(out.removed.iter().cloned());
     if dirty.all_stats {
-        stat_seeds.extend(strings(c, "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)", &[profile])?);
+        stat_seeds.extend(strings(c, "SELECT DISTINCT srs_idt(card_id) AS card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)", &[profile])?);
     }
     if !stat_seeds.is_empty() {
         refresh_stats(c, profile, cfg, &mut links, &stat_seeds)?;
@@ -347,7 +347,7 @@ fn dupe_norm_of(n: &NoteInfo, t: Option<&TypeInfo>) -> String {
 /// 它们的笔记类型、只改这一列，不重算整行与卡片（整行重算要读每张卡的血统与日志，十万卡库慢一个量级）。与
 /// [flush_notes] 写的值同一个函数（[dupe_norm_of]）。身份记录已不在的行（缓存孤行）写空串。幂等。返回补了几行。
 pub(crate) fn backfill_dupe_norms(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<usize, String> {
-    let ids = strings(c, "SELECT id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND dupe_norm IS NULL", &[profile])?;
+    let ids = strings(c, "SELECT srs_idt(id) AS id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND dupe_norm IS NULL", &[profile])?;
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
     let mut up = c.prepare_cached("UPDATE srs_notes_cache SET dupe_norm = ?1 WHERE id = ?2").map_err(sql)?;
     for chunk in ids.chunks(CHUNK) {
@@ -516,7 +516,7 @@ pub(crate) fn lineage_ids(c: &Connection, cards: &[String]) -> Result<Vec<Vec<St
         }
         for chunk in ids.chunks(400) {
             let q = format!(
-                "SELECT f.entity_id, f.field_key, f.json, e.server_time FROM srs_field_edits f \
+                "SELECT srs_idt(f.entity_id) AS entity_id, f.field_key, f.json, e.server_time FROM srs_field_edits f \
                  LEFT JOIN srs_event_local e ON e.event_id = f.id \
                  WHERE f.entity_kind = 'card' AND f.entity_id IN ({}) AND substr(f.field_key, 1, 12) = 'historyFrom/'",
                 marks(chunk.len())
@@ -589,7 +589,7 @@ fn flush_cards(c: &Connection, profile: &str, cfg: &CacheConfig, chunk: &[String
         freq: Option<i64>,
     }
     let q = format!(
-        "SELECT id, note_id, template_id, cloze_ord, hidden, note_created_at, freq_rank FROM srs_cards_cache \
+        "SELECT srs_idt(id) AS id, srs_idt(note_id) AS note_id, srs_idt(template_id) AS template_id, cloze_ord, hidden, note_created_at, freq_rank FROM srs_cards_cache \
          WHERE id IN ({})",
         marks(chunk.len())
     );
@@ -618,7 +618,7 @@ fn flush_cards(c: &Connection, profile: &str, cfg: &CacheConfig, chunk: &[String
     let note_ids: Vec<String> = rows.values().map(|r| r.note.clone()).collect::<BTreeSet<_>>().into_iter().collect();
     let mut notes: HashMap<String, (Option<String>, i64)> = HashMap::new();
     for ids in note_ids.chunks(500) {
-        let q = format!("SELECT id, deck_id, created_at FROM srs_notes_cache WHERE id IN ({})", marks(ids.len()));
+        let q = format!("SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, created_at FROM srs_notes_cache WHERE id IN ({})", marks(ids.len()));
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(ids.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
@@ -742,7 +742,7 @@ impl Links {
     pub(crate) fn load_all(c: &Connection) -> Result<Links, String> {
         let mut stmt = c
             .prepare_cached(
-                "SELECT entity_id, field_key FROM srs_field_edits \
+                "SELECT srs_idt(entity_id) AS entity_id, field_key FROM srs_field_edits \
                  WHERE substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
             )
             .map_err(sql)?;
@@ -769,7 +769,7 @@ impl Links {
         let want: Vec<String> = ids.iter().filter(|id| !self.succ.contains_key(**id)).map(|id| format!("{HISTORY_FROM}{id}")).collect();
         for chunk in want.chunks(500) {
             let q = format!(
-                "SELECT entity_id, field_key FROM srs_field_edits WHERE field_key IN ({}) \
+                "SELECT srs_idt(entity_id) AS entity_id, field_key FROM srs_field_edits WHERE field_key IN ({}) \
                  AND substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
                 marks(chunk.len())
             );
@@ -795,7 +795,7 @@ impl Links {
         let want: Vec<&String> = ids.iter().copied().filter(|id| !self.pred.contains_key(*id)).collect();
         for chunk in want.chunks(500) {
             let q = format!(
-                "SELECT entity_id, field_key FROM srs_field_edits WHERE entity_kind = 'card' AND entity_id IN ({}) \
+                "SELECT srs_idt(entity_id) AS entity_id, field_key FROM srs_field_edits WHERE entity_kind = 'card' AND entity_id IN ({}) \
                  AND substr(field_key, 1, 12) = 'historyFrom/'",
                 marks(chunk.len())
             );
@@ -878,7 +878,7 @@ fn refresh_stats(
     ids.sort_by(|a, b| cmp_utf16(a, b));
     let mut visible: HashSet<String> = HashSet::new();
     for chunk in ids.chunks(500) {
-        let q = format!("SELECT id FROM srs_cards_cache WHERE hidden = 0 AND id IN ({})", marks(chunk.len()));
+        let q = format!("SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE hidden = 0 AND id IN ({})", marks(chunk.len()));
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
@@ -998,7 +998,7 @@ fn strings(c: &Connection, q: &str, args: &[&str]) -> Result<Vec<String>, String
 fn entity_rows(c: &Connection, ids: &[String]) -> Result<HashMap<String, Value>, String> {
     let mut out = HashMap::new();
     for chunk in ids.chunks(500) {
-        let q = format!("SELECT id, payload_json FROM srs_entities WHERE id IN ({})", marks(chunk.len()));
+        let q = format!("SELECT srs_idt(id) AS id, payload_json FROM srs_entities WHERE id IN ({})", marks(chunk.len()));
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
@@ -1015,7 +1015,7 @@ fn edits_of(c: &Connection, kind: &str, ids: &[String]) -> Result<HashMap<String
     let mut out: HashMap<String, Vec<(String, String, Option<i64>)>> = HashMap::new();
     for chunk in ids.chunks(500) {
         let q = format!(
-            "SELECT f.entity_id, f.field_key, f.json, s.server_time FROM srs_field_edits f \
+            "SELECT srs_idt(f.entity_id) AS entity_id, f.field_key, f.json, s.server_time FROM srs_field_edits f \
              LEFT JOIN srs_event_local s ON s.event_id = f.id WHERE f.entity_kind = ? AND f.entity_id IN ({})",
             marks(chunk.len())
         );
@@ -1034,7 +1034,7 @@ fn edits_of(c: &Connection, kind: &str, ids: &[String]) -> Result<HashMap<String
 fn cards_of_notes(c: &Connection, notes: &[String]) -> Result<HashMap<String, Vec<String>>, String> {
     let mut out: HashMap<String, Vec<String>> = HashMap::new();
     for chunk in notes.chunks(500) {
-        let q = format!("SELECT id, note_id FROM srs_cards_cache WHERE note_id IN ({})", marks(chunk.len()));
+        let q = format!("SELECT srs_idt(id) AS id, srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE note_id IN ({})", marks(chunk.len()));
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
         while let Some(r) = it.next().map_err(sql)? {
@@ -1059,7 +1059,7 @@ mod link_tests {
     fn old_successor_index(c: &Connection) -> HashMap<String, Vec<String>> {
         let mut stmt = c
             .prepare(
-                "SELECT entity_id, field_key FROM srs_field_edits \
+                "SELECT srs_idt(entity_id) AS entity_id, field_key FROM srs_field_edits \
                  WHERE substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
             )
             .unwrap();
@@ -1324,7 +1324,7 @@ mod tests {
 
     /// 每条笔记的卡的 freq_rank（NULL 记成 "null"）。
     fn ranks(d: &Device) -> Vec<(String, String)> {
-        d.rows("SELECT note_id, IFNULL(freq_rank, 'null') FROM srs_cards_cache ORDER BY note_id")
+        d.rows("SELECT srs_idt(note_id) AS note_id, IFNULL(freq_rank, 'null') FROM srs_cards_cache ORDER BY note_id")
             .into_iter()
             .skip(1)
             .map(|r| (r[0].clone(), r[1].clone()))
@@ -1406,7 +1406,7 @@ mod tests {
 
         // 只有卡片事件变了：名次沿用。
         let card = d.rows(&format!(
-            "SELECT id FROM srs_cards_cache WHERE note_id = '{N1}'"
+            "SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE note_id = '{N1}'"
         ))[1][0]
             .clone();
         let r = d.apply(T0 + 2, vec![review("r1", &card, T0 + 2, 3, "learn")]);

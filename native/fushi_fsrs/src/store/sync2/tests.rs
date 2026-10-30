@@ -208,9 +208,9 @@ const T0: i64 = 1_700_000_000_000;
 pub(crate) const DAY: i64 = 86_400_000;
 
 pub(crate) fn projection(d: &Device) -> Vec<Vec<String>> {
-    let mut out = d.rows("SELECT id, json FROM srs_field_edits ORDER BY id");
-    out.extend(d.rows("SELECT id, json FROM srs_review_logs ORDER BY id"));
-    out.extend(d.rows("SELECT id, payload_json FROM srs_entities ORDER BY id"));
+    let mut out = d.rows("SELECT srs_idt(id) AS id, json FROM srs_field_edits ORDER BY id");
+    out.extend(d.rows("SELECT srs_idt(id) AS id, json FROM srs_review_logs ORDER BY id"));
+    out.extend(d.rows("SELECT srs_idt(id) AS id, payload_json FROM srs_entities ORDER BY id"));
     out
 }
 
@@ -244,7 +244,7 @@ fn two_devices_converge_and_concurrent_reviews_all_count() {
     solo.apply(T0 + 10, vec![review("a1", "C", T0 + 10, 3, "learn")]);
     solo.apply(T0 + 2 * 3_600_000, vec![review("b1", "C", T0 + 2 * 3_600_000, 2, "learn")]);
     solo.apply(T0 + DAY + 1_800_000, vec![review("a2", "C", T0 + DAY + 1_800_000, 1, "review")]);
-    let res = |d: &Device| d.rows("SELECT id, json_extract(json, '$.res') FROM srs_review_logs ORDER BY id");
+    let res = |d: &Device| d.rows("SELECT srs_idt(id) AS id, json_extract(json, '$.res') FROM srs_review_logs ORDER BY id");
     assert_eq!(res(&a), res(&solo));
 }
 
@@ -300,7 +300,7 @@ fn cloned_data_directory_forks_and_rotates_without_losing_anything() {
         twin.sync(&mut bucket, "loc", T0 + DAY);
         observer.sync(&mut bucket, "loc", T0 + DAY);
     }
-    let ids = |d: &Device| d.rows("SELECT id FROM srs_review_logs ORDER BY id");
+    let ids = |d: &Device| d.rows("SELECT srs_idt(id) AS id FROM srs_review_logs ORDER BY id");
     for d in [&a, &twin, &observer] {
         let logs = ids(d);
         assert!(logs.iter().any(|r| r[0] == "ra") && logs.iter().any(|r| r[0] == "rt"), "both branches' reviews survive");
@@ -870,7 +870,7 @@ fn fushisrs_export_import_merges_without_overwriting() {
     a.apply(T0 + 5, vec![review("ra", "C", T0 + 5, 2, "learn")]);
     a.core.sync2_import(P, &twin.core.sync2_export(P).unwrap(), T0 + 6).unwrap();
     assert_ne!(a.core.sync2_status(P).unwrap()["device"], me);
-    let ids = a.rows("SELECT id FROM srs_review_logs ORDER BY id");
+    let ids = a.rows("SELECT srs_idt(id) AS id FROM srs_review_logs ORDER BY id");
     assert!(ids.iter().any(|r| r[0] == "ra") && ids.iter().any(|r| r[0] == "rt"));
 }
 
@@ -1421,7 +1421,7 @@ fn bench_join_sliced() {
     let changed = a.core.sync2_replay_all(P).unwrap();
     let replay_ms = t.elapsed().as_millis();
     assert!(changed.is_empty(), "the author's results are already the replayed ones");
-    let logs = |d: &Device| d.rows("SELECT id, json FROM srs_review_logs ORDER BY id");
+    let logs = |d: &Device| d.rows("SELECT srs_idt(id) AS id, json FROM srs_review_logs ORDER BY id");
     assert_eq!(logs(&a), logs(&b), "every card's replayed rows match the author's full replay");
     println!(
         "bench_join_sliced cards={cards} reviews={} slices={slices} commits={commit_ms}ms join_total={join_ms}ms replay_all={replay_ms}ms",
@@ -1540,9 +1540,9 @@ fn legacy_library(d: &Device) {
 }
 
 fn legacy_rows(d: &Device) -> Vec<Vec<String>> {
-    let mut out = d.rows("SELECT id, json FROM srs_review_logs ORDER BY id");
-    out.extend(d.rows("SELECT id, json FROM srs_field_edits ORDER BY id"));
-    out.extend(d.rows("SELECT id, payload_json, created_at FROM srs_entities ORDER BY id"));
+    let mut out = d.rows("SELECT srs_idt(id) AS id, json FROM srs_review_logs ORDER BY id");
+    out.extend(d.rows("SELECT srs_idt(id) AS id, json FROM srs_field_edits ORDER BY id"));
+    out.extend(d.rows("SELECT srs_idt(id) AS id, payload_json, created_at FROM srs_entities ORDER BY id"));
     out
 }
 
@@ -2144,7 +2144,7 @@ fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
         assert!(err.to_string().contains("UNIQUE constraint failed: srs_field_edits.id"), "{err}");
     }
     a.core.sync2_migrate(P, T0, None).unwrap();
-    let ids_of = |profile: &str| a.rows(&format!("SELECT id, writer_id FROM srs_field_edits WHERE profile_uid = '{profile}' ORDER BY id"));
+    let ids_of = |profile: &str| a.rows(&format!("SELECT srs_idt(id) AS id, srs_idt(writer_id) AS writer_id FROM srs_field_edits WHERE profile_uid = '{profile}' ORDER BY id"));
     let p_rows = ids_of(P);
     assert_eq!(p_rows.len(), 4, "header + 3 legacy rows: {p_rows:?}");
 

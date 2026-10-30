@@ -334,7 +334,7 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
     for table in ["srs_notes_cache", "srs_cards_cache"] {
         let ids: Vec<String> = {
             let mut stmt = c
-                .prepare(&format!("SELECT id FROM {table} WHERE anki_id = 0"))
+                .prepare(&format!("SELECT srs_idt(id) AS id FROM {table} WHERE anki_id = 0"))
                 .map_err(|e| e.to_string())?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
             rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
@@ -701,7 +701,7 @@ mod tests {
             });
             (
                 format!(
-                    "SELECT deck_id, COUNT(*) AS total, \
+                    "SELECT srs_idt(deck_id) AS deck_id, COUNT(*) AS total, \
                      SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END) AS new_avail, \
                      SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END) AS learn, \
                      SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) AS due \
@@ -717,7 +717,7 @@ mod tests {
             args.extend(order_vars);
             (
                 format!(
-                    "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({deck_in}) \
+                    "SELECT srs_idt(id) AS id, due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({deck_in}) \
                      AND {cond} ORDER BY {order} LIMIT 1"
                 ),
                 args,
@@ -752,7 +752,7 @@ mod tests {
                 vec![Value::Text("p".into()), Value::Text("review".into()), Value::Integer(now - 29 * 86_400_000)],
             );
             let today_logs = (
-                "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = ? THEN json END AS j FROM srs_review_logs \
+                "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = ? THEN json END AS j FROM srs_review_logs \
                  WHERE profile_uid = srs_id(?) AND kind = ? AND occurred_at >= ? ORDER BY occurred_at"
                     .to_owned(),
                 vec![

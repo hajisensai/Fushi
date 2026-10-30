@@ -68,7 +68,7 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Vv, retract_review
     let mut touched: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
     let mut later_logs: Vec<OpId> = Vec::new();
     {
-        let mut stmt = conn.prepare("SELECT kind, entity, device, seq, what FROM sync2_ent_ops WHERE profile_uid = srs_id(?1)").map_err(sql)?;
+        let mut stmt = conn.prepare("SELECT kind, srs_idt(entity) AS entity, device, seq, what FROM sync2_ent_ops WHERE profile_uid = srs_id(?1)").map_err(sql)?;
         let rows = stmt
             .query_map([profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?, r.get::<_, String>(4)?)))
             .map_err(sql)?;
