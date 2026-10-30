@@ -219,14 +219,14 @@ void main() {
         expect(
           await srsCount(
             'SELECT COUNT(*) AS c FROM srs_entities '
-            "WHERE profile_uid = '$oldUid'",
+            "WHERE profile_uid = srs_id('$oldUid')",
           ),
           0,
         );
         expect(
           await srsCount(
             'SELECT COUNT(*) AS c FROM srs_local_state '
-            "WHERE profile_uid = '$oldUid'",
+            "WHERE profile_uid = srs_id('$oldUid')",
           ),
           0,
         );
