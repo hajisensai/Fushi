@@ -28,20 +28,16 @@ void main() {
       reason: 'behavior harness ${jsTest.path} must exist',
     );
 
-    final Directory tmp = Directory.systemTemp.createTempSync(
-      'fushi_ruby_spans_',
+    // harness 只从这个固定位置读脚本（不接受外部传入路径）；.dart_tool 已被 gitignore。
+    final File readerJs = File(
+      '.dart_tool/fushi_test_scripts/reader_selection.js',
     );
-    final File readerJs = File('${tmp.path}/reader_selection.js');
+    readerJs.parent.createSync(recursive: true);
     readerJs.writeAsStringSync(ReaderSelectionScripts.source());
     try {
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-        environment: <String, String>{
-          'FUSHI_READER_SELECTION_JS': readerJs.path,
-        },
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
       expect(
         result.exitCode,
         0,
@@ -55,7 +51,7 @@ void main() {
         reason: 'behavior harness must reach its success marker',
       );
     } finally {
-      tmp.deleteSync(recursive: true);
+      readerJs.deleteSync();
     }
   });
 

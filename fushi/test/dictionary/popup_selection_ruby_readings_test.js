@@ -92,10 +92,8 @@ function makeTreeWalker(root, filter) {
   };
 }
 
-const src = fs.readFileSync(
-  process.env.FUSHI_POPUP_SELECTION_JS || path.join(__dirname, '../../assets/popup/selection.js'),
-  'utf8',
-);
+// 固定读仓库内的资产（不接受外部传入路径：被执行的只能是本仓的 selection.js）。
+const src = fs.readFileSync(path.join(__dirname, '../../assets/popup/selection.js'), 'utf8');
 
 // 从 [node] 的 [offset] 起取词，返回 { text, rubyReadings, handlerArgs }。
 function scan(paragraph, node, offset) {
