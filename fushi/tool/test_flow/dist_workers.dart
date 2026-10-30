@@ -1143,13 +1143,14 @@ class SshDistWorker extends DistWorker {
   }
 
   Future<void> _sshChecked(String step, String command, IOSink log) async {
+    final Stopwatch watch = Stopwatch()..start();
     final ProcessResult r = await _step(distSshExecutable(), <String>[
       '-n',
       ..._sshBase,
       command,
     ]);
     log
-      ..writeln('== $step (exit ${r.exitCode})')
+      ..writeln('== $step (exit ${r.exitCode}, ${watch.elapsed.inSeconds}s)')
       ..write(r.stdout)
       ..write(r.stderr);
     if (r.exitCode != 0) {
@@ -1245,19 +1246,20 @@ class SshDistWorker extends DistWorker {
       for (final String a in _sshBase.sublist(0, _sshBase.length - 1))
         shellQuote(a),
     ].join(' ');
+    final Stopwatch watch = Stopwatch()..start();
     final ProcessResult push = await _step(
       'git',
       <String>[
         'push',
         '--quiet',
         '${config.host}:$remotePath',
-        '${snapshot.commit}:refs/dist/$runId',
+        ...distPushRefspecs(snapshot, runId),
       ],
       workingDirectory: repoRoot,
       environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
     );
     log
-      ..writeln('== push (exit ${push.exitCode})')
+      ..writeln('== push (exit ${push.exitCode}, ${watch.elapsed.inSeconds}s)')
       ..write(push.stdout)
       ..write(push.stderr);
     if (push.exitCode != 0) {
@@ -1585,6 +1587,21 @@ class SshDistWorker extends DistWorker {
     return '${r.stdout}'.trim();
   }
 }
+
+/// What a run pushes to a worker's checkout: the snapshot under its run's ref
+/// (deleted again when the run finishes), and HEAD under [kDistBaseRef], which
+/// stays. receive-pack advertises refs only, not the detached HEAD the batches
+/// run on, so without a ref that outlives the run the next push finds no
+/// common history and sends the whole repository again (measured 2026-10-30:
+/// 596 s to wight-win, all history sent again). Forced: the next run's HEAD
+/// need not descend from this one.
+List<String> distPushRefspecs(DistSnapshot snapshot, String runId) => <String>[
+  '${snapshot.commit}:refs/dist/$runId',
+  '+${snapshot.base}:$kDistBaseRef',
+];
+
+/// The ref [distPushRefspecs] keeps on every worker checkout.
+const String kDistBaseRef = 'refs/dist/base';
 
 /// Name of slot [slot]'s checkout on an ssh-shim worker, as `git push`
 /// addresses it (the shim maps it under its own home).
