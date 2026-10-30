@@ -18,8 +18,9 @@
 //!   语义与旧的 Dart 快照（`SrsBrowseSnapshot`）逐项相同：回归向量见
 //!   packages/fushi_engine/test/srs/srs_browse_vectors_test.dart。
 //! - **AnkiConnect**（L-5）：兼容层的 findNotes / findCards（`anki_find`）、canAddNotes 的库内查重（`anki_dupes`）、
-//!   getTags（`anki_tags`）用同一个会话、同一份语料，不再在 Dart 里常驻一份全库笔记镜像；查重的首字段规范形按笔记
-//!   增量维护（[Dupe]）。回归向量见 packages/fushi_engine/test/srs/ankiconnect/srs_ankiconnect_vectors_test.dart。
+//!   getTags（`anki_tags`）用同一个会话、同一份语料，不再在 Dart 里常驻一份全库笔记镜像。canAddNotes 的库内查重
+//!   不用会话：首字段的查重规范形写在笔记缓存行上（srs.db v15 `dupe_norm`，写缓存行时算），直接按索引查
+//!   （[anki_dupes]）。回归向量见 packages/fushi_engine/test/srs/ankiconnect/srs_ankiconnect_vectors_test.dart。
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -890,41 +891,6 @@ pub(crate) struct Session {
     builds: u64,
     /// 最近几次查询的结果（新的在后；浏览页与控制通道可以同时各持一份）。
     results: Vec<Res>,
-    /// AnkiConnect 查重的首字段规范形索引（第一次查重时建）。
-    dupe: Option<Dupe>,
-    /// 索引建好之后写过的笔记：下次查重前重核。
-    dupe_dirty: HashSet<String>,
-}
-
-/// AnkiConnect 查重的倒排索引：每条笔记首字段（笔记类型字段顺序第一个）的查重规范形
-/// （[search::dupe_norm]：样式去重规范形 → 去 HTML → trim）→ 笔记。只含未删除、笔记类型在（Dart 传来的
-/// [Dupe::first] 里有它）的笔记。首字段原文没变的笔记重核时沿用旧的规范形。
-struct Dupe {
-    /// 笔记类型 → 首字段 id（建索引时 Dart 传来的那份；变了整份重核）。
-    first: HashMap<String, String>,
-    /// 笔记 id → (首字段原文的哈希, 规范形)：原文本身已在会话笔记里，这里不再存一份。
-    of: HashMap<String, (u64, String)>,
-    /// 规范形 → 笔记 id（同一规范形通常只有一两条，用 Vec 不用 HashSet）。
-    by: HashMap<String, Vec<String>>,
-}
-
-fn raw_hash(raw: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    raw.hash(&mut h);
-    h.finish()
-}
-
-impl Dupe {
-    fn unlink(&mut self, id: &str) {
-        let Some((_, norm)) = self.of.remove(id) else { return };
-        if let Some(same) = self.by.get_mut(&norm) {
-            same.retain(|x| x != id);
-            if same.is_empty() {
-                self.by.remove(&norm);
-            }
-        }
-    }
 }
 
 /// 一个会话留几份查询结果。
@@ -947,8 +913,6 @@ impl Session {
             view_dirty: HashSet::new(),
             builds: 0,
             results: Vec::new(),
-            dupe: None,
-            dupe_dirty: HashSet::new(),
         };
         {
             let q = format!("SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = ?1 AND deleted_at IS NULL");
@@ -978,9 +942,6 @@ impl Session {
         }
         for r in &mut self.results {
             r.stale = true;
-        }
-        if self.dupe.is_some() {
-            self.dupe_dirty.extend(d.notes.iter().cloned());
         }
         let ids: Vec<&String> = d.cards.iter().collect();
         for chunk in ids.chunks(CHUNK) {
@@ -1659,110 +1620,96 @@ impl Session {
         Ok(if want_uuids { json!({"count": count, "cards": uuids}) } else { json!({"count": count}) })
     }
 
-    /// `anki_dupes`：canAddNotes / addNote 的库内查重。`first` = 笔记类型 → 首字段 id（未删除、有字段的笔记类型）；
-    /// `cands` = `[{norm, type, all, decks}]`（`norm` 是候选首字段的查重规范形，调用方已判过空；`all` = 跨笔记类型
-    /// 比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool]}`，与 `cands` 等长：库里有规范形相同、笔记
-    /// 类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的笔记。
-    fn anki_dupes(&mut self, c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
-        let first: HashMap<String, String> = req
-            .get("first")
-            .and_then(Value::as_object)
-            .map(|m| m.iter().filter_map(|(k, v)| v.as_str().map(|f| (k.clone(), f.to_owned()))).collect())
-            .unwrap_or_default();
-        let cands = req.get("cands").and_then(Value::as_array).cloned().unwrap_or_default();
-        if cands.is_empty() {
-            return Ok(json!({"dup": []}));
-        }
-        let fids: HashSet<String> = first.values().cloned().collect();
-        self.ensure_fields(c, profile, Some(&fids))?;
-        self.sync_dupe(first);
-        let dupe = self.dupe.as_ref().expect("dupe index");
-        // 每个候选命中的库内笔记（笔记类型已按 `all` 过滤）；要看牌组的先收齐，一遍扫完全部卡。
-        let mut matched: Vec<Vec<&str>> = Vec::with_capacity(cands.len());
-        let mut deck_notes: HashSet<&str> = HashSet::new();
-        for cand in &cands {
-            let norm = cand.get("norm").and_then(Value::as_str).unwrap_or("");
-            let ty = cand.get("type").and_then(Value::as_str).unwrap_or("");
-            let all = cand.get("all").and_then(Value::as_bool).unwrap_or(false);
-            let scoped = cand.get("decks").is_some_and(Value::is_array);
-            let mut hit: Vec<&str> = Vec::new();
-            for id in dupe.by.get(norm).into_iter().flatten() {
-                let Some(&slot) = self.note_at.get(id) else { continue };
-                let n = self.note(slot);
-                if !all && n.ty != ty {
-                    continue;
-                }
-                hit.push(id.as_str());
-                if scoped {
-                    deck_notes.insert(id.as_str());
-                }
-            }
-            matched.push(hit);
-        }
-        let mut decks_of: HashMap<&str, HashSet<&str>> = HashMap::new();
-        if !deck_notes.is_empty() {
-            for card in self.cards.iter().flatten() {
-                if deck_notes.contains(card.note.as_str()) {
-                    decks_of.entry(card.note.as_str()).or_default().insert(card.deck.as_str());
-                }
-            }
-        }
-        let out: Vec<bool> = cands
-            .iter()
-            .zip(&matched)
-            .map(|(cand, hit)| match cand.get("decks").and_then(Value::as_array) {
-                None => !hit.is_empty(),
-                Some(ds) => {
-                    let scope: HashSet<&str> = ds.iter().filter_map(Value::as_str).collect();
-                    hit.iter().any(|id| decks_of.get(id).is_some_and(|d| d.iter().any(|x| scope.contains(x))))
-                }
-            })
-            .collect();
-        Ok(json!({"dup": out}))
-    }
-
-    /// 把查重索引刷到会话此刻的笔记：首字段映射变了（或还没建）就全部重核，否则只重核写过的笔记。
-    fn sync_dupe(&mut self, first: HashMap<String, String>) {
-        let rebuild = self.dupe.as_ref().is_none_or(|d| d.first != first);
-        let dirty: Vec<String> = if rebuild {
-            self.dupe = Some(Dupe {
-                first,
-                of: HashMap::new(),
-                by: HashMap::new(),
-            });
-            self.dupe_dirty.clear();
-            self.notes.iter().flatten().map(|n| n.id.clone()).collect()
-        } else {
-            self.dupe_dirty.drain().collect()
-        };
-        let dupe = self.dupe.as_mut().expect("dupe index");
-        for id in dirty {
-            let raw = self
-                .note_at
-                .get(&id)
-                .and_then(|&slot| self.notes[slot as usize].as_ref())
-                .and_then(|n| dupe.first.get(&n.ty).map(|f| n.value(f)));
-            let Some(raw) = raw else {
-                dupe.unlink(&id);
-                continue;
-            };
-            let hash = raw_hash(raw);
-            if dupe.of.get(&id).is_some_and(|(h, _)| *h == hash) {
-                continue;
-            }
-            let norm = search::dupe_norm(raw);
-            dupe.unlink(&id);
-            dupe.by.entry(norm.clone()).or_default().push(id.clone());
-            dupe.of.insert(id, (hash, norm));
-        }
-    }
-
     /// `anki_tags`：全部未删除笔记的标签，去重、按 Dart `String.compareTo`（UTF-16 码元）排。
     fn anki_tags(&self) -> Value {
         let mut tags: Vec<&str> = self.notes.iter().flatten().flat_map(|n| n.tags.iter().map(String::as_str)).collect::<HashSet<_>>().into_iter().collect();
         tags.sort_by(|a, b| cmp16(a, b));
         json!({"tags": tags})
     }
+}
+
+/// `anki_dupes`：canAddNotes / addNote 的库内查重。`first` = 笔记类型 → 首字段 id（未删除、有字段的笔记类型；只用
+/// 键：不在里面的笔记类型的笔记不参与查重）；`cands` = `[{norm, type, all, decks}]`（`norm` 是候选首字段的查重规范形，
+/// 调用方已判过空；`all` = 跨笔记类型比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool]}`，与 `cands`
+/// 等长：库里有规范形相同、笔记类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的未删除笔记。
+///
+/// 库内笔记的规范形是笔记缓存行的 `dupe_norm`（写缓存行时用同一个 [search::dupe_norm] 算好，srs.db v15），按
+/// `idx_srs_notes_cache_dupe` 查候选的规范形：不读修改记录、不建内存索引、不要浏览会话——冷启动与热查同价，开销
+/// 只与候选数和命中数有关。读快照与浏览命令相同（写连接上事务里则看得见未提交的行）。
+fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+    let types: HashSet<&str> =
+        req.get("first").and_then(Value::as_object).map(|m| m.keys().map(String::as_str).collect()).unwrap_or_default();
+    let cands = req.get("cands").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    if cands.is_empty() {
+        return Ok(json!({"dup": []}));
+    }
+    let norm_of = |cand: &Value| cand.get("norm").and_then(Value::as_str).unwrap_or("").to_owned();
+    // 规范形 → 库里的 (笔记 id, 笔记类型)。空规范形不查（调用方已判空；库里首字段为空的笔记存空串）。
+    let wanted: Vec<String> =
+        cands.iter().map(norm_of).filter(|n| !n.is_empty()).collect::<HashSet<_>>().into_iter().collect();
+    let mut by: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    for chunk in wanted.chunks(CHUNK) {
+        let q = format!(
+            "SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
+             WHERE profile_uid = ?1 AND deleted_at IS NULL AND dupe_norm IN ({})",
+            (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+        );
+        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+        let args = std::iter::once(profile).chain(chunk.iter().map(String::as_str));
+        let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
+        while let Some(r) = rows.next().map_err(sql)? {
+            let (id, ty, norm): (String, String, String) =
+                (r.get(0).map_err(sql)?, r.get(1).map_err(sql)?, r.get(2).map_err(sql)?);
+            if types.contains(ty.as_str()) {
+                by.entry(norm).or_default().push((id, ty));
+            }
+        }
+    }
+    // 每个候选命中的库内笔记（笔记类型已按 `all` 过滤）；要看牌组的收齐，一条查询读它们的可见卡。
+    let mut matched: Vec<Vec<&str>> = Vec::with_capacity(cands.len());
+    let mut deck_notes: HashSet<&str> = HashSet::new();
+    for cand in cands {
+        let ty = cand.get("type").and_then(Value::as_str).unwrap_or("");
+        let all = cand.get("all").and_then(Value::as_bool).unwrap_or(false);
+        let scoped = cand.get("decks").is_some_and(Value::is_array);
+        let hit: Vec<&str> = by
+            .get(&norm_of(cand))
+            .into_iter()
+            .flatten()
+            .filter(|(_, t)| all || t == ty)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        if scoped {
+            deck_notes.extend(hit.iter().copied());
+        }
+        matched.push(hit);
+    }
+    let mut decks_of: HashMap<String, HashSet<String>> = HashMap::new();
+    let deck_notes: Vec<&str> = deck_notes.into_iter().collect();
+    for chunk in deck_notes.chunks(CHUNK) {
+        let q = format!(
+            "SELECT note_id, deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = ?1 AND +hidden = 0",
+            (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+        );
+        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+        let args = std::iter::once(profile).chain(chunk.iter().copied());
+        let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
+        while let Some(r) = rows.next().map_err(sql)? {
+            decks_of.entry(r.get(0).map_err(sql)?).or_default().insert(r.get(1).map_err(sql)?);
+        }
+    }
+    let out: Vec<bool> = cands
+        .iter()
+        .zip(&matched)
+        .map(|(cand, hit)| match cand.get("decks").and_then(Value::as_array) {
+            None => !hit.is_empty(),
+            Some(ds) => {
+                let scope: HashSet<&str> = ds.iter().filter_map(Value::as_str).collect();
+                hit.iter().any(|id| decks_of.get(*id).is_some_and(|d| d.iter().any(|x| scope.contains(x.as_str()))))
+            }
+        })
+        .collect();
+    Ok(json!({"dup": out}))
 }
 
 /// 语法树里有没有某种叶子（`t` 键）。
@@ -1814,6 +1761,10 @@ impl SrsCore {
                 "builds": s.map_or(0, |s| s.builds),
                 "owners": owners,
             }));
+        }
+        if op == "anki_dupes" {
+            // 不碰会话（也不登记持有者）：查的是笔记缓存行上的规范形列。
+            return self.read_visible_tx(|c, _| anki_dupes(c, profile, req));
         }
         self.read_visible_tx(|c, uncommitted| {
             let mut b = lock(&self.browse);
@@ -1868,7 +1819,6 @@ impl SrsCore {
                 "browse_ids" => s.ids(req),
                 "browse_targets" => s.targets(req),
                 "anki_find" => s.anki_find(c, profile, req, files),
-                "anki_dupes" => s.anki_dupes(c, profile, req),
                 "anki_tags" => Ok(s.anki_tags()),
                 _ => Err(format!("browse: unknown op {op}")),
             };
@@ -1961,7 +1911,7 @@ mod tests {
     }
 
     /// `anki_dupes`：首字段查重规范形（去 HTML、trim）相同、笔记类型相符（`all` 不看类型）、范围牌组里有它的卡；
-    /// 写入（新笔记、删笔记）之后查重索引按笔记增量更新，与释放后重建的会话结果一致。
+    /// 写入（新笔记、删笔记）之后查的是缓存行上刚写好的规范形，释放浏览会话不影响结果（查重不用会话）。
     #[test]
     fn anki_dupes_match_first_field_norms_types_and_decks() {
         let (d, cfg, deck) = library();
@@ -2002,6 +1952,141 @@ mod tests {
         // 释放会话后重建：与增量结果一致。
         assert_eq!(call(&d, "browse_close", json!({"owner": "ankiconnect"}))["released"], json!(true));
         assert_eq!(probe(&d), incremental);
+    }
+
+    /// 每条缓存行的 `dupe_norm`。
+    fn dupe_norms(d: &Device) -> Vec<(String, Option<String>)> {
+        let w = d.core.writer().unwrap();
+        let mut stmt = w.prepare("SELECT id, dupe_norm FROM srs_notes_cache ORDER BY id").unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
+    }
+
+    /// `anki_dupes` 不建浏览会话：冷查（从没浏览过）就直接查缓存行，查完也没有常驻会话、没有登记持有者。
+    #[test]
+    fn anki_dupes_needs_no_browse_session() {
+        let (d, _, _) = library();
+        assert_eq!(dupes(&d, json!([cand("cat", "A", false, Value::Null)])), [true]);
+        let stats = call(&d, "browse_stats", json!({}));
+        assert_eq!(stats["live"], json!(false), "{stats}");
+        assert_eq!(stats["sessions"], json!(0), "{stats}");
+        assert_eq!(stats["owners"], json!([]), "{stats}");
+    }
+
+    /// 笔记类型调换字段顺序：首字段换了，成员笔记的缓存行（含 `dupe_norm`）随笔记类型重算，查重跟着换。
+    #[test]
+    fn anki_dupes_follow_a_first_field_reorder() {
+        let (d, cfg, _) = library();
+        assert_eq!(dupes(&d, json!([cand("cat", "A", false, Value::Null), cand("dog", "A", false, Value::Null)])), [true, false]);
+        let fdef = |name: &str, ord: i64| json!({"name": name, "ord": ord});
+        write(
+            &d,
+            &cfg,
+            T0 + 1000,
+            vec![edit("notetype", "A", "fieldDef/fa", fdef("Front", 1)), edit("notetype", "A", "fieldDef/fb", fdef("Back", 0))],
+        );
+        // N1 的首字段现在是 fb = "dog"；N2 / N4 的 fb 为空。
+        assert_eq!(dupes(&d, json!([cand("cat", "A", false, Value::Null), cand("dog", "A", false, Value::Null)])), [false, true]);
+    }
+
+    /// v15 老行（`dupe_norm` 为 NULL）的补算与写缓存行时算的逐行相同；补完再跑一遍什么也不做；补完查重结果相同。
+    #[test]
+    fn backfill_dupe_norms_matches_the_cache_write_and_is_idempotent() {
+        let (d, cfg, deck) = library();
+        let written = dupe_norms(&d);
+        assert!(written.iter().all(|(_, n)| n.is_some()), "{written:?}");
+        assert!(written.contains(&(N1.to_owned(), Some("cat".to_owned()))), "{written:?}");
+        let probe = json!([cand("cat", "A", false, Value::Null), cand("owl", "C", true, Value::Null), cand("cat", "A", false, json!([deck]))]);
+        let before = dupes(&d, probe.clone());
+        let backfill = |d: &Device| {
+            let w = d.core.writer().unwrap();
+            in_savepoint(&w, |c| crate::store::caches::backfill_dupe_norms(c, P, &cfg)).unwrap()
+        };
+        {
+            let w = d.core.writer().unwrap();
+            w.execute_batch("UPDATE srs_notes_cache SET dupe_norm = NULL").unwrap();
+            // 缓存孤行（身份记录已不在）：补成空串。
+            w.execute(
+                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at) VALUES ('orphan', ?1, 'A', 'g', 1)",
+                [P],
+            )
+            .unwrap();
+        }
+        assert_eq!(dupes(&d, probe.clone()), [false, false, false], "NULL rows never match");
+        assert_eq!(backfill(&d), written.len() + 1);
+        let mut expect = written.clone();
+        expect.push(("orphan".to_owned(), Some(String::new())));
+        expect.sort();
+        assert_eq!(dupe_norms(&d), expect);
+        assert_eq!(backfill(&d), 0);
+        assert_eq!(dupes(&d, probe), before);
+    }
+
+    /// 同 study.rs `a_snapshot_read_between_commit_and_settle_rereads_the_touched_rows`，浏览会话这一侧：写锁守卫释放
+    /// （settle）晚于 COMMIT 可见。COMMIT 之后、守卫还持着时在读连接上发浏览命令：快照看得见新行，触发器记下的 id
+    /// 还在「未提交」里——只重读已提交的会按旧会话作答（漏读一次）。未提交的改动读到旧值（与快照一致），也不清掉，
+    /// 提交后再按终态重读。
+    #[test]
+    fn a_browse_read_between_commit_and_settle_rereads_the_touched_rows() {
+        let (d, _, _) = library();
+        let tags = |d: &Device| call(d, "anki_tags", json!({"owner": "ankiconnect"}))["tags"].clone();
+        assert_eq!(tags(&d), json!(["B", "b", "t1"]));
+        {
+            // 写连接上自动提交一条改动：COMMIT 已对读连接可见，守卫还没释放（没 settle）。浏览命令不在写连接上读
+            // （没有挂着的 Drift 事务），所以持着守卫也照样走读连接。
+            let w = d.core.writer().unwrap();
+            w.execute("UPDATE srs_notes_cache SET tags_json = '[\"zz\"]' WHERE id = ?1", [N1]).unwrap();
+            assert!(w.is_autocommit());
+            assert_eq!(tags(&d), json!(["B", "t1", "zz"]), "the committed write is visible and must be reread");
+            // 未提交的改动：读快照重读到的是旧值。
+            w.execute_batch(&format!("BEGIN; UPDATE srs_notes_cache SET tags_json = '[\"yy\"]' WHERE id = '{N2}';")).unwrap();
+            assert_eq!(tags(&d), json!(["B", "t1", "zz"]));
+            w.execute_batch("COMMIT;").unwrap();
+            assert_eq!(tags(&d), json!(["yy", "zz"]), "rows committed after an earlier reread are reread again");
+        }
+        assert_eq!(tags(&d), json!(["yy", "zz"]));
+        let stats = call(&d, "browse_stats", json!({}));
+        assert_eq!(stats["sessions"], json!(1), "rereads, not rebuilds: {stats}");
+    }
+
+    /// `anki_notes_info`（store/bulk.rs）：按数字 id 一批交回笔记类型、标签、字段（寄存器视图原序、落库表示）与可见卡；
+    /// 查不到 / 已删除的为 null，与请求等长、同序（重复的 id 各回一份）。
+    #[test]
+    fn anki_notes_info_reads_fields_tags_and_visible_cards_by_numeric_id() {
+        let (d, cfg, _) = library();
+        write(&d, &cfg, T0 + 1000, vec![edit("note", N2, "deleted", json!(T0 + 1000))]);
+        let num = crate::store::schema::anki_numeric_id;
+        let card = crate::registers::card_id(N1, "t1", 0).unwrap();
+        let req = json!({"notes": [num(N1), num(N2), 7, num(N3), num(N1)]});
+        let got = d.core.read_visible(|c| crate::store::bulk::anki_notes_info(c, P, &req)).unwrap();
+        let n1 = json!({
+            "id": N1, "nt": "A", "t": ["t1", "b"],
+            "f": [["fa", "<b>cat</b>"], ["fb", "dog"]],
+            "c": [[num(&card), "t1", 0]],
+        });
+        assert_eq!(got["notes"][0], n1);
+        assert_eq!(got["notes"][1], Value::Null, "deleted");
+        assert_eq!(got["notes"][2], Value::Null, "unknown");
+        assert_eq!(got["notes"][3]["nt"], json!("B"));
+        assert_eq!(got["notes"][3]["f"], json!([["x", "cat"]]));
+        assert_eq!(got["notes"][4], n1);
+    }
+
+    /// 查重用得上 v15 的部分索引（候选规范形 IN (...) 不扫全表）。
+    #[test]
+    fn anki_dupes_query_uses_the_dupe_index() {
+        let (d, _, _) = library();
+        let w = d.core.writer().unwrap();
+        let plan: Vec<String> = w
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
+                 WHERE profile_uid = ?1 AND deleted_at IS NULL AND dupe_norm IN (?2, ?3)",
+            )
+            .unwrap()
+            .query_map(rusqlite::params![P, "a", "b"], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(plan.iter().any(|l| l.contains("idx_srs_notes_cache_dupe")), "{plan:?}");
     }
 
     /// `anki_tags`：全部未删除笔记的标签去重，按 UTF-16 码元排（大写在前）；删了笔记它独有的标签就没了。

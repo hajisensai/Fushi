@@ -62,6 +62,11 @@ abstract interface class SrsLocationFileStore {
 
   /// 同 [SrsLocationStore.putNew]，内容来自 [src]（调用期间 [src] 不得改动）。
   Future<void> putNewFile(String path, File src);
+
+  /// 同 [SrsLocationStore.put]（同名覆盖），内容来自 [src]，流式、不整份读进内存（调用期间 [src] 不得改动）。原子性
+  /// 与 [SrsLocationStore.put] 相同：文件夹位置先写同目录临时文件再改名（读者看不到半截）；网盘位置用后端自己的覆盖
+  /// 语义。只有可疑内容对象的覆盖重传用它（srs_media_sync.dart `putContent`）。
+  Future<void> putFile(String path, File src);
 }
 
 /// 把 [path] 下载到 [dst]；不存在返回 false。
@@ -77,6 +82,18 @@ Future<bool> srsLocationGetFile(
   if (bytes == null) return false;
   await dst.writeAsBytes(bytes, flush: true);
   return true;
+}
+
+/// 把 [src] 覆盖写到 [path]（见 [SrsLocationFileStore.putFile]）；只实现了 [SrsLocationStore] 的位置退回按字节写。
+Future<void> srsLocationPutFile(
+  SrsLocationStore location,
+  String path,
+  File src,
+) async {
+  if (location is SrsLocationFileStore) {
+    return (location as SrsLocationFileStore).putFile(path, src);
+  }
+  await location.put(path, await src.readAsBytes());
 }
 
 /// 把 [src] 写成不可变对象 [path]（见 [SrsLocationStore.putNew]）。
@@ -333,10 +350,26 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   }
 
   @override
-  Future<void> put(String path, Uint8List bytes) =>
-      _write(() => _put(path, bytes));
+  Future<void> put(String path, Uint8List bytes) => _write(() async {
+    final File f = _tmp();
+    try {
+      await f.writeAsBytes(bytes, flush: true);
+      await _putFile(path, f);
+    } finally {
+      try {
+        await f.delete();
+      } on FileSystemException {
+        // 临时文件留给系统清理。
+      }
+    }
+  });
 
-  Future<void> _put(String path, Uint8List bytes) async {
+  @override
+  Future<void> putFile(String path, File src) =>
+      _write(() => _putFile(path, src));
+
+  /// 覆盖写：后端本来就是「从文件传」，直接传 [src]，不经内存。
+  Future<void> _putFile(String path, File src) async {
     final (String dir, String name) = _split(path);
     final String id = (await _folder(dir, create: true))!;
     // 允许同名多文件的后端（Google Drive）先删旧的，免得读到旧的那份（只有清除重写的段与说明文件会覆盖）。
@@ -351,17 +384,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
         if (old != null) await store.deleteAsset(old.id);
       }
     }
-    final File f = _tmp();
-    try {
-      await f.writeAsBytes(bytes, flush: true);
-      await store.putAsset(id, name, f);
-    } finally {
-      try {
-        await f.delete();
-      } on FileSystemException {
-        // 临时文件留给系统清理。
-      }
-    }
+    await store.putAsset(id, name, src);
     listed?[name] = null;
   }
 
@@ -489,6 +512,22 @@ class SrsDirectoryLocationStore
     await put(path, bytes);
   }
 
+  /// 先流式拷成同目录临时文件再改名盖上去（读者看不到半截；改名失败不留临时文件）。
+  @override
+  Future<void> putFile(String path, File src) async {
+    final File f = _file(path);
+    await f.parent.create(recursive: true);
+    final File tmp = File(
+      p.join(f.parent.path, '.srs2tmp-${_rand.nextInt(1 << 30)}'),
+    );
+    try {
+      await src.copy(tmp.path);
+      await tmp.rename(f.path);
+    } finally {
+      if (await tmp.exists()) await tmp.delete();
+    }
+  }
+
   @override
   Future<bool> getFile(String path, File dst) async {
     try {
@@ -581,6 +620,10 @@ class SrsMemoryLocationStore implements SrsLocationStore, SrsLocationFileStore {
   @override
   Future<void> putNewFile(String path, File src) async =>
       putNew(path, await src.readAsBytes());
+
+  @override
+  Future<void> putFile(String path, File src) async =>
+      put(path, await src.readAsBytes());
 
   @override
   Future<void> delete(String path) async => files.remove(path);

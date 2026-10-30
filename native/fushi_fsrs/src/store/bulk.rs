@@ -409,6 +409,62 @@ pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value,
     Ok(Value::Object(out))
 }
 
+/// `anki_notes_info`：AnkiConnect `notesInfo` 要的笔记内容，一批一次读（L-final）。`notes` = 数字笔记 id；回
+/// `{notes: [...]}` 与请求等长，每项是 null（查不到 / 已删除）或 `{id, nt, t, f, c}`：笔记 UUID、笔记类型、标签、
+/// 字段（`[[字段 ID, 值]]`，寄存器视图的原序，值是落库表示——样式引用由 Dart 一批展开）、可见卡
+/// （`[[卡的数字 id, 模板 ID, cloze 序号]]`，排序要笔记类型的模板序，由 Dart 排）。
+///
+/// 以前 Dart 侧为这一个动作把每条笔记的身份记录与**全部**修改记录读成 Drift 行对象、组装成 `SrsEntitySource`、
+/// 物化后再连同修改记录列表建 `SrsNoteView`，另读一遍卡片缓存行；这里在只读快照上直接读、物化（与缓存行刷新
+/// 同一个寄存器内核与同一套 SQL，store/caches.rs [super::caches::note_infos]），只交回要用的值。
+pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+    let nums: Vec<Option<i64>> =
+        req.get("notes").and_then(Value::as_array).map(|a| a.iter().map(Value::as_i64).collect()).unwrap_or_default();
+    let mut resolve =
+        c.prepare_cached("SELECT MIN(id) FROM srs_notes_cache WHERE profile_uid = ?1 AND anki_id = ?2").map_err(sql)?;
+    let mut ids: Vec<Option<String>> = Vec::with_capacity(nums.len());
+    for n in &nums {
+        ids.push(match n {
+            Some(n) => resolve.query_row(rusqlite::params![profile, n], |r| r.get(0)).map_err(sql)?,
+            None => None,
+        });
+    }
+    let known: Vec<String> = ids.iter().flatten().cloned().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    let mut views: HashMap<String, super::caches::NoteInfo> = HashMap::with_capacity(known.len());
+    let mut cards: HashMap<String, Vec<Value>> = HashMap::new();
+    for chunk in known.chunks(200) {
+        for v in super::caches::note_infos(c, chunk)? {
+            views.insert(v.id.clone(), v);
+        }
+        let q = format!(
+            "SELECT note_id, anki_id, template_id, cloze_ord FROM srs_cards_cache              WHERE note_id IN ({}) AND +profile_uid = ?1 AND +hidden = 0",
+            (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+        );
+        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+        let args = std::iter::once(profile).chain(chunk.iter().map(String::as_str));
+        let mut rows = stmt.query(rusqlite::params_from_iter(args)).map_err(sql)?;
+        while let Some(r) = rows.next().map_err(sql)? {
+            let note: String = r.get(0).map_err(sql)?;
+            let (num, tpl, ord): (i64, String, i64) = (r.get(1).map_err(sql)?, r.get(2).map_err(sql)?, r.get(3).map_err(sql)?);
+            cards.entry(note).or_default().push(json!([num, tpl, ord]));
+        }
+    }
+    let out: Vec<Value> = ids
+        .iter()
+        .map(|id| match id.as_ref().and_then(|id| views.get(id)) {
+            Some(n) if n.deleted_at.is_none() => json!({
+                "id": n.id,
+                "nt": n.note_type,
+                "t": n.tags,
+                "f": n.fields.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(),
+                "c": cards.get(&n.id).cloned().unwrap_or_default(),
+            }),
+            _ => Value::Null,
+        })
+        .collect();
+    Ok(json!({"notes": out}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 14;
+pub const SCHEMA_VERSION: i64 = 15;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -284,6 +284,17 @@ CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_anki_id ON srs_notes_cache (profi
 CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_anki_id ON srs_cards_cache (profile_uid, anki_id);
 "#;
 
+/// V15：AnkiConnect canAddNotes 的库内查重直接查表（store/browse.rs `anki_dupes`），不再为查重把每条笔记的首字段
+/// 从修改记录里读出来、在内存里建倒排（十万卡库首查要 0.5 s / 100 MB+）。
+/// - `srs_notes_cache.dupe_norm`：笔记首字段（笔记类型字段顺序第一个）的查重规范形（`search::dupe_norm`：样式去重
+///   规范形 → 去 HTML → trim），写缓存行时一并算（store/caches.rs）。只有 Rust 读写（Drift 不声明）。
+///   NULL = 还没算：老行加列后都是 NULL，由 Dart 侧缓存修订号 8 的升级步让内核只补这一列（caches.rs
+///   [super::caches::backfill_dupe_norms]，不重算整行与卡片）；新写的行一律非 NULL（首字段为空 = 空串）。
+/// - 按 (profile, dupe_norm) 建未删除笔记的部分索引：查重 WHERE 必须带 `deleted_at IS NULL` 才用得上。
+/// 按「列在不在」判断，可重放。
+const V15_NOTES: (&str, &str) = ("dupe_norm", "ALTER TABLE srs_notes_cache ADD COLUMN dupe_norm TEXT NULL;");
+const V15_INDEX: &str = "CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_dupe ON srs_notes_cache (profile_uid, dupe_norm)      WHERE deleted_at IS NULL;";
+
 fn has_column(tx: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
     tx.query_row(
         &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
@@ -450,6 +461,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 同在 V14：旧段 / 旧转发件的删除改两段式（sync2/transport.rs `pending_deletes`、sync2/relay.rs）。
         tx.execute_batch(super::sync2::schema::V14_RELAY_GONE).map_err(|e| e.to_string())?;
     }
+    if current < 15 {
+        if !has_column(&tx, "srs_notes_cache", V15_NOTES.0)? {
+            tx.execute_batch(V15_NOTES.1).map_err(|e| e.to_string())?;
+        }
+        tx.execute_batch(V15_INDEX).map_err(|e| e.to_string())?;
+    }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -479,6 +496,35 @@ mod tests {
 
     fn version(c: &rusqlite::Connection) -> String {
         c.query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get(0)).unwrap()
+    }
+
+    /// v14 的库升到 v15：加 `dupe_norm` 列（老行 NULL，等 Dart 缓存修订号 8 的升级步补）与查重部分索引；
+    /// 中途崩溃重放（列与索引已在、版本号还是 14）不出错、不重复建、不动已补的值。
+    #[test]
+    fn v14_store_gains_the_dupe_norm_column_idempotently() {
+        let mut c = rusqlite::Connection::open_in_memory().unwrap();
+        migrate(&mut c).unwrap();
+        c.execute_batch(
+            "DROP INDEX idx_srs_notes_cache_dupe; ALTER TABLE srs_notes_cache DROP COLUMN dupe_norm; \
+             INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at) VALUES ('n1', 'p', 'T', 'g', 1); \
+             UPDATE srs_meta SET value = '14' WHERE key = 'schema';",
+        )
+        .unwrap();
+        assert!(!has_column(&c, "srs_notes_cache", "dupe_norm").unwrap());
+        migrate(&mut c).unwrap();
+        assert!(has_column(&c, "srs_notes_cache", "dupe_norm").unwrap());
+        assert!(indexes(&c).contains(&"idx_srs_notes_cache_dupe".to_owned()));
+        let v: Option<String> = c.query_row("SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(v, None, "old rows wait for the backfill");
+        assert_eq!(version(&c), "15");
+        c.execute_batch("UPDATE srs_notes_cache SET dupe_norm = 'x'; UPDATE srs_meta SET value = '14' WHERE key = 'schema';")
+            .unwrap();
+        let before = indexes(&c);
+        migrate(&mut c).unwrap();
+        assert_eq!(indexes(&c), before);
+        let v: String = c.query_row("SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(v, "x");
+        assert_eq!(version(&c), SCHEMA_VERSION.to_string());
     }
 
     /// v8 的库升到 v9：补上出卡 / 计数索引；再跑一遍迁移（`current < 9` 的步骤重放）不出错、不重复建。

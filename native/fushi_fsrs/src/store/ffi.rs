@@ -754,10 +754,18 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>
     let op = s("op")?;
     // 改投影的命令：同一次调用里接着刷新本机缓存行（store/caches.rs），Dart 只收写过哪些笔记 / 卡。缓存配置
     // （内置笔记类型的代码默认值、默认牌组）只有 Dart 知道，随命令带来；缺了是调用方的 bug，不跳过刷新。
-    if PROJECTING_OPS.contains(&op) || op == "refresh_caches" || op == "rebuild_caches" {
+    if PROJECTING_OPS.contains(&op) || op == "refresh_caches" || op == "rebuild_caches" || op == "backfill_dupe_norms" {
         let cfg = crate::store::caches::CacheConfig::parse(req.get("caches").ok_or("sync2: missing caches")?)?;
         let mut v = match op {
             "refresh_caches" => json!({}),
+            // srs.db v15 的老行补 `dupe_norm`（只改这一列，不算缓存写入：不进 Dart 的缓存变更日志）。
+            "backfill_dupe_norms" => {
+                let w = c.writer()?;
+                let n = crate::store::sync2::in_savepoint(&w, |conn| {
+                    crate::store::caches::backfill_dupe_norms(conn, profile, &cfg)
+                })?;
+                return Ok(json!({"filled": n}));
+            }
             "rebuild_caches" => {
                 let w = c.writer()?;
                 let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::rebuild(conn, profile, &cfg))?;
@@ -843,6 +851,7 @@ fn sync2_command(
         }
         "stats_bundle" => c.read_visible(|conn| crate::store::bulk::stats_bundle(conn, profile, files))?,
         "anki_resolve" => c.read_visible(|conn| crate::store::bulk::anki_resolve(conn, profile, req))?,
+        "anki_notes_info" => c.read_visible(|conn| crate::store::bulk::anki_notes_info(conn, profile, req))?,
         // 卡片浏览的常驻会话（store/browse.rs）：查询（筛选 + 排序）、取行、取行 id、批量目标、关闭；AnkiConnect 的
         // 搜索 / 查重 / 标签走同一个会话。
         "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close" | "anki_find" | "anki_dupes" | "anki_tags" | "browse_stats" => {
@@ -950,15 +959,22 @@ fn sync2_command(
             json!({})
         }
         // 文件到文件的流式封 / 解（大媒体不整份进内存；审查 S-9）：返回明文的字节数与 sha256（内容寻址核对用，
-        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。
+        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。解不开（不是本机读写出错）不算命令失败：
+        // 回 `{"failure": "unauthenticated" | "corrupt"}`（media_seal.rs [OpenError]），媒体对账据此决定记不记可疑。
         "seal_file" | "open_file" => {
+            use crate::sync2::media_seal::OpenError;
             let key = crate::sync2::keys::CollectionKey(key32(&req["key"])?.ok_or("seal/open: missing key")?);
             let aad = format!("fushi-srs-media:{}", s("name")?);
             let (src, dst) = (std::path::Path::new(s("src")?), std::path::Path::new(s("dst")?));
             let done = if op == "seal_file" {
                 crate::sync2::media_seal::seal_file(&key, src, dst, aad.as_bytes())?
             } else {
-                crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes())?
+                match crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes()) {
+                    Ok(done) => done,
+                    Err(OpenError::Unauthenticated) => return Ok(json!({"failure": "unauthenticated"})),
+                    Err(OpenError::Corrupt) => return Ok(json!({"failure": "corrupt"})),
+                    Err(e @ OpenError::Io(_)) => return Err(e.into()),
+                }
             };
             let sha: String = done.sha256.iter().map(|b| format!("{b:02x}")).collect();
             json!({"sha256": sha, "bytes": done.plain_len})
