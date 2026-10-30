@@ -182,9 +182,12 @@ impl DeckTree {
             .map(|a| a.iter().filter_map(Value::as_f64).map(|x| x as f32).collect())
             .unwrap_or_default();
         let params = if params.len() == alg.param_count() { params } else { Vec::new() };
+        // 没写过步长的 RWKV 牌组不用步长（`SrsDeckView.learnStepsFor`）。
+        let rwkv = alg_wire == "rwkv";
+        let pick = |v: &Value, default: &[f64]| if rwkv && !v.is_array() { Vec::new() } else { steps(v, default) };
         Config {
-            learn_steps: steps(&me.view["ls"], &DEFAULT_LEARN),
-            relearn_steps: steps(&me.view["rs"], &DEFAULT_RELEARN),
+            learn_steps: pick(&me.view["ls"], &DEFAULT_LEARN),
+            relearn_steps: pick(&me.view["rs"], &DEFAULT_RELEARN),
             desired_retention: owner.view["ret"].as_f64().unwrap_or(0.8),
             max_interval: me.view["mi"].as_i64().unwrap_or(36500),
             alg,

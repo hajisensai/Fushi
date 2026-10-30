@@ -109,6 +109,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _replayQuestionAudio = true;
   SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
 
+  /// 打开时实际用的步长（没写过步长的 RWKV 牌组为空，见 [SrsDeckView.learnStepsFor]）。
+  List<double> _loadedLearn = const <double>[];
+  List<double> _loadedRelearn = const <double>[];
+
   String? _learnError;
   String? _relearnError;
 
@@ -165,8 +169,11 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _name.text = deck.name;
         _newPerDay.text = '${deck.newPerDay}';
         _reviewsPerDay.text = '${deck.reviewsPerDay}';
-        _learnSteps.text = _formatSteps(deck.learnSteps);
-        _relearnSteps.text = _formatSteps(deck.relearnSteps);
+        final SrsSchedulingConfig config = tree.schedulingConfig(deck.id);
+        _loadedLearn = config.learnStepsMinutes;
+        _loadedRelearn = config.relearnStepsMinutes;
+        _learnSteps.text = _formatSteps(_loadedLearn);
+        _relearnSteps.text = _formatSteps(_loadedRelearn);
         _maxInterval.text = '${deck.maxIntervalDays}';
         _retention = deck.desiredRetention.clamp(0.7, 0.97);
         _algorithm = deck.localAlgorithm;
@@ -254,8 +261,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         ? t.srs_settings_steps_invalid
         : null;
     if (_learnError != null || _relearnError != null) return null;
-    if (_formatSteps(learn!) != _formatSteps(deck.learnSteps) ||
-        _formatSteps(relearn!) != _formatSteps(deck.relearnSteps)) {
+    if (_formatSteps(learn!) != _formatSteps(_loadedLearn) ||
+        _formatSteps(relearn!) != _formatSteps(_loadedRelearn)) {
       out[SrsFieldKeys.deckSteps] = <String, Object?>{
         'learn': learn,
         'relearn': relearn,

@@ -76,7 +76,7 @@ class SrsRwkvQueueSettings {
     this.repeatMinReviews = 5,
     this.repeatMinSeconds = 30,
     this.refreshEvery = 1,
-    this.ignoreReviewLimit = false,
+    this.ignoreReviewLimit = true,
   });
 
   /// 每天最少复习数：今天在这个牌组复习过的卡不到这个数时，从回忆率高于目标保留率（本不该出）
@@ -96,7 +96,7 @@ class SrsRwkvQueueSettings {
   final int refreshEvery;
 
   /// 忽略每日复习上限（上游 Anki「Ignore review limit」）：R 降到目标保留率的复习卡全部出，
-  /// 不按 [SrsDeckView.reviewsPerDay] 截断。缺省关（与以前相同）。
+  /// 不按 [SrsDeckView.reviewsPerDay] 截断。缺省开（上游 RWKV 的推荐设置）；只对 RWKV 牌组生效。
   final bool ignoreReviewLimit;
 
   static const int maxMinReviewsPerDay = 9999;
@@ -132,7 +132,7 @@ class SrsRwkvQueueSettings {
         1,
         read('refreshEvery', d.refreshEvery, maxRefreshEvery),
       ),
-      ignoreReviewLimit: v['ignoreLimit'] == true,
+      ignoreReviewLimit: v['ignoreLimit'] != false,
     );
   }
 
@@ -235,6 +235,8 @@ class SrsDeckView {
     required this.reviewsPerDay,
     required this.learnSteps,
     required this.relearnSteps,
+    this.learnStepsSet = true,
+    this.relearnStepsSet = true,
     required this.desiredRetention,
     required this.algorithmWire,
     required this.algorithmAuto,
@@ -270,6 +272,22 @@ class SrsDeckView {
   final int reviewsPerDay;
   final List<double> learnSteps;
   final List<double> relearnSteps;
+
+  /// 牌组上写过学习 / 重学步长（[SrsFieldKeys.deckSteps] 里有这一项）。没写过时
+  /// [learnSteps] / [relearnSteps] 是 FSRS 的默认步长，RWKV 牌组改用「不用步长」
+  /// （[learnStepsFor] / [relearnStepsFor]）。
+  final bool learnStepsSet;
+  final bool relearnStepsSet;
+
+  /// 按 [algorithm]（参数归属的 own 祖先的算法）实际用的学习步长：没写过步长的 RWKV 牌组
+  /// 不用步长（上游 RWKV 推荐设置：答错 / 新卡直接进复习队列，由 RWKV 按 R 决定何时再出）。
+  /// Rust 侧同一条规则在 `sync2/config.rs` `DeckTree::config`。
+  List<double> learnStepsFor(SrsAlgorithm algorithm) =>
+      !learnStepsSet && algorithm.usesRwkv ? const <double>[] : learnSteps;
+
+  /// 同 [learnStepsFor]，重学步长。
+  List<double> relearnStepsFor(SrsAlgorithm algorithm) =>
+      !relearnStepsSet && algorithm.usesRwkv ? const <double>[] : relearnSteps;
   final double desiredRetention;
 
   /// 可能是本机不认识的值（原样保留、不改写）。
@@ -448,8 +466,8 @@ class SrsDeckTree {
         ? set.params
         : (defaultsOf?.call(alg.memoryAlgorithm) ?? const <double>[]);
     return SrsSchedulingConfig(
-      learnStepsMinutes: self.learnSteps,
-      relearnStepsMinutes: self.relearnSteps,
+      learnStepsMinutes: self.learnStepsFor(alg),
+      relearnStepsMinutes: self.relearnStepsFor(alg),
       desiredRetention: owner.desiredRetention,
       maxIntervalDays: self.maxIntervalDays,
       algorithm: alg,

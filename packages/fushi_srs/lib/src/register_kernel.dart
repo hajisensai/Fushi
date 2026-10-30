@@ -375,6 +375,8 @@ SrsDeckView _deckView(SrsEntitySource s, Map<String, Object?> r) {
     reviewsPerDay: v['rp']! as int,
     learnSteps: _steps(v['ls'], SrsDeckView.defaultLearnSteps),
     relearnSteps: _steps(v['rs'], SrsDeckView.defaultRelearnSteps),
+    learnStepsSet: v['ls'] is List,
+    relearnStepsSet: v['rs'] is List,
     desiredRetention: (v['ret']! as num).toDouble(),
     algorithmWire: v['alg'] as String? ?? srsDefaultAlgorithm.wire,
     algorithmAuto: v['aa'] == true,
