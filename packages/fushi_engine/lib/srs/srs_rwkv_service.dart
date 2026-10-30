@@ -893,135 +893,6 @@ class SrsRwkvService implements SrsRwkvScheduling {
     SrsDayContext day,
     int nowMs,
   ) async {
-    final (List<SrsRwkvNowCard> now, Int64List anchors) = await _nowCards(
-      cards,
-      tree,
-      day,
-    );
-    final RwkvRows rows = srsRwkvNowRows(now, nowMs: nowMs, day: day);
-    return _serial(() => backend.updateScores(rows, versions, anchors));
-  }
-
-  /// 预测到期（接口文档见 [SrsRwkvScheduling.forecastDueOffsets]）。对所有卡同时二分：第 0 轮一次
-  /// 查询拿两端（此刻、第 [days] 天），之后每轮一次查询把所有待定卡的区间对半，共
-  /// 1 + ceil(log2 days) 次原生查询（366 天 = 10 次），与卡数无关；历史只读一次。
-  @override
-  Future<List<int?>?> forecastDueOffsets(
-    List<SrsRwkvCandidate> cards, {
-    required List<double> targets,
-    required int days,
-    required int nowMs,
-  }) async {
-    if (targets.length != cards.length) {
-      throw ArgumentError.value(
-        targets.length,
-        'targets',
-        'must match cards (${cards.length})',
-      );
-    }
-    final SrsRwkvBackend? backend = _backend;
-    if (_current.phase != SrsRwkvPhase.ready || backend == null) return null;
-    try {
-      if (!await refresh()) return null;
-      final int n = cards.length;
-      if (n == 0) return const <int?>[];
-      final int horizon = days < 0 ? 0 : days;
-      final SrsDayContext day = await store.dayContext();
-      final SrsDeckTree tree = await store.deckTree();
-      final int today = day.dayIndexOf(nowMs);
-      // 每张卡的历史（最后一条保留评分）只读一次，各轮复用。
-      final (List<SrsRwkvNowCard> base, Int64List _) = await _nowCards(
-        cards,
-        tree,
-        day,
-      );
-      // 第 k 天的探测时刻：今天取此刻（与出卡同一个查询），之后取那天的翻日起点（那天最早能出卡的时刻）。
-      int probeAt(int k) => k == 0 ? nowMs : day.dayStartMs(today + k);
-
-      // 一轮 = 一次原生查询：本轮所有待定卡各在自己的探测日建一行，拼成一批。查询不推进模型状态、
-      // 不碰分数表（README `frwkv_runtime_query`；唯一的副作用是第一次见到的 id 取 ID 编码，这些卡
-      // 的 id 出卡打分时已经查过）。
-      Future<Float32List> probe(List<int> which, List<int> offsets) {
-        final RwkvRows rows = srsRwkvNowRows(
-          <SrsRwkvNowCard>[for (final int i in which) base[i]],
-          nowMs: nowMs,
-          day: day,
-          atMs: <int>[for (final int k in offsets) probeAt(k)],
-        );
-        return _serial(() => backend.query(rows));
-      }
-
-      bool due(double r, int i) => r.isFinite && r <= targets[i];
-      final List<int?> result = List<int?>.filled(n, null);
-      // 第 0 轮：此刻与第 [horizon] 天两端一起查（一批 2n 行）。此刻已不高于目标 → 0；到上限那天还高于
-      // 目标（或打不了分）→ 范围外，null。
-      final List<int> all = <int>[for (int i = 0; i < n; i++) i];
-      final Float32List ends = await probe(
-        horizon == 0 ? all : <int>[...all, ...all],
-        <int>[
-          ...List<int>.filled(n, 0),
-          if (horizon > 0) ...List<int>.filled(n, horizon),
-        ],
-      );
-      // 每张待定卡的区间 (lo, hi]：lo 天还高于目标，hi 天已不高于目标。
-      final Int32List lo = Int32List(n);
-      final Int32List hi = Int32List(n);
-      List<int> pending = <int>[];
-      for (int i = 0; i < n; i++) {
-        final double now = ends[i];
-        if (!now.isFinite) continue;
-        if (now <= targets[i]) {
-          result[i] = 0;
-          continue;
-        }
-        if (horizon == 0 || !due(ends[n + i], i)) continue;
-        lo[i] = 0;
-        hi[i] = horizon;
-        if (horizon == 1) {
-          result[i] = 1;
-        } else {
-          pending.add(i);
-        }
-      }
-      // 之后每轮把所有待定卡的区间对半（各卡中点不同，仍一批一次查询）：约 ceil(log2 horizon) 轮。
-      // 二分假定回忆率随时间单调不增；不单调时找到的是区间里某个「高于 → 不高于」的交界日，不一定
-      // 是最早那天——统计页的预测分布可以接受这个近似（出卡本身每次按此刻的 R 判，不受影响）。
-      while (pending.isNotEmpty) {
-        final List<int> mids = <int>[
-          for (final int i in pending) (lo[i] + hi[i]) >> 1,
-        ];
-        final Float32List r = await probe(pending, mids);
-        final List<int> next = <int>[];
-        for (int j = 0; j < pending.length; j++) {
-          final int i = pending[j];
-          if (!r[j].isFinite) continue; // 打不了分：这张不给预测。
-          if (due(r[j], i)) {
-            hi[i] = mids[j];
-          } else {
-            lo[i] = mids[j];
-          }
-          if (hi[i] - lo[i] <= 1) {
-            result[i] = hi[i];
-          } else {
-            next.add(i);
-          }
-        }
-        pending = next;
-      }
-      return result;
-    } catch (error, stack) {
-      _log('RWKV due forecast unavailable: $error\n$stack');
-      return null;
-    }
-  }
-
-  /// [cards] 的「此刻」行输入（最后一条保留评分由 Rust 从日志直读，每 500 张一次）与锚点（最后一条
-  /// 保留评分的时刻，没有则 -1）。
-  Future<(List<SrsRwkvNowCard>, Int64List)> _nowCards(
-    List<SrsRwkvCandidate> cards,
-    SrsDeckTree tree,
-    SrsDayContext day,
-  ) async {
     final Int64List anchors = Int64List(cards.length);
     final List<SrsRwkvNowCard> now = <SrsRwkvNowCard>[];
     for (int at = 0; at < cards.length; at += 500) {
@@ -1056,7 +927,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
         ));
       }
     }
-    return (now, anchors);
+    final RwkvRows rows = srsRwkvNowRows(now, nowMs: nowMs, day: day);
+    return _serial(() => backend.updateScores(rows, versions, anchors));
   }
 
   @override

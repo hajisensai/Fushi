@@ -684,14 +684,6 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
             (t.srs_stats_future_load, _decimal(f.dailyLoad)),
             (t.srs_stats_future_overdue, '${f.overdue}'),
           ]),
-          if (f.byRecallForecast > 0) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.srs_stats_future_due_rwkv_forecast(n: f.byRecallForecast),
-              key: const ValueKey<String>('srs-stats-future-rwkv-forecast'),
-              style: context.fushiType.bodySmall,
-            ),
-          ],
           if (f.byRecall > 0) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
             Text(

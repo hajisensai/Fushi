@@ -14,12 +14,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
-
-/// 统计页按 RWKV 预测到期日看多远（天，含今天之后）：与「一年」范围同长，更远的 RWKV 卡计入
-/// 「不计在内」。预测是对全部 RWKV 复习卡同时二分，原生查询次数 1 + ceil(log2 天数)（这里 10 次）。
-const int kSrsStatsRwkvForecastDays = 366;
 
 /// 统计页的筛选索引：牌组树、笔记与笔记类型（Anki 搜索语法求值用）。
 class SrsStatsIndex {
@@ -226,41 +221,6 @@ Future<SrsStatsBundle> loadSrsStats(
     ],
   );
 
-  // 这些卡什么时候到期也按 RWKV 预测：回忆率首次降到所在牌组目标保留率的那天（未来到期 / 负担用）。
-  // 没预测的（RWKV 用不了、超出 [kSrsStatsRwkvForecastDays]、打不了分）统计页单列「不计在内」。
-  final Map<String, int> rwkvDueOffset = <String, int>{};
-  final SrsRwkvScheduling? rwkv = store.rwkv;
-  if (rwkvR != null && rwkv != null) {
-    final List<SrsCardCacheRow> forecast = <SrsCardCacheRow>[
-      for (int i = 0; i < cardCount; i++)
-        if (byRecallCard(i)) cardRows[i],
-    ];
-    final List<int?>? offsets = forecast.isEmpty
-        ? null
-        : await rwkv.forecastDueOffsets(
-            <SrsRwkvCandidate>[
-              for (final SrsCardCacheRow c in forecast)
-                SrsRwkvCandidate(
-                  id: c.id,
-                  noteId: c.noteId,
-                  deckId: c.deckId,
-                  lastLogId: c.lastLogId,
-                ),
-            ],
-            targets: <double>[
-              for (final SrsCardCacheRow c in forecast)
-                configOf(c.deckId).desiredRetention,
-            ],
-            days: kSrsStatsRwkvForecastDays,
-            nowMs: now,
-          );
-    if (offsets != null && offsets.length == forecast.length) {
-      for (int k = 0; k < forecast.length; k++) {
-        if (offsets[k] case final int off) rwkvDueOffset[forecast[k].id] = off;
-      }
-    }
-  }
-
   final List<SrsStatCard> cards = <SrsStatCard>[];
   for (int i = 0; i < cardCount; i++) {
     final SrsCardCacheRow c = cardRows[i];
@@ -273,8 +233,6 @@ Future<SrsStatsBundle> loadSrsStats(
         ? (rr != null && rr.isFinite ? rr : null)
         : retrievability[i];
     final SrsNoteCacheRow? n = noteCache[c.noteId];
-    final int? rwkvOff = byRecall ? rwkvDueOffset[c.id] : null;
-    final int? rwkvDueDay = rwkvOff == null ? null : today + rwkvOff;
     cards.add(
       SrsStatCard(
         id: c.id,
@@ -296,15 +254,6 @@ Future<SrsStatsBundle> loadSrsStats(
         label: n?.sortField ?? '',
         desiredRetention: config.desiredRetention,
         byRecall: byRecall,
-        rwkvDueDay: rwkvDueDay,
-        rwkvIntervalDays: rwkvDueDay == null
-            ? null
-            : math.max(
-                1,
-                c.lastReviewedAt == null
-                    ? c.scheduledDays
-                    : rwkvDueDay - dayCtx.dayIndexOf(c.lastReviewedAt!),
-              ),
       ),
     );
     if (i % 500 == 499) await Future<void>.delayed(Duration.zero);

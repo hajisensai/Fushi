@@ -7,7 +7,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -50,12 +49,6 @@ class _FakeBackend implements SrsRwkvBackend {
   bool closed = false;
 
   double _r(int card) => r[card] ?? defaultR;
-
-  /// 设了就按（卡, 查询行的日序号）给纯查询（[query]）的 R：预测到期按未来时刻查。
-  double Function(int card, int dayOffset)? rAtDay;
-
-  /// 每次纯查询（[query]）的行数。
-  final List<int> queryBatches = <int>[];
 
   @override
   Future<bool> append(RwkvRows rows, List<int> tags) async {
@@ -156,13 +149,8 @@ class _FakeBackend implements SrsRwkvBackend {
   @override
   Future<Float32List> query(RwkvRows rows) async {
     queries++;
-    queryBatches.add(rows.length);
-    final double Function(int, int)? at = rAtDay;
     return Float32List.fromList(<double>[
-      for (int i = 0; i < rows.length; i++)
-        at != null
-            ? at(rows.cardIdAt(i), rows.dayOffsetAt(i))
-            : r[rows.cardIdAt(i)] ?? defaultR,
+      for (int i = 0; i < rows.length; i++) r[rows.cardIdAt(i)] ?? defaultR,
     ]);
   }
 
@@ -1102,14 +1090,10 @@ void main() {
 
       final SrsStatsBundle stats = await loadSrsStats(f.store);
       final SrsFutureDue due = stats.data.futureDue(30);
-      // cards[0] 此刻已低于目标保留率：按 RWKV 预测计今天（不算逾期）；另两张一年内都高于目标，
-      // 没有预测，单列「不计在内」。
-      expect(due.byRecallForecast, 1);
-      expect(due.byRecall, 2);
-      expect(due.dueToday, 1);
-      expect(due.total, 1);
+      expect(due.byRecall, 3);
+      expect(due.total, 0);
       expect(due.overdue, 0);
-      expect(due.dailyLoad, greaterThan(0));
+      expect(due.dailyLoad, 0);
       final SrsStatCard c0 = stats.data.cards.firstWhere(
         (SrsStatCard c) => c.id == cards[0],
       );
@@ -1137,132 +1121,7 @@ void main() {
         f.store,
       )).data.futureDue(3650);
       expect(fallback.byRecall, 0);
-      expect(fallback.byRecallForecast, 0);
       expect(fallback.total, 3);
-    });
-  });
-
-  group('预测到期（统计页未来到期）', () {
-    late _Fixture f;
-    late List<String> cards;
-    late _FakeBackend backend;
-    late SrsRwkvService service;
-    late int today;
-    late Map<int, String> byNumeric;
-
-    setUp(() async {
-      f = await _Fixture.create();
-      cards = await f.cards(3);
-      await f.graduate(cards);
-      backend = _FakeBackend()..defaultR = 0.95;
-      service = f.service(backend);
-      f.store.rwkv = service;
-      await service.start();
-      await _settled(service);
-      f.advance(kDay);
-      today = (await f.store.dayContext()).dayIndexOf(f.clock[0]);
-      byNumeric = <int, String>{
-        for (final String c in cards)
-          SrsIds.ankiNumericIds(<String>[c]).single: c,
-      };
-      // cards[0]：R = 0.955 − 0.01·k（第 6 天起 ≤ 0.9）；cards[1]：一直 0.5；cards[2]：一直 0.99。
-      backend.rAtDay = (int card, int dayOffset) {
-        final int k = dayOffset - today;
-        return switch (byNumeric[card]) {
-          final String c when c == cards[0] => 0.955 - 0.01 * k,
-          final String c when c == cards[1] => 0.5,
-          _ => 0.99,
-        };
-      };
-    });
-
-    Future<List<SrsRwkvCandidate>> candidates() async => <SrsRwkvCandidate>[
-      for (final String id in cards)
-        if (await f.store.cardRow(id) case final SrsCardCacheRow r)
-          SrsRwkvCandidate(
-            id: r.id,
-            noteId: r.noteId,
-            deckId: r.deckId,
-            lastLogId: r.lastLogId,
-          ),
-    ];
-
-    test('所有卡同时二分：第 0 轮两端一批，之后每轮一批，不碰分数表', () async {
-      final List<SrsRwkvCandidate> cs = await candidates();
-      final int scoredBefore = backend.scoredRows;
-      final int clearsBefore = backend.clears;
-      final int requeriesBefore = backend.requeries;
-      backend.queryBatches.clear();
-
-      final List<int?>? offsets = await service.forecastDueOffsets(
-        cs,
-        targets: <double>[0.9, 0.9, 0.9],
-        days: 30,
-        nowMs: f.clock[0],
-      );
-      expect(offsets, <int?>[6, 0, null]);
-      // 第 0 轮 2×3 行（此刻 + 第 30 天）；只有 cards[0] 待定：30 → 15 → 7 → 3 → 5 → 6 共 5 轮各 1 行。
-      // 共 6 次 = 1 + ceil(log2 30)，与逐卡逐天（3 × 31 次）无关。
-      expect(backend.queryBatches, <int>[6, 1, 1, 1, 1, 1]);
-      expect(backend.scoredRows, scoredBefore);
-      expect(backend.clears, clearsBefore);
-      expect(backend.requeries, requeriesBefore);
-    });
-
-    test('范围 0 天只查此刻；空列表不查；没准备好返回 null', () async {
-      final List<SrsRwkvCandidate> cs = await candidates();
-      backend.queryBatches.clear();
-      expect(
-        await service.forecastDueOffsets(
-          cs,
-          targets: <double>[0.9, 0.9, 0.9],
-          days: 0,
-          nowMs: f.clock[0],
-        ),
-        <int?>[null, 0, null],
-      );
-      expect(backend.queryBatches, <int>[3]);
-      expect(
-        await service.forecastDueOffsets(
-          const <SrsRwkvCandidate>[],
-          targets: const <double>[],
-          days: 30,
-          nowMs: f.clock[0],
-        ),
-        isEmpty,
-      );
-      expect(backend.queryBatches, <int>[3]);
-      await service.close();
-      expect(
-        await service.forecastDueOffsets(
-          cs,
-          targets: <double>[0.9, 0.9, 0.9],
-          days: 30,
-          nowMs: f.clock[0],
-        ),
-        isNull,
-      );
-    });
-
-    test('统计页：按预测的那天计入未来到期，范围外的不计', () async {
-      final SrsStatsBundle stats = await loadSrsStats(f.store);
-      final SrsStatCard c0 = stats.data.cards.firstWhere(
-        (SrsStatCard c) => c.id == cards[0],
-      );
-      final double target = c0.desiredRetention;
-      // 牌组目标保留率不是 0.9 时上面的曲线交点会变：按实际目标算期望。
-      int expected = 0;
-      while (0.955 - 0.01 * expected > target + 1e-6) {
-        expected++;
-      }
-      expect(c0.rwkvDueDay, today + expected);
-      final SrsFutureDue due = stats.data.futureDue(31);
-      expect(due.byRecallForecast, 2);
-      expect(due.byRecall, 1);
-      expect(due.dueToday, 1);
-      expect(due.perDay[expected], expected == 0 ? 2 : 1);
-      expect(due.overdue, 0);
-      expect(stats.data.furthestDueOffset(), 30);
     });
   });
 }
