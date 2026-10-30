@@ -321,11 +321,12 @@ Future<SrsSync2Report> srsSync2Round({
 /// 一轮的读半边（§6.2 第 1–3 步）：读 [location] 上全部设备的 head（每台取代号最大的，同一代号的都要）→ 内核定要拉
 /// 的段 → 分批拉、分批收。结果累加进 [report]。返回 false = 这一轮到此为止：中途收手（[report] 的 error 是
 /// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。v1 位置的
-/// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定。
+/// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定；迁移传 [progressId] = null：
+/// 不按位置记 head / 转发账（旧根不是一个同步位置，记了会清掉同一位置新根的转发记账）。
 Future<bool> srsSync2Pull({
   required SrsSync2Host host,
   required SrsLocationStore location,
-  required String progressId,
+  required String? progressId,
   required String? keyHex,
   required SrsSync2Report report,
   void Function(int done, int total)? onFetchProgress,
@@ -369,7 +370,7 @@ Future<bool> srsSync2Pull({
   // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
   final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
     'op': 'plan',
-    'location': progressId,
+    if (progressId != null) 'location': progressId,
   }, blobs: heads)).map;
   if (plan['needsUpgrade'] == true) {
     // 有设备的 head 声明的最低读者版本比本机新：内核没收它，这一轮整个停下（不收、不发、不写 head）。
