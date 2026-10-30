@@ -15,7 +15,9 @@
 # throwaway one made here, so a compile check never needs the real one.
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
-state="$(pwd)/.git/fushi-dist"
+root=$(pwd)
+# .git/fushi-dist in a worker checkout; also right in a git worktree.
+state="$(git rev-parse --absolute-git-dir)/fushi-dist"
 mkdir -p "$state"
 EX_TOOLCHAIN=78
 
@@ -250,5 +252,5 @@ case "$tool" in
     fi ;;
 esac
 status=$?
-cd "$(dirname "$state")/.." || true
+cd "$root" || true
 finish "$status"
