@@ -117,6 +117,25 @@ case "$need" in
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
         -property installationPath 2>/dev/null)" ] ||
       lack "Visual Studio with the C++ desktop workload"
+    # CMake reaches each plugin through ephemeral/.plugin_symlinks. The
+    # Flutter tool makes directory symlinks there, which on wight-win
+    # (2026-10-30) no native program on the worker account could follow, so
+    # every build died in CMake (Git Bash could: it resolves links itself).
+    # plugin_junctions.dart puts junctions there instead; make one here and
+    # go through it with cmd, as CMake would.
+    probe="$state/junction-probe"
+    cmd.exe //c rmdir "$(cygpath -w "$probe")" > /dev/null 2>&1
+    mkdir -p "$state/junction-probe-target" &&
+      : > "$state/junction-probe-target/ok"
+    cmd.exe //c mklink //J "$(cygpath -w "$probe")" \
+      "$(cygpath -w "$state/junction-probe-target")" > /dev/null 2>&1 ||
+      lack "this account cannot make junctions, which Windows builds with plugins need"
+    followed=
+    cmd.exe //c "if exist $(cygpath -w "$probe")\\ok (exit 0) else (exit 1)" \
+      > /dev/null 2>&1 && followed=1
+    cmd.exe //c rmdir "$(cygpath -w "$probe")" > /dev/null 2>&1
+    [ -n "$followed" ] ||
+      lack "programs on this account cannot go through junctions, which Windows builds with plugins need"
     ;;
   macos)
     [ "$(uname -s)" = Darwin ] || lack "a macOS build needs a Mac"
@@ -236,6 +255,13 @@ if [ "$need" = android ]; then
   fi
 fi
 
+links=fushi/windows/flutter/ephemeral/.plugin_symlinks
+if [ "$need" = windows ]; then
+  echo "==> plugin junctions" >> "$log"
+  dart fushi/tool/dist_test/plugin_junctions.dart fushi >> "$log" 2>&1 ||
+    finish 1
+fi
+
 case "$tool" in
   flutter)
     cd fushi && run_child flutter build "$target" --no-pub "$@" ;;
@@ -253,4 +279,20 @@ case "$tool" in
 esac
 status=$?
 cd "$root" || true
+if [ "$status" -ne 0 ] && [ "$need" = windows ]; then
+  # The plugin links as Windows sees them (Git Bash resolves links itself, so
+  # only cmd shows whether native programs like CMake can go through them).
+  {
+    echo "==> plugin links after the build"
+    cmd.exe //c "chcp 65001 > nul & dir /AL $(cygpath -w "$links")" 2>&1 |
+      grep '<' | head -3
+    for l in "$links"/*; do
+      cmd.exe //c "if exist $(cygpath -w "$l")\\windows (exit 0) else (exit 1)" \
+        > /dev/null 2>&1 &&
+        echo "cmd can go through $(basename "$l")" ||
+        echo "cmd cannot go through $(basename "$l")"
+      break
+    done
+  } >> "$log" 2>&1
+fi
 finish "$status"
