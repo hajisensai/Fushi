@@ -1965,6 +1965,19 @@ void main() {
     for (final bool ready in <bool>[true, false]) {
       final SrsDbStore store = await _openStore(tester);
       store.rwkv = _FakeRwkv(ready: ready);
+      // 这里要验学习步的显示：RWKV 牌组缺省不用步长，写上步长。
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckSteps: <String, Object?>{
+              'learn': <double>[1, 10],
+              'relearn': <double>[10],
+            },
+          },
+        ),
+      );
       await _addLapis(tester, store, '食べる');
       await _pumpPage(
         tester,
