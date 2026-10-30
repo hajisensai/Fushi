@@ -407,6 +407,69 @@ void main() {
     expect(find.byKey(const ValueKey<String>('srs-fushi-term')), findsOne);
   });
 
+  testWidgets('翻译模糊：默认模糊，点按显示，点字外空白再模糊', (WidgetTester tester) async {
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('srs-fushi-translation-toggle'),
+    );
+    final Finder blur = find.descendant(
+      of: toggle,
+      matching: find.byType(ImageFiltered),
+    );
+    await pump(
+      tester,
+      answer: true,
+      fields: _fields(<String, String>{'SentenceTranslation': 'It is fine.'}),
+      appearance: const SrsCardAppearance(blurTranslation: true),
+    );
+    await tester.pumpAndSettle();
+    expect(blur, findsOne, reason: '默认模糊');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('srs-fushi-translation')),
+    );
+    await tester.pumpAndSettle();
+    expect(blur, findsNothing, reason: '点按后显示');
+
+    final Rect r = tester.getRect(toggle);
+    await tester.tapAt(Offset(r.right - 4, r.center.dy));
+    await tester.pumpAndSettle();
+    expect(blur, findsOne, reason: '再点一下重新模糊');
+  });
+
+  testWidgets('翻译模糊开但翻译关：整行不画，模糊开关被忽略', (WidgetTester tester) async {
+    await pump(
+      tester,
+      answer: true,
+      fields: _fields(<String, String>{'SentenceTranslation': 'It is fine.'}),
+      appearance: const SrsCardAppearance(
+        showTranslation: false,
+        blurTranslation: true,
+      ),
+    );
+    for (final String k in <String>[
+      'srs-fushi-translation',
+      'srs-fushi-translation-toggle',
+    ]) {
+      expect(find.byKey(ValueKey<String>(k)), findsNothing, reason: k);
+    }
+  });
+
+  testWidgets('翻译模糊关：行为不变，不包点按层也不模糊', (WidgetTester tester) async {
+    await pump(
+      tester,
+      answer: true,
+      fields: _fields(<String, String>{'SentenceTranslation': 'It is fine.'}),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srs-fushi-translation')),
+      findsOne,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srs-fushi-translation-toggle')),
+      findsNothing,
+    );
+  });
+
   testWidgets('多个声调：每个声调各画一张声调图，不只画第一个', (WidgetTester tester) async {
     await pump(
       tester,

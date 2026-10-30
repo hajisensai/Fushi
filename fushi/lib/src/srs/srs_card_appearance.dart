@@ -66,6 +66,7 @@ class SrsCardAppearance {
     this.dictUnified = true,
     this.showPicture = true,
     this.showTranslation = true,
+    this.blurTranslation = false,
     this.showFrequency = true,
     this.showSource = true,
     this.glossaryExpanded = true,
@@ -105,6 +106,9 @@ class SrsCardAppearance {
 
   final bool showPicture;
   final bool showTranslation;
+
+  /// 例句翻译默认模糊、点按才显示（只在 [showTranslation] 开时生效；仅原生 Fushi 卡片视图）。
+  final bool blurTranslation;
   final bool showFrequency;
   final bool showSource;
 
@@ -146,6 +150,7 @@ class SrsCardAppearance {
     bool? dictUnified,
     bool? showPicture,
     bool? showTranslation,
+    bool? blurTranslation,
     bool? showFrequency,
     bool? showSource,
     bool? glossaryExpanded,
@@ -164,6 +169,7 @@ class SrsCardAppearance {
     dictUnified: dictUnified ?? this.dictUnified,
     showPicture: showPicture ?? this.showPicture,
     showTranslation: showTranslation ?? this.showTranslation,
+    blurTranslation: blurTranslation ?? this.blurTranslation,
     showFrequency: showFrequency ?? this.showFrequency,
     showSource: showSource ?? this.showSource,
     glossaryExpanded: glossaryExpanded ?? this.glossaryExpanded,
@@ -209,6 +215,7 @@ class SrsCardAppearance {
       dictUnified: _bool(json['dictUnified'], d.dictUnified),
       showPicture: _bool(json['showPicture'], d.showPicture),
       showTranslation: _bool(json['showTranslation'], d.showTranslation),
+      blurTranslation: _bool(json['blurTranslation'], d.blurTranslation),
       showFrequency: _bool(json['showFrequency'], d.showFrequency),
       showSource: _bool(json['showSource'], d.showSource),
       glossaryExpanded: _bool(json['glossaryExpanded'], d.glossaryExpanded),
@@ -239,6 +246,7 @@ class SrsCardAppearance {
     'dictUnified': dictUnified,
     'showPicture': showPicture,
     'showTranslation': showTranslation,
+    'blurTranslation': blurTranslation,
     'showFrequency': showFrequency,
     'showSource': showSource,
     'glossaryExpanded': glossaryExpanded,
