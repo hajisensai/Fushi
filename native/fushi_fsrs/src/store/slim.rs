@@ -4,7 +4,8 @@
 //! 其中好几个键（ID、profile、卡 / 实体、种类、时刻……）与同一行的列逐字相同，约占 JSON 的一半。现在磁盘上只存
 //! `jslim`：
 //!
-//! - 去掉「值与列逐字节相同」的那些键，前面加 [SLIM] 标记；
+//! - 去掉「值与列逐字节相同」的那些键，前面加 [SLIM] 标记；列有值而原文没有的键（导入锚点没有 `rtype` / `dur` 之类）
+//!   记在标记与 `{` 之间（`~rtype,dur{…}`），拼回时不补；
 //! - 写入时先拼回一次，与原文逐字节相同才存瘦的，否则原样存原文（非规范的旧行、键缺失 / 不等的行）——无损。
 //!
 //! `json` 成了 VIRTUAL 生成列 `srs_log_json(jslim, 列…)` / `srs_edit_json(…)`：Rust、Dart、摘要触发器读到的仍是逐字节
@@ -112,15 +113,18 @@ fn members(s: &str) -> Option<Vec<(&str, &str)>> {
     }
 }
 
-/// 拼回：瘦 JSON 的成员与列的成员按键的字节序归并（列的键在瘦 JSON 里已有时不插）。不是瘦 JSON 原样返回。
+/// 拼回：瘦 JSON 的成员与列的成员按键的字节序归并（列的键在瘦 JSON 里已有、或记为原文没有时不插）。不是瘦 JSON
+/// 原样返回。
 pub(crate) fn expand(stored: &str, keys: &[&str], frags: &[Option<String>]) -> String {
-    let Some(slim) = stored.strip_prefix(SLIM) else { return stored.to_owned() };
+    let Some(rest) = stored.strip_prefix(SLIM) else { return stored.to_owned() };
+    let Some(brace) = rest.find('{') else { return rest.to_owned() };
+    let (absent, slim) = rest.split_at(brace);
     let Some(have) = members(slim) else { return slim.to_owned() };
     let mut add: Vec<(&str, &str)> = keys
         .iter()
         .zip(frags)
         .filter_map(|(k, f)| f.as_deref().map(|f| (*k, f)))
-        .filter(|(k, _)| !have.iter().any(|(h, _)| h == k))
+        .filter(|(k, _)| !have.iter().any(|(h, _)| h == k) && !absent.split(',').any(|a| a == *k))
         .collect();
     add.sort_by(|a, b| a.0.cmp(b.0));
     let mut out = String::with_capacity(slim.len() + add.iter().map(|(k, f)| k.len() + f.len() + 4).sum::<usize>());
@@ -152,6 +156,13 @@ pub(crate) fn pack(full: &str, keys: &[&str], frags: &[Option<String>]) -> Strin
     let Some(have) = members(full) else { return full.to_owned() };
     let mut slim = String::with_capacity(full.len());
     slim.push(SLIM);
+    let absent: Vec<&str> = keys
+        .iter()
+        .zip(frags)
+        .filter(|(k, f)| f.is_some() && !have.iter().any(|(h, _)| h == *k))
+        .map(|(k, _)| *k)
+        .collect();
+    slim.push_str(&absent.join(","));
     slim.push('{');
     let mut first = true;
     let mut dropped = false;
@@ -299,10 +310,12 @@ mod tests {
     fn keeps_the_original_when_it_cannot_be_rebuilt_exactly() {
         let keys = keys_of(&LOG_KEYS);
         let frags = log_frags("a1", "C", 5);
-        // 键与列不等、列有值而 JSON 没有这个键、非紧凑 / 非规范键序、不是对象：都原样存。
+        // 键与列不等、列有值而 JSON 没有这个键（瘦存并记下缺的键）、非紧凑 / 非规范键序、不是对象：都逐字节拼回。
+        assert_eq!(pack(r#"{"at":5,"card":"C","id":"a1","x":1}"#, &keys, &frags), r#"~p,kind,rating,rtype,origin,dur{"x":1}"#);
         for full in [
             r#"{"at":6,"card":"C","id":"a1"}"#,
             r#"{"at":5,"card":"C","id":"a1"}"#,
+            r#"{"at":5,"card":"C","id":"a1","x":1}"#,
             r#"{ "at":5}"#,
             r#"{"id":"a1","at":5}"#,
             "[1,2]",

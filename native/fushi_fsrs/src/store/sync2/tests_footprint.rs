@@ -15,10 +15,32 @@ const T0: i64 = 1_700_000_000_000;
 #[ignore]
 fn footprint_upgrade_file() {
     let Ok(path) = std::env::var("FUSHI_SRS_FOOTPRINT_DB") else { return };
+    // 两张投影表的 `json` 升级前后逐字节相同（v18 起读的是生成列）。
+    let digest = || {
+        use sha2::{Digest, Sha256};
+        let c = rusqlite::Connection::open(&path).unwrap();
+        crate::store::ids::register(&c).unwrap();
+        crate::store::slim::register(&c).unwrap();
+        ["srs_review_logs", "srs_field_edits"].map(|t| {
+            let mut h = Sha256::new();
+            let mut s = c.prepare(&format!("SELECT json FROM {t} ORDER BY rowid")).unwrap();
+            let mut rows = s.query([]).unwrap();
+            let mut n = 0;
+            while let Some(r) = rows.next().unwrap() {
+                h.update(r.get_ref(0).unwrap().as_str().unwrap().as_bytes());
+                h.update([0]);
+                n += 1;
+            }
+            (n, h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>())
+        })
+    };
+    let before = digest();
     let t = std::time::Instant::now();
     let core = SrsCore::open(Path::new(&path)).unwrap();
     drop(core);
     println!("FOOTPRINT upgraded {path} in {} ms", t.elapsed().as_millis());
+    assert_eq!(digest(), before, "projection json changed by the upgrade");
+    println!("FOOTPRINT json digests {before:?}");
 }
 
 fn count(d: &Device, q: &str) -> i64 {
