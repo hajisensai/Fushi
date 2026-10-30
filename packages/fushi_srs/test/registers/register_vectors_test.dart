@@ -52,6 +52,43 @@ Object? _withLaterDefaults(Object? view) {
   };
 }
 
+/// 向量生成之后改了的语义：步长写成空列表 = 不用步长（2026-10-30；以前回落默认步长）。
+/// 按胜出的 `steps` 修改把期望视图里对应的一项改成空列表。
+Object? _withEmptySteps(Object? view, Map<String, Object?> vector) {
+  if (view is! Map || vector['kind'] != 'deck') return view;
+  final Map<String, Object?> e = _map(vector['expect']);
+  String? winner;
+  for (final Object? r in e['regs']! as List<Object?>) {
+    final List<Object?> reg = r! as List<Object?>;
+    final List<Object?> ids = reg[1]! as List<Object?>;
+    if (reg[0] == 'steps' && ids.isNotEmpty) winner = ids.first as String?;
+  }
+  if (winner == null) return view;
+  // 同一 id 的重复修改（向量里故意造的 dup）值不一致时，胜出哪份由内核定，这里不改期望。
+  final List<Object?> values = <Object?>[
+    for (final Object? j in vector['edits']! as List<Object?>)
+      if (_map(jsonDecode(j! as String)) case final Map<String, Object?> edit
+          when edit['id'] == winner)
+        edit['v'],
+  ];
+  if (values.isEmpty ||
+      values.any((Object? x) => jsonEncode(x) != jsonEncode(values.first)) ||
+      values.first is! Map) {
+    return view;
+  }
+  final Map<String, Object?> value = _map(values.first);
+  bool empty(String k) => value[k] is List && (value[k]! as List).isEmpty;
+  return <String, Object?>{
+    for (final MapEntry<String, Object?> en
+        in view.cast<String, Object?>().entries)
+      en.key:
+          (en.key == 'learnSteps' && empty('learn')) ||
+              (en.key == 'relearnSteps' && empty('relearn'))
+          ? <double>[]
+          : en.value,
+  };
+}
+
 List<SrsEditItem> _items(Object? edits, Map<String, Object?> server) {
   return <SrsEditItem>[
     for (final Object? j in edits! as List<Object?>)
@@ -312,7 +349,7 @@ void main() {
       expect(got['concurrent'], e['concurrent']);
       expect(
         jsonEncode(got['view']),
-        jsonEncode(_withLaterDefaults(e['view'])),
+        jsonEncode(_withEmptySteps(_withLaterDefaults(e['view']), v)),
         reason: jsonEncode(v),
       );
       expect(got['noop'], e['noop'], reason: jsonEncode(v));
