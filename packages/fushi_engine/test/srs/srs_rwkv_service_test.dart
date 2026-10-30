@@ -984,7 +984,7 @@ void main() {
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[2]);
     });
 
-    test('忽略每日复习上限：按 R 合格的卡全部计入，不按每日复习上限截断', () async {
+    test('忽略每日复习上限（缺省开）：按 R 合格的卡全部计入；关掉后按每日复习上限截断', () async {
       f.advance(kDay);
       for (int i = 0; i < 4; i++) {
         backend.setR(cards[i], 0.3);
@@ -996,17 +996,52 @@ void main() {
           SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 2},
         },
       );
-      expect(await f.reviewCount(), 2);
+      expect(await f.reviewCount(), 4);
       await f.store.editFields(
         SrsEntityKind.deck,
         f.store.defaultDeckId,
         <String, Object?>{
           SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
-            ignoreReviewLimit: true,
+            ignoreReviewLimit: false,
           ).toValue(),
         },
       );
-      expect(await f.reviewCount(), 4);
+      expect(await f.reviewCount(), 2);
+    });
+
+    test('没写过步长的 RWKV 牌组不用步长；写过的照用；FSRS 牌组仍是默认步长', () async {
+      final SrsDeckTree tree = await f.store.deckTree();
+      final SrsSchedulingConfig rwkv = tree.schedulingConfig(
+        f.store.defaultDeckId,
+      );
+      expect(rwkv.algorithm, SrsAlgorithm.rwkv);
+      expect(rwkv.learnStepsMinutes, isEmpty);
+      expect(rwkv.relearnStepsMinutes, isEmpty);
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckSteps: <String, Object?>{
+            'learn': <double>[5],
+            'relearn': <double>[10],
+          },
+        },
+      );
+      SrsSchedulingConfig c = (await f.store.deckTree()).schedulingConfig(
+        f.store.defaultDeckId,
+      );
+      expect(c.learnStepsMinutes, <double>[5]);
+      expect(c.relearnStepsMinutes, <double>[10]);
+      final String fsrs = await f.store.createDeck('FSRS deck');
+      await f.store.editFields(SrsEntityKind.deck, fsrs, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': false,
+        },
+      });
+      c = (await f.store.deckTree()).schedulingConfig(fsrs);
+      expect(c.learnStepsMinutes, SrsDeckView.defaultLearnSteps);
+      expect(c.relearnStepsMinutes, SrsDeckView.defaultRelearnSteps);
     });
 
     test('重学步长留空：答错的复习卡留在复习队列，由 RWKV 按 R 当天再出', () async {
