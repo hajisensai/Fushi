@@ -49,8 +49,14 @@ pub(crate) fn pack(s: &str) -> Option<[u8; 16]> {
 
 /// 16 字节 → 小写带连字符文本。
 pub(crate) fn unpack(b: &[u8; 16]) -> String {
-    const H: &[u8; 16] = b"0123456789abcdef";
     let mut s = String::with_capacity(36);
+    unpack_into(b, &mut s);
+    s
+}
+
+/// [unpack] 接到 [s] 末尾（不另分配）。
+pub(crate) fn unpack_into(b: &[u8; 16], s: &mut String) {
+    const H: &[u8; 16] = b"0123456789abcdef";
     for (i, x) in b.iter().enumerate() {
         if i == 4 || i == 6 || i == 8 || i == 10 {
             s.push('-');
@@ -58,7 +64,6 @@ pub(crate) fn unpack(b: &[u8; 16]) -> String {
         s.push(H[(x >> 4) as usize] as char);
         s.push(H[(x & 15) as usize] as char);
     }
-    s
 }
 
 /// 存储值 → ID 文本（16 字节 BLOB 解码；TEXT 原样；别的类型 None）。
