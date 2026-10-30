@@ -165,12 +165,12 @@ CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_upd AFTER UPDATE ON main.srs_ca
         SELECT srs_study_touch(0, OLD.profile_uid, OLD.id) WHERE OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid; END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_del AFTER DELETE ON main.srs_cards_cache
   BEGIN SELECT srs_study_touch(0, OLD.profile_uid, OLD.id); END;
-CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_ins AFTER INSERT ON main.srs_review_log_rows
+CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_ins AFTER INSERT ON main.srs_review_logs
   BEGIN SELECT srs_study_touch(1, NEW.profile_uid, NEW.id); END;
-CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_upd AFTER UPDATE ON main.srs_review_log_rows
+CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_upd AFTER UPDATE ON main.srs_review_logs
   BEGIN SELECT srs_study_touch(1, NEW.profile_uid, NEW.id);
         SELECT srs_study_touch(1, OLD.profile_uid, OLD.id) WHERE OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid; END;
-CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_del AFTER DELETE ON main.srs_review_log_rows
+CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_del AFTER DELETE ON main.srs_review_logs
   BEGIN SELECT srs_study_touch(1, OLD.profile_uid, OLD.id); END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_note_ins AFTER INSERT ON main.srs_notes_cache
   BEGIN SELECT srs_study_touch(2, NEW.profile_uid, NEW.id); END;
@@ -179,22 +179,22 @@ CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_note_upd AFTER UPDATE ON main.srs_n
         SELECT srs_study_touch(2, OLD.profile_uid, OLD.id) WHERE OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid; END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_note_del AFTER DELETE ON main.srs_notes_cache
   BEGIN SELECT srs_study_touch(2, OLD.profile_uid, OLD.id); END;
-CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_ins AFTER INSERT ON main.srs_field_edit_rows WHEN NEW.entity_kind = 'note'
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_ins AFTER INSERT ON main.srs_field_edits WHEN NEW.entity_kind = 'note'
   BEGIN SELECT srs_study_touch(2, NEW.profile_uid, NEW.entity_id); END;
-CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_upd AFTER UPDATE ON main.srs_field_edit_rows
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_upd AFTER UPDATE ON main.srs_field_edits
   BEGIN SELECT srs_study_touch(2, NEW.profile_uid, NEW.entity_id) WHERE NEW.entity_kind = 'note';
         SELECT srs_study_touch(2, OLD.profile_uid, OLD.entity_id) WHERE OLD.entity_kind = 'note'; END;
-CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_del AFTER DELETE ON main.srs_field_edit_rows WHEN OLD.entity_kind = 'note'
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_del AFTER DELETE ON main.srs_field_edits WHEN OLD.entity_kind = 'note'
   BEGIN SELECT srs_study_touch(2, OLD.profile_uid, OLD.entity_id); END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_stamp_ins AFTER INSERT ON main.srs_event_local WHEN NEW.server_time IS NOT NULL
-  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edit_rows f
+  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edits f
         WHERE f.id = NEW.event_id AND f.entity_kind = 'note'; END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_stamp_upd AFTER UPDATE ON main.srs_event_local
   WHEN NEW.server_time IS NOT OLD.server_time OR NEW.event_id IS NOT OLD.event_id
-  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edit_rows f
+  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edits f
         WHERE f.id IN (NEW.event_id, OLD.event_id) AND f.entity_kind = 'note'; END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_stamp_del AFTER DELETE ON main.srs_event_local WHEN OLD.server_time IS NOT NULL
-  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edit_rows f
+  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edits f
         WHERE f.id = OLD.event_id AND f.entity_kind = 'note'; END;
 ";
 
