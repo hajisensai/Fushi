@@ -56,7 +56,7 @@ case "$(uname -s)" in
     echo "==> native libraries (tool/native_libs.ps1)"
     powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
       -File tool/native_libs.ps1
-    echo "==> ready"
+    echo "==> ready (this script: ${SECONDS}s; the rest of the step is checkout and ssh)"
     exit 0 ;;
   *) echo "error: unsupported worker OS $(uname -s)" >&2; exit 3 ;;
 esac
@@ -84,4 +84,4 @@ for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv; do
     echo "==> native/$crate unchanged"
   fi
 done
-echo "==> ready"
+echo "==> ready (this script: ${SECONDS}s; the rest of the step is checkout and ssh)"

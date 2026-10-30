@@ -244,6 +244,7 @@ worker 必须跑**和本机完全一致**的代码，包括没提交的改动。
    - 契约测试 `fushi/test/tools/dist_snapshot_secret_guard_test.dart`：临时仓里造一个 skip-worktree 文件写入假真值，断言快照树里仍是占位值（并做变异实测：去掉排除逻辑必须变红）。
 3. 推送：每台 worker 有一个裸仓 `~/fushi-dist.git`，`git push <worker> <sha>:refs/dist/<runId>`。增量推送，平时只传几十 KB；首次用 `git bundle` 离线带过去或让 worker 直接从 GitHub clone（Mac 经代理拉大增量会断，见 CLAUDE.local.md，首次走局域网推）。
 4. worker 常驻 checkout `~/fushi-dist/work`：`git checkout --detach --force <sha>` + `git clean -fdx -e .dart_tool -e build -e native/*/prebuilt`，保留缓存。跑完删 `refs/dist/<runId>`，裸仓定期 `gc`。
+   - **每次 push 同时强推 HEAD 到常驻的 `refs/dist/base`**（`distPushRefspecs`，2026-10-30）：receive-pack 只公布 ref、不公布 batch 用的 detached HEAD，跑完又删了 `refs/dist/<runId>`，于是下一次 push 找不到共同历史、把整个仓库历史重发一遍——实测 wight-win 一次 push 596 秒，比 analyze 本身还慢。`refs/dist/base` 跨运行保留，push 只传增量；`finish` 只删运行自己的 ref，旧 shim 不用重装。测试 `dist_snapshot_test.dart` 按发送端 `Total N` 计数（接收端会把小包解包并静默丢掉已有对象，数对象数看不出来）。prepare 日志每步带耗时（`== push (exit 0, 596s)`），慢在哪一步直接可见。
 
 ## 2. worker 环境
 
