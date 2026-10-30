@@ -73,28 +73,29 @@ AudioCue? buildGraphicSubtitleAnchorCue({
 }
 
 /// 暂停 OCR 在「没有字幕轨可锚」的画面（硬字幕 / 烧进画面的文字）上点字查词时，默认
-/// 句子音频窗口的长度：暂停位置往前这么久（用户可在设置里改，夹在下面两个界限内）。
-const int kFrameOcrFallbackWindowMs = 4000;
-const int kFrameOcrFallbackMinWindowMs = 1000;
-const int kFrameOcrFallbackMaxWindowMs = 15000;
+/// 句子音频窗口在暂停位置**前后各**取多长（用户可在设置里改，夹在下面两个界限内）。
+/// 前后对称：用户通常是读完一行才暂停，这行多半还有后半句没说完。
+const int kFrameOcrFallbackWindowMs = 2000;
+const int kFrameOcrFallbackMinWindowMs = 500;
+const int kFrameOcrFallbackMaxWindowMs = 10000;
 
 /// 硬字幕画面上 OCR 点字查词的锚点 cue：没有任何字幕时间窗（硬字幕烧进画面，mpv 没有
 /// `sub-start`），制卡区间会塌成 `0..0`（无句子音频）。这里退而求其次，把窗口定成
-/// 「暂停位置往前 [windowMs]」，用户再用高级制卡的起止偏移微调。
+/// 「暂停位置前后各 [windowMs]」，用户再用高级制卡的起止偏移 / 波形微调。
 ///
 /// 返回的 cue 时刻在**字幕轴**（制卡会按 `miningClipTimeMs` 加回 [delayMs] 换算到播放器
-/// 轴），所以这里先减去 [delayMs]，保证最终裁的就是 `[positionMs - windowMs, positionMs]`。
-/// 窗口下界夹到 0；[text] 为空或窗口为空（位置在片头 0）返回 null。
+/// 轴），所以这里先减去 [delayMs]，保证最终裁的就是
+/// `[positionMs - windowMs, positionMs + windowMs]`。窗口下界夹到 0（上界超出片尾由
+/// 裁剪端截断）；[text] 为空返回 null。
 AudioCue? buildFrameOcrFallbackCue({
   required String text,
   required int positionMs,
   required int delayMs,
   int windowMs = kFrameOcrFallbackWindowMs,
 }) {
-  final int playerEndMs = positionMs < 0 ? 0 : positionMs;
-  final int playerStartMs = playerEndMs - windowMs < 0
-      ? 0
-      : playerEndMs - windowMs;
+  final int pauseMs = positionMs < 0 ? 0 : positionMs;
+  final int playerStartMs = pauseMs - windowMs < 0 ? 0 : pauseMs - windowMs;
+  final int playerEndMs = pauseMs + windowMs;
   if (playerEndMs <= playerStartMs) return null;
   return buildPlayerDecodedCue(
     text: text,

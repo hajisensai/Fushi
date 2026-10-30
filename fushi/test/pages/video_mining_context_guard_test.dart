@@ -396,10 +396,17 @@ void main() {
       '_resolveVideoMiningRange(VideoPlayerController controller) {',
       'Future<MinePopupResult> _onMineEntryImpl(',
     );
+    // 兜底分支保持原样；它前面多了一层硬字幕暂停 OCR 的默认窗口（封面锚在暂停位置，
+    // 见 frameOcrFallbackStillMs），只在锚点就是那个默认窗口 cue 时生效。
     expect(
       compactCode(resolve),
       contains(compactCode(
-          'stillFrameAtMs: mergedRange == null ? (controller.positionMs ?? 0)')),
+          '(mergedRange == null ? (controller.positionMs ?? 0)')),
+    );
+    expect(
+      compactCode(resolve),
+      contains(compactCode('controller.frameOcrFallbackStillMs(cue)')),
+      reason: '硬字幕默认窗口的封面静帧锚在暂停位置，不是窗口起点。',
     );
 
     // 引擎：没有时间窗就不去抽「字幕起点」帧（否则在 0.000s 抽出黑帧，且挡住当前帧兜底）。

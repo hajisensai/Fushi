@@ -1354,7 +1354,7 @@ SettingsDestination buildVideoDestination() {
             defaultValue: VideoPauseOcrScope.defaultScope,
           ),
           // 硬字幕（没有字幕轨）上暂停 OCR 点字查词制卡：没有字幕时间窗，制卡区间会塌成
-          // `0..0`、没有句子音频。开着时给一个「暂停位置往前几秒」的默认窗口（高级制卡
+          // `0..0`、没有句子音频。开着时给一个「暂停位置前后各几秒」的默认窗口（高级制卡
           // 再微调）；关掉则保持无音频。窗口长度见下一项。
           SettingsSwitchItem(
             id: 'video.subtitle.pause_ocr_audio_fallback',
@@ -1390,6 +1390,7 @@ SettingsDestination buildVideoDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoPauseOcrAudioFallbackMs / 1000,
             step: 0.5,
+            // 暂停位置前后各取这么多秒（对称）。
             min: kFrameOcrFallbackMinWindowMs / 1000,
             max: kFrameOcrFallbackMaxWindowMs / 1000,
             format: (double v) => '${v.toStringAsFixed(1)}s',

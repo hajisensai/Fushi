@@ -13680,11 +13680,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_setting_pause_ocr_audio_fallback =>
       'Sentence audio for hard subtitles';
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
   String get video_setting_pause_ocr_scope_all => 'All videos';
@@ -37971,13 +37971,13 @@ class _StringsAr extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -63482,13 +63482,13 @@ class _StringsDe extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -89067,13 +89067,13 @@ class _StringsEs extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -114731,13 +114731,13 @@ class _StringsFr extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -140101,13 +140101,13 @@ class _StringsId extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -165581,13 +165581,13 @@ class _StringsIt extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -190152,13 +190152,13 @@ class _StringsJa extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope => '一時停止時に画面の文字を認識';
   @override
@@ -214652,13 +214652,13 @@ class _StringsKo extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -240016,13 +240016,13 @@ class _StringsNl extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -265523,13 +265523,13 @@ class _StringsPtBr extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -290982,13 +290982,13 @@ class _StringsRu extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -316156,13 +316156,13 @@ class _StringsTh extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -341478,13 +341478,13 @@ class _StringsTr extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -366752,13 +366752,13 @@ class _StringsVi extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope =>
       'Recognize on-screen text when paused';
@@ -390059,12 +390059,12 @@ class _StringsZhCn extends _StringsEn {
   String get video_setting_pause_ocr_audio_fallback => '硬字幕句子音频';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      '在没有字幕轨的视频上用暂停 OCR 查词制卡时，仍附上句子音频：暂停位置往前的几秒。可在高级制卡里微调。关闭 = 这类卡片没有音频。';
+      '在没有字幕轨的视频上用暂停 OCR 查词制卡时，仍附上句子音频：暂停位置前后各几秒。可在高级制卡里微调。关闭 = 这类卡片没有音频。';
   @override
-  String get video_setting_pause_ocr_audio_fallback_seconds => '硬字幕音频长度';
+  String get video_setting_pause_ocr_audio_fallback_seconds => '硬字幕音频长度（前后各）';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      '默认句子音频覆盖暂停位置之前的秒数。';
+      '暂停位置之前和之后各取多少秒音频。';
   @override
   String get video_setting_pause_ocr_scope => '暂停时识别画面文字';
   @override
@@ -413867,13 +413867,13 @@ class _StringsZhHk extends _StringsEn {
       'Sentence audio for hard subtitles';
   @override
   String get video_setting_pause_ocr_audio_fallback_hint =>
-      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+      'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds =>
-      'Hard-subtitle audio length';
+      'Hard-subtitle audio length (each side)';
   @override
   String get video_setting_pause_ocr_audio_fallback_seconds_hint =>
-      'How many seconds before the pause the default sentence audio covers.';
+      'Seconds of audio taken before and after the pause.';
   @override
   String get video_setting_pause_ocr_scope => '暫停時辨識畫面文字';
   @override
@@ -435630,11 +435630,11 @@ extension on _StringsEn {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -457185,11 +457185,11 @@ extension on _StringsAr {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -478815,11 +478815,11 @@ extension on _StringsDe {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -500430,11 +500430,11 @@ extension on _StringsEs {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -522062,11 +522062,11 @@ extension on _StringsFr {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -543639,11 +543639,11 @@ extension on _StringsId {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -565249,11 +565249,11 @@ extension on _StringsIt {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -586741,11 +586741,11 @@ extension on _StringsJa {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return '一時停止時に画面の文字を認識';
       case 'video_setting_pause_ocr_scope_all':
@@ -608228,11 +608228,11 @@ extension on _StringsKo {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -629826,11 +629826,11 @@ extension on _StringsNl {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -651426,11 +651426,11 @@ extension on _StringsPtBr {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -673031,11 +673031,11 @@ extension on _StringsRu {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -694592,11 +694592,11 @@ extension on _StringsTh {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -716182,11 +716182,11 @@ extension on _StringsTr {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -737758,11 +737758,11 @@ extension on _StringsVi {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return 'Recognize on-screen text when paused';
       case 'video_setting_pause_ocr_scope_all':
@@ -759093,11 +759093,11 @@ extension on _StringsZhCn {
       case 'video_setting_pause_ocr_audio_fallback':
         return '硬字幕句子音频';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return '在没有字幕轨的视频上用暂停 OCR 查词制卡时，仍附上句子音频：暂停位置往前的几秒。可在高级制卡里微调。关闭 = 这类卡片没有音频。';
+        return '在没有字幕轨的视频上用暂停 OCR 查词制卡时，仍附上句子音频：暂停位置前后各几秒。可在高级制卡里微调。关闭 = 这类卡片没有音频。';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return '硬字幕音频长度';
+        return '硬字幕音频长度（前后各）';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return '默认句子音频覆盖暂停位置之前的秒数。';
+        return '暂停位置之前和之后各取多少秒音频。';
       case 'video_setting_pause_ocr_scope':
         return '暂停时识别画面文字';
       case 'video_setting_pause_ocr_scope_all':
@@ -780495,11 +780495,11 @@ extension on _StringsZhHk {
       case 'video_setting_pause_ocr_audio_fallback':
         return 'Sentence audio for hard subtitles';
       case 'video_setting_pause_ocr_audio_fallback_hint':
-        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: the last few seconds before the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
+        return 'When you look up text read by pause OCR on a video with no subtitle track, still attach sentence audio: a few seconds before and after the pause. Fine-tune it in advanced mining. Off = no audio for these cards.';
       case 'video_setting_pause_ocr_audio_fallback_seconds':
-        return 'Hard-subtitle audio length';
+        return 'Hard-subtitle audio length (each side)';
       case 'video_setting_pause_ocr_audio_fallback_seconds_hint':
-        return 'How many seconds before the pause the default sentence audio covers.';
+        return 'Seconds of audio taken before and after the pause.';
       case 'video_setting_pause_ocr_scope':
         return '暫停時辨識畫面文字';
       case 'video_setting_pause_ocr_scope_all':
