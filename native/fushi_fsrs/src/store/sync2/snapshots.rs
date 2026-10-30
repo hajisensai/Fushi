@@ -216,16 +216,19 @@ pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
             up.execute(params![profile, device, seq, stored, sc, at]).map_err(sql)?;
         }
     }
-    // 日志投影（摘要触发器先换成展开后算的版本，见 [super::digest::install]；改写前后展开结果相同，触发器不动桶）。
+    // 日志投影（摘要触发器先换成展开后算的版本，见 [super::digest::install]；改写前后展开结果相同，触发器删旧加新的是同一个哈希，桶不变）。
     let rows: Vec<(i64, String)> = {
         let mut stmt = c.prepare("SELECT rowid, json FROM srs_review_logs WHERE instr(json, '\"sc\":{') > 0").map_err(sql)?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
         rows.collect::<Result<_, _>>().map_err(sql)?
     };
-    let mut up = c.prepare("UPDATE srs_review_logs SET json = ?2 WHERE rowid = ?1").map_err(sql)?;
+    // 没有要改的行就不编译 UPDATE：编译会连带编译摘要触发器，要求连接上注册了它的 SQL 函数（只建表的空库连接没有）。
     for (rowid, json) in rows {
         if let Some(out) = compact_text(c, &json)? {
-            up.execute(params![rowid, out]).map_err(sql)?;
+            c.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE rowid = ?1")
+                .map_err(sql)?
+                .execute(params![rowid, out])
+                .map_err(sql)?;
         }
     }
     Ok(())

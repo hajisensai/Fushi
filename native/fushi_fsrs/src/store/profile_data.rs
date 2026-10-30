@@ -157,7 +157,8 @@ mod tests {
 
     /// 不按 profile 分、删除时不按 uid 删的表：库级元数据（按 profile 的键单独按后缀删）、跨 profile 去重存的
     /// 因果上下文（按引用回收）。
-    const SHARED_TABLES: [&str; 2] = ["srs_meta", "sync2_deps"];
+    // sync2_snapshots：配置快照原文按内容共用、只增（store/sync2/snapshots.rs），删 profile 后剩下的几行无害。
+    const SHARED_TABLES: [&str; 3] = ["srs_meta", "sync2_deps", "sync2_snapshots"];
 
     fn open(tag: &str) -> (SrsCore, tempdir::Dir) {
         let dir = tempdir::new(tag);

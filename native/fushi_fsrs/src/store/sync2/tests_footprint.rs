@@ -44,7 +44,7 @@ fn config_snapshots_are_stored_once() {
     // 投影里存编号，读出来是原文。
     let raw = a.rows("SELECT json FROM srs_review_logs WHERE id = 'r3'")[1][0].clone();
     let stored: Value = serde_json::from_str(&raw).unwrap();
-    assert!(stored["sc"].is_i64(), "{raw}");
+    assert!(stored["sc"].as_str().is_some_and(|h| h.len() == 32), "{raw}");
     let full = super::tests::log_json(&a, "r3");
     assert_eq!(full["sc"]["ret"], json!(0.8), "{full}");
     assert_eq!(super::tests::log_json(&a, "late")["sc"]["ret"], json!(0.9));
@@ -145,4 +145,66 @@ fn v16_upgrade_moves_inline_snapshots_out_without_changing_anything_observable()
         // 中途被杀 / 重放：标回 15 再开一次，结果相同。
         a.core.writer().unwrap().execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';").unwrap();
     }
+}
+
+/// 本机作答的规模基准（不计入常规测试）：`cargo test footprint_answered_reviews -- --ignored --nocapture`。
+/// 训练过参数的牌组（FSRS-6，21 个参数）下作答 N 次，比较「快照按引用存」与退回内联存法两份库 VACUUM 后的体积。
+#[test]
+#[ignore]
+fn footprint_answered_reviews() {
+    let n: i64 = std::env::var("FUSHI_SRS_FOOTPRINT_REVIEWS").ok().and_then(|v| v.parse().ok()).unwrap_or(30_000);
+    let deck = super::config::default_deck_id(P);
+    let a = Device::new("fp-bench");
+    let params: Vec<f64> = (0..21).map(|i| 0.1 + f64::from(i) * 0.731_234_5).collect();
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "alg", json!("fsrs6")), edit("deck", &deck, "f6", json!({"params": params}))]);
+    let t = std::time::Instant::now();
+    let mut i = 0;
+    while i < n {
+        let batch: Vec<Value> = (i..(i + 500).min(n))
+            .map(|k| review(&format!("b{k}"), &format!("C{}", k % 3000), T0 + 10 + k * 60_000, 1 + k % 4, "review"))
+            .collect();
+        a.apply(T0 + 10 + i * 60_000, batch);
+        i += 500;
+    }
+    let body: Vec<Vec<String>> = a.rows("SELECT length(body) FROM sync2_snapshots");
+    let size = |tag: &str| -> u64 {
+        let out = a._dir.0.join(format!("{tag}.db"));
+        a.core.writer().unwrap().execute("VACUUM INTO ?1", [out.to_string_lossy()]).unwrap();
+        std::fs::metadata(&out).unwrap().len()
+    };
+    let packed = size("packed");
+    // 退回内联存法（v15 的形态）。
+    {
+        let w = a.core.writer().unwrap();
+        let rows: Vec<(String, String)> = w
+            .prepare("SELECT id, json FROM srs_review_logs")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (id, j) in rows {
+            let j = super::snapshots::expand_text(&w, j).unwrap();
+            w.execute("UPDATE srs_review_logs SET json = ?2 WHERE id = ?1", rusqlite::params![id, j]).unwrap();
+        }
+        let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
+            .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (dv, s, p, sc, at) in ops {
+            let p = super::snapshots::unpack_payload(&w, p, sc, at).unwrap();
+            w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
+                .unwrap();
+        }
+    }
+    let inline = size("inline");
+    println!(
+        "FOOTPRINT {n} answered reviews in {} ms; snapshot bytes {body:?}; inline {inline} B, by reference {packed} B ({:.2}x), {} B saved per review",
+        t.elapsed().as_millis(),
+        inline as f64 / packed as f64,
+        (inline - packed) / n as u64
+    );
 }

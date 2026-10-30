@@ -477,7 +477,7 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     }
     if current < 16 {
         // V16：磁盘占用（[V16_DROP]、store/sync2/snapshots.rs）。先换摘要触发器（按快照引用展开后算），再把存量行改成
-        // 引用形态——改写前后展开结果逐字相同，触发器的 WHEN 不成立，桶不动。每一步都可重放。
+        // 引用形态——改写前后展开结果逐字相同，触发器删旧加新的是同一个哈希，桶不变。每一步都可重放。
         tx.execute_batch(V16_DROP).map_err(|e| e.to_string())?;
         tx.execute_batch(super::sync2::snapshots::V16).map_err(|e| e.to_string())?;
         super::sync2::digest::install(&tx)?;
@@ -532,7 +532,7 @@ mod tests {
         assert!(indexes(&c).contains(&"idx_srs_notes_cache_dupe".to_owned()));
         let v: Option<String> = c.query_row("SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'", [], |r| r.get(0)).unwrap();
         assert_eq!(v, None, "old rows wait for the backfill");
-        assert_eq!(version(&c), "15");
+        assert_eq!(version(&c), SCHEMA_VERSION.to_string());
         c.execute_batch("UPDATE srs_notes_cache SET dupe_norm = 'x'; UPDATE srs_meta SET value = '14' WHERE key = 'schema';")
             .unwrap();
         let before = indexes(&c);
