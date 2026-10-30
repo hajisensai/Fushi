@@ -33,6 +33,10 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   AnkiSyncAccount? _account;
   bool _switching = false;
 
+  /// 整节默认折叠：这是高风险的实验功能（同步到 AnkiWeb 可能被拒绝或动账号），
+  /// 不该让不了解的用户一眼点到。
+  bool _expanded = false;
+
   /// 已登录时点了「重新登录」（凭据过期 / 改了密码）：显示预填好的登录表单。
   bool _relogin = false;
 
@@ -84,16 +88,24 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     return AdaptiveSettingsSection(
       title: t.anki_sync_client_section_title,
       children: <Widget>[
-        SettingsSearchTarget(
-          id: 'card_creation.anki.sync_client',
-          child: AdaptiveSettingsSwitchRow(
-            title: t.anki_sync_client_use_title,
-            subtitle: t.anki_sync_client_use_hint,
-            value: enabled,
-            onChanged: _switching ? null : _setEnabled,
-          ),
+        AdaptiveSettingsRow(
+          title: t.anki_sync_client_advanced_title,
+          subtitle: t.anki_sync_client_advanced_hint,
+          icon: _expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+          showIcon: true,
+          onTap: () => setState(() => _expanded = !_expanded),
         ),
-        if (enabled) ...<Widget>[
+        if (_expanded)
+          SettingsSearchTarget(
+            id: 'card_creation.anki.sync_client',
+            child: AdaptiveSettingsSwitchRow(
+              title: t.anki_sync_client_use_title,
+              subtitle: t.anki_sync_client_use_hint,
+              value: enabled,
+              onChanged: _switching ? null : _setEnabled,
+            ),
+          ),
+        if (_expanded && enabled) ...<Widget>[
           AdaptiveSettingsRow(
             // 状态行首图标按阶段换语义：同步中 / 受阻 / 失败 / 已同步 / 未登录。
             icon: _statusIcon(state),
@@ -183,9 +195,10 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       AnkiSyncPhase.busy => FushiIcons.cloudSync,
       AnkiSyncPhase.blocked => FushiIcons.warning,
       AnkiSyncPhase.failed => FushiIcons.error,
-      _ => (state?.unsynced ?? 0) == 0
-          ? FushiIcons.success
-          : FushiIcons.cloudUpload,
+      _ =>
+        (state?.unsynced ?? 0) == 0
+            ? FushiIcons.success
+            : FushiIcons.cloudUpload,
     };
   }
 
@@ -236,6 +249,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   /// 切后端的唯一落地路径：持久化 → 运行时选择 → 重建仓库 provider（与移动端
   /// 「改用 AnkiConnect」同一顺序，三步缺一步就是存储与运行时不一致）。
   Future<void> _setEnabled(bool value) async {
+    if (value && !await _confirmEnable()) return;
     setState(() => _switching = true);
     try {
       await setAnkiSyncClientEnabled(ref, value);
@@ -291,26 +305,38 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
 
   /// 破坏性确认：M3E 对话框 + errorContainer 图标徽标 + error 色确认键。
   Future<bool> _confirmDiscard(int count) => showFushiConfirmDialog(
-        context: context,
-        title: t.anki_sync_client_sign_out,
-        message: t.anki_sync_client_discard_confirm(count: count),
-        cancelLabel: t.cancel,
-        confirmLabel: t.anki_sync_client_discard_action,
-        icon: FushiIcons.logout,
-        destructive: true,
-      );
+    context: context,
+    title: t.anki_sync_client_sign_out,
+    message: t.anki_sync_client_discard_confirm(count: count),
+    cancelLabel: t.cancel,
+    confirmLabel: t.anki_sync_client_discard_action,
+    icon: FushiIcons.logout,
+    destructive: true,
+  );
+
+  Future<bool> _confirmEnable() => showFushiConfirmDialog(
+    context: context,
+    title: t.anki_sync_client_enable_warn_title,
+    message: t.anki_sync_client_enable_warn_body,
+    cancelLabel: t.cancel,
+    confirmLabel: t.anki_sync_client_enable_warn_confirm,
+    icon: FushiIcons.warning,
+    destructive: true,
+  );
 
   Future<bool> _confirmAnkiWeb() => showFushiConfirmDialog(
-        context: context,
-        title: t.anki_sync_client_ankiweb_title,
-        message: t.anki_sync_client_ankiweb_body,
-        cancelLabel: t.cancel,
-        confirmLabel: t.anki_sync_client_ankiweb_confirm,
-        icon: FushiIcons.cloud,
-      );
+    context: context,
+    title: t.anki_sync_client_ankiweb_title,
+    message: t.anki_sync_client_ankiweb_body,
+    cancelLabel: t.cancel,
+    confirmLabel: t.anki_sync_client_ankiweb_confirm,
+    icon: FushiIcons.cloud,
+  );
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(msg)));
   }
 }

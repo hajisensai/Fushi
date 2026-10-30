@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176341 (10373 per locale)
+/// Strings: 176426 (10378 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1309,6 +1309,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String anki_select_handlebar({required Object field}) =>
       'Select value for ${field}';
   String get anki_settings_label => 'Anki settings';
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb\'s terms only allow the official Anki apps to sync. Fushi identifies itself honestly as Fushi, so AnkiWeb may refuse it or take action on your account. Self-hosted sync servers have no such restriction.';
   String get anki_sync_client_ankiweb_confirm => 'Use AnkiWeb anyway';
@@ -1316,6 +1318,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anki_sync_client_discard_action => 'Discard and sign out';
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} card(s) haven\'t synced to Anki yet. Discard them and sign out? They can\'t be recovered.';
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} card(s) haven\'t synced yet. Sync them before switching account or signing out.';
   String get anki_sync_client_password_title => 'Password';
@@ -16826,6 +16832,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_settings_label => 'إعدادات Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'تسمح شروط AnkiWeb لتطبيقات Anki الرسمية فقط بالمزامنة. يعرّف Fushi نفسه بصدق على أنه Fushi، لذا قد ترفضه AnkiWeb أو تتخذ إجراءً بحق حسابك. خوادم المزامنة المستضافة ذاتيًا ليس لها هذا القيد.';
   @override
@@ -16837,6 +16847,13 @@ class _StringsAr extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} بطاقة لم تُزامَن مع Anki بعد. هل تتجاهلها وتسجل الخروج؟ لا يمكن استردادها.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.';
@@ -41992,6 +42009,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki-Einstellungen';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'Die Bedingungen von AnkiWeb erlauben nur den offiziellen Anki-Apps die Synchronisierung. Fushi gibt sich ehrlich als Fushi zu erkennen, daher kann AnkiWeb es ablehnen oder Maßnahmen gegen dein Konto ergreifen. Selbst gehostete Sync-Server haben keine solche Einschränkung.';
   @override
@@ -42003,6 +42024,13 @@ class _StringsDe extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} Karte(n) wurden noch nicht mit Anki synchronisiert. Verwerfen und abmelden? Sie können nicht wiederhergestellt werden.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} Karte(n) wurden noch nicht synchronisiert. Synchronisiere sie, bevor du das Konto wechselst oder dich abmeldest.';
@@ -67525,6 +67553,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_settings_label => 'Configuración de Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'Los términos de AnkiWeb solo permiten sincronizar a las apps oficiales de Anki. Fushi se identifica honestamente como Fushi, por lo que AnkiWeb puede rechazarla o tomar medidas sobre tu cuenta. Los servidores de sincronización autoalojados no tienen esa restricción.';
   @override
@@ -67536,6 +67568,13 @@ class _StringsEs extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} tarjeta(s) aún no se han sincronizado con Anki. ¿Descartarlas y cerrar sesión? No se pueden recuperar.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} tarjeta(s) aún no se han sincronizado. Sincronízalas antes de cambiar de cuenta o cerrar sesión.';
@@ -93115,6 +93154,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_settings_label => 'Paramètres Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'Les conditions d\'AnkiWeb n\'autorisent que les applications Anki officielles à se synchroniser. Fushi s\'identifie honnêtement comme Fushi, AnkiWeb peut donc le refuser ou prendre des mesures sur votre compte. Les serveurs de synchronisation auto-hébergés n\'ont pas cette restriction.';
   @override
@@ -93126,6 +93169,13 @@ class _StringsFr extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} carte(s) pas encore synchronisée(s) avec Anki. Les abandonner et se déconnecter ? Elles ne pourront pas être récupérées.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} carte(s) pas encore synchronisée(s). Synchronisez-les avant de changer de compte ou de vous déconnecter.';
@@ -118760,6 +118810,10 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_settings_label => 'Pengaturan Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'Ketentuan AnkiWeb hanya mengizinkan aplikasi Anki resmi untuk menyinkronkan. Fushi mengidentifikasi dirinya dengan jujur sebagai Fushi, sehingga AnkiWeb mungkin menolaknya atau mengambil tindakan pada akun Anda. Server sinkronisasi yang dihosting sendiri tidak memiliki batasan seperti itu.';
   @override
@@ -118771,6 +118825,13 @@ class _StringsId extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} kartu belum disinkronkan ke Anki. Buang dan keluar? Tidak dapat dipulihkan.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kartu belum disinkronkan. Sinkronkan sebelum berganti akun atau keluar.';
@@ -144087,6 +144148,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_settings_label => 'Impostazioni Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'I termini di AnkiWeb consentono la sincronizzazione solo alle app ufficiali di Anki. Fushi si identifica onestamente come Fushi, quindi AnkiWeb potrebbe rifiutarlo o prendere provvedimenti sul tuo account. I server di sincronizzazione self-hosted non hanno questa restrizione.';
   @override
@@ -144098,6 +144163,13 @@ class _StringsIt extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} carta/e non ancora sincronizzata/e con Anki. Scartarle e uscire? Non si possono recuperare.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} carta/e non ancora sincronizzata/e. Sincronizzale prima di cambiare account o uscire.';
@@ -169494,6 +169566,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 設定';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb の利用規約では、同期できるのは公式の Anki アプリのみです。Fushi は正直に Fushi として名乗るため、AnkiWeb に拒否されたり、アカウントに対して措置を取られたりする可能性があります。セルフホストの同期サーバーにはこのような制限はありません。';
   @override
@@ -169505,6 +169581,13 @@ class _StringsJa extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       'Anki に未同期のカードが ${count} 枚あります。破棄してサインアウトしますか？ 復元できません。';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '未同期のカードが ${count} 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。';
@@ -193935,6 +194018,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 설정';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb 약관은 공식 Anki 앱만 동기화하도록 허용합니다. Fushi는 자신을 Fushi라고 솔직하게 밝히므로 AnkiWeb이 이를 거부하거나 계정에 조치를 취할 수 있습니다. 자체 호스팅 동기화 서버에는 이런 제한이 없습니다.';
   @override
@@ -193946,6 +194033,13 @@ class _StringsKo extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '아직 Anki에 동기화되지 않은 카드가 ${count}장 있습니다. 삭제하고 로그아웃하시겠습니까? 복구할 수 없습니다.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '아직 동기화되지 않은 카드가 ${count}장 있습니다. 계정을 바꾸거나 로그아웃하기 전에 동기화하세요.';
@@ -218530,6 +218624,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki-instellingen';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'De voorwaarden van AnkiWeb staan alleen de officiële Anki-apps toe te synchroniseren. Fushi geeft zich eerlijk als Fushi te kennen, dus AnkiWeb kan het weigeren of maatregelen tegen je account nemen. Zelfgehoste synchronisatieservers hebben zo\'n beperking niet.';
   @override
@@ -218541,6 +218639,13 @@ class _StringsNl extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} kaart(en) zijn nog niet met Anki gesynchroniseerd. Verwerpen en afmelden? Ze kunnen niet worden hersteld.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.';
@@ -243973,6 +244078,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_settings_label => 'Configurações do Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'Os termos do AnkiWeb só permitem que os apps oficiais do Anki sincronizem. O Fushi se identifica honestamente como Fushi, então o AnkiWeb pode recusá-lo ou tomar medidas contra a sua conta. Servidores de sincronização auto-hospedados não têm essa restrição.';
   @override
@@ -243984,6 +244093,13 @@ class _StringsPtBr extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} cartão(ões) ainda não sincronizaram com o Anki. Descartá-los e sair? Eles não podem ser recuperados.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} cartão(ões) ainda não sincronizaram. Sincronize-os antes de trocar de conta ou sair.';
@@ -269464,6 +269580,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_settings_label => 'Настройки Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'Условия AnkiWeb разрешают синхронизацию только официальным приложениям Anki. Fushi честно представляется как Fushi, поэтому AnkiWeb может отказать ему или предпринять меры в отношении вашего аккаунта. У собственных серверов синхронизации такого ограничения нет.';
   @override
@@ -269476,6 +269596,13 @@ class _StringsRu extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       'Карточек ещё не синхронизировано с Anki: ${count}. Отбросить их и выйти? Восстановить их будет невозможно.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       'Карточек ещё не синхронизировано: ${count}. Синхронизируйте их, прежде чем сменить аккаунт или выйти.';
@@ -294883,6 +295010,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_settings_label => 'ตั้งค่า Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'ข้อกำหนดของ AnkiWeb อนุญาตให้ซิงค์เฉพาะแอป Anki อย่างเป็นทางการ Fushi ระบุตัวเองตามจริงว่าเป็น Fushi ดังนั้น AnkiWeb อาจปฏิเสธหรือดำเนินการกับบัญชีของคุณ เซิร์ฟเวอร์ซิงค์ที่โฮสต์เองไม่มีข้อจำกัดนี้';
   @override
@@ -294894,6 +295025,13 @@ class _StringsTh extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       'ยังไม่ได้ซิงค์การ์ด ${count} ใบไป Anki ทิ้งและออกจากระบบไหม? กู้คืนไม่ได้';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       'ยังไม่ได้ซิงค์การ์ด ${count} ใบ ซิงค์ก่อนสลับบัญชีหรือออกจากระบบ';
@@ -320030,6 +320168,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki ayarları';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb\'in koşulları yalnızca resmî Anki uygulamalarının eşitlemesine izin verir. Fushi kendini dürüstçe Fushi olarak tanıtır, bu yüzden AnkiWeb onu reddedebilir veya hesabınıza karşı işlem yapabilir. Kendi barındırdığınız eşitleme sunucularında böyle bir kısıtlama yoktur.';
   @override
@@ -320041,6 +320183,13 @@ class _StringsTr extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} kart henüz Anki\'ye eşitlenmedi. Atılıp çıkış yapılsın mı? Geri alınamazlar.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kart henüz eşitlenmedi. Hesap değiştirmeden veya çıkış yapmadan önce bunları eşitleyin.';
@@ -345349,6 +345498,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_settings_label => 'Cài đặt Anki';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'Điều khoản của AnkiWeb chỉ cho phép các ứng dụng Anki chính thức đồng bộ. Fushi tự nhận mình trung thực là Fushi, nên AnkiWeb có thể từ chối hoặc xử lý tài khoản của bạn. Máy chủ đồng bộ tự lưu trữ không có hạn chế như vậy.';
   @override
@@ -345360,6 +345513,13 @@ class _StringsVi extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '${count} thẻ chưa được đồng bộ tới Anki. Bỏ chúng và đăng xuất? Không thể khôi phục.';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} thẻ chưa được đồng bộ. Hãy đồng bộ chúng trước khi đổi tài khoản hoặc đăng xuất.';
@@ -370449,6 +370609,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 设置';
   @override
+  String get anki_sync_client_advanced_hint => '实验性功能，点按展开';
+  @override
+  String get anki_sync_client_advanced_title => '高级：Anki 同步客户端';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb 的服务条款只允许官方 Anki 客户端同步。Fushi 会如实表明自己是 Fushi，因此 AnkiWeb 可能拒绝连接，或对你的账号采取措施。自建同步服务器没有这项限制。';
   @override
@@ -370460,6 +370624,13 @@ class _StringsZhCn extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '还有 ${count} 张卡没有同步到 Anki。放弃这些卡并退出登录？放弃后无法找回。';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      '除非你知道你在做什么，否则不要启用此功能。同步到 AnkiWeb 不允许第三方客户端，可能失败，也可能影响你的账号。';
+  @override
+  String get anki_sync_client_enable_warn_confirm => '我明白，仍然启用';
+  @override
+  String get anki_sync_client_enable_warn_title => '要启用 Anki 同步吗？';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '还有 ${count} 张卡没有同步，请先同步再切换账号或退出登录。';
@@ -393579,6 +393750,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 設定';
   @override
+  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  @override
+  String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
+  @override
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb 的服務條款只允許官方 Anki 客户端同步。Fushi 會如實表明自己是 Fushi，因此 AnkiWeb 可能拒絕連接，或對你的帳户採取措施。自建同步伺服器沒有這項限制。';
   @override
@@ -393590,6 +393765,13 @@ class _StringsZhHk extends _StringsEn {
   @override
   String anki_sync_client_discard_confirm({required Object count}) =>
       '還有 ${count} 張卡沒有同步到 Anki。放棄這些卡並退出登入？放棄後無法找回。';
+  @override
+  String get anki_sync_client_enable_warn_body =>
+      'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+  @override
+  String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
+  @override
+  String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '還有 ${count} 張卡沒有同步，請先同步再切換帳户或退出登入。';
@@ -417229,6 +417411,10 @@ extension on _StringsEn {
         return ({required Object field}) => 'Select value for ${field}';
       case 'anki_settings_label':
         return 'Anki settings';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'AnkiWeb\'s terms only allow the official Anki apps to sync. Fushi identifies itself honestly as Fushi, so AnkiWeb may refuse it or take action on your account. Self-hosted sync servers have no such restriction.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -417240,6 +417426,12 @@ extension on _StringsEn {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} card(s) haven\'t synced to Anki yet. Discard them and sign out? They can\'t be recovered.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} card(s) haven\'t synced yet. Sync them before switching account or signing out.';
@@ -438784,6 +438976,10 @@ extension on _StringsAr {
         return ({required Object field}) => 'اختر قيمة لـ ${field}';
       case 'anki_settings_label':
         return 'إعدادات Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'تسمح شروط AnkiWeb لتطبيقات Anki الرسمية فقط بالمزامنة. يعرّف Fushi نفسه بصدق على أنه Fushi، لذا قد ترفضه AnkiWeb أو تتخذ إجراءً بحق حسابك. خوادم المزامنة المستضافة ذاتيًا ليس لها هذا القيد.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -438795,6 +438991,12 @@ extension on _StringsAr {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} بطاقة لم تُزامَن مع Anki بعد. هل تتجاهلها وتسجل الخروج؟ لا يمكن استردادها.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.';
@@ -460342,6 +460544,10 @@ extension on _StringsDe {
         return ({required Object field}) => 'Wert für ${field} auswählen';
       case 'anki_settings_label':
         return 'Anki-Einstellungen';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'Die Bedingungen von AnkiWeb erlauben nur den offiziellen Anki-Apps die Synchronisierung. Fushi gibt sich ehrlich als Fushi zu erkennen, daher kann AnkiWeb es ablehnen oder Maßnahmen gegen dein Konto ergreifen. Selbst gehostete Sync-Server haben keine solche Einschränkung.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -460353,6 +460559,12 @@ extension on _StringsDe {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} Karte(n) wurden noch nicht mit Anki synchronisiert. Verwerfen und abmelden? Sie können nicht wiederhergestellt werden.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} Karte(n) wurden noch nicht synchronisiert. Synchronisiere sie, bevor du das Konto wechselst oder dich abmeldest.';
@@ -481960,6 +482172,10 @@ extension on _StringsEs {
         return ({required Object field}) => 'Seleccionar valor para ${field}';
       case 'anki_settings_label':
         return 'Configuración de Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'Los términos de AnkiWeb solo permiten sincronizar a las apps oficiales de Anki. Fushi se identifica honestamente como Fushi, por lo que AnkiWeb puede rechazarla o tomar medidas sobre tu cuenta. Los servidores de sincronización autoalojados no tienen esa restricción.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -481971,6 +482187,12 @@ extension on _StringsEs {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} tarjeta(s) aún no se han sincronizado con Anki. ¿Descartarlas y cerrar sesión? No se pueden recuperar.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} tarjeta(s) aún no se han sincronizado. Sincronízalas antes de cambiar de cuenta o cerrar sesión.';
@@ -503571,6 +503793,10 @@ extension on _StringsFr {
             'Sélectionner la valeur pour ${field}';
       case 'anki_settings_label':
         return 'Paramètres Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'Les conditions d\'AnkiWeb n\'autorisent que les applications Anki officielles à se synchroniser. Fushi s\'identifie honnêtement comme Fushi, AnkiWeb peut donc le refuser ou prendre des mesures sur votre compte. Les serveurs de synchronisation auto-hébergés n\'ont pas cette restriction.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -503582,6 +503808,12 @@ extension on _StringsFr {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} carte(s) pas encore synchronisée(s) avec Anki. Les abandonner et se déconnecter ? Elles ne pourront pas être récupérées.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} carte(s) pas encore synchronisée(s). Synchronisez-les avant de changer de compte ou de vous déconnecter.';
@@ -525189,6 +525421,10 @@ extension on _StringsId {
         return ({required Object field}) => 'Pilih nilai untuk ${field}';
       case 'anki_settings_label':
         return 'Pengaturan Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'Ketentuan AnkiWeb hanya mengizinkan aplikasi Anki resmi untuk menyinkronkan. Fushi mengidentifikasi dirinya dengan jujur sebagai Fushi, sehingga AnkiWeb mungkin menolaknya atau mengambil tindakan pada akun Anda. Server sinkronisasi yang dihosting sendiri tidak memiliki batasan seperti itu.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -525200,6 +525436,12 @@ extension on _StringsId {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} kartu belum disinkronkan ke Anki. Buang dan keluar? Tidak dapat dipulihkan.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kartu belum disinkronkan. Sinkronkan sebelum berganti akun atau keluar.';
@@ -546759,6 +547001,10 @@ extension on _StringsIt {
         return ({required Object field}) => 'Seleziona valore per ${field}';
       case 'anki_settings_label':
         return 'Impostazioni Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'I termini di AnkiWeb consentono la sincronizzazione solo alle app ufficiali di Anki. Fushi si identifica onestamente come Fushi, quindi AnkiWeb potrebbe rifiutarlo o prendere provvedimenti sul tuo account. I server di sincronizzazione self-hosted non hanno questa restrizione.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -546770,6 +547016,12 @@ extension on _StringsIt {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} carta/e non ancora sincronizzata/e con Anki. Scartarle e uscire? Non si possono recuperare.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} carta/e non ancora sincronizzata/e. Sincronizzale prima di cambiare account o uscire.';
@@ -568350,6 +568602,10 @@ extension on _StringsJa {
         return ({required Object field}) => '${field} の値を選択';
       case 'anki_settings_label':
         return 'Anki 設定';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'AnkiWeb の利用規約では、同期できるのは公式の Anki アプリのみです。Fushi は正直に Fushi として名乗るため、AnkiWeb に拒否されたり、アカウントに対して措置を取られたりする可能性があります。セルフホストの同期サーバーにはこのような制限はありません。';
       case 'anki_sync_client_ankiweb_confirm':
@@ -568361,6 +568617,12 @@ extension on _StringsJa {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             'Anki に未同期のカードが ${count} 枚あります。破棄してサインアウトしますか？ 復元できません。';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '未同期のカードが ${count} 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。';
@@ -589818,6 +590080,10 @@ extension on _StringsKo {
         return ({required Object field}) => '${field}에 사용할 값 선택';
       case 'anki_settings_label':
         return 'Anki 설정';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'AnkiWeb 약관은 공식 Anki 앱만 동기화하도록 허용합니다. Fushi는 자신을 Fushi라고 솔직하게 밝히므로 AnkiWeb이 이를 거부하거나 계정에 조치를 취할 수 있습니다. 자체 호스팅 동기화 서버에는 이런 제한이 없습니다.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -589829,6 +590095,12 @@ extension on _StringsKo {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '아직 Anki에 동기화되지 않은 카드가 ${count}장 있습니다. 삭제하고 로그아웃하시겠습니까? 복구할 수 없습니다.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '아직 동기화되지 않은 카드가 ${count}장 있습니다. 계정을 바꾸거나 로그아웃하기 전에 동기화하세요.';
@@ -611318,6 +611590,10 @@ extension on _StringsNl {
         return ({required Object field}) => 'Selecteer waarde voor ${field}';
       case 'anki_settings_label':
         return 'Anki-instellingen';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'De voorwaarden van AnkiWeb staan alleen de officiële Anki-apps toe te synchroniseren. Fushi geeft zich eerlijk als Fushi te kennen, dus AnkiWeb kan het weigeren of maatregelen tegen je account nemen. Zelfgehoste synchronisatieservers hebben zo\'n beperking niet.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -611329,6 +611605,12 @@ extension on _StringsNl {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} kaart(en) zijn nog niet met Anki gesynchroniseerd. Verwerpen en afmelden? Ze kunnen niet worden hersteld.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.';
@@ -632916,6 +633198,10 @@ extension on _StringsPtBr {
         return ({required Object field}) => 'Selecionar valor para ${field}';
       case 'anki_settings_label':
         return 'Configurações do Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'Os termos do AnkiWeb só permitem que os apps oficiais do Anki sincronizem. O Fushi se identifica honestamente como Fushi, então o AnkiWeb pode recusá-lo ou tomar medidas contra a sua conta. Servidores de sincronização auto-hospedados não têm essa restrição.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -632927,6 +633213,12 @@ extension on _StringsPtBr {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} cartão(ões) ainda não sincronizaram com o Anki. Descartá-los e sair? Eles não podem ser recuperados.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} cartão(ões) ainda não sincronizaram. Sincronize-os antes de trocar de conta ou sair.';
@@ -654508,6 +654800,10 @@ extension on _StringsRu {
         return ({required Object field}) => 'Выберите значение для ${field}';
       case 'anki_settings_label':
         return 'Настройки Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'Условия AnkiWeb разрешают синхронизацию только официальным приложениям Anki. Fushi честно представляется как Fushi, поэтому AnkiWeb может отказать ему или предпринять меры в отношении вашего аккаунта. У собственных серверов синхронизации такого ограничения нет.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -654519,6 +654815,12 @@ extension on _StringsRu {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             'Карточек ещё не синхронизировано с Anki: ${count}. Отбросить их и выйти? Восстановить их будет невозможно.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             'Карточек ещё не синхронизировано: ${count}. Синхронизируйте их, прежде чем сменить аккаунт или выйти.';
@@ -676097,6 +676399,10 @@ extension on _StringsTh {
         return ({required Object field}) => 'เลือกค่าสำหรับ ${field}';
       case 'anki_settings_label':
         return 'ตั้งค่า Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'ข้อกำหนดของ AnkiWeb อนุญาตให้ซิงค์เฉพาะแอป Anki อย่างเป็นทางการ Fushi ระบุตัวเองตามจริงว่าเป็น Fushi ดังนั้น AnkiWeb อาจปฏิเสธหรือดำเนินการกับบัญชีของคุณ เซิร์ฟเวอร์ซิงค์ที่โฮสต์เองไม่มีข้อจำกัดนี้';
       case 'anki_sync_client_ankiweb_confirm':
@@ -676108,6 +676414,12 @@ extension on _StringsTh {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             'ยังไม่ได้ซิงค์การ์ด ${count} ใบไป Anki ทิ้งและออกจากระบบไหม? กู้คืนไม่ได้';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             'ยังไม่ได้ซิงค์การ์ด ${count} ใบ ซิงค์ก่อนสลับบัญชีหรือออกจากระบบ';
@@ -697655,6 +697967,10 @@ extension on _StringsTr {
         return ({required Object field}) => '${field} için değer seçin';
       case 'anki_settings_label':
         return 'Anki ayarları';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'AnkiWeb\'in koşulları yalnızca resmî Anki uygulamalarının eşitlemesine izin verir. Fushi kendini dürüstçe Fushi olarak tanıtır, bu yüzden AnkiWeb onu reddedebilir veya hesabınıza karşı işlem yapabilir. Kendi barındırdığınız eşitleme sunucularında böyle bir kısıtlama yoktur.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -697666,6 +697982,12 @@ extension on _StringsTr {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} kart henüz Anki\'ye eşitlenmedi. Atılıp çıkış yapılsın mı? Geri alınamazlar.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kart henüz eşitlenmedi. Hesap değiştirmeden veya çıkış yapmadan önce bunları eşitleyin.';
@@ -719235,6 +719557,10 @@ extension on _StringsVi {
         return ({required Object field}) => 'Chọn giá trị cho ${field}';
       case 'anki_settings_label':
         return 'Cài đặt Anki';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'Điều khoản của AnkiWeb chỉ cho phép các ứng dụng Anki chính thức đồng bộ. Fushi tự nhận mình trung thực là Fushi, nên AnkiWeb có thể từ chối hoặc xử lý tài khoản của bạn. Máy chủ đồng bộ tự lưu trữ không có hạn chế như vậy.';
       case 'anki_sync_client_ankiweb_confirm':
@@ -719246,6 +719572,12 @@ extension on _StringsVi {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '${count} thẻ chưa được đồng bộ tới Anki. Bỏ chúng và đăng xuất? Không thể khôi phục.';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} thẻ chưa được đồng bộ. Hãy đồng bộ chúng trước khi đổi tài khoản hoặc đăng xuất.';
@@ -740769,6 +741101,10 @@ extension on _StringsZhCn {
         return ({required Object field}) => '选择 ${field} 的值';
       case 'anki_settings_label':
         return 'Anki 设置';
+      case 'anki_sync_client_advanced_hint':
+        return '实验性功能，点按展开';
+      case 'anki_sync_client_advanced_title':
+        return '高级：Anki 同步客户端';
       case 'anki_sync_client_ankiweb_body':
         return 'AnkiWeb 的服务条款只允许官方 Anki 客户端同步。Fushi 会如实表明自己是 Fushi，因此 AnkiWeb 可能拒绝连接，或对你的账号采取措施。自建同步服务器没有这项限制。';
       case 'anki_sync_client_ankiweb_confirm':
@@ -740780,6 +741116,12 @@ extension on _StringsZhCn {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '还有 ${count} 张卡没有同步到 Anki。放弃这些卡并退出登录？放弃后无法找回。';
+      case 'anki_sync_client_enable_warn_body':
+        return '除非你知道你在做什么，否则不要启用此功能。同步到 AnkiWeb 不允许第三方客户端，可能失败，也可能影响你的账号。';
+      case 'anki_sync_client_enable_warn_confirm':
+        return '我明白，仍然启用';
+      case 'anki_sync_client_enable_warn_title':
+        return '要启用 Anki 同步吗？';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '还有 ${count} 张卡没有同步，请先同步再切换账号或退出登录。';
@@ -762069,6 +762411,10 @@ extension on _StringsZhHk {
         return ({required Object field}) => '選擇 ${field} 的值';
       case 'anki_settings_label':
         return 'Anki 設定';
+      case 'anki_sync_client_advanced_hint':
+        return 'Experimental. Tap to expand.';
+      case 'anki_sync_client_advanced_title':
+        return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
         return 'AnkiWeb 的服務條款只允許官方 Anki 客户端同步。Fushi 會如實表明自己是 Fushi，因此 AnkiWeb 可能拒絕連接，或對你的帳户採取措施。自建同步伺服器沒有這項限制。';
       case 'anki_sync_client_ankiweb_confirm':
@@ -762080,6 +762426,12 @@ extension on _StringsZhHk {
       case 'anki_sync_client_discard_confirm':
         return ({required Object count}) =>
             '還有 ${count} 張卡沒有同步到 Anki。放棄這些卡並退出登入？放棄後無法找回。';
+      case 'anki_sync_client_enable_warn_body':
+        return 'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
+      case 'anki_sync_client_enable_warn_confirm':
+        return 'I understand, enable';
+      case 'anki_sync_client_enable_warn_title':
+        return 'Enable Anki sync?';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '還有 ${count} 張卡沒有同步，請先同步再切換帳户或退出登入。';
