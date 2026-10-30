@@ -2644,9 +2644,8 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
   const clientSentEpochMs = performance.timeOrigin + clientStartedAt;
   try {
     // 原文振假名只在非空时带（空 / 无 = 旧消息形态逐字不变）。
-    const lookupMessage = { type: 'lookup', term, clientSentEpochMs };
-    if (Array.isArray(ruby) && ruby.length) lookupMessage.ruby = ruby;
-    chrome.runtime.sendMessage(lookupMessage, (resp) => {
+    const hasRuby = Array.isArray(ruby) && ruby.length > 0;
+    chrome.runtime.sendMessage({ type: 'lookup', term, clientSentEpochMs, ...(hasRuby ? { ruby } : {}) }, (resp) => {
       fushiPending = false;
       const responseAt = performance.now();
       const responseEpochMs = performance.timeOrigin + responseAt;
