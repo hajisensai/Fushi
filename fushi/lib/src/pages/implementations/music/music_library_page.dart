@@ -501,16 +501,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       IconData icon,
       String label,
       Future<void> Function() action,
-    ) => PopupMenuItem<Future<void> Function()>(
+    ) => FushiPopupMenuItem<Future<void> Function()>(
       key: ValueKey<String>(key),
       value: action,
-      child: Row(
-        children: <Widget>[
-          FushiIcon(icon, size: 20),
-          const SizedBox(width: 12),
-          Text(label),
-        ],
-      ),
+      icon: icon,
+      label: label,
     );
     final Future<void> Function()? action =
         await showFushiMenu<Future<void> Function()>(

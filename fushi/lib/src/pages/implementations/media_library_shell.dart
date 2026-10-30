@@ -351,6 +351,9 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
           for (int i = 0; i < views.length; i++)
             if (_visited.contains(i))
               Offstage(
+                // 按视图种类认身份：保活视图按下标排，中间冒出新视图（如媒体
+                // 服务器）时不带 key 会让后面已保活的视图错位重建、丢 State。
+                key: ValueKey<MediaLibraryViewKind>(views[i].kind),
                 offstage: i != _currentIndex,
                 child: TickerMode(
                   enabled: i == _currentIndex,
