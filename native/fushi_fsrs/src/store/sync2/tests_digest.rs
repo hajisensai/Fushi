@@ -108,10 +108,10 @@ const DIGESTED: [&str; 3] = ["srs_entities", "srs_field_edits", "srs_review_logs
 
 /// 桶表里的行数和等于三张投影表的实际行数（根对上之外，`n` 也不许漂）。
 fn assert_counts_match(d: &Device) {
-    let n: i64 = d.rows(&format!("SELECT COALESCE(SUM(n), 0) FROM sync2_digest_buckets WHERE profile_uid = '{P}'"))[1][0].parse().unwrap();
+    let n: i64 = d.rows(&format!("SELECT COALESCE(SUM(n), 0) FROM sync2_digest_buckets WHERE profile_uid = srs_id('{P}')"))[1][0].parse().unwrap();
     let mut rows = 0i64;
     for t in DIGESTED {
-        rows += d.rows(&format!("SELECT COUNT(*) FROM {t} WHERE profile_uid = '{P}'"))[1][0].parse::<i64>().unwrap();
+        rows += d.rows(&format!("SELECT COUNT(*) FROM {t} WHERE profile_uid = srs_id('{P}')"))[1][0].parse::<i64>().unwrap();
     }
     assert_eq!(n, rows, "bucket row counts drifted from the tables");
 }

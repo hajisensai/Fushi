@@ -174,7 +174,7 @@ impl Device {
     }
 
     pub fn state(&self, card: &str) -> Value {
-        let rows = self.rows(&format!("SELECT json FROM srs_review_logs WHERE card_id = '{card}'"));
+        let rows = self.rows(&format!("SELECT json FROM srs_review_logs WHERE card_id = srs_id('{card}')"));
         let jsons: Vec<&str> = rows.iter().skip(1).map(|r| r[0].as_str()).collect();
         let st = crate::history::state_from_json(&jsons, &vec![None; jsons.len()]).unwrap();
         json!(format!("{st:?}"))
@@ -500,7 +500,7 @@ mod convergence {
 }
 
 fn tags_of(d: &Device, note: &str) -> String {
-    let r = d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = '{note}' AND field_key = 'tags'"));
+    let r = d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = srs_id('{note}') AND field_key = 'tags'"));
     assert!(r.len() <= 2, "exactly one tags row: {r:?}");
     r.get(1).map(|x| x[0].clone()).unwrap_or_default()
 }
@@ -640,7 +640,7 @@ fn purge_erases_content_everywhere_and_keeps_the_chain_valid() {
             continue;
         }
         let dev = path.split('/').nth(1).unwrap();
-        let public = c.rows(&format!("SELECT hex(public) FROM sync2_devices WHERE hex(device) = upper(replace('{dev}', '-', ''))"));
+        let public = c.rows(&format!("SELECT hex(public) FROM sync2_devices WHERE hex(device) = upper(replace('{dev}', '-', '')) -- ids:text"));
         let hexkey = &public[1][0];
         let key: [u8; 32] = (0..32).map(|i| u8::from_str_radix(&hexkey[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<_>>().try_into().unwrap();
         let seg = crate::sync2::segment::open(bytes, &key, None).unwrap();
@@ -767,7 +767,7 @@ fn timeline_restore_compensates_and_can_itself_be_undone() {
     let before_restore = projection(&a);
     a.core.sync2_restore(P, &RestoreTarget::At(t1), true, T0 + 3000).unwrap();
     let v = |d: &Device, key: &str, e: &str| {
-        d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = '{e}' AND field_key = '{key}'"))
+        d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = srs_id('{e}') AND field_key = '{key}'"))
             .get(1)
             .map(|r| r[0].clone())
             .unwrap_or_default()
@@ -1436,7 +1436,7 @@ fn history_lists_every_edit_including_overwritten_ones() {
     a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("One"))]);
     a.apply(T0 + 1000, vec![edit("deck", &deck, "name", json!("Two"))]);
     // 投影里只剩生效的那条；历史里两条都在，新的在前。
-    assert_eq!(a.rows(&format!("SELECT COUNT(*) FROM srs_field_edits WHERE entity_id = '{deck}' AND field_key = 'name'"))[1][0], "1");
+    assert_eq!(a.rows(&format!("SELECT COUNT(*) FROM srs_field_edits WHERE entity_id = srs_id('{deck}') AND field_key = 'name'"))[1][0], "1");
     let h = a.core.sync2_history(P, "deck", &deck).unwrap();
     let names: Vec<&Value> = h.as_array().unwrap().iter().filter(|e| e["key"] == "name").map(|e| &e["value"]).collect();
     assert_eq!(names, vec![&json!("Two"), &json!("One")]);
@@ -1456,7 +1456,7 @@ fn digest_is_recomputed_only_when_due() {
 }
 
 pub(crate) fn log_json(d: &Device, id: &str) -> Value {
-    serde_json::from_str(&d.rows(&format!("SELECT json FROM srs_review_logs WHERE id = '{id}'"))[1][0]).unwrap()
+    serde_json::from_str(&d.rows(&format!("SELECT json FROM srs_review_logs WHERE id = srs_id('{id}')"))[1][0]).unwrap()
 }
 
 /// 改牌组配置只影响之后的复习（设计 §4.6）：已发生的复习按它自己记下的配置快照重放，结果一字不变，也不触发
@@ -1683,7 +1683,7 @@ fn bench_migrate() {
 
 /// 投影里一条笔记的物化视图（Dart `srsMaterializeNotes` 同一个内核入口）：读 `srs_field_edits` 的落库行。
 fn materialized_note(d: &Device, note: &str) -> Value {
-    let rows = d.rows(&format!("SELECT json FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = '{note}' ORDER BY id"));
+    let rows = d.rows(&format!("SELECT json FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id('{note}') ORDER BY id"));
     let items: Vec<&str> = rows.iter().skip(1).map(|r| r[0].as_str()).collect();
     let header = json!([{"t": "note", "n": items.len(), "rec": {"noteTypeId": "T", "guid": "g", "createdAt": 1}}]).to_string();
     let mut text = String::new();
@@ -1845,7 +1845,7 @@ fn batched_ingest_session_matches_one_shot_ingest() {
     let old = a.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
     let frozen = |d: &Device| {
         d.rows(&format!(
-            "SELECT lower(hex(device)), applied FROM sync2_devices WHERE profile_uid = '{P}' AND frozen = 1"
+            "SELECT lower(hex(device)), applied FROM sync2_devices WHERE profile_uid = srs_id('{P}') AND frozen = 1"
         ))
     };
     assert_eq!(frozen(&one), frozen(&many));
@@ -1857,7 +1857,7 @@ fn batched_ingest_session_matches_one_shot_ingest() {
         assert_ne!(new, old);
         let mut rows = projection(d);
         rows.extend(d.rows(&format!(
-            "SELECT o.seq, o.kind, lower(hex(o.payload)) FROM sync2_ops o JOIN sync2_self s ON s.profile_uid = o.profile_uid AND s.device = o.device              WHERE o.profile_uid = '{P}' ORDER BY o.seq"
+            "SELECT o.seq, o.kind, lower(hex(o.payload)) FROM sync2_ops o JOIN sync2_self s ON s.profile_uid = o.profile_uid AND s.device = o.device              WHERE o.profile_uid = srs_id('{P}') ORDER BY o.seq"
         )));
         // 重签发的修改记录 ID 由写入者（新身份）派生：换成占位后去掉 ID、排序再比。
         let mut out: Vec<String> = rows
@@ -2144,7 +2144,7 @@ fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
         assert!(err.to_string().contains("UNIQUE constraint failed: srs_field_edits.id"), "{err}");
     }
     a.core.sync2_migrate(P, T0, None).unwrap();
-    let ids_of = |profile: &str| a.rows(&format!("SELECT srs_idt(id) AS id, srs_idt(writer_id) AS writer_id FROM srs_field_edits WHERE profile_uid = '{profile}' ORDER BY id"));
+    let ids_of = |profile: &str| a.rows(&format!("SELECT srs_idt(id) AS id, srs_idt(writer_id) AS writer_id FROM srs_field_edits WHERE profile_uid = srs_id('{profile}') ORDER BY id"));
     let p_rows = ids_of(P);
     assert_eq!(p_rows.len(), 4, "header + 3 legacy rows: {p_rows:?}");
 
@@ -2457,7 +2457,7 @@ fn local_apply_does_not_wait_for_ingest_decoding() {
     *b.core.ingest_prepare_hook.lock().unwrap() = None;
     let r: Value = serde_json::from_str(&b.core.sync2_ingest_finish(P, T0 + 401).unwrap()).unwrap();
     assert_eq!(r["fork"], json!(false), "{r}");
-    assert_eq!(b.rows(&format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = '{P}'")).last().unwrap()[0], "201");
+    assert_eq!(b.rows(&format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id('{P}')")).last().unwrap()[0], "201");
 }
 
 /// 预处理与投递之间设备公钥变了：投递在锁内按当时的公钥重验那一段，结果与在锁内从头处理相同。这里预处理时
@@ -2511,7 +2511,7 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row() {
     b.core.sync2_identity(P, T0 + 20).unwrap();
     b.core.sync2_plan(P, &heads).unwrap();
     let logs = |d: &Device| d.rows("SELECT COUNT(*) FROM srs_review_logs")[1][0].parse::<i64>().unwrap();
-    let local_json = |d: &Device| d.rows(&format!("SELECT json FROM srs_local_state WHERE profile_uid = '{P}'")).get(1).map(|r| r[0].clone());
+    let local_json = |d: &Device| d.rows(&format!("SELECT json FROM srs_local_state WHERE profile_uid = srs_id('{P}')")).get(1).map(|r| r[0].clone());
 
     // 本机状态行写不下：整片回滚，会话作废。
     b.core.sync2_ingest_begin(P).unwrap();

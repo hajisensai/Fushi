@@ -1330,7 +1330,7 @@ mod tests {
 
     /// 每条笔记的卡的 freq_rank（NULL 记成 "null"）。
     fn ranks(d: &Device) -> Vec<(String, String)> {
-        d.rows("SELECT srs_idt(note_id) AS note_id, IFNULL(freq_rank, 'null') FROM srs_cards_cache ORDER BY note_id")
+        d.rows("SELECT srs_idt(note_id), IFNULL(freq_rank, 'null') FROM srs_cards_cache ORDER BY note_id")
             .into_iter()
             .skip(1)
             .map(|r| (r[0].clone(), r[1].clone()))
@@ -1412,7 +1412,7 @@ mod tests {
 
         // 只有卡片事件变了：名次沿用。
         let card = d.rows(&format!(
-            "SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE note_id = '{N1}'"
+            "SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE note_id = srs_id('{N1}')"
         ))[1][0]
             .clone();
         let r = d.apply(T0 + 2, vec![review("r1", &card, T0 + 2, 3, "learn")]);

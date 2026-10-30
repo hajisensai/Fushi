@@ -1054,10 +1054,11 @@ const MIGRATING_KEY: &str = "sync2_migrating/";
 /// 写入者的记录保持原先后，闭包按序累积）；日志按发生时刻再按 ID；不认识的事件按 ID。
 fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
     let phases: [(i64, &str, &str); 4] = [
-        (0, "srs_entities", "created_at, id"),
-        (1, "srs_field_edits", "writer_id, seq"),
-        (2, "srs_review_logs", "occurred_at, id"),
-        (3, "srs_unknown_events", "id"),
+        // 按 ID 文本排（store/ids.rs：非 UUID 的文本与 BLOB 混排时 SQLite 的顺序不同），包装顺序与旧版本逐条相同。
+        (0, "srs_entities", "created_at, srs_idt(id)"),
+        (1, "srs_field_edits", "srs_idt(writer_id), seq"),
+        (2, "srs_review_logs", "occurred_at, srs_idt(id)"),
+        (3, "srs_unknown_events", "srs_idt(id)"),
     ];
     let mut base: i64 = 0;
     for (phase, table, order) in phases {
@@ -1065,7 +1066,7 @@ fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
             .execute(
                 &format!(
                     "INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) \
-                     SELECT ?1, ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, id FROM {table} WHERE profile_uid = srs_id(?1)"
+                     SELECT srs_id(?1), ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, srs_idt(id) FROM {table} WHERE profile_uid = srs_id(?1)"
                 ),
                 params![profile, base, phase],
             )

@@ -1957,7 +1957,7 @@ mod tests {
     /// 每条缓存行的 `dupe_norm`。
     fn dupe_norms(d: &Device) -> Vec<(String, Option<String>)> {
         let w = d.core.writer().unwrap();
-        let mut stmt = w.prepare("SELECT srs_idt(id) AS id, dupe_norm FROM srs_notes_cache ORDER BY id").unwrap();
+        let mut stmt = w.prepare("SELECT srs_idt(id), dupe_norm FROM srs_notes_cache ORDER BY id").unwrap();
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
     }
 
@@ -2038,7 +2038,7 @@ mod tests {
             assert!(w.is_autocommit());
             assert_eq!(tags(&d), json!(["B", "t1", "zz"]), "the committed write is visible and must be reread");
             // 未提交的改动：读快照重读到的是旧值。
-            w.execute_batch(&format!("BEGIN; UPDATE srs_notes_cache SET tags_json = '[\"yy\"]' WHERE id = '{N2}';")).unwrap();
+            w.execute_batch(&format!("BEGIN; UPDATE srs_notes_cache SET tags_json = '[\"yy\"]' WHERE id = srs_id('{N2}');")).unwrap();
             assert_eq!(tags(&d), json!(["B", "t1", "zz"]));
             w.execute_batch("COMMIT;").unwrap();
             assert_eq!(tags(&d), json!(["yy", "zz"]), "rows committed after an earlier reread are reread again");
