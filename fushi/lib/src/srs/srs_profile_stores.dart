@@ -4,7 +4,7 @@
 /// 复习数据怎么按配置分：整台设备只有一个 `srs.db`，由一条 Rust 写连接持有（[SrsStorage]：
 /// `db` 是这条连接上的 drift 视图，`core` 是同一连接的内核句柄）；各配置的行按 `profiles.uid`
 /// （`profile_uid` 列）分区，本机状态（HLC / 写入者序号 / 同步 v2 发件序号 / 设备身份）也按 uid
-/// 存在 `srs_local_state` 里。[SrsDbStore] 只是「某个 uid 的副本」：同一个 db / core 上按 uid
+/// 存在 SRS 本机状态表里。[SrsDbStore] 只是「某个 uid 的副本」：同一个 db / core 上按 uid
 /// 读写的对象。所以给别的配置制卡**不开第二个库**，而是在同一个句柄上为那个 uid 开一份副本
 /// （与删配置时的级联清理 `srs_profile_cleanup.dart` 同一做法）。
 ///
