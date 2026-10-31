@@ -65,9 +65,11 @@ enum class SiglusInputEntryAbi : uint8_t {
 };
 
 inline bool HasUniqueSiglusLookupFamily(bool luna, bool native, bool legacy,
-                                       bool eightarg = false) {
+                                       bool eightarg = false,
+                                       bool ninearg = false) {
   return static_cast<int>(luna) + static_cast<int>(native) +
-             static_cast<int>(legacy) + static_cast<int>(eightarg) == 1;
+             static_cast<int>(legacy) + static_cast<int>(eightarg) +
+             static_cast<int>(ninearg) == 1;
 }
 
 // A profile is either a measured executable or a structurally resolved ABI
@@ -790,6 +792,7 @@ inline bool ProjectSiglusLookupRect(const SiglusLookupProfile& profile,
   if (profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxEightArguments &&
       view.occurrence == 0) return false;
   if ((profile.glyph_abi != SiglusGlyphLayoutAbi::kStackSixteenArguments &&
+       profile.glyph_abi != SiglusGlyphLayoutAbi::kStackNineArguments &&
        profile.glyph_abi != SiglusGlyphLayoutAbi::kEcxEightArguments) ||
       view.owner == 0 || profile.viewport_width <= 0 || profile.viewport_height <= 0 ||
       client_width <= 0 || client_height <= 0 || view.viewport.width <= 0 ||

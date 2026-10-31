@@ -16,6 +16,7 @@
 #include "siglus_legacy_live_admission.h"
 #include "siglus_eight_arg_glyph.h"
 #include "siglus_eightarg_message_capture.h"
+#include "siglus_ninearg_family.h"
 #include "siglus_image.h"
 // Exercise the production clock write deterministically, without sleeping or
 // substituting a second implementation of TextLaneEvent publication.
@@ -236,6 +237,10 @@ LegacyGlyphSites g_siglus_legacy_glyph_sites;
 struct { SiglusEightArgGlyphSites glyph; } g_siglus_eightarg_sites;
 bool IsEightArgSiglusLookup(const SiglusLookupProfile& profile) {
   return profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxEightArguments;
+}
+siglus_ninearg::Sites g_siglus_ninearg_sites;
+bool IsNineArgSiglusLookup(const SiglusLookupProfile& profile) {
+  return profile.glyph_abi == SiglusGlyphLayoutAbi::kStackNineArguments;
 }
 uint64_t eightarg_epoch = 0, observed_epoch = 0, bound_epoch = 0;
 int begin_calls = 0, observed_calls = 0, sync_calls = 0, bind_calls = 0;
@@ -827,6 +832,55 @@ void TestLegacyProductionObservers() {
   g_siglus_message_capture_enabled.store(false);
 }
 
+// The nine-argument wrapper shares the legacy frame but carries no script
+// voice key, and its inner call keeps the caller's ESI instead of zero.
+void TestNineArgProductionObservers() {
+  uint32_t owner[80] = {}, frames[128] = {};
+  const auto address = [](const void* p) {
+    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(p));
+  };
+  const uint32_t outer = address(&frames[80]), inner = outer - 0x68;
+  auto* text = reinterpret_cast<SiglusTextUnionW*>(outer + 8);
+  text->size = 2; text->capacity = 7;
+  text->storage.chars[0] = L'C'; text->storage.chars[1] = L'D';
+  frames[80] = 0x8000;
+  *reinterpret_cast<uint32_t*>(inner) = 0x7004;
+  // Saved callee registers sit below the outer frame exactly as in legacy.
+  frames[80 - 0x60 / 4] = 0;
+  frames[80 - 0x5c / 4] = 0x2468;
+  g_siglus_legacy_message_layout = {0u, 0x7004, 1500, false};
+  SiglusNativeMessageSavedRegisters entry{}, call{};
+  entry.saved_esp = outer - 4; entry.ecx = address(owner); entry.esi = 0x2468;
+  call.saved_esp = inner - 4; call.ecx = outer + 4; call.edi = address(owner);
+  call.esi = 0x2468;
+  g_siglus_message_capture_enabled.store(true);
+  g_capture_enabled = true;
+  SiglusMessageTextTask task;
+  while (g_siglus_message_tasks.TryPop(&task)) {}
+  ObserveSiglusLegacyMessageEntry(&entry);
+  Check(g_siglus_legacy_message_ticket.armed);
+  ObserveSiglusLegacyMessageText(&call);
+  Check(g_siglus_message_tasks.TryPop(&task));
+  Check(task.voice_key == UINT32_MAX && task.text_units == 2 &&
+        std::wcscmp(task.text, L"CD") == 0);
+  // ESI is bound to the saved caller value, not to zero.
+  call.esi = 0;
+  ObserveSiglusLegacyMessageEntry(&entry);
+  ObserveSiglusLegacyMessageText(&call);
+  Check(!g_siglus_message_tasks.TryPop(&task));
+  call.esi = 0x2468;
+  // A script slot contradicts the silent contract and never arms.
+  uint32_t script_slot = 0;
+  g_siglus_legacy_message_layout = {address(&script_slot), 0x7004, 1500, false};
+  ObserveSiglusLegacyMessageEntry(&entry);
+  Check(!g_siglus_legacy_message_ticket.armed);
+  // The legacy contract without a script slot stays rejected.
+  g_siglus_legacy_message_layout = {0u, 0x7004, 1500, true};
+  ObserveSiglusLegacyMessageEntry(&entry);
+  Check(!g_siglus_legacy_message_ticket.armed);
+  g_siglus_message_capture_enabled.store(false);
+}
+
 uint32_t eight_owner = 0, eight_surface = 0, eight_outer_return = 0;
 uint32_t eight_inner_return = 0, eight_before = 0, eight_after = 0;
 uint32_t eight_entry_ecx = 0, eight_entry_edx = 0, eight_inner_ecx = 0;
@@ -1063,6 +1117,7 @@ int main() {
   TestDelayedWorkerUsesCommittedTimestamp();
   TestNativeProductionObservers();
   TestLegacyProductionObservers();
+  TestNineArgProductionObservers();
   TestInstallationFailures();
   TestEightArgProduction();
   TestEightArgLiveEntryAdmission();
