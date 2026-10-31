@@ -83,8 +83,12 @@ void main() {
       isTrue,
       reason: '$label 计数自增须走 setState',
     );
+    // 按 token 匹配、容忍换行：dart format 会把这个 setState 闭包拆成多行。
+    // `(?!=)` 排除 `==`，钉的必须是赋值复位。
     expect(
-      src.contains('setState(() => _popupHidingDialogDepth ='),
+      RegExp(
+        r'setState\(\s*\(\)\s*=>\s*_popupHidingDialogDepth\s*=(?!=)',
+      ).hasMatch(src),
       isTrue,
       reason: '$label 计数复位须走 setState',
     );

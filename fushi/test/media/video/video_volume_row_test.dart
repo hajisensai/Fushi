@@ -52,8 +52,17 @@ void main() {
         reason: '音量入口必须打开 volume 浮层',
       );
       expect(
-        build,
-        contains('_controlPopoverLinkFor(slot, VideoControlItem.volume)'),
+        // 折叠空白（且掩掉注释）后匹配：`dart format` 会把这个调用拆成多行
+        // 并补尾逗号，钉的是「按 slot + volume 取锚点」的语义而非排版。
+        compactCode(build),
+        matches(
+          RegExp(
+            RegExp.escape(
+                  '_controlPopoverLinkFor(slot,VideoControlItem.volume',
+                ) +
+                r',?\)',
+          ),
+        ),
         reason: '音量浮层必须按所在 slot 取得独立锚点，不能共用全局 link',
       );
       expect(

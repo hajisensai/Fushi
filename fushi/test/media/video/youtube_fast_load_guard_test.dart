@@ -37,12 +37,12 @@ void main() {
       expect(
         // TODO-1314：快解析 gate 现经可注入的默认 resolver 闭包（参数名 u）保留，行为不变。
         // 画质目标（playbackTargetHeight）加参后调用折行，折叠空白后断言完整参数形态。
-        launchSrc
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .contains(
-              'resolveYoutubeSource(u, withCaptions: false, '
-              'playbackTargetHeight: youtubeTargetHeight)',
-            ),
+        _flat(launchSrc).contains(
+          _flat(
+            'resolveYoutubeSource(u, withCaptions: false, '
+            'playbackTargetHeight: youtubeTargetHeight)',
+          ),
+        ),
         isTrue,
         reason: 'YouTube 分支必须走快解析 gate（withCaptions:false），不前置阻塞字幕/title',
       );
@@ -129,9 +129,9 @@ void main() {
       reason: 'A1：必须有多 client 兜底顺序常量',
     );
     expect(
-      resolverSrc.contains(
-        '_getManifestWithClientFallback(client, http, videoId',
-      ),
+      _flat(
+        resolverSrc,
+      ).contains(_flat('_getManifestWithClientFallback(client, http, videoId')),
       isTrue,
       reason: 'A1：resolveYoutubeSource 必须经逐个兜底 helper 取 manifest',
     );

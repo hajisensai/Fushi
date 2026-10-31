@@ -239,9 +239,11 @@ void main() {
         ).readAsStringSync(),
       );
       expect(crop, contains('final double? aspectRatio;'));
+      // dart format 会把构造参数折行并补尾逗号：在折叠空白后的代码上匹配，
+      // 尾逗号可有可无，钉语义不钉排版。
       expect(
-        crop,
-        contains('CropController(aspectRatio: widget.aspectRatio)'),
+        compactCode(crop),
+        matches(RegExp(r'CropController\(aspectRatio:widget\.aspectRatio,?\)')),
         reason: '只加字段不接到 controller 上，锁比例就是个摆设。',
       );
       expect(

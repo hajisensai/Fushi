@@ -124,19 +124,17 @@ void main() {
           reason: '$title 项同样是给 Android 补的，必须门控',
         );
       }
+      // `dart format` 会把 `await SelectionExternalActions.instance` 与
+      // `.shareText(text)` 拆到两行：按折叠空白后的代码（注释已掩掉）匹配调用链，
+      // 守的是「调用了共享动作 seam」，不是那一行怎么排版。
+      final String compactMenu = compactCode(menu);
       expect(
-        containsCodeLine(
-          menu,
-          'SelectionExternalActions.instance.shareText(text)',
-        ),
-        isTrue,
+        compactMenu,
+        contains('SelectionExternalActions.instance.shareText(text)'),
       );
       expect(
-        containsCodeLine(
-          menu,
-          'SelectionExternalActions.instance.searchWeb(text)',
-        ),
-        isTrue,
+        compactMenu,
+        contains('SelectionExternalActions.instance.searchWeb(text)'),
       );
       expect(
         containsCodeLine(menu, 't.selection_web_search_unavailable'),

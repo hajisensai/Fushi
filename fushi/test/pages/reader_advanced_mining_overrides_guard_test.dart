@@ -86,7 +86,11 @@ void main() {
       mining,
       'Future<MinePopupResult> _onMineFromPopupInner(',
     );
-    final int read = mine.indexOf('MiningRequestOverrides.readFrom(fields)');
+    // 容忍 dart format 的折行与尾逗号：钉的是「从 fields 读出」这件事，不是排版。
+    final RegExp readFromFields = RegExp(
+      r'MiningRequestOverrides\.readFrom\(\s*fields\s*,?\s*\)',
+    );
+    final int read = readFromFields.firstMatch(mine)?.start ?? -1;
     final int firstAwait = mine.indexOf('await ');
     expect(read, greaterThanOrEqualTo(0));
     expect(
@@ -99,7 +103,7 @@ void main() {
       mining,
       'Future<MinePopupResult> _onUpdateFromPopupInner(',
     );
-    expect(update, contains('MiningRequestOverrides.readFrom(fields)'));
+    expect(readFromFields.hasMatch(update), isTrue);
   });
 
   test('对话框的区间显示与试听都经 _miningSentenceAudioClip（与写卡同源）', () {

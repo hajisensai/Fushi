@@ -149,7 +149,10 @@ void main() {
     test('_paddingFor 的底部基线走真相源，不得退回裸 max(userBase, scaledMarginV)', () {
       final int fn = src.indexOf('EdgeInsets _paddingFor(');
       expect(fn, greaterThanOrEqualTo(0));
-      final int fnEnd = src.indexOf('\n  }', fn);
+      // 方法体结束 = 第 2 列独占一行的 `}`：dart format 把多参数签名的 `}) {` 也放在
+      // 第 2 列，裸 `\n  }` 会误停在参数列表尾。
+      final int fnEnd = src.indexOf(RegExp(r'\n  \}\r?\n'), fn);
+      expect(fnEnd, greaterThan(fn));
       final String body = src.substring(fn, fnEnd);
       expect(
         body,
@@ -158,7 +161,11 @@ void main() {
       );
       expect(
         body,
-        isNot(contains('math.max(userBase, scaledMarginV)')),
+        isNot(
+          contains(
+            RegExp(r'math\.max\(\s*userBase\s*,\s*scaledMarginV\s*,?\s*\)'),
+          ),
+        ),
         reason: '裸 max 与分组键脱节，正是 BUG-1335 的形状',
       );
     });
@@ -166,7 +173,8 @@ void main() {
     test('_positionKey 的基线桶判据也走同一个真相源', () {
       final int fn = src.indexOf('String _positionKey(');
       expect(fn, greaterThanOrEqualTo(0));
-      final int fnEnd = src.indexOf('\n  }', fn);
+      final int fnEnd = src.indexOf(RegExp(r'\n  \}\r?\n'), fn);
+      expect(fnEnd, greaterThan(fn));
       final String body = src.substring(fn, fnEnd);
       expect(
         body,

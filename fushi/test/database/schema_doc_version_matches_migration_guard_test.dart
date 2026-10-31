@@ -542,13 +542,16 @@ class _MigrationIndex {
   static final RegExp _blockHead = RegExp(
     r'if\s*\(\s*from\s*<\s*(\d+)\s*(?:\)|&&)',
   );
+  // dart format 把放不下一行的调用折成多行时会补尾逗号
+  // （`m.addColumn(\n  t,\n  t.c,\n)`），闭括号前必须容许一个可选逗号，
+  // 否则折行后的 addColumn 整条漏扫，列被误报成「找不到落地点」或回落到建表版本。
   static final RegExp _createTable = RegExp(
-    r'\bm\s*\.\s*createTable\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)',
+    r'\bm\s*\.\s*createTable\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,?\s*\)',
   );
   static final RegExp _addColumn = RegExp(
     r'\bm\s*\.\s*addColumn\(\s*'
     r'[A-Za-z_$][A-Za-z0-9_$]*\s*,\s*'
-    r'([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)',
+    r'([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,?\s*\)',
   );
   static final RegExp _newColumns = RegExp(r'newColumns\s*:\s*\[([^\]]*)\]');
   static final RegExp _qualified = RegExp(

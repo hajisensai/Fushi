@@ -408,7 +408,14 @@ void main() {
       // 钉的不变量是「渲染前先问宿主账本已经装过哪些静态段版本」。锚点从旧的局部
       // 变量名 knownStaticRevisions 换成账本接口本身：账本现在是必填参数
       // （PopupStaticRevisionCache），比一个可以随手改名的局部变量更贴近不变量。
-      expect(render.contains('staticRevisions.snapshotFor(hostKey)'), isTrue);
+      // 用 compactCode（剥注释 + 去空白）+ 可选尾逗号比对：钉语义而非 dart format
+      // 的换行排版（格式化后实参折行会补一个尾逗号）。
+      expect(
+        compactCode(
+          render,
+        ).contains(RegExp(r'staticRevisions\.snapshotFor\(hostKey,?\)')),
+        isTrue,
+      );
       expect(render.contains("map['entriesJs']"), isTrue);
       expect(
         render.contains("map['staticHeadJs']"),

@@ -30,7 +30,11 @@ class _CExport {
 /// 按顶层逗号切分参数列表（尖括号/圆括号内的逗号不算）。
 /// C 侧没有尖括号，但函数指针参数会有圆括号，一并处理。
 int _countTopLevelParams(String params) {
-  final String trimmed = params.trim();
+  String trimmed = params.trim();
+  // `dart format` 给多行参数表补的尾随逗号不算参数（C 侧不合法，不会出现）。
+  if (trimmed.endsWith(',')) {
+    trimmed = trimmed.substring(0, trimmed.length - 1).trimRight();
+  }
   if (trimmed.isEmpty) return 0;
   // C 的 `(void)` = 无参。
   if (trimmed == 'void') return 0;
@@ -67,8 +71,9 @@ List<_CExport> _parseHeader(String source) {
 Map<String, int> _parseBindings(String source) {
   final Map<String, int> out = <String, int>{};
   // late final _ht_xxx = _ht_xxxPtr.asFunction<Ret Function(params)>();
+  // 与排版无关：`dart format` 会把 `)` 与 `>()` 拆到不同行。
   final RegExp re = RegExp(
-    r'_(ht_\w+)\s*=\s*_\1Ptr\s*\.?\s*asFunction<[^(]*?Function\((.*?)\)>\(\)',
+    r'_(ht_\w+)\s*=\s*_\1Ptr\s*\.?\s*asFunction<[^(]*?Function\((.*?)\)\s*>\s*\(\)',
     dotAll: true,
   );
   for (final RegExpMatch m in re.allMatches(source)) {

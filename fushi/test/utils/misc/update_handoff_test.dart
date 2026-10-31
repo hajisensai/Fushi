@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 
+import '../../helpers/source_guard.dart' show compactCode;
+
 Future<File> _markerFile() async {
   final Directory dir = await Directory.systemTemp.createTemp(
     'fushi-update-handoff-test',
@@ -1122,22 +1124,25 @@ void main() {
 
     test('source guard: injected installer diagnostics are not hidden behind '
         'Platform.isWindows', () {
-      final String source = File(
-        'lib/src/utils/misc/platform_updater.dart',
-      ).readAsStringSync();
-      final int injectedFlag = source.indexOf(
+      // Match on comment-masked, whitespace-collapsed code so the guard pins
+      // the expressions themselves, not `dart format` line breaks.
+      final String source = compactCode(
+        File('lib/src/utils/misc/platform_updater.dart').readAsStringSync(),
+      );
+      int find(String snippet) =>
+          source.indexOf(snippet.replaceAll(RegExp(r'\s+'), ''));
+      final int injectedFlag = find(
         'final bool hasInjectedDiagnostics = collectDiagnostics != null;',
       );
-      final int injectedDiagnostics = source.indexOf(
-        'collectDiagnostics != null\n            ? await collectDiagnostics()',
+      final int injectedDiagnostics = find(
+        'collectDiagnostics != null ? await collectDiagnostics()',
       );
-      final int platformFallback = source.indexOf(
-        'Platform.isWindows\n                ? await '
-        'collectWindowsInstallerDiagnostics',
+      final int platformFallback = find(
+        ': Platform.isWindows ? await collectWindowsInstallerDiagnostics(',
       );
-      final int injectedBlockerCheck = source.indexOf(
-        'if (Platform.isWindows || hasInjectedDiagnostics) {\n'
-        '        _throwIfWindowsInstallBlocked',
+      final int injectedBlockerCheck = find(
+        'if (Platform.isWindows || hasInjectedDiagnostics) { '
+        '_throwIfWindowsInstallBlocked(',
       );
 
       expect(injectedFlag, isNonNegative);

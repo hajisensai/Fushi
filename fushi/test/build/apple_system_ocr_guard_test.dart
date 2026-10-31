@@ -33,7 +33,12 @@ void main() {
     // Dart 那边是 `MethodChannel('app.fushi.reader/system_ocr')`；两边对不上时
     // Dart 收到的是 MissingPluginException → isAvailable() 返回 false → 引擎选项
     // 静默消失，看起来就像「这个平台不支持」。
-    expect(dart, contains("MethodChannel('app.fushi.reader/system_ocr')"));
+    // 折叠空白 + 剥注释后比对：`dart format` 会把这个构造调用拆行并补尾逗号，
+    // 守卫只钉 channel 名语义，不钉排版。
+    expect(
+      compactCode(dart),
+      matches(RegExp(r"MethodChannel\('app\.fushi\.reader/system_ocr',?\)")),
+    );
     expect(swift, contains('"app.fushi.reader/system_ocr"'));
   });
 

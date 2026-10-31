@@ -2,7 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'reader_fushi_page_source_corpus.dart';
+
+/// 在 [compactCode]（掩注释 + 去全部空白）后的源码上匹配
+/// `buildAdvancedMiningSections(matched: matched)`，容忍 formatter 加的尾逗号。
+final RegExp _buildSectionsWithMatched = RegExp(
+  r'buildAdvancedMiningSections\(matched:matched,?\)',
+);
 
 /// BUG-763/766 守卫：「制卡·选择句子上下文」现为 **app 原生顶层 Flutter 对话框**
 /// （[SentenceContextDialog]），**不再**画在查词弹窗 WebView 内（那受弹窗表面尺寸/半透明
@@ -184,8 +191,9 @@ void main() {
       expect(src.contains('showAdvancedMiningDialog('), isTrue);
       expect(src.contains('loadAdvancedMiningDeckSection(ref)'), isTrue);
       expect(
-        src.contains('buildAdvancedMiningSections(matched: matched)'),
+        _buildSectionsWithMatched.hasMatch(compactCode(src)),
         isTrue,
+        reason: '分区必须以 matched 组装（跨 dart format 换行 / 尾逗号匹配）',
       );
       expect(
         src.contains('webViewKey.currentState?.mineEntryByIndex('),
@@ -205,8 +213,9 @@ void main() {
       expect(src.contains('onOpenAdvancedMining:'), isTrue);
       expect(src.contains('showAdvancedMiningDialog('), isTrue);
       expect(
-        src.contains('buildAdvancedMiningSections(matched: matched)'),
+        _buildSectionsWithMatched.hasMatch(compactCode(src)),
         isTrue,
+        reason: '分区必须以 matched 组装（跨 dart format 换行 / 尾逗号匹配）',
       );
       expect(
         src.contains('webViewKey.currentState?.mineEntryByIndex('),

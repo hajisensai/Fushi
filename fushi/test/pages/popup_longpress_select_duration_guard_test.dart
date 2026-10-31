@@ -51,7 +51,8 @@ void main() {
     () {
       final String text = source.readAsStringSync();
       final RegExpMatch? match = RegExp(
-        r'kPopupNativeSelectLongPressDuration\s*=\s*Duration\(milliseconds:\s*(\d+)\)',
+        r'kPopupNativeSelectLongPressDuration\s*=\s*'
+        r'Duration\(\s*milliseconds:\s*(\d+)\s*,?\s*\)',
       ).firstMatch(text);
       expect(
         match,

@@ -54,7 +54,12 @@ void main() {
     );
 
     test('ranks candidates inside the native index', () {
-      expect(src.contains('catalog.search(normalizedQuery, limit)'), isTrue);
+      expect(
+        _compact(
+          src,
+        ).contains(_compact('catalog.search(normalizedQuery, limit)')),
+        isTrue,
+      );
       expect(
         src.contains('TitleNormalizer.similarity('),
         isFalse,
@@ -132,3 +137,8 @@ void main() {
     });
   });
 }
+
+/// 去掉全部空白并抹掉 `dart format` 补的尾逗号（`,)` → `)`），让守卫钉语义
+/// 而非排版。
+String _compact(String s) =>
+    s.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');

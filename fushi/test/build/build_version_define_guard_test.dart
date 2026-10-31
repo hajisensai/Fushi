@@ -192,9 +192,14 @@ void main() {
     //
     // 先抹掉所有空白再匹配：`dart format` 的 tall style 会把这行折成三行，
     // 单行字面量断言会**恒不匹配**而不是报错——守卫悄悄失效比没有守卫更糟。
+    // 折行时 formatter 还会补尾逗号，所以 `)` 前允许一个可选的 `,`。
     expect(
       source.readAsStringSync().replaceAll(RegExp(r'\s+'), ''),
-      contains("String.fromEnvironment('$defineName')"),
+      matches(
+        RegExp(
+          "String\\.fromEnvironment\\('${RegExp.escape(defineName)}',?\\)",
+        ),
+      ),
       reason: '构建期注入的名字和 Dart 侧读的名字对不上，注入就是白注入',
     );
   });

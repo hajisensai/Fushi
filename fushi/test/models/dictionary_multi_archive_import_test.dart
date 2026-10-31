@@ -17,6 +17,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   group('BUG-1903 判据：什么算「一包多典」', () {
     test('两本 MDX = 两本词典', () {
@@ -100,10 +102,14 @@ void main() {
     final String src = File(
       'lib/src/models/dictionary_import_manager.dart',
     ).readAsStringSync();
+    // 注释掩掉 + 折叠空白：断言钉调用语义，不钉 `dart format` 的换行 / 尾逗号。
+    final String compactSrc = compactCode(src);
 
     test('importFromFile 里按判据分流到逐本导入', () {
       expect(
-        src.contains('archivedDictionaryEntries(_readZipFileNames(file))'),
+        RegExp(
+          r'archivedDictionaryEntries\(_readZipFileNames\(file\),?\)',
+        ).hasMatch(compactSrc),
         isTrue,
       );
       expect(src.contains('_importArchivedDictionaries('), isTrue);
@@ -118,10 +124,10 @@ void main() {
 
     test('三个「更新某一本」的入口不拆包', () {
       expect(
-        src.contains(
-          'if (replaceTarget == null &&\n'
-          '        !forceReplaceExisting &&\n'
-          '        sourceOverride == null &&',
+        compactSrc.contains(
+          'if(replaceTarget==null&&'
+          '!forceReplaceExisting&&'
+          'sourceOverride==null&&',
         ),
         isTrue,
         reason:

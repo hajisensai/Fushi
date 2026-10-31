@@ -445,9 +445,14 @@ void main() {
 
     // ③ 图标随**三态**切换，状态可一览（BUG-2158）。少一个分支就意味着两个态
     // 共用一个图标 —— 那正是修复前「显式展开」和「继承」长得一模一样的老毛病。
+    // 只钉语义不钉排版：dart format 可能把实参折行并补尾逗号。
     expect(
       btnSource,
-      contains('dictionary.collapseStateFor(JapaneseLanguage.instance)'),
+      matches(
+        RegExp(
+          r'dictionary\.collapseStateFor\(\s*JapaneseLanguage\.instance\s*,?\s*\)',
+        ),
+      ),
     );
     expect(btnSource, contains('DictionaryCollapseState.inherit'));
     expect(btnSource, contains('DictionaryCollapseState.expanded'));

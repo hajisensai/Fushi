@@ -394,8 +394,9 @@ void main() {
     // 加法（恢复 `bottomPadding + extraBottom` / `+ widget.controlsBottomReserve`）即露。
     final int fn = overlaySrc.indexOf('EdgeInsets _paddingFor(');
     expect(fn, greaterThanOrEqualTo(0), reason: '_paddingFor 应存在');
-    final int fnEnd = overlaySrc.indexOf('\n  }', fn);
-    final String body = overlaySrc.substring(fn, fnEnd);
+    // 方法体按花括号配对切：`dart format` 把多行参数表收成 `  }) {`，旧的
+    // 「下一个 `\n  }`」切法会停在参数表闭合处、只切到签名。
+    final String body = methodBody(overlaySrc, 'EdgeInsets _paddingFor(');
     // 底部分支对控制条高取下限（BUG-684 起用 math.max 显式取下限；旧为等价三元），非加法。
     expect(
       body,

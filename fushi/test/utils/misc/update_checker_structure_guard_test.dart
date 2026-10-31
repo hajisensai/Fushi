@@ -125,7 +125,11 @@ void main() {
     // BUG-2487：「发现新版本」对话框与下载安装并成按版本互斥的一条流（启动期
     // 自动检查与更新中心 toast 点击是必然并发，不互斥就是两个对话框叠着），
     // release 净增 ~50 行，天花板 2090 → 2150。
-    const int kReleaseCeiling = 2150;
+    // 全仓 `dart format`（afe7ce6c7d，CI 门禁此后保持树已格式化）只做换行 / 尾逗号
+    // 重排：release 去空白与逗号后逐字节不变，但物理行数 2134 → 2240（+106，零逻辑
+    // 增长）。行数天花板以「已格式化源码」为基准，故按同一 ~16 行余量平移
+    // 2150 → 2260，不放宽对真实增长的约束。
+    const int kReleaseCeiling = 2260;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download

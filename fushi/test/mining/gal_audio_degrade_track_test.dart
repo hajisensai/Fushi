@@ -435,9 +435,15 @@ void main() {
     final String panel = File(
       'lib/src/mining/gal_audio_tracks_panel.dart',
     ).readAsStringSync();
-    // 「可选性」这个量本身必须由**后端**算出来。
+    // 「可选性」这个量本身必须由**后端**算出来。比的是折叠空白、去掉 dart format
+    // 补的尾逗号后的表达式：钉语义，不钉换行。
+    final String? selectionExpr = initializerExpression(
+      panel,
+      'selectionEffective',
+    );
+    expect(selectionExpr, isNotNull, reason: 'selectionEffective 改名了：守卫失去锚点');
     expect(
-      initializerExpression(panel, 'selectionEffective'),
+      compactCode(selectionExpr!).replaceAll(',)', ')'),
       'galTrackSelectionAffectsCapture(state.audioBackend)',
       reason: '解释/禁用判据必须是后端，不能再是 audioTracks.isEmpty',
     );

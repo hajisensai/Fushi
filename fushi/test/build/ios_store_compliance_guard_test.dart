@@ -521,10 +521,13 @@ void main() {
       );
       // 刮削链路（给已入库文件补作品资料）与「站上有什么可看」不是一回事，
       // 两者共用本类只是因为查的是同一批 API。门错了会把刮削一起关掉。
+      // 尾逗号由 `dart format` 按行宽决定加不加，不属于语义，用 `,?` 放过。
       expect(
         source,
-        contains(
-          'metadataProviders:<VideoMetadataProvider>[...catalog.providers,anilist,],',
+        matches(
+          RegExp(
+            r'metadataProviders:<VideoMetadataProvider>\[\.\.\.catalog\.providers,anilist,?\],',
+          ),
         ),
         reason: 'metadata provider 不受发现门约束。',
       );
