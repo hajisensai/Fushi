@@ -78,6 +78,19 @@ class SubtitleBackfillTarget {
   /// 与字幕工作台都写它）。非空即硬过滤 + 排序首选，压过全局默认字幕语言；
   /// 与 [contentLanguage] 不同：那是「视频说什么语言」，这是「要什么语言的字幕」。
   final String? explicitLanguage;
+
+  /// 换一份身份，其余不变。
+  SubtitleBackfillTarget withMedia(VideoMediaReference media) =>
+      SubtitleBackfillTarget(
+        bookUid: bookUid,
+        videoPath: videoPath,
+        media: media,
+        hasExistingSubtitle: hasExistingSubtitle,
+        scrapedRuntimeMinutes: scrapedRuntimeMinutes,
+        contentLanguage: contentLanguage,
+        originalLanguage: originalLanguage,
+        explicitLanguage: explicitLanguage,
+      );
 }
 
 /// 单个目标的补字幕结果。
@@ -193,7 +206,7 @@ class VideoSubtitleBackfillService {
     if (result.items.isEmpty) {
       return SubtitleBackfillResult(
         SubtitleBackfillOutcome.noCandidate,
-        detail: result.failures.isEmpty ? null : result.failures.first.message,
+        detail: registry.describeEmptySearch(result),
       );
     }
 

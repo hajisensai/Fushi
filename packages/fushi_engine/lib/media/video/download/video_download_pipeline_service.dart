@@ -3626,9 +3626,7 @@ class VideoDownloadPipelineService {
             );
         _ensureLeaseHeld();
         if (result.items.isEmpty) {
-          final String message = result.failures.isEmpty
-              ? 'No matching subtitle was found'
-              : result.failures.first.message;
+          final String message = subtitleRegistry!.describeEmptySearch(result);
           await _recordUnavailableSubtitle(job, file, subtitleId, message);
           if (policy == VideoDownloadSubtitlePolicy.required) {
             throw VideoDownloadPipelineActionRequired(message);

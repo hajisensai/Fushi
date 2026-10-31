@@ -7163,7 +7163,15 @@ class AppModel with ChangeNotifier {
               notice.work.collection!.name.trim().toLowerCase(),
             ),
     );
-    for (final SubtitleBackfillTarget target in targets) {
+    for (final SubtitleBackfillTarget scraped in targets) {
+      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3892）。
+      final SubtitleBackfillTarget target = scraped.withMedia(
+        await withDownloadConfirmedIdentity(
+          database,
+          videoPath: scraped.videoPath,
+          media: scraped.media,
+        ),
+      );
       final SubtitleBackfillResult result = await service.backfill(target);
       if (result.installed) {
         debugPrint(
