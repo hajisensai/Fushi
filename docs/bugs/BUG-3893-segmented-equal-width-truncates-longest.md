@@ -1,0 +1,6 @@
+## BUG-3893 · 分段选择器强制等宽把最长段截成省略号
+- **报告**：2026-10-28（用户 App 内反馈 GaI5uPQEbF，Windows 2560x1440@1.5，zh-CN：音乐「信号路径」睡眠定时「播完本曲」显示成「播完…」，「还有好多这种地方，根本性修复」）
+- **真实性**：✅ 真 bug。MD3：`fushi/lib/src/utils/components/fushi_pill_segmented_button.dart:181`（基线 896d45a9b2）`IntrinsicWidth` + 每段 `Expanded` + 文字 `maxLines: 1, ellipsis`——各段宽 = 最宽段，总宽超过容器时所有段等比缩窄，最长段先被截断，短段（「关闭」「15 分钟」）里却还空着留白。Apple：`fushi/lib/src/utils/components/glass/fushi_glass_toggles.dart:4162` `FushiAppleSegmentedControl` 同样 `(width - inset) / count` 等分 + 单行省略。所有 `adaptiveSegmentedButton` / `FushiSegmentedButton`（Apple）调用点同病；`FushiSegmentedStrip` 把条钉在「Σ(文案 + 外框)」估宽上时也因等分把长段截断。
+- **[x] ① 已修复** — 036f3c66d8：组件层根治，不改调用点文案。新增两套共用的纯函数 `fushiSegmentWidths`（`fushi_segment_widths.dart`）按序退让：等宽（放得下时保持选中胶囊不跳宽）→ 按内容分宽（窄段注水抬平、宽段保持自然宽）→ 按比例收内边距（MD3 16→8 / Apple 14→6）→ 仍放不下只削最宽段。MD3 用自定义 `_RenderPillSegmentRow` 实现（支持固有尺寸 / dry layout / RTL / 紧约束撑满），最后一级折成两行而非省略；Apple 的段宽、滑块位置 / 宽度与横拖命中都改按变宽段计算，最后一级仍单行省略（固定高度控件）。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/fushi_segment_widths_test.dart`（纯函数四级退让 + MD3 400px 下五段全单行不截断、300px 下折行不省略、宽松宿主等宽、紧约束撑满等分；Apple 400px 不截断）。
+- **备注**：Cupertino 平台渲染分支（`CupertinoSlidingSegmentedControl`，仅隐藏内部能力）未改。未真机截图（widget 测试层验证布局几何）。
