@@ -279,6 +279,7 @@ void main() {
     late GalLineTtsSettings settings;
     late List<String> synthesized;
     late List<String> played;
+    late List<double> volumes;
     late int stops;
     late Map<String, Completer<bool>> playbacks;
 
@@ -295,6 +296,7 @@ void main() {
           },
       playToEnd: (String path, double volume) {
         played.add(path);
+        volumes.add(volume);
         return (playbacks[path] = Completer<bool>()).future;
       },
       stopPlayback: () async {
@@ -310,6 +312,7 @@ void main() {
       settings = _auto;
       synthesized = <String>[];
       played = <String>[];
+      volumes = <double>[];
       stops = 0;
       playbacks = <String, Completer<bool>>{};
     });
@@ -337,6 +340,18 @@ void main() {
       );
       await pumpEventQueue();
       expect(played, hasLength(1));
+      player.dispose();
+    });
+
+    test('朗读音量取设置里的 volume', () async {
+      settings = _auto.copyWith(volume: 0.4);
+      final GalLineTtsPlayer player = build();
+      player.onLatestLine(
+        _line('1', '雨が降っていた。', status: TexthookerLineAudioStatus.missing),
+      );
+      await pumpEventQueue();
+      expect(played, <String>['/tts/雨が降っていた。']);
+      expect(volumes, <double>[0.4]);
       player.dispose();
     });
 
