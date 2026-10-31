@@ -232,9 +232,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
   SrsRwkvBackend? _backend;
   _LogPrint? _replayed;
 
-  /// 上次全量对日志表计数时的 [SrsDbStore.contentFingerprint]：没变时日志只可能新增（复习日志
+  /// 上次全量计数核对过 [_replayed] 时的 [SrsDbStore.contentFingerprint]：没变时日志只可能新增（复习日志
   /// 不推进内容修订号；删日志的清除、恢复、重读本机状态都推进），行数按新增的行累加，不必每次
-  /// 作答都对整个 profile 计数。
+  /// 作答都对整个 profile 计数。只在全量计数与 [_replayed] 对得上（或计数本身就成了新的 [_replayed]）
+  /// 时记下：对不上（删过日志）时记了，下一次增量累加就会把删除掩盖掉，退回重放 / 重建永远等不到。
   String? _countedAt;
 
   /// 已回放的评分里最晚的时刻（追加只接受严格晚于它的；不晚于它的走 [_rebase]）。撤回一条后不往回退
@@ -404,7 +405,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
       );
     }
     final SrsRwkvLogTail t = await store.rwkvLogTail(since: 0);
-    _countedAt = content;
+    // 没有 [_replayed] 时这次计数就是全量回放的基数；有时不知道它与 [_replayed] 是否一致，不记。
+    if (base == null) _countedAt = content;
     return (count: t.count, maxRowId: t.maxRowId);
   }
 
@@ -438,7 +440,11 @@ class SrsRwkvService implements SrsRwkvScheduling {
       since: afterRowId,
       withRows: withRows,
     );
-    _countedAt = content;
+    if (base != null &&
+        base.maxRowId == afterRowId &&
+        t.count - t.newRows == base.count) {
+      _countedAt = content;
+    }
     return ((count: t.count, maxRowId: t.maxRowId), t.newRows, t.logs);
   }
 
