@@ -1,10 +1,12 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 所有库页与首页共用的「继续」区（[FushiContinueSpotlight]，2026-10-31 合一）：
 /// 主卡皮只看封面方向——横图剧照是叠层主卡，竖图（书 / 游戏 / 只有竖海报的
@@ -31,6 +33,7 @@ void main() {
     double width,
     List<FushiContinueEntry> entries, {
     bool showSideWhenNarrow = true,
+    bool staggerEntrance = true,
   }) => MaterialApp(
     theme: ThemeData(
       extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(false)],
@@ -45,6 +48,7 @@ void main() {
               main: entries.first,
               side: entries.sublist(1),
               showSideWhenNarrow: showSideWhenNarrow,
+              staggerEntrance: staggerEntrance,
             ),
           ),
         ),
@@ -62,12 +66,18 @@ void main() {
     double width,
     List<FushiContinueEntry> entries, {
     bool showSideWhenNarrow = true,
+    bool staggerEntrance = true,
   }) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      harness(width, entries, showSideWhenNarrow: showSideWhenNarrow),
+      harness(
+        width,
+        entries,
+        showSideWhenNarrow: showSideWhenNarrow,
+        staggerEntrance: staggerEntrance,
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -239,5 +249,80 @@ void main() {
         expect(find.byType(ListView), findsNothing);
       }
     }
+  });
+
+  testWidgets('外层已整块进场时（staggerEntrance: false）组件内不再叠进场动画', (
+    WidgetTester tester,
+  ) async {
+    final Finder spotlight = find.byType(FushiContinueSpotlight);
+    final Finder inner = find.descendant(
+      of: spotlight,
+      matching: find.byType(FushiStaggeredEntrance),
+    );
+    // 宽屏剧照主卡 / 宽屏竖封面主卡 / 窄屏，主卡与封面行都要覆盖到。
+    for (final double width in <double>[1200, 400]) {
+      for (final bool still in <bool>[true, false]) {
+        final List<FushiContinueEntry> entries = <FushiContinueEntry>[
+          entry(0, still: still),
+          entry(1),
+          entry(2, still: false),
+        ];
+        await pumpAt(tester, width, entries, staggerEntrance: false);
+        expect(inner, findsNothing, reason: 'width=$width still=$still');
+        // 对照：默认（库页 / 视频首页）仍错峰进场。
+        await pumpAt(tester, width, entries);
+        expect(inner, findsWidgets, reason: 'width=$width still=$still');
+      }
+    }
+  });
+
+  testWidgets('封面行小卡对读屏只是一个按钮节点（封面卡与文字块不再各读一遍）', (WidgetTester tester) async {
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    await pumpAt(tester, 1200, <FushiContinueEntry>[
+      entry(0),
+      entry(1),
+      entry(2, still: false),
+    ]);
+    for (final int i in <int>[1, 2]) {
+      final Finder tile = find.ancestor(
+        of: find.byKey(ValueKey<String>('spot-$i')),
+        matching: find.byType(FushiContinueSideTile),
+      );
+      expect(tile, findsOneWidget);
+      final Finder container = find.descendant(
+        of: tile,
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is Semantics && w.properties.button == true,
+        ),
+      );
+      expect(container, findsOneWidget, reason: 'tile $i');
+      final SemanticsNode node = tester.getSemantics(container);
+      final SemanticsData data = node.getSemanticsData();
+      expect(data.flagsCollection.isButton, isTrue, reason: 'tile $i');
+      expect(data.label, contains('Work $i'));
+      expect(data.hasAction(SemanticsAction.tap), isTrue);
+      expect(data.hasAction(SemanticsAction.longPress), isTrue);
+      // 子树里没有别的按钮节点。
+      int buttons = 0;
+      void visit(SemanticsNode n) {
+        if (n.getSemanticsData().flagsCollection.isButton) buttons++;
+        n.visitChildren((SemanticsNode c) {
+          visit(c);
+          return true;
+        });
+      }
+
+      visit(node);
+      expect(buttons, 1, reason: 'tile $i');
+    }
+
+    // 文字块长按 / 右键也出条目菜单（与封面卡同一约定）。
+    final Finder meta = find
+        .byKey(const ValueKey<String>('fushi-continue-tile-meta'))
+        .first;
+    await tester.longPress(meta);
+    await tester.pumpAndSettle();
+    expect(menus, isNotEmpty);
+    semantics.dispose();
   });
 }

@@ -2542,6 +2542,8 @@ class _HomeDashboardPageState
         showSideWhenNarrow: true,
         narrowSideCoverHeight: rowCoverHeight,
         sideRowKey: const ValueKey<String>('home-continue-row'),
+        // 整个「继续」分区已由 build 里的 entering(continueCard) 错峰进场。
+        staggerEntrance: false,
       );
     } else if (!_initialLoadDone) {
       continueContent = HomeContinueRowSkeleton(coverHeight: rowCoverHeight);

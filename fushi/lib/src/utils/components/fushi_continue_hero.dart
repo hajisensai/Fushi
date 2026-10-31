@@ -463,7 +463,15 @@ class _EntryAspectProbeState extends State<_EntryAspectProbe>
   Widget build(BuildContext context) {
     final double? aspect = coverAspect;
     final bool landscape = !coverFailed && aspect != null && aspect > 1;
-    return widget.builder(widget.entry._oriented(landscape));
+    // 冷启动时探测图还没解码，先按竖版排；解出横图后整块换成剧照几何，高度
+    // 渐变过去而不是一帧跳变。不裁切：悬停放大与投影要能溢出这块。
+    return AnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+      alignment: AlignmentDirectional.topStart,
+      clipBehavior: Clip.none,
+      child: widget.builder(widget.entry._oriented(landscape)),
+    );
   }
 }
 
@@ -489,6 +497,7 @@ class FushiContinueSpotlight extends StatelessWidget {
     this.showSideWhenNarrow = false,
     this.narrowSideCoverHeight,
     this.sideRowKey = const ValueKey<String>('fushi-continue-side-row'),
+    this.staggerEntrance = true,
     super.key,
   });
 
@@ -510,6 +519,11 @@ class FushiContinueSpotlight extends StatelessWidget {
   /// 窄屏封面行里竖封面的高；null = 132（全剧照行恒为 16:9 宽 168）。
   final double? narrowSideCoverHeight;
   final Key sideRowKey;
+
+  /// 主卡与封面行各自错峰进场（[FushiStaggeredEntrance]）。外层已经把整个
+  /// 「继续」区包进一个进场项的调用方（首页 dashboard、游戏首页）传 false，
+  /// 否则同一张卡会叠两层进场动画（淡入 + 位移各走两遍）。
+  final bool staggerEntrance;
 
   /// 内容宽 ≥ 它时主卡与封面行左右并排。
   static const double sideBySideMinWidth = 840;
@@ -572,17 +586,20 @@ class FushiContinueSpotlight extends StatelessWidget {
       horizontal: widest * (scale - 1) / 2,
       vertical: math.max(0, vertical),
     );
-    Widget tile(int i) => FushiStaggeredEntrance(
-      index: i + 1,
-      child: _OrientedEntry(
+    Widget tile(int i) {
+      final Widget child = _OrientedEntry(
         entry: side[i],
         builder: (FushiContinueEntry e) => FushiContinueSideTile(
           entry: e,
           coverHeight: coverHeight,
           metaHeight: metaHeight,
         ),
-      ),
-    );
+      );
+      return staggerEntrance
+          ? FushiStaggeredEntrance(index: i + 1, child: child)
+          : child;
+    }
+
     return SizedBox(
       key: sideRowKey,
       height: height,
@@ -644,11 +661,16 @@ class FushiContinueSpotlight extends StatelessWidget {
       onLongPress: main.onLongPress,
       coverHeight: coverHeight,
       widthCap: widthCap ?? soloWidthCap,
+      entranceIndex: staggerEntrance ? 0 : null,
     );
   }
 
-  Widget _stillMain(FushiContinueEntry main) =>
-      FushiStaggeredEntrance(index: 0, child: _StillMainCard(entry: main));
+  Widget _stillMain(FushiContinueEntry main) {
+    final Widget card = _StillMainCard(entry: main);
+    return staggerEntrance
+        ? FushiStaggeredEntrance(index: 0, child: card)
+        : card;
+  }
 
   @override
   Widget build(BuildContext context) => _OrientedEntry(
@@ -942,11 +964,15 @@ class FushiContinueSideTile extends StatelessWidget {
             child: framed,
           );
         }
+        // 整张小卡对读屏是一个按钮：封面卡与文字块各自的点按语义并进来，
+        // 否则同一条目会读成两三个可点节点。
         return Semantics(
           container: true,
           button: true,
+          excludeSemantics: true,
           label: subtitle == null ? entry.title : '${entry.title} · $subtitle',
           onTap: entry.onOpen,
+          onLongPress: entry.onLongPress,
           child: SizedBox(
             width: width,
             child: Column(
@@ -959,6 +985,8 @@ class FushiContinueSideTile extends StatelessWidget {
                   key: const ValueKey<String>('fushi-continue-tile-meta'),
                   behavior: HitTestBehavior.opaque,
                   onTap: entry.onOpen,
+                  onLongPress: entry.onLongPress,
+                  onSecondaryTap: entry.onLongPress,
                   child: SizedBox(
                     height: metaHeight,
                     child: ShelfCardMeta(

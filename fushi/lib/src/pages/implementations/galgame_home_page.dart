@@ -810,6 +810,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         : (hasPlayed ? t.game_focus_continue : t.game_launch);
     return FushiContinueSpotlight(
       sideRowKey: const ValueKey<String>('games_home_continue_side_row'),
+      // 调用处已包在 FushiStaggeredEntrance(index: 4) 里整块进场。
+      staggerEntrance: false,
       main: FushiContinueEntry(
         key: ValueKey<String>('games_home_hero_${game.id}'),
         focusId: FushiFocusId('game-dashboard-hero-${game.id}'),
