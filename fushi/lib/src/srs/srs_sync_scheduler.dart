@@ -174,15 +174,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
       ..kdf = prepared.kdf;
     return r;
   }
-  final String? leftover = prepared.leftoverError;
-  if (leftover != null) {
-    // 旧根残留没处理成（读失败 / 解不开）：不挡新根，记一次、下一轮再试。
-    ErrorLogService.instance.log(
-      'srsPrepareLocation',
-      StateError('srs v1 leftovers on $directoryKey: $leftover'),
-      StackTrace.current,
-    );
-  }
+  srsLogMigrationLeftover(prepared, directoryKey);
   final SrsSync2Report r = await srsSync2Round(
     host: store,
     location: location,
@@ -207,8 +199,32 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
       ),
       writers: writers,
     );
+    srsLogMigrationCleanup(prepared, directoryKey);
   }
   return r;
+}
+
+/// 旧根残留没处理成（读失败 / 解不开 / 新根口令问题）：不挡新根，但必须落日志（带原始栈），下一轮再试。
+void srsLogMigrationLeftover(SrsLocationPrepared prepared, String locationId) {
+  final String? leftover = prepared.leftoverError;
+  if (leftover == null) return;
+  ErrorLogService.instance.log(
+    'srsPrepareLocation',
+    StateError('srs v1 leftovers on $locationId: $leftover'),
+    prepared.leftoverStack ?? StackTrace.current,
+  );
+}
+
+/// 迁移收尾删旧文件时逐个出的错：那些文件留着下一轮再删，这一轮的同步照样算成功，但每个错都记日志。
+void srsLogMigrationCleanup(SrsLocationPrepared prepared, String locationId) {
+  for (final (Object e, StackTrace stack) in prepared.cleanupErrors) {
+    ErrorLogService.instance.log(
+      'srsFinishLocationMigration',
+      StateError('srs v1 cleanup on $locationId: $e'),
+      stack,
+    );
+  }
+  prepared.cleanupErrors.clear();
 }
 
 /// 本机直接读写的同步目录：本机作为互联 host 时，别的设备经互联写进来的就是这块目录，
@@ -1013,6 +1029,11 @@ class SrsSyncScheduler {
           key: _locationKey?.call(l.locationId),
           migrationMemo: _srsMigrationMemo,
         );
+        final SrsLocationPrepared? prepared = r.prepared;
+        if (prepared != null) {
+          srsLogMigrationLeftover(prepared, l.locationId);
+          srsLogMigrationCleanup(prepared, l.locationId);
+        }
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
         // 握手没过但不是口令类问题（meta.json 读不到 / 位置来自更新版本）：如实记成这个位置没同步成。
