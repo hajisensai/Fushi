@@ -381,7 +381,7 @@ export async function reporterView(env, row) {
 
 export async function devView(env, row) {
   const reporter = row.account_id
-    ? await env.DB.prepare('SELECT id, nickname, discriminator FROM accounts WHERE id = ?1').bind(row.account_id).first()
+    ? await env.DB.prepare('SELECT id, nickname, discriminator, role FROM accounts WHERE id = ?1').bind(row.account_id).first()
     : null;
   let meta = {};
   try {
@@ -403,7 +403,9 @@ export async function devView(env, row) {
     contact: row.contact,
     meta,
     origin,
-    reporter: reporter ? { id: reporter.id, nickname: reporter.nickname, discriminator: reporter.discriminator } : null,
+    reporter: reporter
+      ? { id: reporter.id, nickname: reporter.nickname, discriminator: reporter.discriminator, isDev: reporter.role === 'dev' }
+      : null,
     attachments: publicAttachments(row),
     messages: await timeline(env, row.id),
     install: await installTrail(env, row.install_id, row.id, row.install_verified === 1),
@@ -890,6 +892,20 @@ export async function devSaveNotes(env, row, body, now) {
 }
 
 /**
+ * 本页反馈人里的开发者账户 id → {id, nickname}。开发者自己提的反馈在处理台要醒目标出（内部人员自测 /
+ * 拍板意见，和外部用户报告分开看）。按本页出现的 account_id 走主键查，不扫 accounts 全表。
+ * @param {Array<string | null>} accountIds
+ * @returns {Promise<Map<string, {id: string, nickname: string}>>}
+ */
+async function devAccounts(env, accountIds) {
+  const ids = [...new Set(accountIds.filter((x) => x !== null))];
+  if (ids.length === 0) return new Map();
+  const marks = ids.map((_, i) => `?${i + 1}`).join(', ');
+  const rows = await env.DB.prepare(`SELECT id, nickname, role FROM accounts WHERE id IN (${marks})`).bind(...ids).all();
+  return new Map(rows.results.filter((a) => a.role === 'dev').map((a) => [a.id, { id: a.id, nickname: a.nickname }]));
+}
+
+/**
  * 处理台列表：按最近变化倒序，游标 `<updated_at>:<id>`。status = 'active' 表示未结案（open + in_progress）。
  */
 export async function devList(env, { status, cursor, limit, q }) {
@@ -927,9 +943,12 @@ export async function devList(env, { status, cursor, limit, q }) {
   const rows = await env.DB.prepare(sql)
     .bind(first, after ? after.at : null, after ? after.id : null, n + 1,
       term ? term.exact : null, term ? term.like : null).all();
-  const list = rows.results.slice(0, n).map((r) => ({
+  const pageRows = rows.results.slice(0, n);
+  const devs = await devAccounts(env, pageRows.map((r) => r.account_id));
+  const list = pageRows.map((r) => ({
     ...devSummary(r),
     hasAccount: r.account_id !== null,
+    devReporter: devs.get(r.account_id) ?? null,
     attachments: parseAttachments(r).length,
     aiSummary: r.ai_summary ?? null,
     hasDevNote: Boolean(r.has_dev_note),

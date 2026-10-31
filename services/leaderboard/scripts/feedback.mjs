@@ -76,8 +76,11 @@ export function listSql({ status = 'active', needSummary = false, limit } = {}) 
   else if (status !== 'all') throw new Error(`未知状态：${status}`);
   if (needSummary) where.push('ai_summary IS NULL');
   const cond = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  // dev_reporter：开发者账户提的反馈带上昵称（非开发者 / 匿名为 ''，同 showSql 的 COALESCE 口径）。
   return 'SELECT id, status, category, title, created_at, ai_summary IS NOT NULL AS summarized, '
-    + `dev_note IS NOT NULL AS noted FROM feedback ${cond} ORDER BY created_at DESC LIMIT ${clampInt(limit, 1, 500, 100)}`;
+    + 'dev_note IS NOT NULL AS noted, '
+    + "COALESCE((SELECT a.nickname FROM accounts a WHERE a.id = feedback.account_id AND a.role = 'dev'), '') AS dev_reporter "
+    + `FROM feedback ${cond} ORDER BY created_at DESC LIMIT ${clampInt(limit, 1, 500, 100)}`;
 }
 
 // 可空列一律 COALESCE 成 '' / 0：wrangler 3.x 的 --local --json 把 NULL 输出成字符串 "null"
@@ -89,6 +92,7 @@ export function showSql(id) {
       + "attachments, created_at, updated_at, COALESCE(ai_summary, '') AS ai_summary, "
       + "COALESCE(ai_summary_at, 0) AS ai_summary_at, COALESCE(dev_note, '') AS dev_note, "
       + "COALESCE(dev_note_at, 0) AS dev_note_at, COALESCE(fix_sha, '') AS fix_sha, COALESCE(fix_scope, '') AS fix_scope, "
+      + "COALESCE((SELECT a.nickname FROM accounts a WHERE a.id = feedback.account_id AND a.role = 'dev'), '') AS dev_reporter, "
       + `fixed_in FROM feedback WHERE id = ${q}`,
     "SELECT author, COALESCE(body, '') AS body, COALESCE(status, '') AS status, created_at "
       + `FROM feedback_messages WHERE feedback_id = ${q} ORDER BY id`,
@@ -169,7 +173,8 @@ export function formatShow(row, messages) {
   const atts = safeJson(row.attachments || '[]', []);
   const lines = [
     `#${row.id} [${row.status}] ${row.category} · 提交 ${fmtTime(row.created_at)} · 更新 ${fmtTime(row.updated_at)}`
-      + (row.parent_id ? ` · 重新提交自 #${row.parent_id}` : ''),
+      + (row.parent_id ? ` · 重新提交自 #${row.parent_id}` : '')
+      + (row.dev_reporter ? `  ★【开发者 ${row.dev_reporter} 自己提的】` : ''),
     `风险标记：${(safeJson(row.flags || '[]', [])).join(', ') || '无'}`,
     `附件：${atts.map((a) => `${a.slot}(${a.kind}, ${a.bytes}B)`).join(' ') || '无'}`,
     `服务端来源：${JSON.stringify({ country: origin.country, asn: origin.asn, signed: origin.signed })}`,
@@ -270,9 +275,10 @@ export function main(argv, out = console.log) {
     const [rows] = d1(listSql({ status: flags.status ?? 'active', needSummary: !!flags['need-summary'], limit: flags.limit }), where);
     for (const r of rows) {
       const marks = `${r.summarized ? 'AI' : '--'} ${r.noted ? '批' : '--'}`;
-      out(`#${r.id}  ${marks}  [${r.status}] ${r.category}  ${fmtTime(r.created_at)}  ${String(r.title).replace(/\s+/g, ' ')}`);
+      const insider = r.dev_reporter ? `★【开发者 ${r.dev_reporter}】` : '';
+      out(`#${r.id}  ${marks}  [${r.status}] ${r.category}  ${fmtTime(r.created_at)}  ${insider}${String(r.title).replace(/\s+/g, ' ')}`);
     }
-    out(`共 ${rows.length} 条（AI = 已有 AI 总结，批 = 已有开发者批改）`);
+    out(`共 ${rows.length} 条（AI = 已有 AI 总结，批 = 已有开发者批改，★ = 开发者账户自己提的）`);
     return;
   }
   if (cmd === 'show') {

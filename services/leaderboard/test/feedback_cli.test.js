@@ -77,6 +77,19 @@ describe('scripts/feedback.mjs', () => {
     expect(text).toContain('未经核实');
     // 联系方式不进 CLI 输出。
     expect(text).not.toContain('me@example.com');
+    expect(text).not.toContain('★');
+  });
+
+  it('list / show 标出开发者账户自己提的反馈', async () => {
+    const env = makeEnv();
+    const id = await seed(env, '内部自测');
+    const other = await seed(env, '外部');
+    env.DB.raw.exec("INSERT INTO accounts (id, email_hash, nickname, discriminator, role, created_at) VALUES ('devacct00000001', 'h', '哈吉', 1, 'dev', 0)");
+    env.DB.raw.prepare('UPDATE feedback SET account_id = ? WHERE id = ?').run('devacct00000001', id);
+    const rows = env.DB.raw.prepare(listSql({ status: 'all' })).all();
+    expect(Object.fromEntries(rows.map((r) => [r.id, r.dev_reporter]))).toEqual({ [id]: '哈吉', [other]: '' });
+    const [rowSql, msgSql] = showSql(id);
+    expect(formatShow(env.DB.raw.prepare(rowSql).get(), env.DB.raw.prepare(msgSql).all())).toContain('★【开发者 哈吉 自己提的】');
   });
 
   it('fixed：与 CI 接口同一份 SQL——改状态、记时间线、重置 fixed_in；--no-app = scope none；校验 sha / 编号', async () => {
