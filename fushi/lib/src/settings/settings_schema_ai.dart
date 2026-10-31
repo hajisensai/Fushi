@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/ai/mcp/ai_mcp_access.dart';
+import 'package:fushi/src/ai/mcp/ai_mcp_ui.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -303,6 +305,36 @@ SettingsDestination buildAiDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.prefsRepo.setAiAgentForPeers(value),
             defaultValue: false,
+          ),
+          // 外部 AI 访问（MCP，docs/mcp-external-ai.md）：只在桌面（挂在本机控制通道
+          // `/mcp` 上）。默认关；授权开关与配对令牌只能在这里亲手操作——AI 自己的
+          // settings.set 写不进开关（userOnly），令牌不经控制通道签发。
+          SettingsSwitchItem(
+            id: 'ai.mcp_access',
+            title: t.ai_mcp_access,
+            subtitle: t.ai_mcp_access_hint,
+            icon: FushiIcons.link,
+            userOnly: true,
+            visible: (_) => isDesktopPlatform,
+            value: (SettingsContext c) => c.appModel.prefsRepo.aiMcpEnabled,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setAiMcpEnabled(value),
+            defaultValue: false,
+          ),
+          SettingsActionItem(
+            id: 'ai.mcp_token',
+            title: t.ai_mcp_token,
+            subtitle: t.ai_mcp_token_hint,
+            icon: FushiIcons.key,
+            visible: (SettingsContext c) =>
+                isDesktopPlatform && c.appModel.prefsRepo.aiMcpEnabled,
+            cli: const SettingsCliAction.unsupported(
+              '配对令牌只在设置页里由用户亲手生成：令牌授权的是外部 AI，不能由控制通道或 AI 自己签发',
+            ),
+            onTap: (SettingsContext c) => showAiMcpTokenIssueDialog(
+              c.context,
+              () => issueAiMcpToken(c.appModel.prefsRepo),
+            ),
           ),
         ],
       ),

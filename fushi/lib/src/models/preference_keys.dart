@@ -57,6 +57,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
   // 但描述的是本机配的 key 的健康，跟着 ai_providers 设备本地（deviceLocalPrefKeys）。
   'ai_key_health',
+  // bool（默认 false）：外部 AI 访问（MCP）。打开后本机 MCP 客户端凭配对令牌可调
+  // 操作目录；授权只对点它的这台设备成立（设备本地）。
+  'ai_mcp_enabled',
+  // String：外部 AI 配对令牌的 SHA-256 hex（令牌本身不落盘）。空串 = 未生成。
+  // 设备本地：令牌是发给这台机器上某个 MCP 客户端的。
+  'ai_mcp_token_sha256',
   // 用户自配的 AI 提供商清单，每条里带 base64 的 apiKeyB64 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。

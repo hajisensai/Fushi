@@ -90,9 +90,13 @@ class DesktopCtlHost implements CtlDesktopHandler {
 /// 启动桌面控制通道（127.0.0.1 随机端口 + token，发现文件见 [resolveCtlStateDir]）。
 ///
 /// 失败只记日志返回 null：CLI 用不了不该拖垮 app 启动。`FUSHI_CTL=off` 时不启动。
+///
+/// [mcp]：外部 AI 的 MCP 入口，挂在同一个监听的 `/mcp` 上（自己的配对令牌鉴权，
+/// 开关默认关，见 `fushi/lib/src/ai/mcp/`）。
 Future<CtlServer?> startDesktopCtlServer(
   CtlDesktopHandler handler, {
   Map<String, String>? environment,
+  McpHttpEndpoint? mcp,
 }) async {
   final Map<String, String> env = environment ?? Platform.environment;
   if (env[kDesktopCtlDisableEnv]?.trim().toLowerCase() == 'off') return null;
@@ -105,7 +109,11 @@ Future<CtlServer?> startDesktopCtlServer(
     debugPrint('[Fushi] ctl channel disabled: no per-user state dir');
     return null;
   }
-  final CtlServer server = CtlServer(handler: handler, stateDir: stateDir);
+  final CtlServer server = CtlServer(
+    handler: handler,
+    stateDir: stateDir,
+    mcp: mcp,
+  );
   try {
     final CtlEndpoint endpoint = await server.start();
     debugPrint('[Fushi] ctl channel listening on 127.0.0.1:${endpoint.port}');
