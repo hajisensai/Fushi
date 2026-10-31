@@ -259,7 +259,7 @@
   "mine_already_queued": "Đã có trong hàng đợi khai thác thẻ",
   "mine_queued_n": "Đã thêm vào hàng đợi khai thác thẻ ({n})",
   "mine_already_queued_n": "Đã có trong hàng đợi khai thác thẻ ({n})",
-  "mine_queued_generate_later": "Tạo tất cả sau khi xem xong",
+  "mine_queued_generate_later": "Nhấn nút khai thác thẻ trong tiện ích mở rộng để tạo tất cả",
   "mine_no_cue": "Không tìm thấy dòng phụ đề hiện tại, thử lại sau giây lát",
   "mine_enqueue_failed": "Không thể thêm vào hàng đợi",
   "mine_failed": "Khai thác thẻ thất bại",
