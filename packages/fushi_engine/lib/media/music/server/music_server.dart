@@ -22,7 +22,11 @@ enum MusicServerKind {
   jellyfin('jellyfin'),
 
   /// OpenSubsonic / Subsonic API（Navidrome、Gonic、Airsonic-Advanced、Ampache …）。
-  subsonic('subsonic');
+  subsonic('subsonic'),
+
+  /// Apple Music catalog（MusicKit 方案 P1b：Worker 代签 developer token，只浏览 + 30 秒
+  /// 试听；`fushi_engine/media/music/apple_music/`）。
+  appleMusic('apple_music');
 
   const MusicServerKind(this.wire);
 

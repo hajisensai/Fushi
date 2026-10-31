@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 181424 (10672 per locale)
+/// Strings: 181526 (10678 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -8057,6 +8057,14 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'The Browse tab is hidden in Settings → Appearance → Feature modules; turn it back on to manage subscriptions.';
   String get move_down => 'Move down';
   String get move_up => 'Move up';
+  String get music_apple_music_enable => 'Apple Music catalog';
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  String get music_apple_music_storefront => 'Storefront';
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
   String get music_artist_unknown => 'Unknown artist';
   String get music_audio_device_auto => 'System default';
   String get music_audio_device_title => 'Output device';
@@ -8419,6 +8427,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get music_server_allow_http => 'Allow plain HTTP';
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
   String get music_server_bitrate_original => 'Original';
@@ -28680,6 +28690,19 @@ class _StringsAr extends _StringsEn {
   @override
   String get move_up => 'تحريك لأعلى';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -29319,6 +29342,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -54800,6 +54826,19 @@ class _StringsDe extends _StringsEn {
   @override
   String get move_up => 'Nach oben';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -55439,6 +55478,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -81095,6 +81137,19 @@ class _StringsEs extends _StringsEn {
   @override
   String get move_up => 'Mover arriba';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -81734,6 +81789,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -107468,6 +107526,19 @@ class _StringsFr extends _StringsEn {
   @override
   String get move_up => 'Monter';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -108107,6 +108178,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -133678,6 +133752,19 @@ class _StringsId extends _StringsEn {
   @override
   String get move_up => 'Naikkan';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -134317,6 +134404,9 @@ class _StringsId extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -159839,6 +159929,19 @@ class _StringsIt extends _StringsEn {
   @override
   String get move_up => 'Sposta su';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -160478,6 +160581,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -185481,6 +185587,19 @@ class _StringsJa extends _StringsEn {
   @override
   String get move_up => '上に移動';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -186120,6 +186239,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -210685,6 +210807,19 @@ class _StringsKo extends _StringsEn {
   @override
   String get move_up => '위로 이동';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -211324,6 +211459,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -236460,6 +236598,19 @@ class _StringsNl extends _StringsEn {
   @override
   String get move_up => 'Omhoog';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -237099,6 +237250,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -262686,6 +262840,19 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get move_up => 'Mover para cima';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -263325,6 +263492,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -288883,6 +289053,19 @@ class _StringsRu extends _StringsEn {
   @override
   String get move_up => 'Вверх';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -289522,6 +289705,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -314894,6 +315080,19 @@ class _StringsTh extends _StringsEn {
   @override
   String get move_up => 'เลื่อนขึ้น';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -315533,6 +315732,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -340888,6 +341090,19 @@ class _StringsTr extends _StringsEn {
   @override
   String get move_up => 'Yukarı taşı';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -341527,6 +341742,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -366916,6 +367134,19 @@ class _StringsVi extends _StringsEn {
   @override
   String get move_up => 'Di chuyển lên';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -367555,6 +367786,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -391785,6 +392019,18 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get move_up => '上移';
   @override
+  String get music_apple_music_enable => 'Apple Music 曲库';
+  @override
+  String get music_apple_music_enable_hint =>
+      '浏览 Apple Music 曲库（热门专辑与搜索）并试听 30 秒片段。无需登录；暂不支持整曲播放。';
+  @override
+  String get music_apple_music_storefront => '地区';
+  @override
+  String get music_apple_music_storefront_hint =>
+      '浏览哪个国家 / 地区的 Apple Music 曲库。';
+  @override
+  String get music_apple_music_unavailable => 'Apple Music 暂不可用';
+  @override
   String get music_artist_unknown => '未知艺人';
   @override
   String get music_audio_device_auto => '系统默认';
@@ -392379,6 +392625,8 @@ class _StringsZhCn extends _StringsEn {
   String get music_server_allow_http => '允许明文 HTTP';
   @override
   String get music_server_allow_http_hint => '只用于自己局域网里的服务器；凭据会以明文传输';
+  @override
+  String get music_server_apple_music_subtitle => 'Apple Music · 30 秒试听';
   @override
   String get music_server_bitrate_hint =>
       '原始 = 按服务器上的文件原样播放（无损仍是无损）；设上限则请服务器转码';
@@ -415883,6 +416131,19 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get move_up => '上移';
   @override
+  String get music_apple_music_enable => 'Apple Music catalog';
+  @override
+  String get music_apple_music_enable_hint =>
+      'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+  @override
+  String get music_apple_music_storefront => 'Storefront';
+  @override
+  String get music_apple_music_storefront_hint =>
+      'Which country\'s Apple Music catalog to browse.';
+  @override
+  String get music_apple_music_unavailable =>
+      'Apple Music is temporarily unavailable';
+  @override
   String get music_artist_unknown => 'Unknown artist';
   @override
   String get music_audio_device_auto => 'System default';
@@ -416522,6 +416783,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get music_server_allow_http_hint =>
       'Only for servers on your own network; credentials travel unencrypted';
+  @override
+  String get music_server_apple_music_subtitle =>
+      'Apple Music · 30-second previews';
   @override
   String get music_server_bitrate_hint =>
       'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
@@ -439225,6 +439489,16 @@ extension on _StringsEn {
         return 'Move down';
       case 'move_up':
         return 'Move up';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -439801,6 +440075,8 @@ extension on _StringsEn {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -461401,6 +461677,16 @@ extension on _StringsAr {
         return 'تحريك لأسفل';
       case 'move_up':
         return 'تحريك لأعلى';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -461977,6 +462263,8 @@ extension on _StringsAr {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -483628,6 +483916,16 @@ extension on _StringsDe {
         return 'Nach unten';
       case 'move_up':
         return 'Nach oben';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -484204,6 +484502,8 @@ extension on _StringsDe {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -505865,6 +506165,16 @@ extension on _StringsEs {
         return 'Mover abajo';
       case 'move_up':
         return 'Mover arriba';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -506441,6 +506751,8 @@ extension on _StringsEs {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -528112,6 +528424,16 @@ extension on _StringsFr {
         return 'Descendre';
       case 'move_up':
         return 'Monter';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -528688,6 +529010,8 @@ extension on _StringsFr {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -550328,6 +550652,16 @@ extension on _StringsId {
         return 'Turunkan';
       case 'move_up':
         return 'Naikkan';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -550904,6 +551238,8 @@ extension on _StringsId {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -572541,6 +572877,16 @@ extension on _StringsIt {
         return 'Sposta giù';
       case 'move_up':
         return 'Sposta su';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -573117,6 +573463,8 @@ extension on _StringsIt {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -594702,6 +595050,16 @@ extension on _StringsJa {
         return '下に移動';
       case 'move_up':
         return '上に移動';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -595278,6 +595636,8 @@ extension on _StringsJa {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -616801,6 +617161,16 @@ extension on _StringsKo {
         return '아래로 이동';
       case 'move_up':
         return '위로 이동';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -617377,6 +617747,8 @@ extension on _StringsKo {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -638983,6 +639355,16 @@ extension on _StringsNl {
         return 'Omlaag';
       case 'move_up':
         return 'Omhoog';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -639559,6 +639941,8 @@ extension on _StringsNl {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -661204,6 +661588,16 @@ extension on _StringsPtBr {
         return 'Mover para baixo';
       case 'move_up':
         return 'Mover para cima';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -661780,6 +662174,8 @@ extension on _StringsPtBr {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -683429,6 +683825,16 @@ extension on _StringsRu {
         return 'Вниз';
       case 'move_up':
         return 'Вверх';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -684005,6 +684411,8 @@ extension on _StringsRu {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -705619,6 +706027,16 @@ extension on _StringsTh {
         return 'เลื่อนลง';
       case 'move_up':
         return 'เลื่อนขึ้น';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -706195,6 +706613,8 @@ extension on _StringsTh {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -727822,6 +728242,16 @@ extension on _StringsTr {
         return 'Aşağı taşı';
       case 'move_up':
         return 'Yukarı taşı';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -728398,6 +728828,8 @@ extension on _StringsTr {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -750017,6 +750449,16 @@ extension on _StringsVi {
         return 'Di chuyển xuống';
       case 'move_up':
         return 'Di chuyển lên';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -750593,6 +751035,8 @@ extension on _StringsVi {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':
@@ -772066,6 +772510,16 @@ extension on _StringsZhCn {
         return '下移';
       case 'move_up':
         return '上移';
+      case 'music_apple_music_enable':
+        return 'Apple Music 曲库';
+      case 'music_apple_music_enable_hint':
+        return '浏览 Apple Music 曲库（热门专辑与搜索）并试听 30 秒片段。无需登录；暂不支持整曲播放。';
+      case 'music_apple_music_storefront':
+        return '地区';
+      case 'music_apple_music_storefront_hint':
+        return '浏览哪个国家 / 地区的 Apple Music 曲库。';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music 暂不可用';
       case 'music_artist_unknown':
         return '未知艺人';
       case 'music_audio_device_auto':
@@ -772630,6 +773084,8 @@ extension on _StringsZhCn {
         return '允许明文 HTTP';
       case 'music_server_allow_http_hint':
         return '只用于自己局域网里的服务器；凭据会以明文传输';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30 秒试听';
       case 'music_server_bitrate_hint':
         return '原始 = 按服务器上的文件原样播放（无损仍是无损）；设上限则请服务器转码';
       case 'music_server_bitrate_original':
@@ -794033,6 +794489,16 @@ extension on _StringsZhHk {
         return '下移';
       case 'move_up':
         return '上移';
+      case 'music_apple_music_enable':
+        return 'Apple Music catalog';
+      case 'music_apple_music_enable_hint':
+        return 'Browse the Apple Music catalog (top albums and search) and play 30-second previews. No sign-in needed; full-track playback is not available yet.';
+      case 'music_apple_music_storefront':
+        return 'Storefront';
+      case 'music_apple_music_storefront_hint':
+        return 'Which country\'s Apple Music catalog to browse.';
+      case 'music_apple_music_unavailable':
+        return 'Apple Music is temporarily unavailable';
       case 'music_artist_unknown':
         return 'Unknown artist';
       case 'music_audio_device_auto':
@@ -794609,6 +795075,8 @@ extension on _StringsZhHk {
         return 'Allow plain HTTP';
       case 'music_server_allow_http_hint':
         return 'Only for servers on your own network; credentials travel unencrypted';
+      case 'music_server_apple_music_subtitle':
+        return 'Apple Music · 30-second previews';
       case 'music_server_bitrate_hint':
         return 'Original plays the file as stored (lossless stays lossless); a cap asks the server to transcode';
       case 'music_server_bitrate_original':

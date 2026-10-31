@@ -7,6 +7,8 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.dart'
+    show AppleMusicUnavailableException;
 import 'package:fushi_engine/media/music/server/music_server.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -145,7 +147,9 @@ Widget musicBrowseErrorView(
 ) => Center(
   child: FushiPlaceholderMessage(
     icon: FushiIcons.cloudOff,
-    message: t.music_server_load_failed,
+    message: error is AppleMusicUnavailableException
+        ? t.music_apple_music_unavailable
+        : t.music_server_load_failed,
     detail: '$error',
     action: FushiFilledButton.icon(
       onPressed: retry,
@@ -283,6 +287,8 @@ class _MusicServerListPageState extends ConsumerState<MusicServerListPage> {
                           subtitle: Text(switch (s.kind) {
                             MusicServerKind.jellyfin => 'Jellyfin / Emby',
                             MusicServerKind.subsonic => 'OpenSubsonic',
+                            MusicServerKind.appleMusic =>
+                              t.music_server_apple_music_subtitle,
                           }),
                           trailing: const FushiIcon(FushiIcons.chevronRight),
                         ),
