@@ -32,10 +32,13 @@ class _Worker implements SrsRwkvBackend {
   @override
   Future<void> close() => worker.close();
   @override
-  Future<bool> append(RwkvRows rows, List<int> tags) =>
-      worker.append(rows, tags);
+  Future<bool> append(RwkvRows rows, List<int> tags, List<int> ats) =>
+      worker.append(rows, tags, ats);
   @override
   Future<bool> unappend(int tag) => worker.unappend(tag);
+  @override
+  Future<int?> rewindFrom(int atMs, int floorMs) =>
+      worker.rewindFrom(atMs, floorMs);
   @override
   Future<void> clearScores() => worker.clearScores();
   @override
@@ -182,7 +185,7 @@ void main() {
         await store.nextCard(deck);
         final SrsAnswerPreview p = await store.preview(logs[i].cardId);
         undoMs.add(sw.elapsedMilliseconds);
-        readyAfter.add(!p.rwkvUnavailable && service.ready);
+        readyAfter.add(p.algorithm == SrsAlgorithm.rwkv && service.ready);
       }
       print('undo+counts+nextCard ms: $undoMs; rwkv ready after: $readyAfter');
       await service.close();

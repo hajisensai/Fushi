@@ -224,43 +224,69 @@ List<SrsRwkvCardRows> srsDecodeRwkvCards(Uint8List bytes) {
   return out;
 }
 
-/// 全量回放（`ffsrs_store_rwkv_rows` 回放模式）。
+/// 回放行（`ffsrs_store_rwkv_rows` 回放模式：全量，或局部重放）。
 class SrsRwkvReplay {
   const SrsRwkvReplay({
     required this.count,
     required this.maxRowId,
     required this.lastAt,
     required this.rows,
+    required this.ats,
+    required this.tags,
     required this.strays,
+    this.divergeAt,
+    this.tailRows = 0,
   });
 
   /// 日志指纹（与 [rows] 出自同一个快照）。
   final int count;
   final int maxRowId;
 
-  /// 最后一条回放行的评分时刻；没有评分时 null。
+  /// 全部保留评分（不只 [rows]）里最晚的评分时刻；没有评分时 null。
   final int? lastAt;
 
   /// 按评分时刻排好序的行。
   final RwkvRows rows;
 
+  /// 每行的评分时刻（毫秒）与撤销日志标签（日志 ID 的 53 位数字 id，同 [SrsIds.ankiNumericIds]）。
+  final Int64List ats;
+  final Int64List tags;
+
   /// 调用方列卡之后才出现日志、不在任何血统里的卡。
   final List<String> strays;
+
+  /// 局部重放：rowid 在 rebaseSince 之后的日志让回放序列最早从这个时刻起不同；null = 这些日志不改变任何行。
+  final int? divergeAt;
+
+  /// 局部重放：rowid 在 rebaseSince 之后的日志行数（与指纹的行数差核对，对不上 = 删过日志）。
+  final int tailRows;
 }
 
 SrsRwkvReplay srsDecodeRwkvReplay(Uint8List bytes) {
   final ByteData d = ByteData.sublistView(bytes);
   int w(int k) => d.getInt64(8 * k, Endian.little);
   final int n = w(3);
-  const int rowsAt = 40;
+  const int rowsAt = 56;
+  final int atsAt = rowsAt + n * kFrwkvReviewSize;
+  final int tagsAt = atsAt + 8 * n;
+  Int64List words(int at) {
+    final Int64List out = Int64List(n);
+    for (int i = 0; i < n; i++) {
+      out[i] = d.getInt64(at + 8 * i, Endian.little);
+    }
+    return out;
+  }
+
   return SrsRwkvReplay(
     count: w(0),
     maxRowId: w(1),
     lastAt: w(2) == _none ? null : w(2),
-    rows: RwkvRows.fromBytes(
-      Uint8List.sublistView(bytes, rowsAt, rowsAt + n * kFrwkvReviewSize),
-    ),
-    strays: _strings(bytes, rowsAt + n * kFrwkvReviewSize, w(4)),
+    rows: RwkvRows.fromBytes(Uint8List.sublistView(bytes, rowsAt, atsAt)),
+    ats: words(atsAt),
+    tags: words(tagsAt),
+    strays: _strings(bytes, tagsAt + 8 * n, w(4)),
+    divergeAt: w(5) == _none ? null : w(5),
+    tailRows: w(6),
   );
 }
 

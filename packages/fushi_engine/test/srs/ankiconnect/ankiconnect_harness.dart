@@ -41,11 +41,7 @@ class AcHarness {
       core: srsStorage.core,
       profileUid: kAcProfile,
       deviceId: 'dev',
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t++,
-        monotonicMs: () => t++,
-        bootId: 'boot',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t++, bootId: 'boot'),
       styles: styles,
     );
     final AcHarness h = AcHarness._(store);

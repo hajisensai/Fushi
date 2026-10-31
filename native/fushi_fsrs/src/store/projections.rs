@@ -13,6 +13,61 @@ use super::SrsCore;
 use crate::history::{parse_full, Parsed, NONE_I64};
 use crate::projection::{self, Alg, Day, EffLog, RwkvIds, RWKV_ROW};
 
+/// [SrsCore::rwkv_replay] 取哪些行（见那里）。
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RwkvRange {
+    pub rebase_since: Option<i64>,
+    pub rows_from: Option<i64>,
+}
+
+/// 分歧时刻（[SrsCore::rwkv_replay] 的局部重放）：`touched` 里的卡所在的每份历史，按「只看 rowid ≤ `since`
+/// 的日志」与「全部日志」各算一遍保留评分行，第一处不同的时刻（两边在该位置的时刻取小）；全部相同 = None。
+/// 行里的数字身份两边一样，比较时用 0。
+fn rwkv_divergence(
+    groups: &[Vec<String>],
+    logs: &LogsByCard,
+    rowids: &HashMap<String, Vec<i64>>,
+    touched: &HashSet<String>,
+    since: i64,
+    day: &Day,
+) -> Result<Option<i64>, String> {
+    let mut diverge: Option<i64> = None;
+    let zero: RwkvIds = [0; 4];
+    for lineage in groups {
+        if !lineage.iter().any(|c| touched.contains(c)) {
+            continue;
+        }
+        let mut old: LogsByCard = HashMap::new();
+        for c in lineage {
+            if let (Some(rows), Some(ids)) = (logs.get(c), rowids.get(c)) {
+                let kept: Vec<(String, Option<i64>)> =
+                    rows.iter().zip(ids).filter(|(_, &id)| id <= since).map(|(r, _)| r.clone()).collect();
+                old.insert(c.clone(), kept);
+            }
+        }
+        let (new_rows, new_at, _) = projection::rwkv_card_rows(&effective_of(lineage, logs)?, &zero, day)?;
+        let (old_rows, old_at, _) = projection::rwkv_card_rows(&effective_of(lineage, &old)?, &zero, day)?;
+        let n = new_at.len().max(old_at.len());
+        for i in 0..n {
+            let same = i < new_at.len()
+                && i < old_at.len()
+                && new_at[i] == old_at[i]
+                && new_rows[i * RWKV_ROW..(i + 1) * RWKV_ROW] == old_rows[i * RWKV_ROW..(i + 1) * RWKV_ROW];
+            if same {
+                continue;
+            }
+            let at = match (new_at.get(i), old_at.get(i)) {
+                (Some(&a), Some(&b)) => a.min(b),
+                (Some(&a), None) | (None, Some(&a)) => a,
+                (None, None) => unreachable!("i < max(len)"),
+            };
+            diverge = Some(diverge.map_or(at, |d| d.min(at)));
+            break;
+        }
+    }
+    Ok(diverge)
+}
+
 /// 一组卡的全部日志：卡 ID → [(落库 JSON, 服务器时刻)]（同卡内按 rowid）。
 type LogsByCard = HashMap<String, Vec<(String, Option<i64>)>>;
 
@@ -218,18 +273,38 @@ impl SrsCore {
         Ok(head)
     }
 
-    /// RWKV 全量回放：本 profile 的日志一条语句扫出（指纹与行出自同一个快照），按 `groups`（卡的血统，
-    /// 输入顺序 = 回放的加入顺序）产出保留评分行，按评分时刻稳定排序。
+    /// RWKV 回放行：本 profile 的日志一条语句扫出（指纹与行出自同一个快照），按 `groups`（卡的血统，
+    /// 输入顺序 = 同一时刻的先后）产出保留评分行，按评分时刻稳定排序。
     ///
     /// `since`：调用方列卡之前的指纹 maxRowId；rowid 在它之后、却不属于任何一份血统的日志的卡 ID 作为
     /// 「漏掉的卡」返回（列卡之后新建的卡），调用方补上再来一次。
     ///
-    /// 输出：`[i64 count, maxRowId, lastAt|NONE, n_rows, n_strays]`、行（80 字节 × n_rows）、漏掉的卡 ID 串表。
-    pub fn rwkv_replay(&self, profile: &str, groups: &[Vec<String>], ids: &[i64], day: &Day, since: i64) -> Result<Vec<u8>, String> {
+    /// `range` 选出哪些行：
+    /// - `rebase_since = None`（全量）：全部行；
+    /// - `rebase_since = Some(s)`（局部重放）：先在同一个快照里算**分歧时刻**——rowid 在 `s` 之后的日志
+    ///   碰到的每份历史，比较「只看 rowid ≤ s 的日志」与「全部日志」两种情况下它的保留评分行，第一处
+    ///   不同（时刻或行内容）的时刻取最小。只多了不改变任何行的日志时没有分歧。行从 `rows_from`
+    ///   （给了的话）起、否则从分歧时刻起取（没有分歧就一行都不取）。调用方据此把 RWKV 状态退到这个
+    ///   时刻之前，再追加取出的行，结果与全量回放逐位相同。
+    ///
+    /// 输出：`[i64 count, maxRowId, lastAt|NONE, n_rows, n_strays, divergeAt|NONE, tailRows]`、
+    /// 行（80 字节 × n_rows）、评分时刻（i64 × n_rows）、标签（日志 ID 的 53 位数字 id，i64 × n_rows）、
+    /// 漏掉的卡 ID 串表。`lastAt` 是全部保留评分（不只取出的行）里最晚的时刻；`tailRows` 是 rowid 在
+    /// `rebase_since` 之后的日志行数（全量时 0），调用方用它核对期间没有删过日志。
+    pub fn rwkv_replay(
+        &self,
+        profile: &str,
+        groups: &[Vec<String>],
+        ids: &[i64],
+        day: &Day,
+        since: i64,
+        range: RwkvRange,
+    ) -> Result<Vec<u8>, String> {
         if ids.len() != groups.len() * 4 {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
-        let (groups, count, max_rowid, logs, strays) = self.read_snapshot(|r| {
+        let rebase = range.rebase_since;
+        let (groups, count, max_rowid, logs, rowids, strays, tail_rows, touched) = self.read_snapshot(|r| {
             let groups = expand_lineages(r, groups)?;
             let mut member: HashMap<String, Vec<usize>> = HashMap::new();
             for (g, lineage) in groups.iter().enumerate() {
@@ -247,13 +322,20 @@ impl SrsCore {
             let mut count = 0i64;
             let mut max_rowid = 0i64;
             let mut logs: LogsByCard = HashMap::new();
+            let mut rowids: HashMap<String, Vec<i64>> = HashMap::new();
             let mut strays: Vec<String> = Vec::new();
             let mut stray_seen: HashSet<String> = HashSet::new();
+            let mut tail_rows = 0i64;
+            let mut touched: HashSet<String> = HashSet::new();
             while let Some(row) = q.next().map_err(|e| e.to_string())? {
                 let rowid: i64 = row.get(0).map_err(|e| e.to_string())?;
                 let card: String = row.get(1).map_err(|e| e.to_string())?;
                 count += 1;
                 max_rowid = max_rowid.max(rowid);
+                let in_tail = rebase.is_some_and(|s| rowid > s);
+                if in_tail {
+                    tail_rows += 1;
+                }
                 if !member.contains_key(card.as_str()) {
                     if rowid > since && stray_seen.insert(card.clone()) {
                         strays.push(card);
@@ -262,33 +344,58 @@ impl SrsCore {
                 }
                 let json: String = row.get(2).map_err(|e| e.to_string())?;
                 let st: Option<i64> = row.get(3).map_err(|e| e.to_string())?;
+                if rebase.is_some() {
+                    rowids.entry(card.clone()).or_default().push(rowid);
+                    if in_tail {
+                        touched.insert(card.clone());
+                    }
+                }
                 logs.entry(card).or_default().push((json, st));
             }
             drop(q);
-            Ok((groups, count, max_rowid, logs, strays))
+            Ok((groups, count, max_rowid, logs, rowids, strays, tail_rows, touched))
         })?;
-        // (时刻, 行)：按加入顺序收集，稳定排序。
-        let mut entries: Vec<(i64, [u8; RWKV_ROW])> = Vec::new();
+        let diverge = match rebase {
+            Some(s) => rwkv_divergence(&groups, &logs, &rowids, &touched, s, day)?,
+            None => None,
+        };
+        // 取行的起点：全量 = 不设限；局部 = rows_from 或分歧时刻（没有分歧 = 一行不取）。
+        let from = match (rebase, range.rows_from) {
+            (_, Some(f)) => Some(f),
+            (Some(_), None) => Some(diverge.unwrap_or(i64::MAX)),
+            (None, None) => None,
+        };
+        // (时刻, 行, 标签)：按加入顺序收集，稳定排序。
+        let mut entries: Vec<(i64, [u8; RWKV_ROW], i64)> = Vec::new();
+        let mut last_at: Option<i64> = None;
         for (g, lineage) in groups.iter().enumerate() {
             let eff = effective_of(lineage, &logs)?;
             let card: RwkvIds = [ids[4 * g], ids[4 * g + 1], ids[4 * g + 2], ids[4 * g + 3]];
-            let (rows, times, _) = projection::rwkv_card_rows(&eff, &card, day)?;
+            let (rows, times, kept) = projection::rwkv_card_rows(&eff, &card, day)?;
             for (k, at) in times.into_iter().enumerate() {
+                last_at = Some(last_at.map_or(at, |l| l.max(at)));
+                if from.is_some_and(|f| at < f) {
+                    continue;
+                }
                 let mut row = [0u8; RWKV_ROW];
                 row.copy_from_slice(&rows[k * RWKV_ROW..(k + 1) * RWKV_ROW]);
-                entries.push((at, row));
+                entries.push((at, row, crate::store::schema::anki_numeric_id(&eff[kept[k]].id)));
             }
         }
         entries.sort_by_key(|e| e.0);
-        let mut out = Vec::with_capacity(40 + entries.len() * RWKV_ROW);
+        let mut out = Vec::with_capacity(56 + entries.len() * (RWKV_ROW + 16));
         push_i64(&mut out, count);
         push_i64(&mut out, max_rowid);
-        push_i64(&mut out, entries.last().map_or(NONE_I64, |e| e.0));
+        push_i64(&mut out, last_at.unwrap_or(NONE_I64));
         push_i64(&mut out, entries.len() as i64);
         push_i64(&mut out, strays.len() as i64);
-        for (_, row) in &entries {
+        push_i64(&mut out, diverge.unwrap_or(NONE_I64));
+        push_i64(&mut out, tail_rows);
+        for (_, row, _) in &entries {
             out.extend_from_slice(row);
         }
+        entries.iter().for_each(|e| push_i64(&mut out, e.0));
+        entries.iter().for_each(|e| push_i64(&mut out, e.2));
         push_strings(&mut out, strays.iter().map(String::as_str));
         Ok(out)
     }
@@ -443,17 +550,72 @@ mod tests {
         insert(&c, "a1", "c1", "review", 0, &log("a1", "c1", 1, 5000, r#","rtype":"learn","rating":3"#));
         insert(&c, "z1", "c9", "review", 0, &log("z1", "c9", 1, 0, r#","rtype":"learn","rating":3"#));
         insert(&c, "b1", "c2", "review", 0, &log("b1", "c2", 1, 1000, r#","rtype":"learn","rating":4"#));
-        let out = c.rwkv_replay("p", &[vec!["c1".into()], vec!["c2".into()]], &[1, 2, 3, 4, 5, 6, 7, 8], &D, 1).unwrap();
+        let out = c
+            .rwkv_replay("p", &[vec!["c1".into()], vec!["c2".into()]], &[1, 2, 3, 4, 5, 6, 7, 8], &D, 1, RwkvRange::default())
+            .unwrap();
         assert_eq!((i64_at(&out, 0), i64_at(&out, 1)), (3, 3));
         assert_eq!(i64_at(&out, 2), 5000, "lastAt = latest kept rating");
         assert_eq!((i64_at(&out, 3), i64_at(&out, 4)), (2, 1));
+        assert_eq!((i64_at(&out, 5), i64_at(&out, 6)), (NONE_I64, 0), "full replay: no divergence");
         // 按时刻排序：c2（1000）在 c1（5000）前面。
-        assert_eq!(i64_at(&out, 5), 5);
-        assert_eq!(i64_at(&out, 5 + 10), 1);
-        let strs = 40 + 2 * RWKV_ROW;
+        let rows = 7;
+        assert_eq!(i64_at(&out, rows), 5);
+        assert_eq!(i64_at(&out, rows + 10), 1);
+        let at = 56 + 2 * RWKV_ROW;
+        assert_eq!((i64_at(&out, at / 8), i64_at(&out, at / 8 + 1)), (1000, 5000), "rating times");
+        let tags = at / 8 + 2;
+        assert_eq!(i64_at(&out, tags), crate::store::schema::anki_numeric_id("b1"), "tag = numeric id of the log");
+        let strs = at + 4 * 8;
         assert_eq!(&out[strs + 8..], b"c9");
         let tail = c.rwkv_log_tail("p", 1, true, false).unwrap();
         assert_eq!((i64_at(&tail, 0), i64_at(&tail, 1), i64_at(&tail, 2), i64_at(&tail, 3)), (3, 3, 2, 2));
+    }
+
+    /// 局部重放：分歧时刻 = 新日志改动的最早一行的时刻；行从那里起取，标签与时刻成对。
+    #[test]
+    fn rwkv_rebase_finds_the_earliest_changed_row_and_returns_the_rows_from_it() {
+        let c = core("rebase");
+        let ids = [1, 2, 3, 4, 5, 6, 7, 8];
+        let groups = [vec!["c1".to_string()], vec!["c2".to_string()]];
+        insert(&c, "a1", "c1", "review", 1000, &log("a1", "c1", 1, 1000, r#","rtype":"learn","rating":3"#));
+        insert(&c, "a2", "c1", "review", 9000, &log("a2", "c1", 2, 9000, r#","rtype":"learn","rating":3"#));
+        insert(&c, "b1", "c2", "review", 5000, &log("b1", "c2", 3, 5000, r#","rtype":"learn","rating":4"#));
+        let base = 3;
+        // 晚到的评分：时刻 3000，落在已回放的 a2（9000）与 b1（5000）之前。
+        insert(&c, "b0", "c2", "review", 3000, &log("b0", "c2", 4, 3000, r#","rtype":"learn","rating":1"#));
+        let range = RwkvRange { rebase_since: Some(base), rows_from: None };
+        let out = c.rwkv_replay("p", &groups, &ids, &D, base, range).unwrap();
+        assert_eq!(i64_at(&out, 5), 3000, "divergence = the late rating");
+        assert_eq!(i64_at(&out, 6), 1, "one log after the base");
+        assert_eq!(i64_at(&out, 2), 9000, "lastAt over every kept rating");
+        assert_eq!(i64_at(&out, 3), 3, "b0, b1, a2 are at >= 3000");
+        let at = (56 + 3 * RWKV_ROW) / 8;
+        assert_eq!((i64_at(&out, at), i64_at(&out, at + 1), i64_at(&out, at + 2)), (3000, 5000, 9000));
+        let num = crate::store::schema::anki_numeric_id;
+        assert_eq!((i64_at(&out, at + 3), i64_at(&out, at + 5)), (num("b0"), num("a2")));
+        // 这些行就是全量回放里时刻 ≥ 3000 的那几行（含 b1 因前面多了 b0 而改变的间隔）。
+        let full = c.rwkv_replay("p", &groups, &ids, &D, base, RwkvRange::default()).unwrap();
+        let rows = |b: &[u8], n: usize, skip: usize| b[56 + skip * RWKV_ROW..56 + (skip + n) * RWKV_ROW].to_vec();
+        assert_eq!(i64_at(&full, 3), 4);
+        assert_eq!(rows(&out, 3, 0), rows(&full, 3, 1));
+
+        // 指定起点（从检查点重来）：rows_from 优先，分歧照样报出来。
+        let range = RwkvRange { rebase_since: Some(base), rows_from: Some(5001) };
+        let out = c.rwkv_replay("p", &groups, &ids, &D, base, range).unwrap();
+        assert_eq!((i64_at(&out, 5), i64_at(&out, 3)), (3000, 1), "only a2 at >= 5001");
+
+        // 撤销一条更早的评分：分歧在被撤的那条。
+        let undo = r#"{"id":"u1","p":"p","card":"c1","kind":"undo","hlc":"5:0:A","at":9500,"ts":"anchored","revokes":"a1"}"#;
+        insert(&c, "u1", "c1", "undo", 9500, undo);
+        let range = RwkvRange { rebase_since: Some(4), rows_from: None };
+        let out = c.rwkv_replay("p", &groups, &ids, &D, 4, range).unwrap();
+        assert_eq!(i64_at(&out, 5), 1000, "divergence = the revoked rating");
+
+        // 只多了不改变行的日志：没有分歧，一行不取。
+        insert(&c, "s1", "c1", "suspend", 9600, r#"{"id":"s1","p":"p","card":"c1","kind":"suspend","hlc":"6:0:A","at":9600,"ts":"anchored"}"#);
+        let range = RwkvRange { rebase_since: Some(5), rows_from: None };
+        let out = c.rwkv_replay("p", &groups, &ids, &D, 5, range).unwrap();
+        assert_eq!((i64_at(&out, 5), i64_at(&out, 3), i64_at(&out, 6)), (NONE_I64, 0, 1));
     }
 
     #[test]

@@ -642,8 +642,10 @@ pub extern "C" fn ffsrs_store_optimizer_items(
     })
 }
 
-/// RWKV 回放行。`args = [n_groups, mode, utcOffsetMin, rolloverHour, since, 数字 id × 4·n_groups]`；
-/// mode 0 = 逐卡（`SrsCore::rwkv_cards`），1 = 全量回放（`SrsCore::rwkv_replay`，页里要有 profile 行）。
+/// RWKV 回放行。mode 0 = 逐卡（`SrsCore::rwkv_cards`）：`args = [n_groups, 0, utcOffsetMin, rolloverHour, 0,
+/// 数字 id × 4·n_groups]`；mode 1 = 回放（`SrsCore::rwkv_replay`，页里要有 profile 行）：`args = [n_groups, 1,
+/// utcOffsetMin, rolloverHour, since, rebaseSince|NONE, rowsFrom|NONE, 数字 id × 4·n_groups]`（NONE = i64::MIN，
+/// rebaseSince 为 NONE = 全量）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_rwkv_rows(
     core: *const SrsCoreHandle,
@@ -658,11 +660,18 @@ pub extern "C" fn ffsrs_store_rwkv_rows(
     command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, args| {
         let n = group_count(args)?;
         let (lineages, profile) = lineage_page(page, n)?;
-        let ids = args.get(5..5 + 4 * n).ok_or("missing rwkv ids")?;
         let day = day_of(args, 2)?;
+        let opt = |v: i64| (v != crate::history::NONE_I64).then_some(v);
         match arg(args, 1)? {
-            0 => c.rwkv_cards(&lineages, ids, &day),
-            1 => c.rwkv_replay(profile.as_deref().ok_or("missing profile")?, &lineages, ids, &day, arg(args, 4)?),
+            0 => c.rwkv_cards(&lineages, args.get(5..5 + 4 * n).ok_or("missing rwkv ids")?, &day),
+            1 => c.rwkv_replay(
+                profile.as_deref().ok_or("missing profile")?,
+                &lineages,
+                args.get(7..7 + 4 * n).ok_or("missing rwkv ids")?,
+                &day,
+                arg(args, 4)?,
+                crate::store::projections::RwkvRange { rebase_since: opt(arg(args, 5)?), rows_from: opt(arg(args, 6)?) },
+            ),
             m => Err(format!("unknown rwkv mode {m}")),
         }
     })

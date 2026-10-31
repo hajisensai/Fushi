@@ -707,6 +707,9 @@ final class SrsCore {
   ]);
 
   /// RWKV 全量回放（[profileUid] 的日志一条语句扫出；[since] 之后的漏卡一并返回）。
+  ///
+  /// [rebaseSince] 给了就是局部重放（lib.rs `SrsCore::rwkv_replay`）：同一快照里算出 rowid 在它之后的日志
+  /// 造成的分歧时刻，行从 [rowsFrom]（给了的话）或分歧时刻起取。
   Uint8List rwkvReplay(
     String profileUid,
     List<List<String>> lineages,
@@ -714,14 +717,21 @@ final class SrsCore {
     required int utcOffsetMin,
     required int rolloverHour,
     required int since,
+    int? rebaseSince,
+    int? rowsFrom,
   }) => _command(_b.rwkvRows, _lineagePage(lineages, profileUid), <int>[
     lineages.length,
     1,
     utcOffsetMin,
     rolloverHour,
     since,
+    rebaseSince ?? _noneI64,
+    rowsFrom ?? _noneI64,
     ...ids,
   ]);
+
+  /// Rust 侧的「无」（`NONE_I64` = i64::MIN）。
+  static const int _noneI64 = -0x8000000000000000;
 
   /// RWKV 对齐的日志指纹（与 rowid 在 [since] 之后的行数），[withRows] 时连同这些新行。
   /// [incremental]：只数 rowid 在 [since] 之后的行（O(新增)），行数 / 最大 rowid 只算新增部分。

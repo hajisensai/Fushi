@@ -11224,8 +11224,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Volume of card audio, both when tapped and when played automatically';
   String get srs_review_pending_decision => 'Needs your decision';
   String get srs_review_replay_audio => 'Replay audio';
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   String get srs_review_show_answer => 'Show answer';
   String get srs_review_undo_blocked =>
       'This card was already reviewed on another device, so this step can\'t be undone';
@@ -11323,7 +11323,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String srs_settings_rwkv_downloading({required Object percent}) =>
       'Downloading… ${percent}%';
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
@@ -33997,8 +33997,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -34158,7 +34158,7 @@ class _StringsAr extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -59866,8 +59866,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -60027,7 +60027,7 @@ class _StringsDe extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -85857,8 +85857,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -86018,7 +86018,7 @@ class _StringsEs extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -111936,8 +111936,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -112097,7 +112097,7 @@ class _StringsFr extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -137779,8 +137779,8 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -137940,7 +137940,7 @@ class _StringsId extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -163663,8 +163663,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -163824,7 +163824,7 @@ class _StringsIt extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -188837,8 +188837,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -188998,7 +188998,7 @@ class _StringsJa extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -213746,8 +213746,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -213907,7 +213907,7 @@ class _StringsKo extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -239362,8 +239362,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -239523,7 +239523,7 @@ class _StringsNl extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -265278,8 +265278,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -265439,7 +265439,7 @@ class _StringsPtBr extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -291171,8 +291171,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -291332,7 +291332,7 @@ class _StringsRu extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -316816,8 +316816,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -316977,7 +316977,7 @@ class _StringsTh extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -342526,8 +342526,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -342687,7 +342687,7 @@ class _StringsTr extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -368231,8 +368231,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -368392,7 +368392,7 @@ class _StringsVi extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -392358,8 +392358,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_review_replay_audio => '重播音频';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV 还没准备好，这个牌组暂按 FSRS-7 存下的到期日排队。';
+  String get srs_review_rwkv_pending => 'RWKV 还没准备好。RWKV 牌组的复习卡等它就绪后再出。';
   @override
   String get srs_review_show_answer => '显示答案';
   @override
@@ -392502,7 +392501,7 @@ class _StringsZhCn extends _StringsEn {
       '正在下载… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV 不可用：${error}。在此之前复习按 FSRS-7 存下的到期日排队。';
+      'RWKV 不可用：${error}。在它恢复之前，RWKV 牌组的复习卡暂停出卡。';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV 用神经网络根据整个复习历史估计每张卡此刻的回忆率；复习卡在估计回忆率降到目标保留率时出现，不看到期日。稳定性、难度与存下的到期日仍由 FSRS-7 维护。';
@@ -416417,8 +416416,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_review_replay_audio => 'Replay audio';
   @override
-  String get srs_review_rwkv_unavailable =>
-      'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+  String get srs_review_rwkv_pending =>
+      'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
   @override
   String get srs_review_show_answer => 'Show answer';
   @override
@@ -416578,7 +416577,7 @@ class _StringsZhHk extends _StringsEn {
       'Downloading… ${percent}%';
   @override
   String srs_settings_rwkv_failed({required Object error}) =>
-      'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+      'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
   @override
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
@@ -438965,8 +438964,8 @@ extension on _StringsEn {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -439095,7 +439094,7 @@ extension on _StringsEn {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -460883,8 +460882,8 @@ extension on _StringsAr {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -461013,7 +461012,7 @@ extension on _StringsAr {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -482857,8 +482856,8 @@ extension on _StringsDe {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -482987,7 +482986,7 @@ extension on _StringsDe {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -504835,8 +504834,8 @@ extension on _StringsEs {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -504965,7 +504964,7 @@ extension on _StringsEs {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -526824,8 +526823,8 @@ extension on _StringsFr {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -526954,7 +526953,7 @@ extension on _StringsFr {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -548773,8 +548772,8 @@ extension on _StringsId {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -548903,7 +548902,7 @@ extension on _StringsId {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -570731,8 +570730,8 @@ extension on _StringsIt {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -570861,7 +570860,7 @@ extension on _StringsIt {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -592623,8 +592622,8 @@ extension on _StringsJa {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -592753,7 +592752,7 @@ extension on _StringsJa {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -614464,8 +614463,8 @@ extension on _StringsKo {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -614594,7 +614593,7 @@ extension on _StringsKo {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -636395,8 +636394,8 @@ extension on _StringsNl {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -636525,7 +636524,7 @@ extension on _StringsNl {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -658357,8 +658356,8 @@ extension on _StringsPtBr {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -658487,7 +658486,7 @@ extension on _StringsPtBr {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -680323,8 +680322,8 @@ extension on _StringsRu {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -680453,7 +680452,7 @@ extension on _StringsRu {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -702249,8 +702248,8 @@ extension on _StringsTh {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -702379,7 +702378,7 @@ extension on _StringsTh {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -724193,8 +724192,8 @@ extension on _StringsTr {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -724323,7 +724322,7 @@ extension on _StringsTr {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -746132,8 +746131,8 @@ extension on _StringsVi {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -746262,7 +746261,7 @@ extension on _StringsVi {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':
@@ -767866,8 +767865,8 @@ extension on _StringsZhCn {
         return '待你决定';
       case 'srs_review_replay_audio':
         return '重播音频';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV 还没准备好，这个牌组暂按 FSRS-7 存下的到期日排队。';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV 还没准备好。RWKV 牌组的复习卡等它就绪后再出。';
       case 'srs_review_show_answer':
         return '显示答案';
       case 'srs_review_undo_blocked':
@@ -767994,7 +767993,7 @@ extension on _StringsZhCn {
         return ({required Object percent}) => '正在下载… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV 不可用：${error}。在此之前复习按 FSRS-7 存下的到期日排队。';
+            'RWKV 不可用：${error}。在它恢复之前，RWKV 牌组的复习卡暂停出卡。';
       case 'srs_settings_rwkv_hint':
         return 'RWKV 用神经网络根据整个复习历史估计每张卡此刻的回忆率；复习卡在估计回忆率降到目标保留率时出现，不看到期日。稳定性、难度与存下的到期日仍由 FSRS-7 维护。';
       case 'srs_settings_rwkv_ignore_limit':
@@ -789621,8 +789620,8 @@ extension on _StringsZhHk {
         return 'Needs your decision';
       case 'srs_review_replay_audio':
         return 'Replay audio';
-      case 'srs_review_rwkv_unavailable':
-        return 'RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.';
+      case 'srs_review_rwkv_pending':
+        return 'RWKV is not ready yet. Review cards in RWKV decks will appear once it is ready.';
       case 'srs_review_show_answer':
         return 'Show answer';
       case 'srs_review_undo_blocked':
@@ -789751,7 +789750,7 @@ extension on _StringsZhHk {
         return ({required Object percent}) => 'Downloading… ${percent}%';
       case 'srs_settings_rwkv_failed':
         return ({required Object error}) =>
-            'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
+            'RWKV is unavailable: ${error}. Review cards in RWKV decks are paused until it works again.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
       case 'srs_settings_rwkv_ignore_limit':

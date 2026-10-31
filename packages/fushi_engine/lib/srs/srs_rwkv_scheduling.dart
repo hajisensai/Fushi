@@ -22,8 +22,8 @@ class SrsRwkvCandidate {
 }
 
 abstract interface class SrsRwkvScheduling {
-  /// 现在能用 RWKV 排队：所选模型就绪、状态已建好。false 时 RWKV 牌组按存下的到期日排队
-  /// （FSRS-7 算的），界面说明（`SrsAnswerPreview.rwkvUnavailable`）；调用本 getter 不启动服务。
+  /// 现在能用 RWKV 排队：所选模型就绪、状态已建好。false 时 RWKV 牌组的复习卡不出（不退回 FSRS-7 的到期日），
+  /// 复习页等它就绪（`SrsStudyState.rwkvPending`）；调用本 getter 不启动服务。
   bool get ready;
 
   /// RWKV-Instant：[cards] 这些复习卡**此刻**的回忆率（即时头，按当前状态查询），与 [cards] 同序；

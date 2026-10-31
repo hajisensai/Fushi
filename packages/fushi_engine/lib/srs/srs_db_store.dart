@@ -33,16 +33,12 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 /// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
 const int kSrsSync2MigrateBatch = 20000;
 
-/// 本机时间：服务器校时锚点 + 本进程单调时钟（Stopwatch）。
-///
-/// 计划要求「含睡眠的开机单调时钟」（Android elapsedRealtime 等）；纯 Dart 拿不到，这里退到本进程内的
-/// Stopwatch：同一进程内改系统时间不影响记录，进程重启后要重新校时（锚点按进程 bootId 失效）。
+/// 本机时间：墙钟 + 同步校时测得的偏移（[SrsTrustedClock]）。偏移按进程 bootId 失效：进程重启后要重新校时
+/// （两次运行之间用户可能改过系统时间）。
 SrsTrustedClock srsProcessTrustedClock() {
-  final Stopwatch sw = Stopwatch()..start();
   final int base = DateTime.now().millisecondsSinceEpoch;
   return SrsTrustedClock(
     wallClockMs: () => DateTime.now().millisecondsSinceEpoch,
-    monotonicMs: () => base + sw.elapsedMilliseconds,
     bootId: '${base}_${Random.secure().nextInt(1 << 30)}',
   );
 }
@@ -346,8 +342,9 @@ class SrsDbStore implements SrsSync2Host {
   /// 排程内核；null = 原生库不可用（只能浏览 / 编辑，不能复习）。
   final FsrsEngine? engine;
 
-  /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantReviews]）；
-  /// null 或它没准备好时 RWKV 牌组按存下的到期日排队（`SrsAnswerPreview.rwkvUnavailable`）。
+  /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantInput]）。它没准备好时
+  /// RWKV 牌组的复习卡一张都不出（[SrsStudyState.rwkvPending]），**不**退回按 FSRS-7 存下的到期日排队。
+  /// null = 这个宿主根本没有 RWKV 运行时（无头引擎 / 测试），RWKV 牌组按到期日排。
   SrsRwkvScheduling? rwkv;
 
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
@@ -600,10 +597,10 @@ class SrsDbStore implements SrsSync2Host {
         '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
             '${Random.secure().nextInt(1 << 30).toRadixString(36)}';
     final Object? anchor = j['anchor'];
-    if (anchor is Map) {
+    // 旧版本写的 `{s, m, b}`（服务器时间 + 单调读数）不再认：bootId 也只在写下它的进程里有效。
+    if (anchor is Map && anchor['o'] is int && anchor['b'] is String) {
       _trusted.restoreAnchor(
-        serverTimeMs: anchor['s']! as int,
-        monotonicMs: anchor['m']! as int,
+        offsetMs: anchor['o']! as int,
         bootId: anchor['b']! as String,
       );
     }
@@ -638,6 +635,8 @@ class SrsDbStore implements SrsSync2Host {
     'cacheRev': _cacheRevision,
     'revision': _revision,
     'epoch': _epoch,
+    if (_trusted.anchorState case final ({int offsetMs, String bootId}) a)
+      'anchor': <String, Object?>{'o': a.offsetMs, 'b': a.bootId},
   };
 
   (int, SrsTimeSource) now() => _trusted.now();
@@ -2261,11 +2260,16 @@ class SrsDbStore implements SrsSync2Host {
 
   /// RWKV 全量回放：[cardIds]（回放的加入顺序）的保留评分行按评分时刻排好序，连同同一快照里的日志指纹；
   /// [since] 之后出现、不在这些卡血统里的卡作为 [SrsRwkvReplay.strays] 返回。
+  ///
+  /// [rebaseSince]：局部重放——同一快照里算出 rowid 在它之后的日志让回放序列最早从哪个时刻起不同
+  /// （[SrsRwkvReplay.divergeAt]），行只取从 [rowsFrom]（给了的话）或分歧时刻起的。
   Future<SrsRwkvReplay> rwkvReplay(
     List<String> cardIds,
     List<int> ids,
     SrsDayContext day, {
     required int since,
+    int? rebaseSince,
+    int? rowsFrom,
   }) async => srsDecodeRwkvReplay(
     await _coreRwkvReplay(
       core.address,
@@ -2276,6 +2280,8 @@ class SrsDbStore implements SrsSync2Host {
       day.utcOffsetMin,
       day.rolloverHour,
       since,
+      rebaseSince,
+      rowsFrom,
     ),
   );
 
@@ -3068,8 +3074,6 @@ class SrsDbStore implements SrsSync2Host {
   SrsAnswerPreview _previewOf(_PreviewRaw raw, SrsDeckTree tree) {
     final SrsSchedulingConfig config = _schedulingConfigIn(tree, raw.deck);
     final List<Object?> plan = raw.r['plan']! as List<Object?>;
-    final bool rwkvUnavailable =
-        config.algorithm.usesRwkv && !(rwkv?.ready ?? false);
     return SrsAnswerPreview(
       plan: SrsAnswerPlan(<int, SrsScheduleResult>{
         for (int i = 0; i < 4; i++)
@@ -3078,7 +3082,7 @@ class SrsDbStore implements SrsSync2Host {
           ),
       }),
       memoryBefore: SrsMemory.fromJson(raw.r['memoryBefore']),
-      algorithm: config.algorithm.usesRwkv && !rwkvUnavailable
+      algorithm: config.algorithm.usesRwkv
           ? SrsAlgorithm.rwkv
           : config.algorithm.memoryAlgorithm,
       params: <double>[
@@ -3087,7 +3091,6 @@ class SrsDbStore implements SrsSync2Host {
       ],
       nowMs: raw.nowMs,
       timeSource: raw.source,
-      rwkvUnavailable: rwkvUnavailable,
     );
   }
 
@@ -3312,8 +3315,9 @@ class SrsDbStore implements SrsSync2Host {
   SrsStudyState? _studyStateOf(
     Map<String, Object?> r,
     SrsDeckTree tree,
-    String deckId,
-  ) {
+    String deckId, {
+    Map<String, Object?>? request,
+  }) {
     final SrsDeckView? d = tree[deckId];
     final Map<Object?, Object?>? counts = r['counts'] as Map<Object?, Object?>?;
     if (d == null || counts == null) return null;
@@ -3321,6 +3325,7 @@ class SrsDbStore implements SrsSync2Host {
       summary: _summaryFrom(d, tree, counts[deckId]),
       next: r['next'] as String?,
       after: r['after'] as String?,
+      rwkvPending: (request?['rwkv'] as Map?)?['pending'] == true,
     );
   }
 
@@ -3332,13 +3337,13 @@ class SrsDbStore implements SrsSync2Host {
   }) async {
     final SrsDeckTree tree = await deckTree();
     if (tree[deckId] == null) return null;
-    return _studyStateOf(
-      await _sync2(
-        await _studyRequest(tree, deckId, pick: true, exclude: exclude),
-      ),
+    final Map<String, Object?> request = await _studyRequest(
       tree,
       deckId,
+      pick: true,
+      exclude: exclude,
     );
+    return _studyStateOf(await _sync2(request), tree, deckId, request: request);
   }
 
   /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数（一次排队命令）。
@@ -3614,8 +3619,11 @@ class SrsDbStore implements SrsSync2Host {
   /// （RWKV 服务是另一个原生库，[SrsRwkvScheduling]），排队规则（目标保留率、同日间隔守卫、每天最少复习数、
   /// 按 R 升序、每日上限）在内核（store/study.rs `instant_eligible`）。
   ///
-  /// 返回 null = [decks] 里没有 RWKV 牌组，或 RWKV 现在用不了（没装配 / 没准备好 / 出错）：这些牌组照旧按
-  /// 到期日排队。没启用「每天最少复习数」时只交 R 不高于目标保留率的卡（其余的内核也只会丢掉）。
+  /// 返回 null = [decks] 里没有 RWKV 牌组，或这个宿主没有 RWKV 运行时（[rwkv] 为 null）。RWKV 没准备好（权重
+  /// 没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
+  /// （[SrsStudyState.rwkvPending]），复习页等 RWKV 就绪再出。绝不退回按 FSRS-7 存下的到期日排队——那是另一种
+  /// 排程，日志的 `alg` 会混进 FSRS-7，时钟出问题时还会把「回放失败 → 改按到期日」放大成整批重复出卡。
+  /// 没启用「每天最少复习数」时只交 R 不高于目标保留率的卡（其余的内核也只会丢掉）。
   Future<Map<String, Object?>?> _instantInput(
     SrsDeckTree tree,
     List<String> decks,
@@ -3634,6 +3642,27 @@ class SrsDbStore implements SrsSync2Host {
                 .paramsOwner(tree.effectiveDeckOf(d, fallback: defaultDeckId))
                 .rwkvQueue,
         };
+    final Map<String, Object?> deckInput = <String, Object?>{
+      for (final MapEntry<String, double> e in targets.entries)
+        e.key: <Object?>[
+          e.value,
+          queueOf[e.key]!.minReviewsPerDay,
+          queueOf[e.key]!.repeatMinReviews,
+          queueOf[e.key]!.repeatMinSeconds,
+        ],
+    };
+    final Map<String, Object?> pending = <String, Object?>{
+      'decks': deckInput,
+      'cands': const <Object?>[],
+      'pending': true,
+    };
+    if (!source.ready) {
+      // 不读候选卡：没准备好时 [SrsRwkvScheduling.instantRetrievability] 只触发准备并返回 null。
+      unawaited(
+        source.instantRetrievability(const <SrsRwkvCandidate>[], nowMs: nowMs),
+      );
+      return pending;
+    }
     final List<_RwkvCandidate> rows = (await _rwkvCandidates(
       day.dayIndexOf(nowMs),
       targets.keys,
@@ -3642,20 +3671,12 @@ class SrsDbStore implements SrsSync2Host {
       <SrsRwkvCandidate>[for (final _RwkvCandidate r in rows) r.card],
       nowMs: nowMs,
     );
-    if (scores == null || scores.length != rows.length) return null;
+    if (scores == null || scores.length != rows.length) return pending;
     final bool anyMinimum = queueOf.values.any(
       (SrsRwkvQueueSettings q) => q.minReviewsPerDay > 0,
     );
     return <String, Object?>{
-      'decks': <String, Object?>{
-        for (final MapEntry<String, double> e in targets.entries)
-          e.key: <Object?>[
-            e.value,
-            queueOf[e.key]!.minReviewsPerDay,
-            queueOf[e.key]!.repeatMinReviews,
-            queueOf[e.key]!.repeatMinSeconds,
-          ],
-      },
+      'decks': deckInput,
       'cands': <Object?>[
         for (int i = 0; i < rows.length; i++)
           if (scores[i].isFinite &&
@@ -4388,12 +4409,12 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 同步成功拿到服务器时间后校时。[atMonotonicMs] 见 [SrsTrustedClock.anchor]。
-  Future<void> anchorTime(int serverTimeMs, {int? atMonotonicMs}) =>
+  /// 同步成功拿到服务器时间后校时。[observedAtWallMs] 见 [SrsTrustedClock.anchor]。
+  Future<void> anchorTime(int serverTimeMs, {int? observedAtWallMs}) =>
       runExclusive(() async {
         _trusted.anchor(
           serverTimeMs: serverTimeMs,
-          atMonotonicMs: atMonotonicMs,
+          observedAtWallMs: observedAtWallMs,
         );
         await _saveLocal();
       });
@@ -4721,6 +4742,7 @@ class SrsStudyState {
     required this.summary,
     required this.next,
     required this.after,
+    this.rwkvPending = false,
   });
 
   final SrsDeckSummary summary;
@@ -4730,6 +4752,10 @@ class SrsStudyState {
 
   /// 排除 [next] 之后的下一张（预取的猜测：真正的下一张仍以评分后的排队为准）。
   final String? after;
+
+  /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没出，等就绪后
+  /// 再排一次。[next] 为 null 时界面据此说「等 RWKV」，不说「今天复习完了」。
+  final bool rwkvPending;
 }
 
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。
@@ -4829,6 +4855,8 @@ Future<Uint8List> _coreRwkvReplay(
   int utcOffsetMin,
   int rolloverHour,
   int since,
+  int? rebaseSince,
+  int? rowsFrom,
 ) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
   address,
   (SrsCore c) => c.rwkvReplay(
@@ -4838,6 +4866,8 @@ Future<Uint8List> _coreRwkvReplay(
     utcOffsetMin: utcOffsetMin,
     rolloverHour: rolloverHour,
     since: since,
+    rebaseSince: rebaseSince,
+    rowsFrom: rowsFrom,
   ),
 );
 

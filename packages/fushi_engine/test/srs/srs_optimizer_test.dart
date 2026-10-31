@@ -146,11 +146,7 @@ void main() {
           profileUid: kProfile,
           deviceId: 'dev',
           engine: engine,
-          trustedClock: SrsTrustedClock(
-            wallClockMs: () => t,
-            monotonicMs: () => t,
-            bootId: 'b',
-          ),
+          trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'b'),
         );
         final Random r = Random(7);
         final List<String> cards = <String>[];

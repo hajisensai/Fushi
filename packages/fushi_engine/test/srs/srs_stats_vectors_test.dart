@@ -58,7 +58,10 @@ final class _FakeRwkv implements SrsRwkvScheduling {
 }
 
 /// 造场景库（只在重新生成时跑）。
-Future<SrsDbStore> _build(int Function() clock, void Function(int) setNow) async {
+Future<SrsDbStore> _build(
+  int Function() clock,
+  void Function(int) setNow,
+) async {
   int t = DateTime.utc(2026, 9, 20, 12).millisecondsSinceEpoch;
   setNow(t);
   final SrsDbStore s = await openTestStore(
@@ -83,12 +86,7 @@ Future<SrsDbStore> _build(int Function() clock, void Function(int) setNow) async
   final String a1 = await s.ensureDeckPath('Root::A::A1');
   final String b = await s.ensureDeckPath('Root::B');
   final String other = await s.ensureDeckPath('Other');
-  await s.editField(
-    SrsEntityKind.deck,
-    b,
-    SrsFieldKeys.deckParamsMode,
-    'own',
-  );
+  await s.editField(SrsEntityKind.deck, b, SrsFieldKeys.deckParamsMode, 'own');
   await s.editField(SrsEntityKind.deck, b, SrsFieldKeys.deckRetention, 0.85);
   final List<SrsSourceRef?> sources = <SrsSourceRef?>[
     SrsSourceRef.book(
@@ -184,8 +182,7 @@ void main() {
   bool built = false;
   final Map<String, Object?> expected = write
       ? const <String, Object?>{}
-      : (jsonDecode(vectors.readAsStringSync()) as Map)
-            .cast<String, Object?>();
+      : (jsonDecode(vectors.readAsStringSync()) as Map).cast<String, Object?>();
 
   tearDownAll(() {
     if (write) {
@@ -225,11 +222,7 @@ void main() {
         profileUid: kStatsVecProfile,
         deviceId: 'v',
         engine: const FakeFsrsEngine(),
-        trustedClock: SrsTrustedClock(
-          wallClockMs: () => t,
-          monotonicMs: () => t,
-          bootId: 'boot-v',
-        ),
+        trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot-v'),
         fallbackRolloverHour: () => 4,
       );
     }

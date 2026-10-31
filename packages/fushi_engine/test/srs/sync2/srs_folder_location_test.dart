@@ -46,11 +46,7 @@ void main() {
       profileUid: kProfile,
       deviceId: id,
       engine: const SrsFakeEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        monotonicMs: () => t,
-        bootId: 'boot-$id',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot-$id'),
     );
   }
 

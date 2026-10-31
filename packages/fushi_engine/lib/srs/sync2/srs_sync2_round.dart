@@ -107,6 +107,11 @@ class SrsSync2Report {
   /// 写 head 那一刻的服务端时间（校时用；后端给不出为 null）。
   int? serverTimeMs;
 
+  /// [serverTimeMs] 被盖下那一刻本机的墙钟：写 head 那次上传前后两次墙钟读数的中点（误差 ≤ 上传耗时的一半）。
+  /// 校时必须把服务器时间与**同一刻**的本机时钟配对：以前拿一轮开头的时钟读数去配这一轮末尾的服务器时间，
+  /// 整轮同步的耗时（大库、卡顿时十几分钟）全算成了「本机时钟落后」，可信时间因此超前同样的时长。
+  int? serverTimeWallMs;
+
   /// 这个位置这一轮没同步成的原因（调度器据此如实报「未同步」）；null = 成功。
   String? error;
 
@@ -123,6 +128,8 @@ class SrsSync2Report {
   final List<String> errors = <String>[];
 }
 
+int _systemWallClockMs() => DateTime.now().millisecondsSinceEpoch;
+
 /// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[key] = 本机为这个位置记的密钥
 /// （见 srs_location_crypto.dart [srsLocationHandshake]：位置是加密的而本机没有 / 不对 → 这一轮不同步，报
 /// [kSrsSync2NeedsKey] / [kSrsSync2WrongKey]；本机开过加密而位置上的 `kdf` 不见了 → [kSrsSync2EncryptionMissing]，
@@ -138,6 +145,7 @@ Future<SrsSync2Report> srsSync2Round({
   required SrsLocationStore location,
   required String locationId,
   required int Function() nowMs,
+  int Function() wallClockMs = _systemWallClockMs,
   SrsLocationKey? key,
   bool archive = false,
   void Function(int done, int total)? onFetchProgress,
@@ -293,8 +301,11 @@ Future<SrsSync2Report> srsSync2Round({
     });
   }
   String? written;
+  int? writtenAtWallMs;
   for (final (String path, Uint8List bytes) in head.files) {
+    final int before = wallClockMs();
     await location.put(path, bytes);
+    writtenAtWallMs = before + (wallClockMs() - before) ~/ 2;
     written = path.substring(path.lastIndexOf('/') + 1);
   }
   // 小段合并（§7.1）换下来的旧小段（新 head 已不再引用、过了宽限期）与没删成的旧转发件：两段式，删成功才确认
@@ -315,7 +326,11 @@ Future<SrsSync2Report> srsSync2Round({
     if (!archive && g != null && g < gen - 2) {
       stale.add('devices/$self/${f.name}');
     }
-    if (f.name == written) report.serverTimeMs = f.modifiedAt;
+    if (f.name == written && f.modifiedAt != null) {
+      report
+        ..serverTimeMs = f.modifiedAt
+        ..serverTimeWallMs = writtenAtWallMs;
+    }
   }
   await srsRunPooled(stale, kSrsSync2Concurrency, location.delete);
   return report;

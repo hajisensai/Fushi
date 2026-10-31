@@ -51,8 +51,9 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 | `void frwkv_runtime_free(FrwkvRuntime*)` | |
 | `int32_t frwkv_runtime_replay(FrwkvRuntime*, const FrwkvReview* reviews, size_t count, float* out_predictions)` | 按时间顺序追加一批已答复习。`out_predictions` 可空；非空则写 `count` 个 f32：每条有评分行**作答前**的 R，无评分行写 NaN。任一行不合法 → `-2`，整批不应用 |
 | `int32_t frwkv_runtime_query(FrwkvRuntime*, const FrwkvReview* queries, size_t count, float* out)` | 批量查询当前 R，写 `count` 个 f32；不合法的行写 **NaN**（见下） |
-| `int32_t frwkv_runtime_append(FrwkvRuntime*, const FrwkvReview* reviews, const uint64_t* tags, size_t count)` | 同 replay 追加（状态逐位相同），每行记一条撤销日志（标签 `tags[i]`，Fushi 用日志 id 的 hash）；每行必须有评分；**仅小模型**（大模型 `-6`）。日志上限 16 MB（约 300 条），超出丢最早的 |
-| `int32_t frwkv_runtime_unappend(FrwkvRuntime*, uint64_t tag)` | 撤回最近一条 append，仅当标签是 `tag`：返回 1，状态与没回放过它逐位相同（之后没有新抽 ID 编码时连编码一并收回）；不是它 / 日志被 replay·restore·reset 清空过返回 0、什么都不改（调用方全量重建） |
+| `int32_t frwkv_runtime_append(FrwkvRuntime*, const FrwkvReview* reviews, const uint64_t* tags, const int64_t* ats, size_t count)` | 同 replay 追加（状态逐位相同），每行记一条撤销日志（标签 `tags[i]`，Fushi 用日志 id 的 hash；评分时刻 `ats[i]` 毫秒，不得早于日志里最后一条）；每行必须有评分；**仅小模型**（大模型 `-6`）。日志上限 32 MB（约 600 条），超出丢最早的 |
+| `int32_t frwkv_runtime_unappend(FrwkvRuntime*, uint64_t tag)` | 撤回最近一条 append，仅当标签是 `tag`：返回 1，状态与没回放过它逐位相同（之后没有新抽 ID 编码时连编码一并收回）；不是它 / 日志被 replay·restore·reset 清空过返回 0、什么都不改 |
+| `int32_t frwkv_runtime_rewind_from(FrwkvRuntime*, int64_t at_ms, int64_t floor_ms, uint64_t* out_count)` | 退到 `at_ms` 之前：撤掉日志里时刻 ≥ `at_ms` 的全部条目，返回 1 并写撤了几条；状态与「只回放过时刻 < `at_ms` 的行」逐位相同，之后按时间顺序 append 从 `at_ms` 起的行 = 全量回放（Fushi 的「退回重放」）。`floor_ms` = 调用方保证最近一次 replay·restore·reset 之后不经日志进来的行的最晚时刻（reset 后 `INT64_MIN`，不知道 `INT64_MAX`）；它或超出容量丢掉的条目不早于 `at_ms` 时返回 0、什么都不改（调用方从检查点或全量回放重来） |
 | `int32_t frwkv_runtime_scores_clear(FrwkvRuntime*)` | 清空常驻分数表 |
 | `int32_t frwkv_runtime_scores_lookup(const FrwkvRuntime*, const int64_t* card_ids, const uint64_t* versions, size_t count, float* out_scores, uint8_t* out_found)` | 按（卡、版本）查分数表；命中写 R 与 1，否则 NaN 与 0；返回命中数 |
 | `int32_t frwkv_runtime_scores_update(FrwkvRuntime*, const FrwkvReview* queries, const uint64_t* versions, const int64_t* anchors_ms, size_t count, float* out)` | 同 query 算 R（逐位相同，每行不取决于同批别的行）并记进表（版本、锚点 = 最后一条保留评分的毫秒时刻，无则 -1） |
@@ -60,7 +61,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 分数表：append / unappend / replay 作废同卡、同笔记的项（它们的卡 / 笔记状态变了），牌组 / 预设 / 全局
 状态被别的卡带动的变化由调用方定时 `scores_requery` 收敛；reset / restore 清空日志与表。契约测试
-`tests/journal.rs`。
+`tests/journal.rs`（含「rewind_from + 按时间顺序 append == 全量回放」的逐字节对拍）。
 | `int32_t frwkv_runtime_next_intervals(FrwkvRuntime*, const FrwkvReview* answer, float target_retention, uint32_t max_interval_days, uint32_t* out_days, float* out_r)` | 作答时排程（见下）：写 4 个天数（Again / Hard / Good / Easy），`out_r` 可空；什么都不保存 |
 | `int32_t frwkv_runtime_snapshot(const FrwkvRuntime*, uint8_t** out_bytes, size_t* out_len)` | 导出无损快照（用 `frwkv_free_bytes` 释放） |
 | `int32_t frwkv_runtime_restore(FrwkvRuntime*, const uint8_t* bytes, size_t len)` | 用快照替换状态；precision 必须一致；失败时状态不变 |
