@@ -5789,6 +5789,26 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setAiAgentForPeers(bool value) =>
       setPref('ai_agent_for_peers', value);
 
+  /// 外部 AI 访问（MCP，`fushi_cli mcp` / 控制通道 `/mcp`）。默认关：打开后本机的
+  /// MCP 客户端凭配对令牌能调操作目录，只能由用户在设置页亲手打开（设备本地）。
+  bool get aiMcpEnabled =>
+      getPref('ai_mcp_enabled', defaultValue: false) as bool;
+
+  Future<void> setAiMcpEnabled(bool value) async {
+    await setPref('ai_mcp_enabled', value);
+    notifyListeners();
+  }
+
+  /// 外部 AI 配对令牌的 SHA-256（hex）。只存摘要：令牌只在生成那一刻给用户看一次，
+  /// 偏好库泄露也拿不到能用的令牌。空串 = 还没生成。
+  String get aiMcpTokenSha256 =>
+      getPref('ai_mcp_token_sha256', defaultValue: '') as String;
+
+  Future<void> setAiMcpTokenSha256(String value) async {
+    await setPref('ai_mcp_token_sha256', value);
+    notifyListeners();
+  }
+
   /// AI 整理库「导入后自动整理」（spec docs/specs/2026-10-20-ai-library-organize-design.md
   /// §10.2）。默认关：按量计费，绝不静默开启。
   bool get libraryOrganizeAuto =>

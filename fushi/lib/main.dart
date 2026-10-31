@@ -6,6 +6,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/ai/agent/ai_agent_entry.dart'
     show openAiAgentFromShortcut;
+import 'package:fushi/src/ai/mcp/ai_mcp_ui.dart' show buildAiMcpHttpEndpoint;
 import 'package:fushi/src/corpus/corpus_origin_navigation.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
@@ -2011,6 +2012,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         },
         quitApp: _flushAndExitForWindowClose,
         routes: buildOpRoutes(appOpContext!),
+      ),
+      mcp: buildAiMcpHttpEndpoint(
+        appVersion: () => ref.read(appProvider).packageInfo.version,
       ),
     );
     if (!mounted) {
