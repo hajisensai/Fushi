@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "開啟後用 mpv 內建高畫質縮放讓畫面更清晰，動畫、真人影視/電視劇都適用。想用 Anime4K 等著色器進一步增強，請在播放影片時的「畫質增強」裡選擇檔位。",
   "video_quality_load_failed": "無法獲取該影片的畫質檔。",
   "video_quality_loading": "正在獲取可選畫質…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "畫質：$label",
   "video_recently_added_badge": "新",
   "video_remote_all": "All videos",

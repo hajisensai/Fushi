@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Bật để dùng tính năng co giãn chất lượng cao tích hợp của mpv giúp hình ảnh sắc nét hơn, hợp cho cả anime lẫn phim/series người thật. Muốn đẩy xa hơn với các shader như Anime4K, hãy mở Tăng cường hình ảnh khi đang phát video và chọn mức ở đó.",
   "video_quality_load_failed": "Không thể tải danh sách chất lượng cho video này.",
   "video_quality_loading": "Đang tải các chất lượng khả dụng…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Chất lượng: $label",
   "video_recently_added_badge": "MỚI",
   "video_remote_all": "All videos",

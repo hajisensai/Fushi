@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Actívalo para nitidez de imagen con el escalado de alta calidad integrado en mpv. Funciona tanto en anime como en series y películas de acción real. Para ir más allá con shaders como Anime4K, abre Mejora de imagen mientras se reproduce un vídeo y elige un nivel allí.",
   "video_quality_load_failed": "No se pudieron cargar las calidades para este vídeo.",
   "video_quality_loading": "Cargando calidades disponibles…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Calidad: $label",
   "video_recently_added_badge": "NUEVO",
   "video_remote_all": "All videos",

@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Görüntüyü mpv'nin yerleşik yüksek kaliteli ölçeklemesiyle keskinleştirmek için bunu açın. Hem anime hem de gerçek çekim dizi ve filmlerde çalışır. Anime4K gibi shader'larla daha ileri gitmek için bir video oynarken Görüntü iyileştirme'yi açın ve oradan bir seviye seçin.",
   "video_quality_load_failed": "Bu video için kalite seçenekleri yüklenemedi.",
   "video_quality_loading": "Mevcut kaliteler yükleniyor…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Kalite: $label",
   "video_recently_added_badge": "YENİ",
   "video_remote_all": "All videos",

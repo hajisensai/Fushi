@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "เปิดเพื่อให้ภาพคมขึ้นด้วยการปรับขนาดคุณภาพสูงในตัวของ mpv ใช้ได้ทั้งอนิเมะและภาพยนตร์/ซีรีส์คนแสดง หากต้องการใช้เชเดอร์อย่าง Anime4K เพิ่มเติม ให้เปิด \"ปรับปรุงคุณภาพภาพ\" ขณะเล่นวิดีโอแล้วเลือกระดับที่นั่น",
   "video_quality_load_failed": "ไม่สามารถโหลดตัวเลือกคุณภาพสำหรับวิดีโอนี้",
   "video_quality_loading": "กำลังโหลดตัวเลือกคุณภาพ…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "คุณภาพ: $label",
   "video_recently_added_badge": "ใหม่",
   "video_remote_all": "All videos",
