@@ -317,9 +317,9 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     final List<_Section> sections = empty
         ? <_Section>[]
         : <_Section>[
-            if (data.rwkvNow() case final SrsRwkvNow now)
+            if (data.rwkvNow case final SrsRwkvNow now)
               _Section(_rwkvNowSection(now), 1.6),
-            if (data.hasDueDateCards || data.rwkvNow() == null)
+            if (data.hasDueDateCards || data.rwkvNow == null)
               _Section(_futureSection(data, colors), 3.2),
             _Section(_calendarSection(data), 2.6),
             _Section(_reviewsSection(data, colors), 3.6),
