@@ -3,6 +3,16 @@ import 'dart:convert';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 
+/// 互联 host 替已配对设备跑的远端会话存进对话存档时的场景名。这些会话属于发起
+/// 的那台设备：本机「AI 助手」的会话列表不列（[kAiAgentLocalLibraryExcludedScenes]），
+/// 只在「AI 操作记录」页按会话配标题。
+const String kAiAgentRemoteScene = 'remote';
+
+/// 本机会话列表（`AiAgentController.listSessions`）排除的场景。
+const Set<String> kAiAgentLocalLibraryExcludedScenes = <String>{
+  kAiAgentRemoteScene,
+};
+
 /// 一场会话的默认标题：首条用户消息的摘要（[aiAgentSessionAutoTitle]）。还没有
 /// 用户消息时退到第一条条目的文字。
 String aiAgentSessionTitleOf(AgentSession session) {

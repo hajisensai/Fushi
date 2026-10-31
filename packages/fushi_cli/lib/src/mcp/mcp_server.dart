@@ -9,6 +9,7 @@
 /// 参数 schema 就是给模型看的那份（用户表态参数已删掉）。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -42,13 +43,69 @@ class McpClientInfo {
       version == null || version!.isEmpty ? name : '$name $version';
 }
 
+/// 没带会话 id、或会话 id 不认识（app 重启过 / 被挤出）的调用共用的会话身份。
+/// 这些调用彼此分不开：它们做过的事记在同一个 `anonymous` 名下。
+const String kMcpAnonymousSessionId = 'anonymous';
+
+/// 一次工具调用是否已被客户端取消（MCP `notifications/cancelled`）。
+abstract interface class McpCancellation {
+  /// 永不取消（测试、没有取消通道的调用方）。
+  const factory McpCancellation.never() = _NeverCancelled;
+
+  bool get isCancelled;
+
+  /// 取消时完成；永不取消的永不完成。
+  Future<void> get whenCancelled;
+}
+
+class _NeverCancelled implements McpCancellation {
+  const _NeverCancelled();
+
+  static final Future<void> _never = Completer<void>().future;
+
+  @override
+  bool get isCancelled => false;
+
+  @override
+  Future<void> get whenCancelled => _never;
+}
+
+/// 服务端为每个在途 `tools/call` 发的取消信号。
+class McpCancellationSource implements McpCancellation {
+  final Completer<void> _cancelled = Completer<void>();
+
+  @override
+  bool get isCancelled => _cancelled.isCompleted;
+
+  @override
+  Future<void> get whenCancelled => _cancelled.future;
+
+  /// 客户端取消时的说明（`params.reason`，不可信，只作日志）。
+  String? reason;
+
+  void cancel([String? reason]) {
+    if (_cancelled.isCompleted) return;
+    this.reason = reason;
+    _cancelled.complete();
+  }
+}
+
 /// 一次工具调用的来源。
 class McpCallContext {
-  const McpCallContext({required this.sessionId, required this.client});
+  const McpCallContext({
+    required this.sessionId,
+    required this.client,
+    this.cancellation = const McpCancellation.never(),
+  });
 
-  /// MCP 会话 id（`Mcp-Session-Id`）；客户端没带或会话已过期时是 `anonymous`。
+  /// MCP 会话 id（`Mcp-Session-Id`）；客户端没带或会话已过期时是
+  /// [kMcpAnonymousSessionId]。
   final String sessionId;
   final McpClientInfo client;
+
+  /// 客户端发 `notifications/cancelled` 放弃这次调用时触发：还没执行的不再执行
+  /// （等确认的撤掉确认），已经执行完的不回滚。
+  final McpCancellation cancellation;
 }
 
 /// MCP 的一个工具。
@@ -196,8 +253,28 @@ class McpServer {
 
   static const int _maxSessions = 64;
 
-  /// 结束一个会话（HTTP `DELETE /mcp`）。
-  void endSession(String sessionId) => _sessions.remove(sessionId);
+  /// 在途的 `tools/call`：键 = （传输层会话 id，请求 id），见 [_inFlightKey]。
+  /// `notifications/cancelled` 只能取消同一会话发出的请求。
+  final Map<String, McpCancellationSource> _inFlight =
+      <String, McpCancellationSource>{};
+
+  /// 结束一个会话（HTTP `DELETE /mcp`）：它在途的调用一并取消。
+  void endSession(String sessionId) {
+    _sessions.remove(sessionId);
+    final String prefix = _inFlightSessionKey(sessionId);
+    for (final MapEntry<String, McpCancellationSource> e
+        in _inFlight.entries.toList()) {
+      if (e.key.startsWith(prefix)) e.value.cancel('session ended');
+    }
+  }
+
+  /// 传输层带来的原始会话 id（不认识的也照用：取消通知与原请求带的是同一个头）。
+  static String _inFlightSessionKey(String? sessionId) =>
+      '${jsonEncode(sessionId ?? '')}:';
+
+  /// 请求 id 按 JSON 编码区分（`1` 与 `"1"` 是两个请求）。
+  static String _inFlightKey(String? sessionId, Object? requestId) =>
+      '${_inFlightSessionKey(sessionId)}${jsonEncode(requestId)}';
 
   /// 处理一条已解码的 JSON-RPC 消息（或 2025-03-26 及更早版本允许的批量数组）。
   Future<McpReply> handle(Object? payload, {String? sessionId}) async {
@@ -234,6 +311,7 @@ class McpServer {
     }
     if (!isRequest) {
       // 通知（notifications/initialized、notifications/cancelled…）：不回。
+      if (method == 'notifications/cancelled') _cancel(message, sessionId);
       return const _Handled(null);
     }
     final Object? rawParams = message['params'];
@@ -302,7 +380,7 @@ class McpServer {
     );
   }
 
-  Future<Map<String, Object?>> _callTool(
+  Future<Map<String, Object?>?> _callTool(
     Object? id,
     Map<String, Object?> params,
     String? sessionId,
@@ -318,9 +396,14 @@ class McpServer {
     final _McpSession? session = sessionId == null
         ? null
         : _sessions[sessionId];
+    final String key = _inFlightKey(sessionId, id);
+    final McpCancellationSource cancellation = McpCancellationSource();
+    // 客户端在上一个同 id 请求还没结束时复用了 id：取消通知只可能指新的这个。
+    _inFlight[key] = cancellation;
     final McpCallContext context = McpCallContext(
-      sessionId: session == null ? 'anonymous' : sessionId!,
+      sessionId: session == null ? kMcpAnonymousSessionId : sessionId!,
       client: session?.client ?? McpClientInfo.unknown,
+      cancellation: cancellation,
     );
     try {
       final McpToolResult result = await host.callTool(
@@ -330,10 +413,25 @@ class McpServer {
             : Map<String, Object?>.from(rawArgs as Map),
         context,
       );
+      // 客户端已放弃这次调用：按 MCP 规定不再应答（HTTP 回 202，stdio 桥不写）。
+      if (cancellation.isCancelled) return null;
       return _result(id, result.toJson());
     } on McpUnknownTool catch (unknown) {
       return _error(id, kJsonRpcInvalidParams, 'Unknown tool: ${unknown.name}');
+    } finally {
+      if (identical(_inFlight[key], cancellation)) _inFlight.remove(key);
     }
+  }
+
+  /// `notifications/cancelled`：取消同一会话里还在途的那个请求。不认识的请求 id
+  /// （已结束、从没有过）按规范静默忽略。
+  void _cancel(Map<Object?, Object?> message, String? sessionId) {
+    final Object? params = message['params'];
+    if (params is! Map || params['requestId'] == null) return;
+    final Object? reason = params['reason'];
+    _inFlight[_inFlightKey(sessionId, params['requestId'])]?.cancel(
+      reason is String ? _clip(reason, 200) : null,
+    );
   }
 
   String _newSessionId() {
