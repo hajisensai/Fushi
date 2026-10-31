@@ -4358,6 +4358,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 副本还能写（没有被 [retire]、也没有因重读失败作废）。
   bool get isUsable => _unusable == null;
 
+  /// 当前代码正跑在本副本的独占区里（[runExclusive] 的 body 内，按 Zone 认）。
+  ///
+  /// 外层锁（[SrsExclusiveOuter]）的实现据此判断重入：已在激活副本独占区里的代码再调别的副本的写方法，
+  /// 必须直接执行，不能再排队等这把锁（否则自己等自己）。
+  bool get holdsExclusive => identical(Zone.current[_writeZoneKey], this);
+
   Future<List<SrsEvent>> exportAll() async {
     final List<SrsEvent> out = await exportEntitiesAndEdits();
     for (final SrsReviewLogRow r in await (db.select(

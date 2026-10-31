@@ -596,6 +596,12 @@ class ProfileRepository {
     );
   }
 
+  /// [loadSettingsView] 从 live `preferences` 表直接取值（而不是从配置快照取）的键：不随配置走的
+  /// 设备本地 / 凭据 / 状态键（[ProfileKeys.isExcludedPref]，含 Anki 设置整份 JSON）。其余键的值
+  /// 只来自配置快照——App 激活配置改它们不影响别的配置的视图（视图缓存据此判断要不要重建）。
+  static bool settingsViewReadsLivePref(String key) =>
+      ProfileKeys.isExcludedPref(key);
+
   /// 反馈 biLEesNqWb：**只读**解析 [profileId] 的快照，得到「现在切到它会生效的整份
   /// 设置」（[ProfileSettingsView]），不写任何表、不动激活配置。配置不存在返回 null。
   ///
@@ -619,7 +625,7 @@ class ProfileRepository {
 
     final Map<String, String> prefs = <String, String>{
       for (final MapEntry<String, String> e in (await _db.getAllPrefs()).entries)
-        if (ProfileKeys.isExcludedPref(e.key)) e.key: e.value,
+        if (settingsViewReadsLivePref(e.key)) e.key: e.value,
       ...snapshot.prefMap,
     };
 

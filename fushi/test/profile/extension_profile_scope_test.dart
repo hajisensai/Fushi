@@ -26,6 +26,41 @@ class _NoopLookup implements FushiRemoteLookupService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// 数解析依据的读库次数（激活配置 / 浏览器绑定 / 配置列表）。
+class _CountingProfileRepository extends ProfileRepository {
+  _CountingProfileRepository(super.db, super.anki);
+
+  int activeReads = 0;
+  int bindingReads = 0;
+  int profileListReads = 0;
+
+  @override
+  Future<int> getActiveProfileId() {
+    activeReads++;
+    return super.getActiveProfileId();
+  }
+
+  @override
+  Future<int?> resolveBoundProfileId({
+    required String? bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+  }) {
+    bindingReads++;
+    return super.resolveBoundProfileId(
+      bookUid: bookUid,
+      languageTag: languageTag,
+      mediaType: mediaType,
+    );
+  }
+
+  @override
+  Future<List<ProfileRow>> getAllProfiles() {
+    profileListReads++;
+    return super.getAllProfiles();
+  }
+}
+
 void main() {
   late FushiDatabase db;
   late FakeAnkiRepository anki;
@@ -249,5 +284,76 @@ void main() {
     await api.resolveScope(profileB);
     expect(builtViews, hasLength(2));
     expect(builtViews.last.prefsMap[_scopedPref], 'B-updated');
+  });
+
+  test('App 激活配置的设置写入不重建别的配置的视图；设备本地键变了才重建', () async {
+    await api.resolveScope(profileB);
+    expect(builtViews, hasLength(1));
+
+    // A（激活）改设置：只写 live preferences，B 的视图只从快照读这个键 → 不重建。
+    await db.setPref(_scopedPref, 'A-edited');
+    await db.setPref(_scopedPref, 'A-edited-again');
+    await pumpEventQueue();
+    await api.resolveScope(profileB);
+    await api.resolveScope(profileB);
+    expect(builtViews, hasLength(1), reason: '与 B 无关的偏好写入不该让 hover 查词重建快照');
+    expect(builtViews.single.prefsMap[_scopedPref], 'B-value');
+
+    // 设备本地键（视图从 live 表读）真变了 → 重建，新视图看到新值。
+    await db.setPref(_deviceLocalPref, 'ja');
+    await pumpEventQueue();
+    await api.resolveScope(profileB);
+    expect(builtViews, hasLength(2));
+    expect(builtViews.last.prefsMap[_deviceLocalPref], 'ja');
+
+    // 写回同一个值（只跳了 prefs_version）→ 不重建。
+    await db.setPref(_deviceLocalPref, 'ja');
+    await pumpEventQueue();
+    await api.resolveScope(profileB);
+    expect(builtViews, hasLength(2));
+  });
+
+  test('解析依据缓存：稳态 hover 不再查库；切激活配置 / 改绑定 / 删配置后下一次请求看到新值', () async {
+    final _CountingProfileRepository counting = _CountingProfileRepository(
+      db,
+      anki,
+    );
+    final AppExtensionProfileApi scoped = AppExtensionProfileApi(
+      repository: () => counting,
+      database: () => db,
+      servicesForView: (ProfileSettingsView view) =>
+          ExtensionRequestServices(lookup: _NoopLookup()),
+    );
+    addTearDown(scoped.dispose);
+
+    for (int i = 0; i < 5; i++) {
+      expect((await scoped.resolveScope(null)).effectiveProfileId, profileA);
+      expect((await scoped.resolveScope(profileA)).services, isNull);
+    }
+    expect(counting.activeReads, 1, reason: '默认路径每次请求都查库太重');
+    expect(counting.bindingReads, 1);
+    expect(counting.profileListReads, 1);
+
+    // App 切到 B（active_profile_id 在 preferences 里）。
+    await counting.setActiveProfileId(profileB);
+    await pumpEventQueue();
+    expect((await scoped.resolveScope(null)).effectiveProfileId, profileB);
+    expect(counting.activeReads, 2);
+    await counting.setActiveProfileId(profileA);
+    await pumpEventQueue();
+
+    // 改「浏览器」绑定。
+    await counting.setMediaTypeBinding(ProfileMediaKind.browser, profileB);
+    await pumpEventQueue();
+    final ExtensionProfileScope bound = await scoped.resolveScope(null);
+    expect(bound.effectiveProfileId, profileB);
+    expect(bound.services, isNotNull);
+
+    // 删掉所选配置。
+    await counting.deleteProfile(profileB);
+    await pumpEventQueue();
+    final ExtensionProfileScope gone = await scoped.resolveScope(profileB);
+    expect(gone.effectiveProfileId, profileA);
+    expect(gone.missingRequestedProfileId, profileB);
   });
 }
