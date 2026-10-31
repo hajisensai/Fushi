@@ -10,10 +10,16 @@
 ///
 /// * 组内顺序 = 全局序列里该组成员的相对先后——旧用户升级后零迁移，同组内的
 ///   相对顺序天然不变；
-/// * 组内重排（[mergeLanguageGroupOrder]）只在**该组成员原来占的那些槽位**里
-///   重新分配，其它组的词典一个槽位都不动；
-/// * 组与组之间的交错顺序不被任何 UI 暴露，也就不影响用户能感知的优先级——
-///   日语查询基本只命中日语词典，跨组的相对先后没有意义。
+/// * 管理页把各组**首尾相接**地画出来（组序见 [groupDictionariesByLanguage]），
+///   用户读到的就是「组 1 全部 → 组 2 全部 → … → 未标注语言组」这一条顺序。
+///   跨组的先后**并非无意义**：「未标注语言」组里常是没声明语言的日语包，
+///   `ja` / `ja-JP` 也会分成两组，同一次日语查询会同时命中它们，弹窗按全局序排。
+/// * 所以每次把一个分区写回（组内重排 [mergeLanguageGroupOrder] /
+///   [moveDictionaryWithinLanguageGroup]、改语言换组 [sectionAfterLanguageChange]）
+///   都把整个分区规范成「各组按显示顺序首尾相接」（[concatenateLanguageGroups]），
+///   调用方再按下标 0..n-1 重编号——写过一次之后，管理页显示的顺序 ==
+///   `termDictionaryOrder` / 汉字桶的真实查词顺序，旧数据里的跨组交错随之消掉。
+///   从没写过的旧数据仍是交错的全局序（不在读路径上偷偷改用户的查词优先级）。
 ///
 /// 所有者已否决「查词时按内容语言 / 学习语言过滤词典」：本文件只服务管理与排序，
 /// 查词照旧查所有启用的词典。
@@ -93,17 +99,31 @@ List<DictionaryLanguageGroup> groupDictionariesByLanguage(
   ];
 }
 
-/// 组内重排后的新分区顺序：[reorderedGroup] 是某一组的新顺序，按分区里该组成员
-/// 原来占的槽位依次填回，其它组的词典原位不动。
+/// 分区的规范顺序：各语言组按显示顺序（[groupDictionariesByLanguage]）首尾相接。
+///
+/// 这就是管理页从上到下画出来的顺序。写回分区时一律按它重编号，显示顺序与
+/// 真实查词顺序才是同一条（见文件头）。
+List<Dictionary> concatenateLanguageGroups(List<Dictionary> section) =>
+    <Dictionary>[
+      for (final DictionaryLanguageGroup group in groupDictionariesByLanguage(
+        section,
+      ))
+        ...group.dictionaries,
+    ];
+
+/// 组内重排后的新分区顺序：[reorderedGroup] 是某一组的新顺序；返回整个分区的
+/// 规范顺序（[concatenateLanguageGroups]），其中该组换成新顺序，其它组的组内
+/// 顺序与组序都不变。调用方按返回下标重编号。
 ///
 /// [reorderedGroup] 必须恰好是 [section] 里该组的全部成员（按 [Dictionary.name]
-/// 比对），否则抛 [ArgumentError]——半组写回会把别组词典挤出槽位、静默改掉它们
-/// 的查词优先级。
+/// 比对），否则抛 [ArgumentError]——半组写回会丢词典或重复词典。UI 不要拿渲染时
+/// 捕获的旧组调它：组成员可能已被别处改过，用 [moveDictionaryWithinLanguageGroup]
+/// 从最新分区重算。
 List<Dictionary> mergeLanguageGroupOrder(
   List<Dictionary> section,
   List<Dictionary> reorderedGroup,
 ) {
-  if (reorderedGroup.isEmpty) return List<Dictionary>.of(section);
+  if (reorderedGroup.isEmpty) return concatenateLanguageGroups(section);
   final String? language = dictionaryLanguageGroupOf(reorderedGroup.first);
   final List<String> currentMembers = <String>[
     for (final Dictionary d in section)
@@ -122,26 +142,55 @@ List<Dictionary> mergeLanguageGroupOrder(
           '(${currentMembers.join(', ')})',
     );
   }
-  final Iterator<Dictionary> next = reorderedGroup.iterator;
   return <Dictionary>[
-    for (final Dictionary d in section)
-      if (dictionaryLanguageGroupOf(d) == language)
-        (next..moveNext()).current
-      else
-        d,
+    for (final DictionaryLanguageGroup group in groupDictionariesByLanguage(
+      section,
+    ))
+      ...(group.language == language ? reorderedGroup : group.dictionaries),
   ];
 }
 
-/// 比 [others] 里所有词典在任何分区的排序键都大的下一个序号。
+/// 把 [section] 里名为 [name] 的词典挪到它**所在语言组**的最终下标 [to]（越界
+/// 钳到组的两端），返回整个分区的新规范顺序（同 [mergeLanguageGroupOrder]）。
 ///
-/// 改了语言、换到别的组的词典用它当新序号：在新组（以及它出现的每个分区）里
-/// 排最后。同时看 [Dictionary.order] 与 [Dictionary.kanjiSectionOrder]，因为
-/// 混合词典在「汉字」分区有自己的序号空间。
-int dictionaryOrderTailOf(Iterable<Dictionary> others) {
-  int tail = -1;
-  for (final Dictionary d in others) {
-    if (d.order > tail) tail = d.order;
-    if (d.kanjiSectionOrder > tail) tail = d.kanjiSectionOrder;
-  }
-  return tail + 1;
+/// 组成员一律从 [section]（调用方传最新分区）现算，不信调用方手里的旧组：管理页
+/// 的列表是渲染时捕获的，期间别处（ctl 路由、另一窗口、导入）改了语言或增删词典，
+/// 拿旧组去合并就会因成员不符抛错。
+///
+/// 返回 null = 不用写：这本词典已不在分区里，或挪完位置不变。
+List<Dictionary>? moveDictionaryWithinLanguageGroup(
+  List<Dictionary> section,
+  String name,
+  int to,
+) {
+  final int index = section.indexWhere((Dictionary d) => d.name == name);
+  if (index < 0) return null;
+  final Dictionary moved = section[index];
+  final String? language = dictionaryLanguageGroupOf(moved);
+  final List<Dictionary> group = <Dictionary>[
+    for (final Dictionary d in section)
+      if (dictionaryLanguageGroupOf(d) == language) d,
+  ];
+  final int from = group.indexOf(moved);
+  final int target = to.clamp(0, group.length - 1);
+  if (target == from) return null;
+  group
+    ..removeAt(from)
+    ..insert(target, moved);
+  return mergeLanguageGroupOrder(section, group);
 }
+
+/// 改了语言之后 [section] 的新规范顺序：[updated] 是改完语言的那本（按
+/// [Dictionary.name] 替换分区里的旧对象），排到它新组的最后；然后整个分区按
+/// [concatenateLanguageGroups] 规范化。调用方按返回下标重编号。
+///
+/// 换到一个分区里原本没有的语言时，新组排在已有的已标注组之后（组序按首次
+/// 出现）、「未标注语言」组之前。
+List<Dictionary> sectionAfterLanguageChange(
+  List<Dictionary> section,
+  Dictionary updated,
+) => concatenateLanguageGroups(<Dictionary>[
+  for (final Dictionary d in section)
+    if (d.name != updated.name) d,
+  updated,
+]);

@@ -1729,8 +1729,9 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 按「有效语言」（手动指定优先，其次包内声明）分组的列表（反馈 D_Nz5R4vSH）：
   /// 每组一个语言名标题 + 一列只能在组内拖动的词典；没有语言信息的归「未标注
   /// 语言」组放最后。分组与组内顺序的推导见 [groupDictionariesByLanguage]——
-  /// 组内顺序就是全局查词优先级在该组的子序列，组内重排只在该组原占的槽位里
-  /// 重新分配（[mergeLanguageGroupOrder]），不影响其它组。
+  /// 组内顺序就是全局查词优先级在该组的子序列；组内重排写回时整个分区按「各组
+  /// 首尾相接」重编号（[moveDictionaryWithinLanguageGroup]），所以这里从上到下
+  /// 画出来的顺序就是真实查词顺序，其它组的组内顺序不变。
   ///
   /// 只有一个语言组时不画组标题：多数用户只装一种语言的词典，列表保持原样，
   /// 不平白多一行标题；两组及以上才需要标题来区分。
@@ -2222,27 +2223,24 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 拖拽、键盘、详情里的上移 / 下移 / 置顶 / 置底统一走这套最终下标语义——无需
   /// SDK 的 `if(new>old)new--` 特例。越界与原地不动直接忽略。
   ///
-  /// [dictionaries] 是**一个语言组**（组内顺序）：组内挪完后用
-  /// [mergeLanguageGroupOrder] 填回本分区该组原占的槽位，再按分区整体重编号——
-  /// 其它组的词典相对位置一个都不变。
+  /// [dictionaries] 是**一个语言组**（组内顺序），只用来取被移动的是哪本：组成员
+  /// 一律从最新分区现算（[moveDictionaryWithinLanguageGroup]）——列表是渲染时捕获
+  /// 的，期间别处（ctl 路由、导入、改语言）可能已经改了组成员，拿旧组去合并会因
+  /// 成员不符抛错。写回的是整个分区的规范顺序（各语言组按显示顺序首尾相接），
+  /// 按新下标重编号后，管理页显示的顺序就是真实查词顺序。
   Future<bool> _reorderDictionaries(
     int oldIndex,
     int newIndex,
     List<Dictionary> dictionaries,
   ) async {
-    if (newIndex < 0 ||
-        newIndex >= dictionaries.length ||
-        newIndex == oldIndex) {
-      return false;
-    }
-    final List<Dictionary> group = List<Dictionary>.of(dictionaries);
-    final Dictionary item = group.removeAt(oldIndex);
-    group.insert(newIndex, item);
-
-    final List<Dictionary> cloneDictionaries = mergeLanguageGroupOrder(
+    if (oldIndex < 0 || oldIndex >= dictionaries.length) return false;
+    final List<Dictionary>? cloneDictionaries =
+        moveDictionaryWithinLanguageGroup(
       _dictionariesForType(_selectedType),
-      group,
+      dictionaries[oldIndex].name,
+      newIndex,
     );
+    if (cloneDictionaries == null) return false;
 
     // 「汉字」分区里混合词典只动汉字部分的位置，不能走按 order 整体重编号的路径
     // （那会把它在「术语」分区的位置一起改掉）。

@@ -482,10 +482,13 @@ class DictionaryRepository {
   /// 才看得到变化（与 toggleDictionaryHidden 同款理由，BUG-171/BUG-177）。
   ///
   /// 词典管理页按「有效语言」分组、组内排序（[groupDictionariesByLanguage]）。
-  /// 改完若换了组，这本词典在新组里排**最后**：序号取比其它所有词典都大的
-  /// [dictionaryOrderTailOf]，混合词典的「汉字」分区序号一并挪到尾部。没换组
-  /// （例如「自动 · ja」改成手动 `ja`）则位置不动。查词照旧查全部启用的词典，
-  /// 语言只决定它在管理页里归哪组、以及渲染用的字体链。
+  /// 改完若换了组，这本词典在新组里排**最后**，并且它所在的每个分区（自身类型的
+  /// 分区；混合词典再加「汉字」分区）都按 [sectionAfterLanguageChange] 写回规范
+  /// 顺序（各语言组按显示顺序首尾相接、按下标重编号）——管理页显示的顺序 ==
+  /// 真实查词顺序。只给它一个「全局最大」序号不够：那会让它在查词序里排到
+  /// 「未标注语言」组之后，而管理页把它画在未标注组之前。
+  /// 没换组（例如「自动 · ja」改成手动 `ja`）则位置不动。查词照旧查全部启用的
+  /// 词典，语言只决定它在管理页里归哪组、以及渲染用的字体链。
   Future<void> setDictionaryLanguageOverride(
       Dictionary dictionary, String? language) {
     final String trimmed = language?.trim() ?? '';
@@ -496,29 +499,79 @@ class DictionaryRepository {
           'Dictionary is no longer installed: ${dictionary.name}',
         ),
       );
-      Dictionary updated = _copyDictionary(current)
+      final Dictionary updated = _copyDictionary(current)
         ..languageOverride = trimmed.isEmpty ? null : trimmed;
+      final Map<String, Dictionary> writes = <String, Dictionary>{
+        updated.name: updated,
+      };
       if (dictionaryLanguageGroupOf(updated) !=
           dictionaryLanguageGroupOf(current)) {
-        final int tail = dictionaryOrderTailOf(
-          _dictionariesCache.where((d) => d.name != current.name),
-        );
-        updated = updated.copyWith(
-          order: tail,
-          metadata: updated.hasEmbeddedKanji
-              ? <String, String>{
-                  ...updated.metadata,
-                  kDictKanjiOrderKey: '$tail',
-                }
-              : null,
-        );
+        // 分区成员与顺序取改之前的缓存（已按 order 排好），只把这本换成改完的。
+        final List<Dictionary> after = <Dictionary>[
+          for (final Dictionary d in _dictionariesCache)
+            d.name == updated.name ? updated : d,
+        ];
+        // 两个分区都先按改之前的序号算好，再动任何序号（混合词典没有
+        // kDictKanjiOrderKey 时汉字分区序号退回 order，先改 order 会带偏）。
+        final List<Dictionary>? typeSection =
+            updated.type == DictionaryType.kanji
+                ? null
+                : sectionAfterLanguageChange(<Dictionary>[
+                    for (final Dictionary d in after)
+                      if (d.type == updated.type) d,
+                  ], updated);
+        final List<Dictionary>? kanjiSection = updated.isInKanjiSection
+            ? sectionAfterLanguageChange(
+                kanjiSectionDictionariesOf(after),
+                updated,
+              )
+            : null;
+        Dictionary writable(Dictionary d) =>
+            writes.putIfAbsent(d.name, () => _copyDictionary(d));
+        if (typeSection != null) {
+          for (int i = 0; i < typeSection.length; i++) {
+            writable(typeSection[i]).order = i;
+          }
+        }
+        if (kanjiSection != null) {
+          // 「汉字」分区：纯 kanji 词典写 order，混合词典只写汉字部分的
+          // kDictKanjiOrderKey（同 [updateKanjiSectionOrder]）。
+          for (int i = 0; i < kanjiSection.length; i++) {
+            final Dictionary target = writable(kanjiSection[i]);
+            if (target.hasEmbeddedKanji) {
+              writes[target.name] = target.copyWith(
+                metadata: <String, String>{
+                  ...target.metadata,
+                  kDictKanjiOrderKey: '$i',
+                },
+              );
+            } else {
+              target.order = i;
+            }
+          }
+        }
       }
-      await _commitDictionaries(<Dictionary>[updated]);
+      // 只写真的变了的：顺序没动的词典不进事务。
+      await _commitDictionaries(<Dictionary>[
+        for (final Dictionary d in writes.values)
+          if (d.name == updated.name || _orderChanged(d)) d,
+      ]);
+      final Dictionary committed = writes[updated.name]!;
       // 与 [_editDictionary] 同理：只在写入成功后把结果回填给调用方手里的快照。
       dictionary
-        ..order = updated.order
-        ..languageOverride = updated.languageOverride;
+        ..order = committed.order
+        ..languageOverride = committed.languageOverride;
     });
+  }
+
+  /// [candidate] 的两个排序键（[Dictionary.order] / 汉字分区序号）与缓存里同名
+  /// 那本是否不同。
+  bool _orderChanged(Dictionary candidate) {
+    final Dictionary current = _dictionariesCache.firstWhere(
+      (Dictionary d) => d.name == candidate.name,
+    );
+    return current.order != candidate.order ||
+        current.kanjiSectionOrder != candidate.kanjiSectionOrder;
   }
 
   /// 折叠三态的**唯一写入点**（BUG-2158）。两个名单在这里保持互斥。
