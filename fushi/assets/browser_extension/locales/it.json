@@ -259,7 +259,7 @@
   "mine_already_queued": "Già nella coda di mining",
   "mine_queued_n": "Aggiunto alla coda di mining ({n})",
   "mine_already_queued_n": "Già nella coda di mining ({n})",
-  "mine_queued_generate_later": "Genera tutte le carte dopo la visione",
+  "mine_queued_generate_later": "Fai clic sul pulsante di mining dell’estensione per generarle tutte",
   "mine_no_cue": "Nessuna riga di sottotitoli corrente trovata, riprova tra un momento",
   "mine_enqueue_failed": "Impossibile aggiungere alla coda",
   "mine_failed": "Mining non riuscito",

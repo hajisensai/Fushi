@@ -49,6 +49,7 @@
 | [BUG-3894](bugs/BUG-3894-asr-sheet-dismiss-interrupts-transcription.md) | ✅ | ✅ | 移动端转录弹层点外部或下拉即关闭并中断转录 |
 | [BUG-3893](bugs/BUG-3893-segmented-equal-width-truncates-longest.md) | ✅ | ✅ | 分段选择器强制等宽把最长段截成省略号 |
 | [BUG-3892](bugs/BUG-3892-toolbar-disabled-icon-not-dimmed.md) | ✅ | ✅ | 顶栏禁用按钮外观与可用态相同 |
+| [BUG-3892](bugs/BUG-3892-browser-ext-shift-keydown-lookup.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词要晃一下鼠标才触发 |
 | [BUG-3891](bugs/BUG-3891-vn-sentence-mode-image-pause.md) | ✅ | ✅ | VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义 |
 | [BUG-3890](bugs/BUG-3890-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
 | [BUG-3889](bugs/BUG-3889-popup-headword-drag-copy.md) | ✅ | ✅ | 查词弹窗拖选词头后 Ctrl+C 复制不了 |
