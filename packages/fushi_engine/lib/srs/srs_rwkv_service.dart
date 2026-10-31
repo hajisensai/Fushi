@@ -485,9 +485,11 @@ class SrsRwkvService implements SrsRwkvScheduling {
     final _LogPrint? replayed = _replayed;
     if (replayed == null) return;
     await snapshotDir.create(recursive: true);
-    await _keepCheckpoint();
+    // 先把新快照完整写进 .tmp，成功了才动磁盘上的旧主快照（留作检查点 / 被替换）：流式写到一半失败时
+    // 旧主快照与元数据原样在，下次启动照常从它恢复。
     final File tmp = File('${_snapshotFile.path}.tmp');
     await backend.snapshotToFile(tmp.path);
+    await _keepCheckpoint();
     await tmp.rename(_snapshotFile.path);
     await _snapshotMeta.writeAsString(
       jsonEncode(<String, Object?>{
