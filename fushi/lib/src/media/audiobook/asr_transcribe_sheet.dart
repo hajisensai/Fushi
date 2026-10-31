@@ -385,6 +385,24 @@ String suggestedTranscriptFileName(List<String> audioPaths) {
   return '${p.basenameWithoutExtension(audioPaths.first)}.srt';
 }
 
+/// 纯函数：运行中那行「编码器为什么落在 CPU」的文案；没回退返回 null。
+///
+/// [probeError] 非 null（计划阶段 EP 探测抛过错）时，引擎加载时问的是同一个运行时，
+/// 它的 `fallbackReason` 就是那次探测的异常原文（探测失败时引擎只向 ORT 请求 CPU，
+/// 会话层不会再有别的回退），
+/// 给可读的说明而不是原文（反馈 eEnV5gBn1K）。其余回退（GPU 会话被 ORT 拒绝）
+/// 的 `code: message` 照旧展示——那是用户能拿去对照显卡 / 驱动的线索。
+String? asrEncoderFallbackLine(
+  OnnxProviderResolution resolution, {
+  required String? probeError,
+}) {
+  if (!resolution.didFallBack) return null;
+  if (probeError != null) return t.audiobook_transcribe_probe_failed_hint;
+  return t.audiobook_transcribe_fallback(
+    reason: resolution.fallbackReason ?? '',
+  );
+}
+
 /// 默认的目录读取口（`asrModelCatalog` 是 getter，取不到函数引用）。
 AsrModelCatalog _readAsrModelCatalog() => asrModelCatalog;
 
@@ -1570,11 +1588,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                     provider: _providerLabel(r.effective),
                   ),
           );
-          if (r.didFallBack) {
-            sb.writeln(
-              t.audiobook_transcribe_fallback(reason: r.fallbackReason ?? ''),
-            );
-          }
+          final String? fallback = asrEncoderFallbackLine(
+            r,
+            probeError: _plan?.probeError,
+          );
+          if (fallback != null) sb.writeln(fallback);
         }
         if (p != null) {
           sb.writeln(
