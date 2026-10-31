@@ -2849,9 +2849,61 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,
       volumeSwitch: _tocVolumeSwitch(),
+      // 歌词模式的「搜索」页搜字幕（音频 cue）：正文搜索 / 字数跳转在歌词页里没有
+      // 目标（见上 onJumpToCharOffset），字幕才是歌词页上看得见的东西。
+      lyricsCueSearch: _lyricsMode ? _lyricsCueSearch() : null,
       readerPaperColors: () =>
           (bg: _themeBackgroundColor(), fg: _themeTextColor()),
     );
+  }
+
+  // ── 歌词模式字幕搜索 ──────────────────────────────────────────────────
+
+  /// 歌词模式导航侧板「搜索」页的接线：被搜的是歌词层同一来源的 cue（整书 cue；
+  /// 没有整书 cue 的书用当前章 cue，与 [LyricsCueWindow.select] 同一取舍）。cue
+  /// 文本只在第一次搜索时抽出一次，搜索本身在后台 isolate 跑。
+  ReaderLyricsCueSearch? _lyricsCueSearch() {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return null;
+    final List<AudioCue> all = controller.allBookCuesSnapshot;
+    final List<AudioCue> cues = all.isNotEmpty
+        ? all
+        : controller.chapterCuesSnapshot;
+    if (cues.isEmpty) return null;
+    List<String>? texts;
+    // 结果行上标的章名按 chapterHref 记一次（几十章，结果最多 200 行）。
+    final Map<String, String> chapterLabels = <String, String>{};
+    return ReaderLyricsCueSearch(
+      cues: cues,
+      search: (String query) => searchLyricsCueTextsOffUi(
+        texts ??= <String>[for (final AudioCue c in cues) c.text],
+        query,
+      ),
+      locationLabel: (AudioCue cue) {
+        final String chapter = chapterLabels.putIfAbsent(cue.chapterHref, () {
+          final int section = _book?.chapterIndexForHref(cue.chapterHref) ?? -1;
+          return section < 0 ? '' : _currentChapterLabelFor(section);
+        });
+        final String time = FushiTimeFormat.clockPadded(
+          Duration(milliseconds: controller.globalMsOfCue(cue)),
+        );
+        return chapter.isEmpty ? time : '$chapter · $time';
+      },
+      onJump: _jumpToLyricsCue,
+    );
+  }
+
+  /// 字幕搜索点结果：与歌词层点行跳句同一条路（[AudiobookPlayerController.
+  /// playCueAndContinue]，暂停态也跳并开播），再强制把歌词层滚到这一句居中——
+  /// 「跟随音频」关着时 cue 推进不滚，不强制就停在原处；目标在已载窗口外时
+  /// [_syncLyricsOverlayCue] 会以它为中心重开窗口。
+  Future<void> _jumpToLyricsCue(AudioCue cue) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null || !_lyricsMode) return;
+    if (isDictionaryShown) clearDictionaryResult();
+    await controller.playCueAndContinue(cue);
+    if (!mounted || !_lyricsMode) return;
+    _syncLyricsOverlayCue(controller, forceReveal: true);
   }
 
   // ── 同合集卷切换（BUG-2521） ──────────────────────────────────────────

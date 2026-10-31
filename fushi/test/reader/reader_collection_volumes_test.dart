@@ -19,11 +19,15 @@ void main() {
 
   tearDown(() => db.close());
 
-  Future<String> insertEpub(String key, {String format = 'epub'}) async {
+  Future<String> insertEpub(
+    String key, {
+    String format = 'epub',
+    String? title,
+  }) async {
     await db.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: key,
-        title: 'Title $key',
+        title: title ?? 'Title $key',
         epubPath: '/$key.epub',
         extractDir: '/extract/$key',
         chapterCount: 1,
@@ -49,9 +53,10 @@ void main() {
 
   test('multi-volume collection: sortIndex order, current index, orphan and '
       'non-book members filtered, PDF volume kept but not peekable', () async {
-    final String v1 = await insertEpub('v1');
-    final String v2 = await insertEpub('v2');
-    final String v3 = await insertEpub('v3', format: 'pdf');
+    // 书名不是同一系列的分卷（主题合集）→ 保持合集内顺序。
+    final String v1 = await insertEpub('v1', title: 'Alpha');
+    final String v2 = await insertEpub('v2', title: 'Beta');
+    final String v3 = await insertEpub('v3', format: 'pdf', title: 'Gamma');
     final int cid = await db.createMediaCollection('Series');
     await db.addToCollection(cid, MediaKind.epub, v2);
     await db.addToCollection(cid, MediaKind.epub, v1);
@@ -66,16 +71,118 @@ void main() {
     expect(ctx, isNotNull);
     expect(ctx!.collectionId, cid);
     expect(ctx.collectionName, 'Series');
-    expect(
-      ctx.volumes.map((ReaderVolume v) => v.bookKey).toList(),
-      <String>['v2', 'v1', 'v3'],
-      reason: '合集内顺序 = sortIndex（加入顺序），不是书名序',
-    );
+    expect(ctx.volumes.map((ReaderVolume v) => v.bookKey).toList(), <String>[
+      'v2',
+      'v1',
+      'v3',
+    ], reason: '非同系列分卷：合集内顺序 = sortIndex（加入顺序），不是书名序');
     expect(ctx.currentIndex, 1);
     expect(ctx.current.uid, v1);
     expect(ctx.volumes[0].canPeek, isTrue);
     expect(ctx.volumes[2].canPeek, isFalse, reason: 'PDF 卷只能整卷切过去');
     expect(ctx.volumes[0].extractDir, '/extract/v2');
+  });
+
+  test(
+    'series volumes are ordered by volume number, currentIndex follows the '
+    'current book (user report: 5, 8, … with the current 3 at the end)',
+    () async {
+      // 用户库里的实际加入顺序（合集 sortIndex）：5, 8, 7, 6, 4, 3, 2, 1。
+      const List<(String, String)> added = <(String, String)>[
+        ('b5', '安達としまむら5'),
+        ('b8', '安達としまむら8'),
+        ('b7', '安達としまむら7'),
+        ('b6', '安達としまむら6'),
+        ('b4', '安達としまむら4'),
+        ('b3', '安達としまむら3'),
+        ('b2', '安達としまむら2'),
+        ('b1', '安達としまむら'),
+      ];
+      final Map<String, String> uids = <String, String>{};
+      final int cid = await db.createMediaCollection('安達としまむら');
+      for (final (String key, String title) in added) {
+        uids[key] = await insertEpub(key, title: title);
+        await db.addToCollection(cid, MediaKind.epub, uids[key]!);
+      }
+
+      final ReaderVolumeContext ctx = (await loadReaderVolumeContext(
+        db,
+        bookUid: uids['b3']!,
+      ))!;
+      expect(ctx.volumes.map((ReaderVolume v) => v.bookKey).toList(), <String>[
+        'b1',
+        'b2',
+        'b3',
+        'b4',
+        'b5',
+        'b6',
+        'b7',
+        'b8',
+      ]);
+      expect(ctx.currentIndex, 2);
+      expect(ctx.current.uid, uids['b3']);
+    },
+  );
+
+  group('readerVolumeOrder', () {
+    List<String> ordered(List<String> titles) => <String>[
+      for (final int i in readerVolumeOrder(titles)) titles[i],
+    ];
+
+    test('volume number ascending; untitled-number volume first (= vol 1); '
+        'full-width digits fold', () {
+      expect(
+        ordered(<String>[
+          '安達としまむら5',
+          '安達としまむら８',
+          '安達としまむら3',
+          '安達としまむら',
+          '安達としまむら10',
+          '安達としまむら2',
+        ]),
+        <String>[
+          '安達としまむら',
+          '安達としまむら2',
+          '安達としまむら3',
+          '安達としまむら5',
+          '安達としまむら８',
+          '安達としまむら10',
+        ],
+        reason: '10 排在 8 后面（按数值，不按字符串）',
+      );
+    });
+
+    test('members outside the dominant series keep their relative order at '
+        'the end (SS extra, other series)', () {
+      expect(
+        ordered(<String>[
+          '安達としまむらSS',
+          '安達としまむら4',
+          '別の本',
+          '安達としまむら2',
+          '安達としまむら3',
+        ]),
+        <String>['安達としまむら2', '安達としまむら3', '安達としまむら4', '安達としまむらSS', '別の本'],
+      );
+    });
+
+    test('no series with ≥2 volumes → original order (theme collection)', () {
+      const List<String> theme = <String>[
+        'Fahrenheit 451',
+        '1984',
+        'Brave New World',
+      ];
+      expect(ordered(theme), theme);
+      expect(readerVolumeOrder(const <String>[]), isEmpty);
+    });
+
+    test('same volume number → natural title, then original position', () {
+      expect(ordered(<String>['志乃と恋 2 (特装版)', '志乃と恋 1', '志乃と恋 2']), <String>[
+        '志乃と恋 1',
+        '志乃と恋 2',
+        '志乃と恋 2 (特装版)',
+      ]);
+    });
   });
 
   test(

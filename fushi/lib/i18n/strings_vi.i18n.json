@@ -4527,6 +4527,8 @@
   "lyrics_mode": "Chế độ lời bài hát",
   "lyrics_mode_hint_body": "Chế độ lời bài hát có cài đặt cỡ chữ riêng. Bạn có thể điều chỉnh trong ⚙ Cài đặt → Kiểu chữ.",
   "lyrics_mode_hint_title": "Chế độ lời bài hát",
+  "lyrics_search_empty_hint": "Search this audiobook's subtitles",
+  "lyrics_search_results_truncated": "Showing the first $n of $total matches",
   "lyrics_sentence_replay": "Replay current sentence",
   "lyrics_skipped_text_show": "Show unread book text",
   "lyrics_skipped_text_show_hint": "Book text the narrator skipped, or the transcript could not match, appears between lines in small grey text",
