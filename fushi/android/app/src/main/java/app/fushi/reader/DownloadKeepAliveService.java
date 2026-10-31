@@ -34,6 +34,10 @@ import io.flutter.plugin.common.MethodChannel;
  * 它**不**下载任何东西，也不在进程死后自我复活（{@link #START_NOT_STICKY}）——
  * Dart 侧随进程一起没了，复活一个空服务毫无意义，断点续传由 Dart 侧负责。
  *
+ * <p>前台优先级只防进程被杀，不防 CPU 休眠：在前台期间还持有
+ * {@link DownloadKeepAliveLocks}（PARTIAL_WAKE_LOCK + Wi-Fi 锁），否则息屏后
+ * 下载停摆、亮屏才继续（反馈 nLXqmvv5Fy）。锁随前台进入拿、随服务停止放。
+ *
  * <p>Dart 门面：{@code lib/src/platform/mobile/android_download_keep_alive.dart}，
  * 通道 {@link ChannelNames#DOWNLOAD_KEEP_ALIVE}；方法名 / 参数名是跨语言契约。
  *
@@ -69,6 +73,10 @@ public final class DownloadKeepAliveService extends Service {
     /** 启动挂起期间收到的最新状态，onStartCommand 时以它为准。 */
     @Nullable
     private static Intent sPendingState;
+
+    /** 本实例在前台期间持有的 CPU / Wi-Fi 锁；进前台时创建并拿锁。 */
+    @Nullable
+    private DownloadKeepAliveLocks mLocks;
 
     // ── 通道 ────────────────────────────────────────────────────────────────
 
@@ -168,6 +176,10 @@ public final class DownloadKeepAliveService extends Service {
             return START_NOT_STICKY;
         }
         sInstance = this;
+        if (mLocks == null) {
+            mLocks = DownloadKeepAliveLocks.create(this);
+        }
+        mLocks.acquire();
         if (sStopRequested) {
             sStopRequested = false;
             stopNow();
@@ -186,6 +198,7 @@ public final class DownloadKeepAliveService extends Service {
         if (sInstance == this) {
             sInstance = null;
         }
+        releaseLocks();
         super.onDestroy();
     }
 
@@ -203,8 +216,16 @@ public final class DownloadKeepAliveService extends Service {
         if (sInstance == this) {
             sInstance = null;
         }
+        releaseLocks();
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
+    }
+
+    /** 放掉 CPU / Wi-Fi 锁；停止路径会重叠（stopNow 后还有 onDestroy），幂等。 */
+    private void releaseLocks() {
+        if (mLocks != null) {
+            mLocks.release();
+        }
     }
 
     private void showState(@NonNull String title, @NonNull String text, int progress) {
