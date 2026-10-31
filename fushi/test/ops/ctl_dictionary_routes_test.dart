@@ -128,7 +128,7 @@ void main() {
     expect(last.map((Dictionary d) => d.name), <String>['a', 'b', 'c']);
   });
 
-  test('ctlReorderDictionaries: position 在语言组内计算，其它组槽位不动 (D_Nz5R4vSH)', () {
+  test('ctlReorderDictionaries: position 在语言组内计算，写回规范顺序 (D_Nz5R4vSH)', () {
     final Dictionary ja1 = _dict(
       'ja1',
       order: 0,
@@ -150,7 +150,8 @@ void main() {
       order: 4,
       metadata: const <String, String>{'sourceLanguage': 'ja'},
     );
-    // ja3 移到日语组第 1 位：只在日语组原占的 0/2/4 槽位里重排。
+    // ja3 移到日语组第 1 位：分区写回成「日语组 → 英语组 → 未标注组」首尾相接，
+    // 与管理页显示顺序一致（旧数据的跨组交错一并消掉）。
     final List<Dictionary> moved = ctlReorderDictionaries(
       <Dictionary>[ja1, en1, ja2, none, ja3],
       ja3,
@@ -158,29 +159,29 @@ void main() {
     );
     expect(moved.map((Dictionary d) => d.name), <String>[
       'ja3',
-      'en1',
       'ja1',
-      'none',
       'ja2',
+      'en1',
+      'none',
     ]);
     expect(moved.map((Dictionary d) => d.order), <int>[0, 1, 2, 3, 4]);
     // 越界钳到组尾（日语组 3 本），不越过别组。
     final List<Dictionary> last = ctlReorderDictionaries(moved, ja3, 99);
     expect(last.map((Dictionary d) => d.name), <String>[
       'ja1',
-      'en1',
       'ja2',
-      'none',
       'ja3',
+      'en1',
+      'none',
     ]);
     // 单本组：任何位置都原地不动。
     final List<Dictionary> single = ctlReorderDictionaries(last, en1, 1);
     expect(single.map((Dictionary d) => d.name), <String>[
       'ja1',
-      'en1',
       'ja2',
-      'none',
       'ja3',
+      'en1',
+      'none',
     ]);
   });
 

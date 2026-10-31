@@ -81,8 +81,9 @@ Dictionary resolveCtlDictionary(List<Dictionary> dictionaries, String query) {
 /// 把 [target] 移到它**所在语言组**里的 [position]（1 起算，越界钳到组的两端），
 /// 返回重排后的整个分区（`order` 已按新下标改写）。与词典管理页
 /// `_reorderDictionaries` 同一语义（反馈 D_Nz5R4vSH）：分区按「有效语言」分组
-/// （[groupDictionariesByLanguage]），排序只在组内进行；组内挪完后经
-/// [mergeLanguageGroupOrder] 填回该组原占的槽位，其它组的词典位置一个不动。
+/// （[groupDictionariesByLanguage]），排序只在组内进行（[moveDictionaryWithinLanguageGroup]）；
+/// 返回的分区是规范顺序——各语言组按显示顺序首尾相接，其它组的组内顺序不变，
+/// 旧数据里的跨组交错一并消掉（管理页显示顺序 == 查词顺序）。
 /// 分区里只有一个语言组时就是整个分区内排序。
 ///
 /// [sameType] 是一个分区（已按分区顺序排好）；[section] 是分区名（报错用），
@@ -101,15 +102,13 @@ List<Dictionary> ctlReorderDictionaries(
       '词典「${target.name}」不在 ${(section ?? target.type).name} 分区里',
     );
   }
-  final Dictionary member = sameType[sectionIndex];
-  final String? language = dictionaryLanguageGroupOf(member);
-  final List<Dictionary> group = <Dictionary>[
-    for (final Dictionary d in sameType)
-      if (dictionaryLanguageGroupOf(d) == language) d,
-  ];
-  group.remove(member);
-  group.insert((position - 1).clamp(0, group.length), member);
-  final List<Dictionary> merged = mergeLanguageGroupOrder(sameType, group);
+  final List<Dictionary> merged =
+      moveDictionaryWithinLanguageGroup(
+        sameType,
+        sameType[sectionIndex].name,
+        position - 1,
+      ) ??
+      concatenateLanguageGroups(sameType);
   for (int i = 0; i < merged.length; i++) {
     merged[i].order = i;
   }

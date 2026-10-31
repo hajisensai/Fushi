@@ -138,7 +138,7 @@ void main() {
       _dict('ja-3', 5, source: 'ja'),
     ];
 
-    test('only refills the slots the group already occupied', () {
+    test('writes the partition back as the groups laid end to end', () {
       final List<Dictionary> ja = groupDictionariesByLanguage(section)
           .firstWhere((DictionaryLanguageGroup g) => g.language == 'ja')
           .dictionaries;
@@ -147,17 +147,57 @@ void main() {
         section,
         reordered,
       );
+      // 交错的全局序被规范成「日语组 → 英语组 → 未标注组」，与管理页从上到下
+      // 画出来的顺序逐字相同。
       expect(_names(merged), <String>[
         'ja-3',
-        'en-1',
         'ja-1',
-        'none-1',
-        'en-2',
         'ja-2',
+        'en-1',
+        'en-2',
+        'none-1',
       ]);
-      // 其它组的成员与位置一个都没动。
+      expect(_names(merged), _names(concatenateLanguageGroups(merged)));
+      // 其它组的组内顺序一个都没动。
       expect(_groupNames(merged)['en'], <String>['en-1', 'en-2']);
       expect(_groupNames(merged)[null], <String>['none-1']);
+    });
+
+    test('moveDictionaryWithinLanguageGroup recomputes the group from the '
+        'latest partition (stale UI group never throws)', () {
+      // 渲染时日语组是 [ja-1, ja-2, ja-3]；之后 en-1 被别处改成了日语。
+      final List<Dictionary> latest = <Dictionary>[
+        for (final Dictionary d in section)
+          d.name == 'en-1' ? (d.copyWith()..languageOverride = 'ja') : d,
+      ];
+      final List<Dictionary> stale = groupDictionariesByLanguage(section)
+          .firstWhere((DictionaryLanguageGroup g) => g.language == 'ja')
+          .dictionaries;
+      expect(
+        () => mergeLanguageGroupOrder(latest, stale.reversed.toList()),
+        throwsArgumentError,
+        reason: '旧组直接合并会因成员不符抛错——UI 不许走这条',
+      );
+      final List<Dictionary>? moved = moveDictionaryWithinLanguageGroup(
+        latest,
+        'ja-1',
+        1,
+      );
+      expect(_names(moved!), <String>[
+        'en-1',
+        'ja-1',
+        'ja-2',
+        'ja-3',
+        'en-2',
+        'none-1',
+      ]);
+      // 越界钳到组尾；原地不动 / 已不在分区里返回 null（不写）。
+      expect(
+        _names(moveDictionaryWithinLanguageGroup(latest, 'ja-1', 99)!).take(4),
+        <String>['en-1', 'ja-2', 'ja-3', 'ja-1'],
+      );
+      expect(moveDictionaryWithinLanguageGroup(latest, 'ja-1', 0), isNull);
+      expect(moveDictionaryWithinLanguageGroup(latest, 'gone', 0), isNull);
     });
 
     test('rejects a partial or foreign group (would shift other groups)', () {
@@ -200,6 +240,95 @@ void main() {
       expect(groups['en'], <String>['OALDPE', 'wty-en-en']);
       // 引擎的术语桶顺序仍是旧全局顺序，逐字不变。
       expect(_engineBuckets(legacy).term, _names(legacy));
+    });
+  });
+
+  group('displayed order == real lookup order (interleaved legacy order)', () {
+    late FushiDatabase db;
+    late DictionaryRepository repo;
+
+    // 旧数据：全局序在三组之间交错，「未标注语言」组里的日语包夹在日语词典中间。
+    setUp(() async {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      repo = DictionaryRepository(db);
+      await repo.loadFromDb();
+      await repo.persistDictionaries(<Dictionary>[
+        _dict('JMdict', 0, source: 'ja'),
+        _dict('ja-local', 1),
+        _dict('OALDPE', 2, source: 'en'),
+        _dict('大辞林', 3, source: 'ja'),
+        _dict('ja-local-2', 4),
+        _dict('wty-en-en', 5, source: 'en'),
+        _dict('JPDB', 6, source: 'ja', type: DictionaryType.frequency),
+      ]);
+    });
+
+    tearDown(() async {
+      repo.dispose();
+      await db.close();
+    });
+
+    List<String> displayed() => <String>[
+      for (final DictionaryLanguageGroup g in groupDictionariesByLanguage(
+        repo.termDictionaries,
+      ))
+        ..._names(g.dictionaries),
+    ];
+
+    test('a within-group reorder normalises the whole partition', () async {
+      final List<Dictionary> moved = moveDictionaryWithinLanguageGroup(
+        repo.termDictionaries,
+        'wty-en-en',
+        0,
+      )!;
+      await repo.updateDictionaryOrder(<Dictionary>[
+        for (int i = 0; i < moved.length; i++) moved[i].copyWith(order: i),
+      ]);
+      await repo.loadFromDb();
+      expect(displayed(), <String>[
+        'JMdict',
+        '大辞林',
+        'wty-en-en',
+        'OALDPE',
+        'ja-local',
+        'ja-local-2',
+      ]);
+      expect(repo.lookupFilters.termDictionaryOrder, displayed());
+      expect(
+        _engineBuckets(repo.dictionaries).term,
+        displayed(),
+        reason: '引擎术语桶的装载顺序与管理页一致',
+      );
+    });
+
+    test('a language change normalises the whole partition', () async {
+      // 未标注的日语包改成 ja：排到日语组最后，而不是排到全局最后
+      // （那会让查词序把它放在未标注组之后、管理页却画在未标注组之前）。
+      await repo.setDictionaryLanguageOverride(
+        repo.dictionaries.firstWhere((Dictionary d) => d.name == 'ja-local'),
+        'ja',
+      );
+      await repo.loadFromDb();
+      expect(displayed(), <String>[
+        'JMdict',
+        '大辞林',
+        'ja-local',
+        'OALDPE',
+        'wty-en-en',
+        'ja-local-2',
+      ]);
+      expect(repo.lookupFilters.termDictionaryOrder, displayed());
+
+      // 新语言（分区里原本没有的组）：排在已标注组之后、未标注组之前。
+      await repo.setDictionaryLanguageOverride(
+        repo.dictionaries.firstWhere((Dictionary d) => d.name == 'ja-local-2'),
+        'ko',
+      );
+      await repo.loadFromDb();
+      expect(displayed().last, 'ja-local-2');
+      expect(repo.lookupFilters.termDictionaryOrder, displayed());
+      // 别的分区（频率）不受影响。
+      expect(repo.freqDictionaries.single.order, 6, reason: '只重编号改了语言的那本所在的分区');
     });
   });
 
