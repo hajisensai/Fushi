@@ -26,7 +26,8 @@
 /// - **清除**：卡被永久清除（srs_purge.dart）后它的项从表里删掉（[onCardsPurged]），否则一直占着
 ///   内存、每次整表重查都白算（HBK-AUDIT-020）。
 /// - **快照缓存**：重建完、空闲 [_snapshotIdle] 后与关闭时把状态写到磁盘，按（模型、精度、日志
-///   指纹）命中；下次启动只需追加快照之后的新日志。
+///   指纹）命中；下次启动只需追加快照之后的新日志。状态文件由 worker 内的 Rust 流式读写，
+///   isolate 之间只传路径，不把整份模型状态复制进 Dart。
 /// - **取数**：回放行（保留评分、card_type、间隔，规则同上游 kuma3，见 native/fushi_rwkv/README.md）、
 ///   日志指纹与尾巴都由 Rust 在 srs.db 上直读算出（native/fushi_fsrs/src/projection.rs、
 ///   src/store/projections.rs），日志不经 Dart；这里只编排。
@@ -85,6 +86,10 @@ abstract interface class SrsRwkvBackend {
 
   Future<Uint8List> snapshot();
   Future<void> restore(Uint8List snapshot);
+
+  /// 无损流式快照；调用者提供临时路径，成功后再提交文件和元数据。
+  Future<void> snapshotToFile(String path);
+  Future<void> restoreFromFile(String path);
   Future<void> reset();
   Future<void> close();
 }
@@ -124,6 +129,10 @@ class _WorkerBackend implements SrsRwkvBackend {
   Future<Uint8List> snapshot() => worker.snapshot();
   @override
   Future<void> restore(Uint8List snapshot) => worker.restore(snapshot);
+  @override
+  Future<void> snapshotToFile(String path) => worker.snapshotToFile(path);
+  @override
+  Future<void> restoreFromFile(String path) => worker.restoreFromFile(path);
   @override
   Future<void> reset() => worker.reset();
   @override
@@ -440,7 +449,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
           jsonDecode(await _snapshotMeta.readAsString())
               as Map<String, Object?>;
       if (meta['v'] != 1) return false;
-      await backend.restore(await _snapshotFile.readAsBytes());
+      await backend.restoreFromFile(_snapshotFile.path);
       _replayed = (
         count: meta['count']! as int,
         maxRowId: meta['maxRowId']! as int,
@@ -458,9 +467,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
     final _LogPrint? replayed = _replayed;
     if (replayed == null) return;
     await snapshotDir.create(recursive: true);
-    final Uint8List bytes = await backend.snapshot();
     final File tmp = File('${_snapshotFile.path}.tmp');
-    await tmp.writeAsBytes(bytes, flush: true);
+    await backend.snapshotToFile(tmp.path);
     await tmp.rename(_snapshotFile.path);
     await _snapshotMeta.writeAsString(
       jsonEncode(<String, Object?>{
@@ -965,16 +973,20 @@ class SrsRwkvService implements SrsRwkvScheduling {
     _snapshotTimer?.cancel();
     _snapshotTimer = null;
     final SrsRwkvBackend? backend = _backend;
-    if (backend != null) {
-      try {
-        if (_current.phase == SrsRwkvPhase.ready && _appendsSinceSnapshot > 0) {
-          await _serial(() => _saveSnapshot(backend));
+    try {
+      if (backend != null) {
+        try {
+          if (_current.phase == SrsRwkvPhase.ready &&
+              _appendsSinceSnapshot > 0) {
+            await _serial(() => _saveSnapshot(backend));
+          }
+        } finally {
+          await backend.close();
         }
-      } finally {
-        await backend.close();
       }
+    } finally {
+      await _status.close();
     }
-    await _status.close();
   }
 }
 
