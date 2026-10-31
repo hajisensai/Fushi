@@ -180,6 +180,9 @@ void main() {
         '${scratch.path}/other-device.png',
       ),
     });
+    // 发布快照不做同步文件 IO：没核对过的路径先按存在发布……
+    expect(pageBackdropSettings.value.hasCustomImage, isTrue);
+    // ……异步核对出不存在后重发布。
     await notifier.refreshPageBackdropSeeds();
     expect(pageBackdropSettings.value.hasCustomImage, isFalse);
     expect(

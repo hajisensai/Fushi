@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiSnackBar;
 import 'package:fushi/src/utils/components/page_backdrop_layer.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
@@ -213,19 +214,23 @@ bool _isShapePreset(ThemeNotifier theme) => switch (theme.pageBackdropPreset) {
   _ => true,
 };
 
-/// 选一张图当背景（[portrait] = 竖屏单独的那张）。取消什么都不做；复制失败给提示。
+/// 选一张图当背景（[portrait] = 竖屏单独的那张）。取消什么都不做。
+///
+/// 任何一步失败（选图器的平台异常 / 权限、复制、数据目录、偏好写入）都告诉用户
+/// 并记应用日志——不只是复制时的 [FileSystemException]，否则别的失败会变成
+/// 未处理的异步错误、用户点了没反应。
 Future<void> pickPageBackdropImage(
   SettingsContext settingsContext, {
   required bool portrait,
 }) async {
-  final File? picked = await pickGalleryImageFile();
-  if (picked == null) return;
   try {
+    final File? picked = await pickGalleryImageFile();
+    if (picked == null) return;
     await _theme(
       settingsContext,
     ).importPageBackdropImage(picked, portrait: portrait);
-  } on FileSystemException catch (error) {
-    debugPrint('[page_backdrop] import failed: $error');
+  } catch (error, stack) {
+    ErrorLogService.instance.log('page_backdrop.import_image', error, stack);
     final BuildContext ctx = settingsContext.context;
     if (ctx.mounted) {
       ScaffoldMessenger.of(ctx).showSnackBar(

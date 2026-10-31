@@ -66,11 +66,14 @@ void main() {
       expect(clampPageBackdropScrim('x'), kPageBackdropScrimDefault);
     });
 
-    test('偏好里的图片路径：空串与不存在的文件都视为没有', () {
+    test('偏好里的图片路径：空串、非字符串与判为不存在的都视为没有', () {
       final String path = writeImage();
-      expect(existingPageBackdropImagePath(path), path);
-      expect(existingPageBackdropImagePath(''), isNull);
-      expect(existingPageBackdropImagePath('${scratch.path}/nope.png'), isNull);
+      final String missing = '${scratch.path}/nope.png';
+      bool exists(String p) => p != missing;
+      expect(existingPageBackdropImagePath(path, exists: exists), path);
+      expect(existingPageBackdropImagePath('', exists: exists), isNull);
+      expect(existingPageBackdropImagePath(42, exists: exists), isNull);
+      expect(existingPageBackdropImagePath(missing, exists: exists), isNull);
     });
   });
 

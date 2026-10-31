@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 
 /// 页面背景（路由层 `FushiPageBackdrop` 垫在每一页下面的那层）的可切换样式。
@@ -213,13 +211,16 @@ double clampPageBackdropScrim(Object? raw) {
       .toDouble();
 }
 
-/// 偏好里存的图片路径：空串 / 非字符串 / 文件不存在一律视为没有。
+/// 偏好里存的图片路径：空串 / 非字符串 / [exists] 判为不存在的一律视为没有。
+///
+/// [exists] 由调用方给（`ThemeNotifier` 传异步核对过的结果）：快照在 UI isolate
+/// 上频繁重读，这里刻意不做同步文件 IO。
 String? existingPageBackdropImagePath(
   Object? raw, {
-  bool Function(String path)? exists,
+  required bool Function(String path) exists,
 }) {
   if (raw is! String || raw.isEmpty) return null;
-  final bool present = (exists ?? (String p) => File(p).existsSync())(raw);
+  final bool present = exists(raw);
   return present ? raw : null;
 }
 
