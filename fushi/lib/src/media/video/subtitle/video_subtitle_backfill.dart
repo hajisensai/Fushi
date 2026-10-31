@@ -78,6 +78,19 @@ class SubtitleBackfillTarget {
   /// 与字幕工作台都写它）。非空即硬过滤 + 排序首选，压过全局默认字幕语言；
   /// 与 [contentLanguage] 不同：那是「视频说什么语言」，这是「要什么语言的字幕」。
   final String? explicitLanguage;
+
+  /// 换一份身份，其余不变。
+  SubtitleBackfillTarget withMedia(VideoMediaReference media) =>
+      SubtitleBackfillTarget(
+        bookUid: bookUid,
+        videoPath: videoPath,
+        media: media,
+        hasExistingSubtitle: hasExistingSubtitle,
+        scrapedRuntimeMinutes: scrapedRuntimeMinutes,
+        contentLanguage: contentLanguage,
+        originalLanguage: originalLanguage,
+        explicitLanguage: explicitLanguage,
+      );
 }
 
 /// 单个目标的补字幕结果。
@@ -193,7 +206,7 @@ class VideoSubtitleBackfillService {
     if (result.items.isEmpty) {
       return SubtitleBackfillResult(
         SubtitleBackfillOutcome.noCandidate,
-        detail: result.failures.isEmpty ? null : result.failures.first.message,
+        detail: registry.describeEmptySearch(result),
       );
     }
 
@@ -493,10 +506,7 @@ class VideoSubtitleBackfillService {
   /// 落 sidecar：`<video 基名>.<lang><ext>`。**已存在同名文件就不写**（上面已经
   /// 查过整目录的 sidecar，这里是防并发的第二道）。返回 true = 这次真写了；false =
   /// 同名文件已在（写之前就在，或对齐期间被别人落下），什么都没写。
-  Future<bool> _writeSidecar(
-    File video,
-    VideoSubtitleDownload download,
-  ) async {
+  Future<bool> _writeSidecar(File video, VideoSubtitleDownload download) async {
     final String target = sidecarPathFor(video.path, download);
     final File dest = File(target);
     if (await dest.exists()) return false;
