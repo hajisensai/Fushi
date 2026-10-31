@@ -9,8 +9,11 @@
 // - 待报的闪退落盘在错误日志目录的 `crash_report_state.json`（不进 Drift：启动即闪退时
 //   数据库可能根本没打开，「以后自动发送」开关也必须在开库前读得到）。
 // - 去重：每份证据本来就只被读一次（会话标记覆写、Windows 摘要读后清空、Android 退出
-//   原因按时间消费），落盘时再按「种类 + 时刻」去一次重；同一份待报只提交一次——提交带
-//   固定的幂等键（[FeedbackDraft.submissionKey]），回执没收到就重试也拿回同一条反馈。
+//   原因按时间消费），落盘时再按「种类 + 时刻」去一次重；同一份待报只提交一次——第一次
+//   尝试提交时把这批待报连同新生成的幂等键（[FeedbackDraft.submissionKey]）一起挪进
+//   「提交中」（[CrashReportBatch]），重试只发、成功只清这一批，回执没收到就重试也拿回
+//   同一条反馈；两次尝试之间新来的闪退留在待报里，进下一份报告（不会顶着旧键被服务端
+//   当成重复请求吞掉又被本机清掉）。
 // - 合并：提交后 [kCrashReportMergeWindow] 内再闪退，先攒着不再问 / 不再自动发；窗口
 //   过后的第一次启动把攒下的几次合成一条报告（标题带次数），不刷屏。
 // - 自动发送默认关：日志会离开设备，第一次必须由用户点「发送」或「以后自动发送」，
@@ -19,8 +22,9 @@
 // 启动即闪退：上次死在初始化完成之前（会话标记的 `initialised`）时，提示在本次
 // `AppModel.initialise()` **之前**出现、等用户选完再初始化（见
 // `pages/implementations/feedback/crash_report_prompt.dart` 的
-// `runCrashReportStartupGate`）；那时数据库还没开，提交落在 [CrashReporter.spoolDir]，
-// 初始化完成后由 [FeedbackService.adoptSpool] 并入反馈中心。
+// `runCrashReportStartupGate`）；开着自动发送时不问也不等网络，提交在后台
+// （[CrashReporter.submitInBackground]）跟初始化并行跑。那时数据库还没开，提交落在
+// [CrashReporter.spoolDir]，初始化完成后由 [FeedbackService.adoptSpool] 并入反馈中心。
 
 import 'dart:convert';
 import 'dart:io';
@@ -110,6 +114,59 @@ class CrashOccurrence {
   };
 }
 
+List<CrashOccurrence> _parseOccurrences(Object? raw) => raw is List
+    ? <CrashOccurrence>[
+        for (final Object? o in raw)
+          if (CrashOccurrence.tryParse(o) case final CrashOccurrence c) c,
+      ]
+    : const <CrashOccurrence>[];
+
+/// 已经开始提交的一批待报：幂等键与它覆盖的那几次退出**一起**落盘。重试只发这一批、
+/// 提交成功只清这一批；之后新来的闪退不进来（进下一份报告）。
+@immutable
+class CrashReportBatch {
+  const CrashReportBatch({
+    required this.submissionKey,
+    required this.occurrences,
+    this.droppedCount = 0,
+  });
+
+  static CrashReportBatch? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? key = raw['submissionKey'];
+    final Object? dropped = raw['droppedCount'];
+    final List<CrashOccurrence> occurrences = _parseOccurrences(
+      raw['occurrences'],
+    );
+    if (key is! String || key.isEmpty || occurrences.isEmpty) return null;
+    return CrashReportBatch(
+      submissionKey: key,
+      occurrences: occurrences,
+      droppedCount: dropped is int && dropped > 0 ? dropped : 0,
+    );
+  }
+
+  /// 这批的提交幂等键（第一次尝试提交时生成）。
+  final String submissionKey;
+
+  /// 这批覆盖的退出，旧的在前，非空。
+  final List<CrashOccurrence> occurrences;
+
+  /// 挪进这批时已被挤掉的更早几次的次数合计（随这批一起报、一起清）。
+  final int droppedCount;
+
+  CrashReportOffer get offer =>
+      CrashReportOffer(occurrences, droppedCount: droppedCount);
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'submissionKey': submissionKey,
+    'occurrences': <Object?>[
+      for (final CrashOccurrence c in occurrences) c.toJson(),
+    ],
+    'droppedCount': droppedCount,
+  };
+}
+
 /// 落盘的闪退报告状态。
 @immutable
 class CrashReportState {
@@ -117,28 +174,38 @@ class CrashReportState {
     this.autoSend = false,
     this.pending = const <CrashOccurrence>[],
     this.droppedCount = 0,
-    this.submissionKey,
+    this.inFlight,
     this.lastSubmittedAt = 0,
     this.lastTicketId,
   });
 
   factory CrashReportState.fromJson(Object? raw) {
     if (raw is! Map) return const CrashReportState();
-    final Object? pending = raw['pending'];
     final Object? dropped = raw['droppedCount'];
     final Object? last = raw['lastSubmittedAt'];
-    final Object? key = raw['submissionKey'];
+    final Object? legacyKey = raw['submissionKey'];
     final Object? ticket = raw['lastTicketId'];
+    List<CrashOccurrence> pending = _parseOccurrences(raw['pending']);
+    int droppedCount = dropped is int && dropped > 0 ? dropped : 0;
+    CrashReportBatch? inFlight = CrashReportBatch.tryParse(raw['inFlight']);
+    // 早期格式只落了一个顶层幂等键、没记它覆盖哪几次：那时的待报全部算进这一批。
+    if (inFlight == null &&
+        legacyKey is String &&
+        legacyKey.isNotEmpty &&
+        pending.isNotEmpty) {
+      inFlight = CrashReportBatch(
+        submissionKey: legacyKey,
+        occurrences: pending,
+        droppedCount: droppedCount,
+      );
+      pending = const <CrashOccurrence>[];
+      droppedCount = 0;
+    }
     return CrashReportState(
       autoSend: raw['autoSend'] == true,
-      pending: pending is List
-          ? <CrashOccurrence>[
-              for (final Object? o in pending)
-                if (CrashOccurrence.tryParse(o) case final CrashOccurrence c) c,
-            ]
-          : const <CrashOccurrence>[],
-      droppedCount: dropped is int && dropped > 0 ? dropped : 0,
-      submissionKey: key is String && key.isNotEmpty ? key : null,
+      pending: pending,
+      droppedCount: droppedCount,
+      inFlight: inFlight,
       lastSubmittedAt: last is int ? last : 0,
       lastTicketId: ticket is String && ticket.isNotEmpty ? ticket : null,
     );
@@ -147,14 +214,14 @@ class CrashReportState {
   /// 用户同意过「以后自动发送」（设置里也能改，默认关）。
   final bool autoSend;
 
-  /// 还没报的异常退出，旧的在前。
+  /// 还没开始报的异常退出，旧的在前（不含 [inFlight] 里的）。
   final List<CrashOccurrence> pending;
 
-  /// 超过 [kCrashReportMaxOccurrences] 被挤掉的更早几次的次数合计。
+  /// [pending] 超过 [kCrashReportMaxOccurrences] 被挤掉的更早几次的次数合计。
   final int droppedCount;
 
-  /// 这批待报的提交幂等键：第一次尝试提交时生成并落盘，提交成功才清掉。
-  final String? submissionKey;
+  /// 已经开始提交、还没确认交上去的那一批（带幂等键）；提交成功才清掉。
+  final CrashReportBatch? inFlight;
 
   /// 上一份闪退报告提交成功的时刻（合并窗口从这里算）。
   final int lastSubmittedAt;
@@ -166,14 +233,14 @@ class CrashReportState {
     bool? autoSend,
     List<CrashOccurrence>? pending,
     int? droppedCount,
-    String? Function()? submissionKey,
+    CrashReportBatch? Function()? inFlight,
     int? lastSubmittedAt,
     String? lastTicketId,
   }) => CrashReportState(
     autoSend: autoSend ?? this.autoSend,
     pending: pending ?? this.pending,
     droppedCount: droppedCount ?? this.droppedCount,
-    submissionKey: submissionKey != null ? submissionKey() : this.submissionKey,
+    inFlight: inFlight != null ? inFlight() : this.inFlight,
     lastSubmittedAt: lastSubmittedAt ?? this.lastSubmittedAt,
     lastTicketId: lastTicketId ?? this.lastTicketId,
   );
@@ -182,7 +249,7 @@ class CrashReportState {
     'autoSend': autoSend,
     'pending': <Object?>[for (final CrashOccurrence c in pending) c.toJson()],
     'droppedCount': droppedCount,
-    'submissionKey': submissionKey,
+    'inFlight': inFlight?.toJson(),
     'lastSubmittedAt': lastSubmittedAt,
     'lastTicketId': lastTicketId,
   };
@@ -319,13 +386,15 @@ class CrashReporter extends ChangeNotifier {
 
   String? get lastTicketId => _state.lastTicketId;
 
-  /// 待报的次数（含被挤掉的）。
-  int get pendingCount => _state.pending.isEmpty
-      ? 0
-      : CrashReportOffer(
-          _state.pending,
-          droppedCount: _state.droppedCount,
-        ).totalCount;
+  /// 待报的次数（含提交中的那批与被挤掉的）。
+  int get pendingCount =>
+      (_state.inFlight?.offer.totalCount ?? 0) +
+      (_state.pending.isEmpty
+          ? 0
+          : CrashReportOffer(
+              _state.pending,
+              droppedCount: _state.droppedCount,
+            ).totalCount);
 
   /// 启动即闪退时提前提交的落脚目录。
   Directory? get spoolDir => _dir == null
@@ -351,9 +420,10 @@ class CrashReporter extends ChangeNotifier {
   void recordVerdict(PreviousExitVerdict? verdict) {
     if (!_enabled || verdict == null || !verdict.worthReporting) return;
     final CrashOccurrence next = CrashOccurrence.fromVerdict(verdict);
-    if (_state.pending.any(
-      (CrashOccurrence c) => c.identity == next.identity,
-    )) {
+    if (<CrashOccurrence>[
+      ..._state.pending,
+      ...?_state.inFlight?.occurrences,
+    ].any((CrashOccurrence c) => c.identity == next.identity)) {
       return;
     }
     final List<CrashOccurrence> pending = <CrashOccurrence>[
@@ -368,63 +438,79 @@ class CrashReporter extends ChangeNotifier {
   }
 
   /// 现在该问 / 该发的报告；没有待报、关着、或还在上一份报告的合并窗口里返回 null。
+  /// 有没交上去的那批（[CrashReportState.inFlight]）时先是它（[submit] 发的也是它），
+  /// 之后新来的待报等它交上去后另成一份。
   CrashReportOffer? currentOffer() {
-    if (!_enabled || _state.pending.isEmpty) return null;
+    if (!_enabled) return null;
+    final CrashReportOffer? offer = _nextOffer();
+    if (offer == null) return null;
     final int sinceLast = _nowMs() - _state.lastSubmittedAt;
     if (_state.lastSubmittedAt > 0 &&
         sinceLast >= 0 &&
         sinceLast < kCrashReportMergeWindow.inMilliseconds) {
       return null;
     }
-    return CrashReportOffer(_state.pending, droppedCount: _state.droppedCount);
+    return offer;
   }
+
+  CrashReportOffer? _nextOffer() =>
+      _state.inFlight?.offer ??
+      (_state.pending.isEmpty
+          ? null
+          : CrashReportOffer(
+              _state.pending,
+              droppedCount: _state.droppedCount,
+            ));
 
   /// 本次启动已经问过 / 发过（启动前的提示处理过，首页出来后就不再问一遍）。
   bool get handledThisSession => _handledThisSession;
 
   void markHandledThisSession() => _handledThisSession = true;
 
-  /// 用户点了「不用了」：这批待报作废。
+  /// 用户点了「不用了」：给他看的那批（[currentOffer]）作废。
   void decline() {
-    _save(
-      _state.copyWith(
-        pending: const <CrashOccurrence>[],
-        droppedCount: 0,
-        submissionKey: () => null,
-      ),
-    );
+    if (_state.inFlight != null) {
+      _save(_state.copyWith(inFlight: () => null));
+      return;
+    }
+    _save(_state.copyWith(pending: const <CrashOccurrence>[], droppedCount: 0));
   }
 
-  /// 提交当前待报（[buildDraft] 按语言组标题与说明）。成功清掉待报并记下时刻与反馈 id；
-  /// 正文没交上去原样抛（待报与幂等键都留着，下次重试拿回的是同一条反馈）。
+  /// 提交一份报告（[buildDraft] 按语言组标题与说明）：有没交上去的那批就重发它（同一个
+  /// 幂等键）；否则把当前待报连同新幂等键挪进「提交中」并落盘，再发。成功只清这一批并
+  /// 记下时刻与反馈 id；正文没交上去原样抛（这批与幂等键都留着，下次重试拿回的是同一条
+  /// 反馈）。两次尝试之间新记的闪退留在待报里，不进这一批。
   Future<FeedbackSubmitResult> submit(
     FeedbackService service,
     FeedbackDraft Function(CrashReportOffer offer, String submissionKey)
     buildDraft,
   ) async {
-    final CrashReportOffer? offer = _state.pending.isEmpty
-        ? null
-        : CrashReportOffer(_state.pending, droppedCount: _state.droppedCount);
-    if (offer == null) throw StateError('no pending crash report');
-    String? key = _state.submissionKey;
-    if (key == null) {
-      key = _newKey();
-      _save(_state.copyWith(submissionKey: () => key));
+    CrashReportBatch? batch = _state.inFlight;
+    if (batch == null) {
+      if (_state.pending.isEmpty) throw StateError('no pending crash report');
+      final CrashReportBatch created = CrashReportBatch(
+        submissionKey: _newKey(),
+        occurrences: _state.pending,
+        droppedCount: _state.droppedCount,
+      );
+      _save(
+        _state.copyWith(
+          inFlight: () => created,
+          pending: const <CrashOccurrence>[],
+          droppedCount: 0,
+        ),
+      );
+      batch = created;
     }
     final FeedbackSubmitResult result = await service.submit(
-      buildDraft(offer, key),
+      buildDraft(batch.offer, batch.submissionKey),
     );
-    final Set<String> sent = <String>{
-      for (final CrashOccurrence c in offer.occurrences) c.identity,
-    };
+    final CrashReportBatch sent = batch;
     _save(
       _state.copyWith(
-        pending: <CrashOccurrence>[
-          for (final CrashOccurrence c in _state.pending)
-            if (!sent.contains(c.identity)) c,
-        ],
-        droppedCount: 0,
-        submissionKey: () => null,
+        // 等待期间用户「不用了」/ 另一处提交已经清掉或换了批次时不动它。
+        inFlight: () =>
+            identical(_state.inFlight, sent) ? null : _state.inFlight,
         lastSubmittedAt: _nowMs(),
         lastTicketId: result.ticket.id,
       ),
@@ -432,8 +518,32 @@ class CrashReporter extends ChangeNotifier {
     return result;
   }
 
+  Future<void>? _backgroundSubmission;
+
+  /// 在后台提交当前报告、不等它（启动即闪退且开着自动发送时：初始化不能等网络）。
+  /// 失败只记日志——这批与幂等键都留在状态文件里，下次启动再发、拿回同一条反馈。
+  /// [adoptSpool] 会先等它跑完，免得把还在写的 [spoolDir] 并走 / 删掉。
+  void submitInBackground(
+    FeedbackService service,
+    FeedbackDraft Function(CrashReportOffer offer, String submissionKey)
+    buildDraft,
+  ) {
+    final Future<void>? previous = _backgroundSubmission;
+    _backgroundSubmission = () async {
+      if (previous != null) await previous;
+      try {
+        await submit(service, buildDraft);
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('CrashReport.background_send', e, st);
+      }
+    }();
+  }
+
   /// 把启动前提交在 [spoolDir] 里的回执并进反馈中心（[FeedbackService.adoptSpool]）。
+  /// 后台提交（[submitInBackground]）还在跑时先等它跑完。
   Future<void> adoptSpool(FeedbackService service) async {
+    final Future<void>? running = _backgroundSubmission;
+    if (running != null) await running;
     final Directory? spool = spoolDir;
     if (spool == null || !spool.existsSync()) return;
     try {
