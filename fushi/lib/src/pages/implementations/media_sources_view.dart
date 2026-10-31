@@ -539,7 +539,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                         // 隐私来源：名字后挂一把锁，一眼看出这一行不上排行榜。
                         if (row.isPrivate) ...<Widget>[
                           const SizedBox(width: 6),
-                          Tooltip(
+                          FushiTooltip(
                             key: ValueKey<String>(
                               'media_source_private_badge_${row.id}',
                             ),
