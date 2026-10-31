@@ -17,31 +17,31 @@
       "sha256": "c19a73709f6103163d565b46a433cddd61e983a9cecb813c09bd956a50b7bb84"
     },
     {
-      "name": "fushi-3.2.0-debug.22594-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.2.0-debug.22594-ios.ipa",
-      "releaseSequence": 22594,
-      "tag": "v3.2.0-debug.22594+4c2dfa9",
-      "version": "3.2.0-debug.22594",
-      "size": 95903061,
-      "sha256": "d6908fb746cd24d86577d158bf1f09a218a43c66d59ab90ddbb400f5f33a079c"
+      "name": "fushi-3.2.0-debug.22643-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.2.0-debug.22643-ios.ipa",
+      "releaseSequence": 22643,
+      "tag": "v3.2.0-debug.22643+2dbaf86",
+      "version": "3.2.0-debug.22643",
+      "size": 95970334,
+      "sha256": "83060f4320928603018a4c77ddad49f2041ea8aa54285bac3c67fd1d246c97bb"
     },
     {
-      "name": "fushi-3.2.0-debug.22594-macos-arm64.dmg",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.2.0-debug.22594-macos-arm64.dmg",
-      "releaseSequence": 22594,
-      "tag": "v3.2.0-debug.22594+4c2dfa9",
-      "version": "3.2.0-debug.22594",
-      "size": 270942924,
-      "sha256": "e873a6f5c5d1fb8f49b68a7f9c12b681f3d9f38932962bf5ede5071f5e6c5228"
+      "name": "fushi-3.2.0-debug.22643-macos-arm64.dmg",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.2.0-debug.22643-macos-arm64.dmg",
+      "releaseSequence": 22643,
+      "tag": "v3.2.0-debug.22643+2dbaf86",
+      "version": "3.2.0-debug.22643",
+      "size": 271215688,
+      "sha256": "8a722e94a12a5f68ee78378724fbf170ea14d46c437f6ced207cd64105e97011"
     },
     {
-      "name": "fushi-3.2.0-debug.22594-macos-arm64.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.2.0-debug.22594-macos-arm64.zip",
-      "releaseSequence": 22594,
-      "tag": "v3.2.0-debug.22594+4c2dfa9",
-      "version": "3.2.0-debug.22594",
-      "size": 257926049,
-      "sha256": "21a20fe7e667d09beb59b71da0618b64b981390e8822df9db6cd0d2001ac6b64"
+      "name": "fushi-3.2.0-debug.22643-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.2.0-debug.22643-macos-arm64.zip",
+      "releaseSequence": 22643,
+      "tag": "v3.2.0-debug.22643+2dbaf86",
+      "version": "3.2.0-debug.22643",
+      "size": 257965216,
+      "sha256": "f3eb2120acd83a341b46f255e13a9d36a42175c196dc3de47ec9fc338f8ec41e"
     },
     {
       "name": "fushi-3.2.0-debug.22643-windows-setup.exe",
