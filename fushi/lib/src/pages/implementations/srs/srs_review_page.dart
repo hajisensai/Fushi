@@ -36,6 +36,7 @@ import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_anki/fushi_anki_core.dart' show CardSourceLink;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/anki/card_source_origin.dart'
@@ -186,6 +187,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   bool _finished = false;
   Object? _error;
 
+  /// 队列空了是因为 RWKV 还没准备好（[SrsStudyState.rwkvPending]）：RWKV 牌组的复习卡不退回按 FSRS-7 的到期日
+  /// 出，这里显示 RWKV 的准备 / 失败状态，就绪后自动重新排队（[_onRwkvStatus]）。
+  bool _rwkvPending = false;
+  SrsRwkvService? _rwkv;
+  SrsRwkvStatus? _rwkvStatus;
+  StreamSubscription<SrsRwkvStatus>? _rwkvSubscription;
+
   /// 悬浮顶栏（[srsReviewChromeFloatingProvider]，默认开）当前是否被唤出。默认收起；
   /// 点卡面空白 / 右键在唤出与收起间切换，不自动收起（与小说、漫画阅读器同一口径：
   /// 点击是唯一的开关）。固定页头时不用它。
@@ -309,6 +317,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   @override
   void dispose() {
+    unawaited(_rwkvSubscription?.cancel());
     srsActiveReviewSessions.value--;
     WidgetsBinding.instance.removeObserver(this);
     _focusNode.removeListener(_onPageFocusChanged);
@@ -330,8 +339,29 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       return;
     }
     _store = store;
+    // 先把 RWKV 服务装配到 store 上（[SrsDbStore.rwkv]）再排第一次队：没装配的 store 会把 RWKV 牌组当成
+    // 「宿主没有 RWKV」按到期日排。
+    SrsRwkvService? rwkv;
+    try {
+      rwkv = await ref.read(srsRwkvServiceProvider.future);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsReviewPage.rwkv', e, stack);
+    }
+    if (!mounted) return;
+    _rwkv = rwkv;
+    _rwkvStatus = rwkv?.status;
+    _rwkvSubscription = rwkv?.statusChanges.listen(_onRwkvStatus);
     SrsReviewPage.debugPhase?.call('store');
     await _loadNext();
+  }
+
+  void _onRwkvStatus(SrsRwkvStatus status) {
+    if (!mounted) return;
+    setState(() => _rwkvStatus = status);
+    // 等的就是它：就绪后重新排队，RWKV 牌组的复习卡按此刻的回忆率出。
+    if (status.phase == SrsRwkvPhase.ready && _finished && _rwkvPending) {
+      unawaited(_loadNext());
+    }
   }
 
   Future<SrsDeckSummary?> _deckSummary() => _store!.deckSummary(widget.deckId);
@@ -455,6 +485,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         setState(() {
           _loading = false;
           _finished = true;
+          _rwkvPending = plan?.rwkvPending ?? false;
           _detail = null;
           _rendered = null;
           _preview = null;
@@ -1574,6 +1605,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         ),
       );
     }
+    if (_finished && _rwkvPending) return _buildRwkvPending(context);
     if (_finished) return _buildFinished(context);
     final SrsDbStore store = _store!;
     if (!store.canSchedule) {
@@ -1586,6 +1618,54 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       );
     }
     return _buildCard(context);
+  }
+
+  /// 队列空了而 RWKV 还没准备好：说清楚在等什么（下载 / 回放 / 失败），失败给「重试」。
+  Widget _buildRwkvPending(BuildContext context) {
+    final SrsRwkvStatus? status = _rwkvStatus;
+    final SrsRwkvService? service = _rwkv;
+    final bool failed = status?.phase == SrsRwkvPhase.failed;
+    final String? detail = switch (status?.phase) {
+      SrsRwkvPhase.failed => t.srs_settings_rwkv_failed(
+        error: '${status!.error}',
+      ),
+      SrsRwkvPhase.downloading => t.srs_settings_rwkv_downloading(
+        percent: status!.total > 0
+            ? (status.done / status.total * 100).round()
+            : 0,
+      ),
+      SrsRwkvPhase.preparing when status!.total > 0 =>
+        t.srs_settings_rwkv_preparing(done: status.done, total: status.total),
+      SrsRwkvPhase.preparing ||
+      SrsRwkvPhase.idle => t.srs_settings_rwkv_preparing_start,
+      _ => null,
+    };
+    return FushiEntranceScope(
+      child: Center(
+        child: FushiStaggeredEntrance(
+          index: 0,
+          child: FushiPlaceholderMessage(
+            key: const ValueKey<String>('srs-review-rwkv-pending'),
+            icon: failed ? FushiIcons.error : FushiIcons.warning,
+            tone: failed
+                ? FushiPlaceholderTone.error
+                : FushiPlaceholderTone.neutral,
+            message: t.srs_review_rwkv_pending,
+            detail: detail,
+            action: failed && service != null
+                ? FushiFilledButton(
+                    key: const ValueKey<String>('srs-review-rwkv-retry'),
+                    onPressed: () => srsRunLogged(
+                      'SrsRwkvService.start',
+                      () => service.start(force: true),
+                    ),
+                    child: Text(t.retry),
+                  )
+                : null,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildFinished(BuildContext context) {
@@ -2041,9 +2121,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     String interval(int rating) {
       if (preview == null || day == null) return '';
       final SrsScheduleResult next = preview.plan[rating];
-      // RWKV 正在排队（RWKV-Instant）：进复习队列的卡在估计回忆率降到目标时出现，不看到期日，
-      // FSRS-7 算的天数不是它真正回来的时间，不显示。学习 / 重学步仍按步长计时，照常显示；
-      // RWKV 没准备好时（rwkvUnavailable）真按存下的到期日排队，也照常显示。
+      // RWKV 牌组（RWKV-Instant）：进复习队列的卡在估计回忆率降到目标时出现，不看到期日，
+      // FSRS-7 算的天数不是它真正回来的时间，不显示。学习 / 重学步仍按步长计时，照常显示。
       if (preview.algorithm == SrsAlgorithm.rwkv &&
           next.queue == SrsQueue.review) {
         return '';
@@ -2083,23 +2162,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       button(3, t.srs_rating_good, SrsRatingTone.good),
       if (!twoButtons) button(4, t.srs_rating_easy, SrsRatingTone.easy),
     ];
-    // RWKV 牌组这张卡没拿到 RWKV 间隔（模型没下载 / 正在回放历史 / 出错），按 FSRS-7 排：说一声。
-    if (preview?.rwkvUnavailable ?? false) {
-      return Column(
-        key: key,
-        mainAxisSize: MainAxisSize.min,
-        spacing: tokens.spacing.gap,
-        children: <Widget>[
-          Text(
-            t.srs_review_rwkv_unavailable,
-            key: const ValueKey<String>('srs-review-rwkv-unavailable'),
-            style: context.fushiType.bodySmall,
-            textAlign: TextAlign.center,
-          ),
-          Row(spacing: tokens.spacing.gap, children: buttons),
-        ],
-      );
-    }
     return Row(key: key, spacing: tokens.spacing.gap, children: buttons);
   }
 }

@@ -2122,11 +2122,7 @@ void main() {
       profileUid: kProfile,
       deviceId: 'a',
       engine: engine,
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        monotonicMs: () => t,
-        bootId: 'boot-a',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot-a'),
       fallbackRolloverHour: () => 4,
     );
     await expectLater(importInto(s, legacyApkg(t)), throwsStateError);
