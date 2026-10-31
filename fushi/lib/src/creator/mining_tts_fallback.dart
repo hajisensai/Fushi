@@ -15,10 +15,14 @@ library;
 import 'dart:io';
 
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show immersionMiningAudioExtension;
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
+    show buildFfmpegAtempoFilter, retempoAudioFileViaFfmpeg;
 import 'package:material_ui/material_ui.dart' show immutable;
 import 'package:path/path.dart' as p;
 
@@ -27,12 +31,35 @@ import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
 
 /// String：制卡单词音频的 TTS 兜底声音（[MiningTtsFallbackVoice.wire]）。
 /// 值可能指向本机的声音预设（`tts_voice_presets` 是设备本地清单），所以与
 /// `tts_active_preset_id` 同族：设备本地，不进 Profile 快照 / 备份 / 同步。
 const String kMiningTtsFallbackVoicePref = 'mining_tts_fallback_voice';
+
+/// double：TTS 兜底发音（查词 ♪ / 自动发音、制卡单词音频）的倍速，默认 1.0。
+/// 倍速是 TTS 声音本身的属性：制卡单词音频一律按它，不受有声书「句子音频跟随
+/// 播放倍速」开关影响。范围同有声书倍速（[kTtsFallbackSpeedMin]..[kTtsFallbackSpeedMax]）。
+const String kTtsFallbackSpeedPref = 'tts_fallback_speed';
+
+/// TTS 兜底倍速下限 / 上限（与有声书倍速拖动条同一范围，[kPlaybackSpeedMin]..[kPlaybackSpeedMax]）。
+const double kTtsFallbackSpeedMin = kPlaybackSpeedMin;
+const double kTtsFallbackSpeedMax = kPlaybackSpeedMax;
+
+/// 读 TTS 兜底倍速；坏值 / 越界夹回范围，非数字回落 1.0。
+double ttsFallbackSpeedOf(PrefStore prefs) {
+  final Object? raw = prefs.getPref(kTtsFallbackSpeedPref, defaultValue: 1.0);
+  if (raw is! num || !raw.isFinite) return 1.0;
+  return raw.toDouble().clamp(kTtsFallbackSpeedMin, kTtsFallbackSpeedMax);
+}
+
+Future<void> setTtsFallbackSpeed(PrefStore prefs, double speed) =>
+    prefs.setPref(
+      kTtsFallbackSpeedPref,
+      speed.clamp(kTtsFallbackSpeedMin, kTtsFallbackSpeedMax),
+    );
 
 enum MiningTtsFallbackKind { system, none, preset }
 
@@ -255,6 +282,25 @@ typedef SystemTtsToFile =
       String? languageTag,
     );
 
+/// 整段变速的形状（生产 = [retempoAudioFileViaFfmpeg]）：成功返回 [outputPath]，
+/// 失败返回 null（失败原因已由实现记进错误日志）。
+typedef TtsFallbackRetempo =
+    Future<String?> Function({
+      required String inputPath,
+      required String outputPath,
+      required double tempo,
+    });
+
+Future<String?> _ffmpegRetempo({
+  required String inputPath,
+  required String outputPath,
+  required double tempo,
+}) => retempoAudioFileViaFfmpeg(
+  inputPath: inputPath,
+  outputPath: outputPath,
+  tempo: tempo,
+);
+
 /// 兜底链第 3 步：按 [choice] 合成 [text] 的单词音频。
 ///
 /// - 系统语音：`systemTts(text, <outputDir>/tts_term_audio.wav, languageTag)`，
@@ -265,7 +311,56 @@ typedef SystemTtsToFile =
 /// - 预设：经 [voices] 取引擎合成（走缓存），产物复制到 [outputDir] 下按缓存键
 ///   命名、扩展名随真实格式（wav / mp3）的文件——不同词互不覆盖。失败抛
 ///   [WordAudioUnavailable]，**不回退系统语音**。
+///
+/// [tempo]：倍速（变速不变调）。null / 1.0 原样返回合成产物；否则经 [retempo]
+/// （ffmpeg atempo）另写一份 `<原名>_x<倍速>.<制卡音频扩展名>` 返回——三条播放
+/// 后端（弹窗 `<audio>` / Android 原生 / 桌面 just_audio）与 Anki 卡片因此拿到同一份
+/// 已变速的文件，不必各自实现倍速。变速失败（ffmpeg 缺失 / 编码失败，已记日志）时
+/// 退回原速产物：发音照常可用，只是没变速。
 Future<File?> synthesizeMiningTtsFallback({
+  required String text,
+  required MiningTtsFallbackVoice choice,
+  required Directory outputDir,
+  required SystemTtsToFile systemTts,
+  required MiningTtsVoiceSource Function() voices,
+  String? languageTag,
+  double? tempo,
+  TtsFallbackRetempo retempo = _ffmpegRetempo,
+}) async {
+  final File? source = await _synthesizeAtSourceSpeed(
+    text: text,
+    choice: choice,
+    outputDir: outputDir,
+    systemTts: systemTts,
+    voices: voices,
+    languageTag: languageTag,
+  );
+  if (source == null || tempo == null) return source;
+  if (buildFfmpegAtempoFilter(tempo) == null) return source;
+  final String name = p.basenameWithoutExtension(source.path);
+  final File out = File(
+    p.join(
+      p.dirname(source.path),
+      '${name}_x${tempo.toStringAsFixed(2)}.'
+      '${immersionMiningAudioExtension()}',
+    ),
+  );
+  // 预设产物按缓存键命名（同名 = 同词同音色），已变速过的直接复用；系统语音沿用
+  // 固定文件名、每次内容都不同，必须重做。
+  if (p.basename(source.path) != kSystemTtsTermAudioFileName &&
+      await out.exists() &&
+      await out.length() > 0) {
+    return out;
+  }
+  final String? written = await retempo(
+    inputPath: source.path,
+    outputPath: out.path,
+    tempo: tempo,
+  );
+  return written == null ? source : File(written);
+}
+
+Future<File?> _synthesizeAtSourceSpeed({
   required String text,
   required MiningTtsFallbackVoice choice,
   required Directory outputDir,

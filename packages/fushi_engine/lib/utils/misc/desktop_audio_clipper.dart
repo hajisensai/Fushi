@@ -906,6 +906,103 @@ String? buildFfmpegAtempoFilter(double? tempo) {
   return stages.join(',');
 }
 
+/// Builds the ffmpeg argument list that time-stretches the whole of
+/// [inputPath] by [tempo] (pitch preserved, `-af atempo=…`) and re-encodes it to
+/// AAC at [outputPath]. Returns null when [tempo] needs no filter (see
+/// [buildFfmpegAtempoFilter]) — callers then keep the original file. Pure (no
+/// IO) so it is unit-testable.
+///
+/// TTS 倍速（查词 / 制卡的 TTS 兜底发音）：合成出的整段短音频按用户设定的倍速
+/// 变速不变调。编码参数与句子音频同一压缩档（单声道 64k AAC）。
+List<String>? buildFfmpegRetempoArgs({
+  required String inputPath,
+  required String outputPath,
+  required double tempo,
+  int audioChannels = 1,
+  String audioBitrate = '64k',
+}) {
+  final String? tempoFilter = buildFfmpegAtempoFilter(tempo);
+  if (tempoFilter == null) return null;
+  return <String>[
+    '-y',
+    '-i',
+    inputPath,
+    '-vn',
+    '-map_chapters',
+    '-1',
+    '-af',
+    tempoFilter,
+    '-c:a',
+    'aac',
+    '-ac',
+    '$audioChannels',
+    '-b:a',
+    audioBitrate,
+    outputPath,
+  ];
+}
+
+/// Time-stretches [inputPath] by [tempo] into [outputPath] via ffmpeg (see
+/// [buildFfmpegRetempoArgs]). Returns [outputPath] on success; returns
+/// [inputPath] unchanged when [tempo] needs no filter; returns null when the
+/// input is missing, ffmpeg is unavailable or the encode failed (logged, and
+/// reported through [onFailure]).
+Future<String?> retempoAudioFileViaFfmpeg({
+  required String inputPath,
+  required String outputPath,
+  required double tempo,
+  FfmpegFailureReporter? onFailure,
+  Duration timeout = const Duration(seconds: 60),
+}) async {
+  final List<String>? args = buildFfmpegRetempoArgs(
+    inputPath: inputPath,
+    outputPath: outputPath,
+    tempo: tempo,
+  );
+  if (args == null) return inputPath;
+  if (!await File(inputPath).exists()) {
+    _reportFfmpegEarlyReturn(
+      'retempoAudioFileViaFfmpeg',
+      'input audio file does not exist: $inputPath (tempo=$tempo)',
+      onFailure,
+    );
+    return null;
+  }
+  final File output = File(outputPath);
+  try {
+    output.parent.createSync(recursive: true);
+    final FfmpegRunResult result = await _runFfmpeg(args, timeout);
+    if (result.returnCode == 0 &&
+        output.existsSync() &&
+        output.lengthSync() > 0) {
+      return outputPath;
+    }
+    if (output.existsSync()) {
+      try {
+        output.deleteSync();
+      } catch (_) {}
+    }
+    _reportFfmpegFailure('retempoAudioFileViaFfmpeg', result, onFailure);
+    return null;
+  } on ProcessException catch (e, stack) {
+    _reportFfmpegProcessException(
+      'retempoAudioFileViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
+    return null;
+  } catch (e, stack) {
+    _reportFfmpegUnexpectedException(
+      'retempoAudioFileViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
+    return null;
+  }
+}
+
 /// Builds the ffmpeg argument list to extract the embedded cover art of
 /// [inputPath] into [outputPath] (re-encoded to the output extension, e.g. jpg).
 List<String> buildFfmpegCoverArgs({

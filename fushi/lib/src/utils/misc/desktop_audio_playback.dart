@@ -239,19 +239,31 @@ class DesktopAudioPlayback {
   @visibleForTesting
   static Uint8List debugSilentWavBytes() => _silentWavBytes();
 
-  static Future<bool> playUrl(String url, {double volume = 1.0}) =>
-      _play(() => _player.setUrl(url), 'playUrl', volume);
+  static Future<bool> playUrl(
+    String url, {
+    double volume = 1.0,
+    double speed = 1.0,
+  }) => _play(() => _player.setUrl(url), 'playUrl', volume, speed);
 
-  static Future<bool> playFile(String path, {double volume = 1.0}) =>
-      _play(() => _player.setFilePath(path), 'playFile', volume);
+  /// [speed] 是倍速（变速不变调）。共用播放器每次开播都重设倍速，默认 1.0，
+  /// 上一段 TTS 的倍速不会带到下一段单词音频上。
+  static Future<bool> playFile(
+    String path, {
+    double volume = 1.0,
+    double speed = 1.0,
+  }) => _play(() => _player.setFilePath(path), 'playFile', volume, speed);
 
   /// 播一个本地文件并等它结束（复习卡面按顺序自动播放多段音频用）。
   ///
   /// 返回 true = 自然播完；false = 没能开播，或中途被别的播放 / [stop] 打断
   /// （共用播放器上一换内容就先 stop，状态回到 idle）。调用方据此决定还要不要
   /// 接着播下一段：被打断说明用户在别处点了播放，不该再抢回来。
-  static Future<bool> playFileToEnd(String path, {double volume = 1.0}) async {
-    if (!await playFile(path, volume: volume)) return false;
+  static Future<bool> playFileToEnd(
+    String path, {
+    double volume = 1.0,
+    double speed = 1.0,
+  }) async {
+    if (!await playFile(path, volume: volume, speed: speed)) return false;
     final PlayerState end = await _player.playerStateStream.firstWhere(
       (PlayerState s) =>
           s.processingState == ProcessingState.completed ||
@@ -265,6 +277,7 @@ class DesktopAudioPlayback {
     Future<Duration?> Function() load,
     String tag,
     double volume,
+    double speed,
   ) {
     // Lazy cold-start warm-up (BUG-1015/BUG-1690): queue the silent warm-up
     // cycle BEFORE this real cycle. Must stay synchronous up to this point so
@@ -291,6 +304,7 @@ class DesktopAudioPlayback {
           return false;
         }
         await _player.setVolume(volume.clamp(0.0, 1.0));
+        await _player.setSpeed(speed.isFinite && speed > 0 ? speed : 1.0);
         await load();
         if (_activation.generation != submittedGeneration) {
           // BUG-1127 — same as above, after load: observable, never silent.

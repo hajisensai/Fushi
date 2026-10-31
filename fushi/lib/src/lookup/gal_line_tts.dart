@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 
 /// String：整份 [GalLineTtsSettings] JSON。含本机声音预设 id，设备本地（不进备份 /
 /// 同步 / Profile 快照，与 `tts_active_preset_id` 同族）。
@@ -389,6 +390,10 @@ List<GalLineTtsRule> insertGalLineTtsRule(
   ];
 }
 
+/// 台词 TTS 倍速范围（与有声书倍速拖动条同一范围）。
+const double kGalLineTtsSpeedMin = kPlaybackSpeedMin;
+const double kGalLineTtsSpeedMax = kPlaybackSpeedMax;
+
 @immutable
 class GalLineTtsSettings {
   const GalLineTtsSettings({
@@ -400,6 +405,7 @@ class GalLineTtsSettings {
     this.rules = const <GalLineTtsRule>[],
     this.textFixes = const <GalLineTtsTextFix>[],
     this.volume = 1.0,
+    this.speed = 1.0,
   });
 
   /// 自动朗读总开关（浮窗工具条上的「自动朗读」键就是它）。默认关：TTS 要先配声音。
@@ -422,6 +428,9 @@ class GalLineTtsSettings {
   /// TTS 播放音量（0..1），方便压在游戏音量下面。
   final double volume;
 
+  /// TTS 播放倍速（变速不变调，[kGalLineTtsSpeedMin]..[kGalLineTtsSpeedMax]）。
+  final double speed;
+
   /// 实际生效的档位（总开关关 = off）。
   GalLineTtsAutoPlay get effectiveAutoPlay =>
       autoPlayEnabled ? autoPlay : GalLineTtsAutoPlay.off;
@@ -436,6 +445,7 @@ class GalLineTtsSettings {
     List<GalLineTtsRule>? rules,
     List<GalLineTtsTextFix>? textFixes,
     double? volume,
+    double? speed,
   }) => GalLineTtsSettings(
     autoPlayEnabled: autoPlayEnabled ?? this.autoPlayEnabled,
     autoPlay: autoPlay ?? this.autoPlay,
@@ -445,6 +455,7 @@ class GalLineTtsSettings {
     rules: rules ?? this.rules,
     textFixes: textFixes ?? this.textFixes,
     volume: volume ?? this.volume,
+    speed: speed ?? this.speed,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -458,6 +469,7 @@ class GalLineTtsSettings {
       for (final GalLineTtsTextFix f in textFixes) f.toJson(),
     ],
     'volume': volume,
+    'speed': speed,
   };
 
   String encode() => jsonEncode(toJson());
@@ -479,6 +491,7 @@ class GalLineTtsSettings {
     final Object? strip = json['stripSpeaker'];
     final Object? speakerPattern = json['speakerPattern'];
     final Object? volume = json['volume'];
+    final Object? speed = json['speed'];
     final Object? enabled = json['autoPlayEnabled'];
     return GalLineTtsSettings(
       autoPlayEnabled: enabled is bool && enabled,
@@ -503,6 +516,9 @@ class GalLineTtsSettings {
                 fix,
       ],
       volume: volume is num ? volume.toDouble().clamp(0.0, 1.0) : 1.0,
+      speed: speed is num && speed.isFinite
+          ? speed.toDouble().clamp(kGalLineTtsSpeedMin, kGalLineTtsSpeedMax)
+          : 1.0,
     );
   }
 
@@ -516,7 +532,8 @@ class GalLineTtsSettings {
       other.speakerPattern == speakerPattern &&
       listEquals(other.rules, rules) &&
       listEquals(other.textFixes, textFixes) &&
-      other.volume == volume;
+      other.volume == volume &&
+      other.speed == speed;
 
   @override
   int get hashCode => Object.hash(
@@ -528,6 +545,7 @@ class GalLineTtsSettings {
     Object.hashAll(rules),
     Object.hashAll(textFixes),
     volume,
+    speed,
   );
 }
 

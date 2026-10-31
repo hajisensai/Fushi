@@ -247,8 +247,12 @@ void main() {
       ],
       textFixes: const <GalLineTtsTextFix>[kGalLineTtsStripBracketsFix],
       volume: 0.5,
+      speed: 1.5,
     );
     expect(GalLineTtsSettings.decode(settings.encode()), settings);
+    // 旧设置没有 speed 字段 → 1.0；越界值夹回范围。
+    expect(GalLineTtsSettings.decode('{"volume":0.5}').speed, 1.0);
+    expect(GalLineTtsSettings.decode('{"speed":9}').speed, kGalLineTtsSpeedMax);
     final GalLineTtsSettings partial = GalLineTtsSettings.decode(
       '{"autoPlayEnabled":true,"rules":[{"match":"nope"},'
       '{"match":"contains","pattern":"x","action":"skip"}]}',
@@ -282,6 +286,7 @@ void main() {
     late List<double> volumes;
     late int stops;
     late Map<String, Completer<bool>> playbacks;
+    late List<double> speeds;
 
     GalLineTtsPlayer build() => GalLineTtsPlayer(
       settings: () => settings,
@@ -294,8 +299,9 @@ void main() {
             synthesized.add(text);
             return '/tts/$text';
           },
-      playToEnd: (String path, double volume) {
+      playToEnd: (String path, double volume, double speed) {
         played.add(path);
+        speeds.add(speed);
         volumes.add(volume);
         return (playbacks[path] = Completer<bool>()).future;
       },
@@ -315,6 +321,19 @@ void main() {
       volumes = <double>[];
       stops = 0;
       playbacks = <String, Completer<bool>>{};
+      speeds = <double>[];
+    });
+
+    test('按设置的倍速播放（每段开播前现读）', () async {
+      settings = _auto.copyWith(autoPlay: GalLineTtsAutoPlay.all, speed: 1.75);
+      final GalLineTtsPlayer player = build();
+      player.onLatestLine(_line('1', '雨が降っていた。'));
+      await pumpEventQueue();
+      expect(played, <String>['/tts/雨が降っていた。']);
+      expect(speeds, <double>[1.75]);
+      playbacks.values.single.complete(true);
+      await pumpEventQueue();
+      player.dispose();
     });
 
     test('还在配对时只预合成不播，判定无配音后才播', () async {
@@ -449,7 +468,7 @@ void main() {
               required String? presetId,
               required TtsCancelToken cancel,
             }) async => throw const GalLineTtsUnavailable('no_voice'),
-        playToEnd: (String path, double volume) async => true,
+        playToEnd: (String path, double volume, double speed) async => true,
         stopPlayback: () async {},
         maxInputLength: (_) => 140,
       );

@@ -30,8 +30,10 @@ typedef GalLineTtsSynthesizer =
       required TtsCancelToken cancel,
     });
 
-/// 播放到结束；返回 true = 自然播完，false = 没开播 / 被打断。
-typedef GalLineTtsPlayToEnd = Future<bool> Function(String path, double volume);
+/// 播放到结束；返回 true = 自然播完，false = 没开播 / 被打断。[speed] 是倍速
+/// （变速不变调）。
+typedef GalLineTtsPlayToEnd =
+    Future<bool> Function(String path, double volume, double speed);
 
 typedef GalLineTtsStopPlayback = Future<void> Function();
 
@@ -97,8 +99,12 @@ class GalLineTtsPlayer {
            )),
        _playToEnd =
            playToEnd ??
-           ((String path, double volume) =>
-               DesktopAudioPlayback.playFileToEnd(path, volume: volume)),
+           ((String path, double volume, double speed) =>
+               DesktopAudioPlayback.playFileToEnd(
+                 path,
+                 volume: volume,
+                 speed: speed,
+               )),
        _stopPlayback = stopPlayback ?? DesktopAudioPlayback.stop,
        _maxInputLength =
            maxInputLength ??
@@ -307,14 +313,19 @@ class GalLineTtsPlayer {
         text: text,
         presetId: presetId,
       );
-      final double volume = _settings().volume;
+      // 每段开播前现读：用户在设置里拖了音量 / 倍速，下一段（长台词分段）就生效。
       for (final String path in files) {
         if (!identical(_current, utterance) || utterance.cancel.isCancelled) {
           return;
         }
         utterance.playing = true;
         lastError.value = null;
-        final bool finished = await _playToEnd(path, volume);
+        final GalLineTtsSettings settings = _settings();
+        final bool finished = await _playToEnd(
+          path,
+          settings.volume,
+          settings.speed,
+        );
         if (!finished) break;
       }
     } on TtsFailure catch (failure) {

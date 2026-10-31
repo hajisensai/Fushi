@@ -57,6 +57,12 @@ class _FakePlayer implements AudioPlayer {
   @override
   Future<void> setVolume(double volume) async {}
 
+  /// 每次开播前设下的倍速（与 [calls] 分开记，不打乱既有的调用序断言）。
+  final List<double> speeds = <double>[];
+
+  @override
+  Future<void> setSpeed(double speed) async => speeds.add(speed);
+
   @override
   Future<Duration?> setFilePath(
     String filePath, {
@@ -159,6 +165,25 @@ void main() {
       player.finishClip();
       expect(await done, isTrue);
     });
+  });
+
+  test('each clip sets its own speed; the default resets to 1.0', () async {
+    // TTS 倍速（galgame 台词 TTS）：共用播放器上一段的倍速不能带到下一段单词
+    // 音频上，所以每次开播都重设倍速。
+    final _FakePlayer player = _FakePlayer(spansPlayback: false);
+    DesktopAudioPlayback.debugReset(
+      player: player,
+      playFutureSpansPlayback: false,
+    );
+    final Future<bool> tts = DesktopAudioPlayback.playFileToEnd(
+      'line.wav',
+      speed: 1.5,
+    );
+    await _settle();
+    player.finishClip();
+    expect(await tts, isTrue);
+    expect(await DesktopAudioPlayback.playFile('word.mp3'), isTrue);
+    expect(player.speeds, <double>[1.5, 1.0]);
   });
 
   test(

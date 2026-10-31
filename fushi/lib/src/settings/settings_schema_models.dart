@@ -21,6 +21,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/utils.dart';
 
 /// 「模型」一级设置分类（2026-10-13 用户拍板）：所有「模型」类配置的唯一的家。
@@ -277,6 +278,7 @@ SettingsDestination _buildTtsDestination() {
         title: t.models_tts_card_fallback_section,
         items: <SettingsItem>[
           _miningTtsFallbackVoiceItem(),
+          _ttsFallbackSpeedItem(),
           SettingsStatusItem(
             id: 'models.tts_usage',
             title: t.models_tts_usage_title,
@@ -287,6 +289,28 @@ SettingsDestination _buildTtsDestination() {
     ],
   );
 }
+
+/// TTS 兜底发音的倍速：查词 ♪ / 自动发音与制卡单词音频一律生效（倍速是 TTS 声音
+/// 本身的属性，不受有声书「句子音频跟随播放倍速」开关影响）。0.25×–3.0×，0.05× 一档。
+SettingsSliderItem _ttsFallbackSpeedItem() => SettingsSliderItem(
+  id: 'models.tts_fallback_speed',
+  title: t.models_tts_fallback_speed,
+  subtitle: t.models_tts_fallback_speed_hint,
+  icon: FushiIcons.speed,
+  min: kTtsFallbackSpeedMin,
+  max: kTtsFallbackSpeedMax,
+  divisions: kPlaybackSpeedDivisions,
+  step: kPlaybackSpeedStep,
+  defaultValue: 1.0,
+  titleReadout: true,
+  commitOnRelease: true,
+  label: (double v) => '${v.toStringAsFixed(2)}x',
+  value: (SettingsContext c) => ttsFallbackSpeedOf(c.appModel.prefsRepo),
+  onChanged: (SettingsContext c, double v) async {
+    await setTtsFallbackSpeed(c.appModel.prefsRepo, snapPlaybackSpeed(v));
+    c.refresh();
+  },
+);
 
 /// 「制卡发音兜底」的声音选择（单词音频；句子音频不做 TTS 兜底，BUG-172）。
 /// 偏好设备本地（可能指向本机声音预设），见 [kMiningTtsFallbackVoicePref]。
