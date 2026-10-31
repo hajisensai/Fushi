@@ -150,10 +150,39 @@ void main() {
                 ($MusicLyricsTable t) => t.source.like('provider:plugin:%'),
               ))
               .getSingle();
-      expect(row.format, 'ttml');
+      // 落库原始两轨（不是合并后的派生 TTML），版本变了能就地重新合并。
+      expect(row.format, kMusicPluginLyricsTracksFormat);
       // 第二次直接走缓存，不再问插件。
       await service().resolve(track());
       expect(fetches, 1);
+
+      // 解析器版本变了：从原始两轨按当前解析器重新合并，不回插件重取。
+      await (db.update(
+        db.musicLyrics,
+      )..where(($MusicLyricsTable t) => t.source.equals(row.source))).write(
+        MusicLyricsCompanion(
+          timelineCache: Value<Uint8List?>(
+            encodeLyricTimeline(
+              FushiLyrics.parse(utf8.encode('[00:01.00]旧缓存'), hint: 'lrc'),
+            ),
+          ),
+          timelineVersion: Value<int>(FushiLyrics.parserVersion - 1),
+        ),
+      );
+      final MusicLyricsResolution rebuilt = (await service().resolve(track()))!;
+      expect(fetches, 1);
+      final LyricLine sungAgain = rebuilt.timeline.lines.firstWhere(
+        (LyricLine l) => l.startMs >= 1000,
+      );
+      expect(sungAgain.text, '夜に駆ける');
+      expect(sungAgain.translations.single.text, '奔向夜晚');
+      expect(
+        (await (db.select(db.musicLyrics)
+                  ..where(($MusicLyricsTable t) => t.source.equals(row.source)))
+                .getSingle())
+            .timelineVersion,
+        FushiLyrics.parserVersion,
+      );
     });
 
     test('YRC 与译文时间轴整体错开 1.5 s：译文仍是原文副行、不成独立行', () async {

@@ -911,6 +911,13 @@ class MusicPluginLyricText {
 
   /// BCP 47 语言标签（如译文的 `zh-Hans`）；插件不给为 null。
   final String? language;
+
+  /// 与 [fromJson] 对称（宿主落库原始轨道用）。
+  Map<String, Object?> toJson() => <String, Object?>{
+    'format': format,
+    'text': text,
+    'language': ?language,
+  };
 }
 
 class MusicPluginLyrics {
@@ -929,6 +936,13 @@ class MusicPluginLyrics {
   final MusicPluginLyricText? original;
   final MusicPluginLyricText? translation;
   final MusicPluginLyricText? romanization;
+
+  /// 与 [fromJson] 对称：宿主把插件给的原始各轨落库，解析器版本变了能就地重新合并。
+  Map<String, Object?> toJson() => <String, Object?>{
+    'original': ?original?.toJson(),
+    'translation': ?translation?.toJson(),
+    'romanization': ?romanization?.toJson(),
+  };
 }
 
 /// 歌词候选（`lyricsSearch` 的一项）。[ref] 是插件自定的不透明 JSON，宿主原样回传给
