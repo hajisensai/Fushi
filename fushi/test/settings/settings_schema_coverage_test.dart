@@ -216,6 +216,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 行为由服务层用例咬住：「开 + 有未结案 → 排；关 → 撤」「关着 → 不发请求」。
   'system/Notify me of feedback replies':
       'test/feedback/feedback_reply_background_test.dart（开关 ↔ 后台排程 / tick）',
+  // 「自动发送闪退日志」：故意不进 settings DB——启动即闪退时数据库还没打开也要读得到，
+  // 存在错误日志目录的 crash_report_state.json（CrashReporter 单例），harness 的 prefs
+  // 快照观测不到（changed=false）。生效点是下次启动的闪退报告流程，由服务层用例咬住：
+  // 「默认关、改了落盘」「开着时启动即闪退直接提交、不弹提示」。
+  'system/Automatically send crash logs':
+      'test/feedback/crash_report_test.dart（开关落盘 / 开着时启动前直接提交）',
   // 「发送使用统计」：写 prefsRepo（changed=true），生效点是 UsageHeartbeat 每个 tick
   // 读开关、提交反馈时 usageStatsInstallIdForFeedback 读开关——harness 里没有心跳与
   // 反馈提交。行为由服务层用例咬住：「关掉开关不发」「关掉后反馈不带安装 id」。

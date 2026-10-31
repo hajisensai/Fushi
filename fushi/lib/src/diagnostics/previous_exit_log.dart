@@ -68,15 +68,70 @@ String _cap(String text, [int max = kExitSummaryMaxChars]) => text.length <= max
 String _iso(int ms) =>
     DateTime.fromMillisecondsSinceEpoch(ms).toIso8601String();
 
+/// 上次进程「怎么没的」的分类（[classifyPreviousExit] 的结论）。声明顺序就是优先级：
+/// 同一次启动收到多份证据时取最靠前的那种——平台给的明确原因（崩溃 / ANR / 内存 /
+/// 用户强停）压过会话标记的推断（[unexpected] / [backgroundReclaim]）。
+enum PreviousExitKind {
+  /// 原生层崩溃：Android `CRASH_NATIVE`、Windows 未处理异常（`crash_summary.log`）。
+  nativeCrash,
+
+  /// 崩溃：Android `CRASH` / `INITIALIZATION_FAILURE`、macOS `.ips`、iOS MetricKit。
+  crash,
+
+  /// 应用无响应被系统结束（Android `ANR`）。
+  anr,
+
+  /// 被系统按内存 / 资源回收（Android `LOW_MEMORY` / `EXCESSIVE_RESOURCE_USAGE`）。
+  memoryKill,
+
+  /// 用户主动强停（Android `USER_REQUESTED` / `USER_STOPPED`：设置里强行停止等）。
+  userStopped,
+
+  /// 停在前台时没了、平台没给原因（会话标记推断，疑似闪退 / 卡死后被强杀）。
+  unexpected,
+
+  /// 停在后台时没了、平台没给原因（多半是系统回收；iOS / Android 划掉后台也在这里）。
+  backgroundReclaim;
+
+  /// 这种退出值得问用户要不要把日志发给开发者。内存回收只在发生在前台时算（用户眼里
+  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。
+  bool worthReporting({required bool foreground}) => switch (this) {
+    nativeCrash || crash || anr || unexpected => true,
+    memoryKill => foreground,
+    userStopped || backgroundReclaim => false,
+  };
+}
+
 /// 一条要折进错误日志的摘要。[severe] 为 true 走 `log`（落盘、用户可见），否则走
 /// `logDiagnostic`（本次运行的诊断段，同样随反馈上传）。
+///
+/// [kind] 非空 = 这条证据说明了上次进程怎么没的（[classifyPreviousExit] 据此判定）；
+/// 内存 trim 记录、活动面包屑这类旁证为 null。
 @immutable
 class ExitReportEntry {
-  const ExitReportEntry(this.source, this.text, {required this.severe});
+  const ExitReportEntry(
+    this.source,
+    this.text, {
+    required this.severe,
+    this.kind,
+    this.foreground = true,
+    this.duringStartup = false,
+    this.atMs,
+  });
 
   final String source;
   final String text;
   final bool severe;
+  final PreviousExitKind? kind;
+
+  /// 没的时候在不在前台（平台没说时按 true：崩溃本身不看前后台）。
+  final bool foreground;
+
+  /// 上次进程死在启动初始化完成之前（会话标记推断）。
+  final bool duringStartup;
+
+  /// 证据里的退出时刻（毫秒）；拿不到为 null。
+  final int? atMs;
 }
 
 // ───────────────────────── 会话标记（全平台） ─────────────────────────
@@ -91,6 +146,7 @@ class PreviousSession {
     required this.lifecycle,
     required this.lifecycleAt,
     required this.clean,
+    this.initialised = true,
     this.memoryPressureAt,
     this.memoryPressureCount = 0,
   });
@@ -101,6 +157,10 @@ class PreviousSession {
   final String lifecycle;
   final int lifecycleAt;
   final bool clean;
+
+  /// 上次进程走到过「初始化完成、首页出来」（[SessionMarker.recordInitialised]）。旧版本
+  /// 写的标记没有这个字段，按 true 处理（不知道就不当成启动即闪退）。
+  final bool initialised;
   final int? memoryPressureAt;
   final int memoryPressureCount;
 
@@ -122,6 +182,7 @@ class PreviousSession {
         lifecycle: '${decoded['lifecycle'] ?? 'unknown'}',
         lifecycleAt: asInt(decoded['lifecycleAt']),
         clean: decoded['clean'] == true,
+        initialised: decoded['initialised'] != false,
         memoryPressureAt: decoded['memoryPressureAt'] is int
             ? decoded['memoryPressureAt'] as int
             : null,
@@ -145,6 +206,7 @@ class SessionMarker {
   String _lifecycle = 'launching';
   int _lifecycleAt = 0;
   bool _clean = false;
+  bool _initialised = false;
   int? _memoryPressureAt;
   int _memoryPressureCount = 0;
 
@@ -171,6 +233,13 @@ class SessionMarker {
     _write();
   }
 
+  /// 本次启动初始化完成（首页出来了）：之后再没了就不算「启动即闪退」。
+  void recordInitialised() {
+    if (_initialised) return;
+    _initialised = true;
+    _write();
+  }
+
   void recordMemoryPressure({required int nowMs}) {
     _memoryPressureAt = nowMs;
     _memoryPressureCount++;
@@ -194,6 +263,7 @@ class SessionMarker {
           'lifecycle': _lifecycle,
           'lifecycleAt': _lifecycleAt,
           'clean': _clean,
+          'initialised': _initialised,
           'memoryPressureAt': _memoryPressureAt,
           'memoryPressureCount': _memoryPressureCount,
         }),
@@ -221,11 +291,18 @@ ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
       'last@${_iso(previous.memoryPressureAt!)}',
     );
   }
+  if (!previous.initialised) b.write(' 启动初始化未完成');
   b.write(previous.diedInForeground ? '（停在前台时没了，疑似闪退）' : '（停在后台时没了，多半是系统回收）');
   return ExitReportEntry(
     kPreviousExitUncleanSource,
     b.toString(),
     severe: previous.diedInForeground,
+    kind: previous.diedInForeground
+        ? PreviousExitKind.unexpected
+        : PreviousExitKind.backgroundReclaim,
+    foreground: previous.diedInForeground,
+    duringStartup: !previous.initialised,
+    atMs: previous.lifecycleAt,
   );
 }
 
@@ -244,6 +321,20 @@ const Set<String> kSevereAndroidExitReasons = <String>{
   'DEPENDENCY_DIED',
   'FREEZER',
 };
+
+/// Android 退出原因 → [PreviousExitKind]；不说明问题的原因（自行退出、包更新、
+/// `SIGNALED`——lmkd 与 `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。
+PreviousExitKind? androidExitKind(String reason) => switch (reason) {
+  'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
+  'CRASH' || 'INITIALIZATION_FAILURE' => PreviousExitKind.crash,
+  'ANR' => PreviousExitKind.anr,
+  'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
+  'USER_REQUESTED' || 'USER_STOPPED' => PreviousExitKind.userStopped,
+  _ => null,
+};
+
+/// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE`：重要性数值不大于它 = 用户看得见。
+const int kAndroidForegroundImportance = 125;
 
 /// `ComponentCallbacks2.TRIM_MEMORY_*` 的可读名。
 String androidTrimLevelName(int level) => switch (level) {
@@ -281,11 +372,17 @@ List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
       if (trace is String && trace.isNotEmpty) {
         b.write('\ntrace summary:\n$trace');
       }
+      final Object? importance = r['importance'];
+      final Object? timestamp = r['timestamp'];
       out.add(
         ExitReportEntry(
           kAndroidExitInfoSource,
           _cap(redactExitReportPaths(b.toString())),
           severe: kSevereAndroidExitReasons.contains(reason),
+          kind: androidExitKind(reason),
+          foreground:
+              importance is! int || importance <= kAndroidForegroundImportance,
+          atMs: timestamp is int ? timestamp : null,
         ),
       );
     }
@@ -360,6 +457,7 @@ List<ExitReportEntry> formatWindowsCrashSummary(String content) {
           '${redactExitReportPaths(line)}',
         ),
         severe: true,
+        kind: PreviousExitKind.nativeCrash,
       ),
   ];
 }
@@ -589,6 +687,86 @@ List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
   return out;
 }
 
+// ───────────────────────── 判定 ─────────────────────────
+
+/// 单份崩溃报告正文里证据摘要的总长上限（反馈正文上限 8000，留出头部说明）。
+const int kExitVerdictSummaryMaxChars = 6000;
+
+/// 一次启动对「上次怎么没的」的结论（[classifyPreviousExit]）。
+@immutable
+class PreviousExitVerdict {
+  const PreviousExitVerdict({
+    required this.kind,
+    required this.count,
+    required this.foreground,
+    required this.duringStartup,
+    required this.atMs,
+    required this.version,
+    required this.summary,
+  });
+
+  final PreviousExitKind kind;
+
+  /// 这次启动收到的同类证据条数（连续崩溃时 > 1，例如 Windows 摘要里有几行）。
+  final int count;
+  final bool foreground;
+
+  /// 死在启动初始化完成之前：提示必须赶在下一次初始化之前出现。
+  final bool duringStartup;
+  final int atMs;
+
+  /// 出事那次进程的版本（会话标记里记的；没有时为本次版本）。
+  final String version;
+
+  /// 全部证据的摘要文本（已脱敏、限长），作为崩溃报告正文的主体。
+  final String summary;
+
+  bool get worthReporting => kind.worthReporting(foreground: foreground);
+}
+
+/// 用 [PreviousExitLog.collect] 收到的证据判定上次进程怎么没的；没有任何说明退出方式的
+/// 证据（上次正常退出、首次启动）返回 null。
+///
+/// 规则（[PreviousExitKind] 的声明顺序即优先级）：
+/// - 平台明确原因压过会话标记推断：Android 说 `USER_REQUESTED` 时，即使标记显示停在
+///   前台也算用户强停，不算闪退；Windows 有崩溃摘要时，标记的「疑似闪退」升级为原生崩溃。
+/// - 「启动即闪退」只看会话标记（只有它知道初始化走没走完），与选中的种类无关。
+PreviousExitVerdict? classifyPreviousExit(
+  List<ExitReportEntry> entries, {
+  required String version,
+  required int nowMs,
+}) {
+  final List<ExitReportEntry> classified = <ExitReportEntry>[
+    for (final ExitReportEntry e in entries)
+      if (e.kind != null) e,
+  ];
+  if (classified.isEmpty) return null;
+  final PreviousExitKind kind = classified
+      .map((ExitReportEntry e) => e.kind!)
+      .reduce(
+        (PreviousExitKind a, PreviousExitKind b) => a.index <= b.index ? a : b,
+      );
+  final List<ExitReportEntry> chosen = <ExitReportEntry>[
+    for (final ExitReportEntry e in classified)
+      if (e.kind == kind) e,
+  ];
+  final int at = chosen
+      .map((ExitReportEntry e) => e.atMs ?? 0)
+      .fold<int>(0, math.max);
+  final String summary = entries
+      .map((ExitReportEntry e) => '[${e.source}] ${e.text}')
+      .join('\n\n');
+  return PreviousExitVerdict(
+    kind: kind,
+    count: chosen.length,
+    foreground: chosen.any((ExitReportEntry e) => e.foreground),
+    duringStartup: entries.any((ExitReportEntry e) => e.duringStartup),
+    atMs: at > 0 ? at : nowMs,
+    version: version,
+    summary: _cap(summary, kExitVerdictSummaryMaxChars),
+  );
+}
+
 // ───────────────────────── 装配 ─────────────────────────
 
 /// 跨运行的去重状态（macOS 看到哪份 `.ips` 了），放在应用文档目录。
@@ -646,6 +824,14 @@ class _ExitEvidenceObserver with WidgetsBindingObserver {
 abstract final class PreviousExitLog {
   static SessionMarker? _marker;
   static _ExitEvidenceObserver? _observer;
+  static PreviousSession? _previous;
+  static PreviousExitVerdict? _verdict;
+
+  /// 本次启动对上次退出的判定（[foldIntoErrorLog] 之后可读；没有异常退出为 null）。
+  static PreviousExitVerdict? get verdict => _verdict;
+
+  /// 本次启动初始化完成（首页出来了）时调用：之后再没了不算「启动即闪退」。
+  static void markInitialised() => _marker?.recordInitialised();
 
   /// 正常退出路径（`exitApp` / 重启）在退进程前调用：本次会话标 clean。
   static void markCleanExit() {
@@ -668,6 +854,14 @@ abstract final class PreviousExitLog {
               appDir: appDir,
               version: fushiRunningCodeVersion ?? 'unknown',
             );
+      final String? previousVersion = _previous?.version;
+      _verdict = classifyPreviousExit(
+        entries,
+        version: previousVersion != null && previousVersion.isNotEmpty
+            ? previousVersion
+            : fushiRunningCodeVersion ?? 'unknown',
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
       for (final ExitReportEntry e in entries) {
         if (e.severe) {
           ErrorLogService.instance.log(e.source, e.text);
@@ -712,9 +906,9 @@ abstract final class PreviousExitLog {
       pid: pid,
       version: version,
     );
-    final ExitReportEntry? unclean = describeUncleanPreviousSession(
-      marker.start(nowMs: now),
-    );
+    final PreviousSession? previous = marker.start(nowMs: now);
+    _previous = previous;
+    final ExitReportEntry? unclean = describeUncleanPreviousSession(previous);
     if (unclean != null) out.add(unclean);
     _marker = marker;
 
@@ -774,12 +968,18 @@ abstract final class PreviousExitLog {
           final String? summary = summarizeMacIpsReport(raw);
           out.add(
             summary != null
-                ? ExitReportEntry(kMacCrashReportSource, summary, severe: true)
+                ? ExitReportEntry(
+                    kMacCrashReportSource,
+                    summary,
+                    severe: true,
+                    kind: PreviousExitKind.crash,
+                  )
                 : ExitReportEntry(
                     kMacCrashReportSource,
                     'crash report ${f.uri.pathSegments.last} '
                     '(${raw.length} chars) could not be parsed',
                     severe: true,
+                    kind: PreviousExitKind.crash,
                   ),
           );
         } on FileSystemException catch (e) {
@@ -818,6 +1018,7 @@ abstract final class PreviousExitLog {
                       'MetricKit crash payload (${raw.length} chars, likely '
                           'truncated) could not be parsed',
                   severe: true,
+                  kind: PreviousExitKind.crash,
                 ),
               );
             }
