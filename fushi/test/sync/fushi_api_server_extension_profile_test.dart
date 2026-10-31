@@ -1,12 +1,13 @@
-// 反馈 biLEesNqWb：浏览器扩展里手动切换 Fushi 配置（Profile）。
+// 反馈 biLEesNqWb：浏览器扩展里选 Fushi 配置（Profile），只影响扩展。
 //
 // 契约（真实 HTTP 层）：
 // - POST /api/extension/profiles → {profiles:[{id,name}], activeProfileId}；未注入 404。
-// - 查词 / 制卡等「按配置生效」端点带 x-fushi-profile-id 时，server 先 await app 让所选配置
-//   生效、再进 handler（顺序钉死：否则第一条请求按旧配置处理）；响应头回报实际生效的配置，
-//   所选配置已删时回 x-fushi-profile-missing（请求照常处理）。
-// - 显式选择压过「浏览器」媒体类型绑定：带头时不再触发 onLookupActivity。
-// - 不带头 / 非按配置端点：行为与之前一致（不调 applySelectedProfile）。
+// - 「按配置生效」端点（查词 / 制卡 / 查重 / 单词音频 / 在 Anki 中打开）一律经
+//   resolveScope 解析出这次请求的服务组：解析出非激活配置时整条请求（查词服务、制卡服务、
+//   随响应下发的弹窗设置）都走那一组，激活配置 / 无选择时走 server 默认组——没有混搭。
+// - 带请求头时响应头回报实际生效的配置；所选配置已删时回 x-fushi-profile-missing，请求按
+//   回退配置照常处理。不带头时不加任何响应头（与本功能引入前一致）。
+// - 与配置无关的端点（探活等）不解析配置。
 import 'dart:convert';
 import 'dart:io';
 
@@ -17,18 +18,26 @@ import 'package:fushi/src/sync/extension_profile_api.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
-/// 事件序列：断言「先切配置、后处理请求」。
-final List<String> _events = <String>[];
+/// 每条请求实际由哪一组服务处理：`<组名>:<动作>`。
+final List<String> _served = <String>[];
 
-class _FakeLookup
-    implements FushiRemoteLookupService, FushiRemotePopupLookupService {
+/// 一组按某份配置读设置的查词 + 制卡服务（[tag] 标明是哪一组）。
+class _TaggedServices
+    implements
+        FushiRemoteLookupService,
+        FushiRemotePopupLookupService,
+        FushiRemoteMiningService {
+  _TaggedServices(this.tag);
+
+  final String tag;
+
   @override
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
     required int maximumTerms,
   }) async {
-    _events.add('lookup:$term');
+    _served.add('$tag:lookup');
     return DictionarySearchResult(searchTerm: term)..popupJson = '{}';
   }
 
@@ -38,24 +47,16 @@ class _FakeLookup
     required bool wildcards,
     required int maximumTerms,
   }) async {
-    _events.add('lookup:$term');
+    _served.add('$tag:lookup');
     return const RemoteDictionaryPopupLookup(popupJson: '{}', bestLength: 1);
   }
 
-  @override
-  Future<RemoteAudioLookup?> lookupAudio({
-    required String expression,
-    required String reading,
-  }) async => null;
-}
-
-class _FakeMining implements FushiRemoteMiningService {
   @override
   Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
   }) async {
-    _events.add('mine');
+    _served.add('$tag:mine');
     return const RemoteMineResult(result: 'success');
   }
 
@@ -64,7 +65,7 @@ class _FakeMining implements FushiRemoteMiningService {
     required String expression,
     required String reading,
   }) async {
-    _events.add('duplicate');
+    _served.add('$tag:duplicate');
     return false;
   }
 
@@ -72,38 +73,39 @@ class _FakeMining implements FushiRemoteMiningService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// app 侧解析的替身：1 = 激活配置（默认组），2 = 另一份配置（B 组），其余 = 已删。
 class _FakeProfileApi implements ExtensionProfileApi {
-  _FakeProfileApi({required this.existing, required this.activeProfileId});
-
-  final Map<int, String> existing;
-  int activeProfileId;
-  final List<int> applied = <int>[];
+  final _TaggedServices profileB = _TaggedServices('B');
+  final List<int?> resolved = <int?>[];
 
   @override
-  Future<ExtensionProfileList> listProfiles() async => ExtensionProfileList(
-    profiles: <ExtensionProfileSummary>[
-      for (final MapEntry<int, String> e in existing.entries)
-        ExtensionProfileSummary(id: e.key, name: e.value),
-    ],
-    activeProfileId: activeProfileId,
-  );
+  Future<ExtensionProfileList> listProfiles() async =>
+      const ExtensionProfileList(
+        profiles: <ExtensionProfileSummary>[
+          ExtensionProfileSummary(id: 1, name: '默认'),
+          ExtensionProfileSummary(id: 2, name: '英语'),
+        ],
+        activeProfileId: 1,
+      );
 
   @override
-  Future<ExtensionProfileApplyResult> applySelectedProfile(
-    int profileId,
-  ) async {
-    applied.add(profileId);
-    // 让出事件循环：真实切换是多段 I/O，handler 若没等它就会先跑。
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    if (!existing.containsKey(profileId)) {
-      return ExtensionProfileApplyResult(
-        found: false,
-        activeProfileId: activeProfileId,
+  Future<ExtensionProfileScope> resolveScope(int? requestedProfileId) async {
+    resolved.add(requestedProfileId);
+    if (requestedProfileId == 2) {
+      return ExtensionProfileScope(
+        effectiveProfileId: 2,
+        services: ExtensionRequestServices(
+          lookup: profileB,
+          mining: profileB,
+          autoReadOnLookupProvider: () => true,
+        ),
       );
     }
-    activeProfileId = profileId;
-    _events.add('apply:$profileId');
-    return ExtensionProfileApplyResult(found: true, activeProfileId: profileId);
+    final bool missing = requestedProfileId != null && requestedProfileId != 1;
+    return ExtensionProfileScope(
+      effectiveProfileId: 1,
+      missingRequestedProfileId: missing ? requestedProfileId : null,
+    );
   }
 }
 
@@ -112,66 +114,64 @@ Future<List<List<TokenizedSegment>>> _noopTokenize(List<String> texts) async =>
       for (final String _ in texts) <TokenizedSegment>[],
     ];
 
-Future<HttpClientResponse> _post(
-  int port,
-  String path,
-  Map<String, dynamic> body, {
-  int? profileId,
-  String? rawProfileHeader,
-}) async {
-  final HttpClient c = HttpClient();
-  final HttpClientRequest req = await c.postUrl(
-    Uri.parse('http://127.0.0.1:$port$path'),
-  );
-  req.headers.contentType = ContentType.json;
-  if (profileId != null) {
-    req.headers.set('X-Fushi-Profile-Id', '$profileId');
-  }
-  if (rawProfileHeader != null) {
-    req.headers.set('X-Fushi-Profile-Id', rawProfileHeader);
-  }
-  req.write(jsonEncode(body));
-  return req.close();
-}
-
-Future<Map<String, dynamic>> _json(HttpClientResponse resp) async =>
-    jsonDecode(await resp.transform(utf8.decoder).join())
-        as Map<String, dynamic>;
-
 void main() {
   late FushiApiServer server;
   late _FakeProfileApi profiles;
-  late int lookupActivity;
 
   Future<void> startServer({bool withProfileApi = true}) async {
-    _events.clear();
-    lookupActivity = 0;
-    profiles = _FakeProfileApi(
-      existing: <int, String>{1: '默认', 2: '英语'},
-      activeProfileId: 1,
-    );
+    _served.clear();
+    profiles = _FakeProfileApi();
+    final _TaggedServices defaults = _TaggedServices('default');
     server = FushiApiServer(
       port: 0,
-      lookupService: _FakeLookup(),
-      miningService: _FakeMining(),
+      lookupService: defaults,
+      miningService: defaults,
       tokenizer: _noopTokenize,
-      onLookupActivity: () => lookupActivity++,
+      autoReadOnLookupProvider: () => false,
       profileApi: withProfileApi ? profiles : null,
     );
     await server.start();
   }
 
+  /// POST [path]，[profileHeader] 非 null 时带扩展所选配置的请求头；返回状态码、两个配置
+  /// 响应头与 JSON 体（读完即关）。
+  Future<
+    ({int status, String? active, String? missing, Map<String, dynamic>? body})
+  >
+  post(String path, Map<String, dynamic> body, {String? profileHeader}) async {
+    final HttpClient client = HttpClient();
+    addTearDown(client.close);
+    final HttpClientRequest req = await client.postUrl(
+      Uri.parse('http://127.0.0.1:${server.port}$path'),
+    );
+    req.headers.contentType = ContentType.json;
+    if (profileHeader != null) {
+      req.headers.set('X-Fushi-Profile-Id', profileHeader);
+    }
+    req.write(jsonEncode(body));
+    final HttpClientResponse resp = await req.close();
+    final String text = await resp.transform(utf8.decoder).join();
+    final Object? decoded = text.isEmpty ? null : jsonDecode(text);
+    return (
+      status: resp.statusCode,
+      active: resp.headers.value(kExtensionProfileActiveHeader),
+      missing: resp.headers.value(kExtensionProfileMissingHeader),
+      body: decoded is Map<String, dynamic> ? decoded : null,
+    );
+  }
+
+  const Map<String, dynamic> lookupBody = <String, dynamic>{
+    'term': '猫',
+    'popupOnly': true,
+  };
+
   tearDown(() async => server.stop());
 
   test('/api/extension/profiles lists profiles and the active one', () async {
     await startServer();
-    final HttpClientResponse resp = await _post(
-      server.port,
-      kExtensionProfilesPath,
-      <String, dynamic>{},
-    );
-    expect(resp.statusCode, 200);
-    expect(await _json(resp), <String, dynamic>{
+    final r = await post(kExtensionProfilesPath, <String, dynamic>{});
+    expect(r.status, 200);
+    expect(r.body, <String, dynamic>{
       'profiles': <Map<String, dynamic>>[
         <String, dynamic>{'id': 1, 'name': '默认'},
         <String, dynamic>{'id': 2, 'name': '英语'},
@@ -184,124 +184,108 @@ void main() {
     '/api/extension/profiles is 404 when the app did not inject it',
     () async {
       await startServer(withProfileApi: false);
-      final HttpClientResponse resp = await _post(
-        server.port,
-        kExtensionProfilesPath,
-        <String, dynamic>{},
-      );
-      expect(resp.statusCode, 404);
-      await resp.drain<void>();
+      final r = await post(kExtensionProfilesPath, <String, dynamic>{});
+      expect(r.status, 404);
     },
   );
 
-  test(
-    'lookup with a selected profile applies it before the lookup runs',
-    () async {
-      await startServer();
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '猫', 'popupOnly': true},
-        profileId: 2,
-      );
-      expect(resp.statusCode, 200);
-      expect(resp.headers.value(kExtensionProfileActiveHeader), '2');
-      expect(resp.headers.value(kExtensionProfileMissingHeader), isNull);
-      await resp.drain<void>();
-      expect(_events, <String>['apply:2', 'lookup:猫']);
-      expect(lookupActivity, 0, reason: '显式选择压过「浏览器」媒体类型绑定，不能再触发绑定应用');
-    },
-  );
-
-  test('mine and duplicate carry the selected profile too', () async {
+  test('selected non-active profile: lookup + popup settings come from its '
+      'services group only', () async {
     await startServer();
-    final HttpClientResponse mine = await _post(
-      server.port,
-      '/api/mine',
-      <String, dynamic>{
-        'fields': <String, String>{'expression': '猫'},
-        'sentence': '猫がいる',
-      },
-      profileId: 2,
+    final r = await post(
+      '/api/lookup/dictionary',
+      lookupBody,
+      profileHeader: '2',
     );
-    expect(mine.statusCode, 200);
-    expect(mine.headers.value(kExtensionProfileActiveHeader), '2');
-    await mine.drain<void>();
-    final HttpClientResponse dup = await _post(
-      server.port,
-      '/api/duplicate',
-      <String, dynamic>{'expression': '猫', 'reading': 'ねこ'},
-      profileId: 2,
+    expect(r.status, 200);
+    expect(r.active, '2');
+    expect(r.missing, isNull);
+    expect(_served, <String>['B:lookup']);
+    expect(
+      r.body?['autoReadOnLookup'],
+      isTrue,
+      reason: '弹窗设置也必须取所选配置那一组（默认组是 false）',
     );
-    expect(dup.statusCode, 200);
-    await dup.drain<void>();
-    // 每条按配置生效的请求都先过 applySelectedProfile（稳态快路径在 app 侧）。
-    expect(_events, <String>['apply:2', 'mine', 'apply:2', 'duplicate']);
-    expect(profiles.applied, <int>[2, 2]);
+  });
+
+  test('mine and duplicate run on the selected profile group', () async {
+    await startServer();
+    await post('/api/mine', <String, dynamic>{
+      'fields': <String, String>{'expression': '猫'},
+      'sentence': '猫がいる',
+    }, profileHeader: '2');
+    await post('/api/duplicate', <String, dynamic>{
+      'expression': '猫',
+      'reading': 'ねこ',
+    }, profileHeader: '2');
+    expect(_served, <String>['B:mine', 'B:duplicate']);
+    expect(profiles.resolved, <int?>[2, 2]);
   });
 
   test(
-    'deleted profile: request still served, missing header reported',
+    'deleted profile: served by the fallback group, missing header set',
     () async {
       await startServer();
-      final HttpClientResponse resp = await _post(
-        server.port,
+      final r = await post(
         '/api/lookup/dictionary',
-        <String, dynamic>{'term': '犬', 'popupOnly': true},
-        profileId: 9,
+        lookupBody,
+        profileHeader: '9',
       );
-      expect(resp.statusCode, 200);
-      expect(resp.headers.value(kExtensionProfileMissingHeader), '9');
-      expect(resp.headers.value(kExtensionProfileActiveHeader), '1');
-      await resp.drain<void>();
-      expect(_events, <String>['lookup:犬']);
+      expect(r.status, 200);
+      expect(r.missing, '9');
+      expect(r.active, '1');
+      expect(_served, <String>['default:lookup']);
     },
   );
 
-  test(
-    'no header keeps the old path (browser binding hook, no apply)',
-    () async {
-      await startServer();
-      final HttpClientResponse resp = await _post(
-        server.port,
-        '/api/lookup/dictionary',
-        <String, dynamic>{'term': '鳥', 'popupOnly': true},
-      );
-      expect(resp.statusCode, 200);
-      expect(resp.headers.value(kExtensionProfileActiveHeader), isNull);
-      await resp.drain<void>();
-      expect(profiles.applied, isEmpty);
-      expect(lookupActivity, 1);
-    },
-  );
+  test('no header: default group, no profile response headers', () async {
+    await startServer();
+    final r = await post('/api/lookup/dictionary', lookupBody);
+    expect(r.status, 200);
+    expect(r.active, isNull);
+    expect(r.missing, isNull);
+    expect(r.body?['autoReadOnLookup'], isFalse);
+    expect(_served, <String>['default:lookup']);
+    // 无选择仍要解析一次：「浏览器」媒体类型绑定由 app 侧在这里生效。
+    expect(profiles.resolved, <int?>[null]);
+  });
 
-  test('garbage header value is ignored like no header', () async {
+  test('garbage header value is treated like no header', () async {
     await startServer();
     for (final String raw in <String>['abc', '0', '-3']) {
-      final HttpClientResponse resp = await _post(
-        server.port,
+      final r = await post(
         '/api/lookup/dictionary',
-        <String, dynamic>{'term': '魚', 'popupOnly': true},
-        rawProfileHeader: raw,
+        lookupBody,
+        profileHeader: raw,
       );
-      expect(resp.statusCode, 200);
-      await resp.drain<void>();
+      expect(r.status, 200);
+      expect(r.active, isNull);
     }
-    expect(profiles.applied, isEmpty);
+    expect(profiles.resolved, <int?>[null, null, null]);
+    expect(_served, everyElement('default:lookup'));
   });
 
-  test('profile-independent endpoints ignore the header', () async {
+  test('without an injected profile api the header is ignored', () async {
+    await startServer(withProfileApi: false);
+    final r = await post(
+      '/api/lookup/dictionary',
+      lookupBody,
+      profileHeader: '2',
+    );
+    expect(r.active, isNull);
+    expect(_served, <String>['default:lookup']);
+  });
+
+  test('profile-independent endpoints do not resolve a profile', () async {
     await startServer();
-    final HttpClientResponse resp = await _post(
-      server.port,
+    final r = await post(
       '/api/extension/status',
       <String, dynamic>{},
-      profileId: 2,
+      profileHeader: '2',
     );
-    expect(resp.statusCode, 200);
-    expect(resp.headers.value(kExtensionProfileActiveHeader), isNull);
-    await resp.drain<void>();
-    expect(profiles.applied, isEmpty);
+    expect(r.status, 200);
+    expect(r.active, isNull);
+    expect(profiles.resolved, isEmpty);
   });
 
   test('parseExtensionProfileHeader accepts only positive integers', () {
