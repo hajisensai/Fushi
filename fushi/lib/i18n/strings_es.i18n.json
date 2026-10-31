@@ -8949,6 +8949,8 @@
   "video_anilist_error_unreachable": "No se puede contactar con AniList (graphql.anilist.co). Comprueba tu conexión de red o configura un proxy en los ajustes de descarga.",
   "video_audio_track": "Pista de audio",
   "video_audio_track_empty": "Sin pistas de audio intercambiables",
+  "video_audio_track_fallback_muxed": "The audio stream was refused; switched to a compatible stream with sound (lower quality)",
+  "video_audio_track_load_failed": "Couldn't load the audio stream — there is no sound. The source refused access; try again later.",
   "video_audio_track_switched": "Pista de audio: $label",
   "video_auto_play_next_cancel": "Cancelar",
   "video_auto_play_next_countdown": "Siguiente episodio en ${seconds} s",

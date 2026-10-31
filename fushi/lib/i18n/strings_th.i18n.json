@@ -8949,6 +8949,8 @@
   "video_anilist_error_unreachable": "เชื่อมต่อ AniList (graphql.anilist.co) ไม่ได้ ตรวจสอบการเชื่อมต่อเครือข่าย หรือตั้งค่าพร็อกซีในการตั้งค่าการดาวน์โหลด",
   "video_audio_track": "แทร็กเสียง",
   "video_audio_track_empty": "ไม่มีแทร็กเสียงที่สลับได้",
+  "video_audio_track_fallback_muxed": "The audio stream was refused; switched to a compatible stream with sound (lower quality)",
+  "video_audio_track_load_failed": "Couldn't load the audio stream — there is no sound. The source refused access; try again later.",
   "video_audio_track_switched": "แทร็กเสียง: $label",
   "video_auto_play_next_cancel": "ยกเลิก",
   "video_auto_play_next_countdown": "เล่นตอนถัดไปในอีก ${seconds} วินาที",
