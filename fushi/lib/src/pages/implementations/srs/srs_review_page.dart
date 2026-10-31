@@ -19,6 +19,7 @@ import 'dart:math' as math;
 import 'dart:ui'
     show FlutterView, ViewFocusDirection, ViewFocusEvent, ViewFocusState;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart'
     show
         GestureBinding,
@@ -51,6 +52,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_gestures_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -60,6 +62,7 @@ import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -206,6 +209,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 同一高度的可监听版本，交给原生卡面（身份不变，不进卡面缓存键，见 [_cardFace]）。
   final ValueNotifier<double> _bottomBarInset = ValueNotifier<double>(0);
 
+  /// 卡面区域（单击分区按它横向三等分）。
+  final GlobalKey _cardSurfaceKey = GlobalKey(debugLabel: 'srs-card-surface');
+
+  /// 滑动途中的视觉反馈（卡面跟手位移 + 松手会执行的动作提示）；null = 没在滑。
+  final ValueNotifier<SrsSwipeHint?> _swipeHint = ValueNotifier<SrsSwipeHint?>(
+    null,
+  );
+
   SrsCardDetail? _detail;
   SrsRenderedCard? _rendered;
   SrsAnswerPreview? _preview;
@@ -325,6 +336,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
     _focusNode.dispose();
     _bottomBarInset.dispose();
+    _swipeHint.dispose();
     super.dispose();
   }
 
@@ -1432,11 +1444,115 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     setState(() => _chromeShown = !_chromeShown);
   }
 
-  /// 卡面空白处被点（WebView 卡面经页内取词脚本、原生卡面经 [SrsBlankTapRegion] 回报）。
-  /// 查词弹窗开着时这一下是关弹窗，不切换顶栏。
-  void _onCardTapEmpty() {
-    if (_lookup.isOpen) return;
-    _toggleChrome();
+  // ------------------------------------------------------------------ 卡面手势
+
+  SrsReviewSide get _side =>
+      _showingAnswer ? SrsReviewSide.back : SrsReviewSide.front;
+
+  /// 当前这一面开着的识别器（随映射 / 「只留重来 / 良好」/ 翻面变）。
+  SrsCardGestureArming get _gestureArming => ref
+      .read(srsReviewGesturesProvider)
+      .arming(_side, hideHardEasy: ref.read(srsReviewHideHardEasyProvider));
+
+  /// [g] 在当前这一面实际执行的动作。
+  SrsReviewGestureAction _resolveGesture(SrsReviewGesture g) => ref
+      .read(srsReviewGesturesProvider)
+      .resolve(_side, g, hideHardEasy: ref.read(srsReviewHideHardEasyProvider));
+
+  /// 卡面回报的手势（WebView 卡面经页内指针脚本、原生卡面经 [SrsCardGestureRegion]，同一
+  /// 套判据）。查词弹窗开着时卡面上的点按是关弹窗，不执行手势。
+  void _onCardGesture(SrsCardGestureEvent event) {
+    if (!mounted) return;
+    switch (event.kind) {
+      case SrsCardGestureKind.drag:
+        _onCardDrag(event.delta);
+        return;
+      case SrsCardGestureKind.cancel:
+        _swipeHint.value = null;
+        return;
+      case SrsCardGestureKind.release:
+        _swipeHint.value = null;
+        if (_lookup.isOpen) return;
+        final SrsCardGestureArming arming = _gestureArming;
+        final SrsReviewGesture? swipe = srsClassifySwipe(
+          event.delta,
+          event.velocity,
+          horizontal: arming.swipeHorizontal,
+          vertical: arming.swipeVertical,
+        );
+        if (swipe != null) _runGestureAction(_resolveGesture(swipe));
+        return;
+      case SrsCardGestureKind.tap:
+      case SrsCardGestureKind.doubleTap:
+      case SrsCardGestureKind.longPress:
+        if (_lookup.isOpen) return;
+        final SrsReviewGesture gesture = switch (event.kind) {
+          SrsCardGestureKind.doubleTap => SrsReviewGesture.doubleTap,
+          SrsCardGestureKind.longPress => SrsReviewGesture.longPress,
+          _ => srsTapGestureOf(_tapZoneOf(event.position)),
+        };
+        _runGestureAction(_resolveGesture(gesture));
+    }
+  }
+
+  /// 单击落点在卡面区域的哪一个三分之一。
+  SrsTapZone _tapZoneOf(Offset global) {
+    final RenderObject? box = _cardSurfaceKey.currentContext
+        ?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return SrsTapZone.center;
+    final Offset local = box.globalToLocal(global);
+    return srsTapZoneOf(local.dx, left: 0, width: box.size.width);
+  }
+
+  /// 滑动途中：只有朝着绑了动作的方向拖时卡面才跟手、显示松手会执行什么。
+  void _onCardDrag(Offset delta) {
+    final SrsCardGestureArming arming = _gestureArming;
+    final ({SrsReviewGesture gesture, Offset offset, double progress})?
+    preview = srsSwipePreview(
+      delta,
+      horizontal: arming.swipeHorizontal,
+      vertical: arming.swipeVertical,
+    );
+    final SrsReviewGestureAction action = preview == null || _lookup.isOpen
+        ? SrsReviewGestureAction.none
+        : _resolveGesture(preview.gesture);
+    _swipeHint.value = action == SrsReviewGestureAction.none
+        ? null
+        : SrsSwipeHint(
+            offset: preview!.offset,
+            progress: preview.progress,
+            action: action,
+          );
+  }
+
+  /// 执行手势绑定的动作：一律走复习页现成的实现（与按钮 / 快捷键同一条路径），按钮在
+  /// 忙碌时禁用的（评分、撤销）这里同样不响应。
+  void _runGestureAction(SrsReviewGestureAction action) {
+    switch (action) {
+      case SrsReviewGestureAction.none:
+        return;
+      case SrsReviewGestureAction.showAnswer:
+        _showAnswer();
+      case SrsReviewGestureAction.rateAgain ||
+          SrsReviewGestureAction.rateHard ||
+          SrsReviewGestureAction.rateGood ||
+          SrsReviewGestureAction.rateEasy:
+        if (!_busy) _rate(action.rating!);
+      case SrsReviewGestureAction.undo:
+        if (!_busy) _undoLast();
+      case SrsReviewGestureAction.replayAudio:
+        _replayAudio();
+      case SrsReviewGestureAction.toggleToolbar:
+        _toggleChrome();
+      case SrsReviewGestureAction.editNote:
+        unawaited(_onCardAction(_CardAction.edit));
+      case SrsReviewGestureAction.bury:
+        unawaited(_onCardAction(_CardAction.bury));
+      case SrsReviewGestureAction.suspend:
+        unawaited(_onCardAction(_CardAction.suspend));
+      case SrsReviewGestureAction.flag:
+        unawaited(_onCardAction(_CardAction.flag));
+    }
   }
 
   /// 鼠标右键（卡面已关掉 WebView 自带右键菜单，复习页上右键别无他用）：切换悬浮顶栏。
@@ -1730,8 +1846,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     required double zoom,
     required String hostCss,
     required MediaQueryData media,
+    required SrsCardGestureArming gestureArming,
   }) {
     final Object inputs = (
+      gestureArming,
       detail?.card.id,
       detail?.noteType.builtinKey,
       rendered,
@@ -1767,7 +1885,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
       autoplayMedia: _autoplayEnabled,
       onPlayAudio: _playNames,
-      onTapEmpty: _onCardTapEmpty,
+      onCardGesture: _onCardGesture,
+      gestureArming: gestureArming,
     );
     // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
     final Widget built = rendered?.fushiCardDefinitions != null
@@ -1804,6 +1923,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       ref.watch(srsReviewImageSizeProvider),
     );
     final MediaQueryData media = MediaQuery.of(context);
+    final SrsCardGestureArming gestureArming = ref
+        .watch(srsReviewGesturesProvider)
+        .arming(_side, hideHardEasy: ref.watch(srsReviewHideHardEasyProvider));
     // 原生 Fushi 卡面铺到底栏背后、把底栏高度当滚动内边距；整面 WebView 卡面滚不到底栏
     // 下面，停在底栏上沿（与顶端让位浮动页头同一口径，见 [_cardScrollsUnderHeader]）。
     final bool underBar = rendered?.fushiCardDefinitions != null;
@@ -1816,6 +1938,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       zoom: zoom,
       hostCss: hostCss,
       media: media,
+      gestureArming: gestureArming,
     );
     return SrsCardLookupHost(
       controller: _lookup,
@@ -1834,6 +1957,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             // Ctrl / ⌘ + 滚轮落在原生区（WebView 上的由页面脚本截下转来）：缩放卡面，
             // 并认领这次滚轮，外层不再滚动。
             child: Listener(
+              key: _cardSurfaceKey,
               onPointerSignal: (PointerSignalEvent event) {
                 if (event is! PointerScrollEvent) return;
                 final HardwareKeyboard kb = HardwareKeyboard.instance;
@@ -1851,7 +1975,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                 child: Stack(
                   fit: StackFit.passthrough,
                   children: <Widget>[
-                    cardFace,
+                    // 结构恒定：没在滑时位移为零，卡面平台视图不因手势重挂。
+                    SrsSwipeFollow(hint: _swipeHint, child: cardFace),
+                    SrsSwipeHintBadge(hint: _swipeHint),
                     IgnorePointer(
                       child: AnimatedSwitcher(
                         duration: fushiMotionDuration(
@@ -1877,7 +2003,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             right: 0,
             bottom: 0,
             // 底栏整条（按钮之间、四周留白、底部安全区）归底栏，点按不穿到下面的卡面：
-            // 原生 Fushi 卡面铺在底栏背后，穿过去会被 SrsBlankTapRegion 当成点卡面空白、
+            // 原生 Fushi 卡面铺在底栏背后，穿过去会被 SrsCardGestureRegion 当成点卡面空白、
             // 切换悬浮顶栏（按偏一点评分按钮就弹顶栏）；整面 WebView 卡面停在底栏上沿，
             // 这条本来就点不到卡面——两条路径同一口径。
             child: Listener(
@@ -2353,5 +2479,164 @@ class _RenderSrsHeightReporter extends RenderProxyBox {
     _reported = height;
     // 布局阶段不能 setState：本帧收尾时再报（布局发生在帧内，帧后回调必然会跑）。
     SchedulerBinding.instance.addPostFrameCallback((_) => onHeight(height));
+  }
+}
+
+// ------------------------------------------------------------------ 滑动反馈
+
+/// 滑动途中的反馈：按主轴锁定的拖动位移、离「松手即触发」的进度（0..1）、松手会执行的动作。
+@immutable
+class SrsSwipeHint {
+  const SrsSwipeHint({
+    required this.offset,
+    required this.progress,
+    required this.action,
+  });
+
+  final Offset offset;
+  final double progress;
+  final SrsReviewGestureAction action;
+
+  bool get committed => progress >= 1;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsSwipeHint &&
+      other.offset == offset &&
+      other.progress == progress &&
+      other.action == action;
+
+  @override
+  int get hashCode => Object.hash(offset, progress, action);
+}
+
+/// 卡面跟手：滑动途中按拖动位移的一部分平移卡面，松手 / 作废时弹回（[FushiMotion.release]）。
+/// 墨水屏 / 系统「减弱动态效果」下不移动。结构恒定，[child]（卡面平台视图）不会因此重挂。
+class SrsSwipeFollow extends StatelessWidget {
+  const SrsSwipeFollow({super.key, required this.hint, required this.child});
+
+  final ValueListenable<SrsSwipeHint?> hint;
+  final Widget child;
+
+  /// 卡面跟手的比例（拖 100 逻辑像素，卡面走 40）。
+  static const double kFollow = 0.4;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<SrsSwipeHint?>(
+    valueListenable: hint,
+    child: child,
+    builder: (BuildContext context, SrsSwipeHint? h, Widget? child) {
+      final bool motion = fushiMotionEnabled(context);
+      final Offset target = motion && h != null
+          ? h.offset * kFollow
+          : Offset.zero;
+      return TweenAnimationBuilder<Offset>(
+        tween: Tween<Offset>(end: target),
+        // 跟手时零时长（逐帧即到）；松手 / 作废时弹回。
+        duration: h != null
+            ? Duration.zero
+            : fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.release,
+        child: child,
+        builder: (BuildContext context, Offset offset, Widget? child) =>
+            Transform.translate(
+              key: const ValueKey<String>('srs-swipe-follow'),
+              offset: offset,
+              child: child,
+            ),
+      );
+    },
+  );
+}
+
+/// 滑动途中卡面中央的动作提示：评分按评分按钮同一套色调（两套设计系统各自的配色），
+/// 其余动作用次要容器色 + 图标；越接近「松手即触发」越实，到了略放大。淡入淡出走
+/// [FushiMotion]，墨水屏 / 减弱动态效果下直接到位。
+class SrsSwipeHintBadge extends StatefulWidget {
+  const SrsSwipeHintBadge({super.key, required this.hint});
+
+  final ValueListenable<SrsSwipeHint?> hint;
+
+  @override
+  State<SrsSwipeHintBadge> createState() => _SrsSwipeHintBadgeState();
+}
+
+class _SrsSwipeHintBadgeState extends State<SrsSwipeHintBadge> {
+  /// 最近一次非空的提示：淡出期间照旧画它。
+  SrsSwipeHint? _last;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: ValueListenableBuilder<SrsSwipeHint?>(
+      valueListenable: widget.hint,
+      builder: (BuildContext context, SrsSwipeHint? h, Widget? _) {
+        if (h != null) _last = h;
+        final SrsSwipeHint? shown = _last;
+        final double opacity = h == null
+            ? 0
+            : (h.committed ? 1 : 0.35 + 0.5 * h.progress);
+        return AnimatedOpacity(
+          opacity: opacity,
+          duration: fushiMotionDuration(context, FushiMotion.micro),
+          curve: FushiMotion.standard,
+          child: shown == null
+              ? const SizedBox.shrink()
+              : Center(
+                  child: AnimatedScale(
+                    scale: shown.committed && fushiMotionEnabled(context)
+                        ? 1.08
+                        : 1,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    curve: FushiMotion.release,
+                    child: _badge(context, shown),
+                  ),
+                ),
+        );
+      },
+    ),
+  );
+
+  Widget _badge(BuildContext context, SrsSwipeHint h) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final int? rating = h.action.rating;
+    final ({Color background, Color foreground}) colors = rating != null
+        ? srsRatingColors(
+            SrsRatingTone.values[rating - 1],
+            cs,
+            apple: isGlassDesign(context),
+          )
+        : (
+            background: cs.secondaryContainer,
+            foreground: cs.onSecondaryContainer,
+          );
+    final IconData? icon = srsReviewGestureActionIcon(h.action);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return DecoratedBox(
+      key: ValueKey<String>('srs-swipe-hint-${h.action.wire}'),
+      decoration: ShapeDecoration(
+        color: colors.background,
+        shape: const StadiumBorder(),
+        shadows: kElevationToShadow[2],
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.page,
+          vertical: tokens.spacing.gap,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            if (icon != null) FushiIcon(icon, color: colors.foreground),
+            Text(
+              srsReviewGestureActionLabel(h.action),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(color: colors.foreground),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

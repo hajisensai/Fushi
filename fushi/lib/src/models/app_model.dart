@@ -78,6 +78,7 @@ import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -10312,6 +10313,11 @@ class AppModel with ChangeNotifier {
       SrsReviewReplayButton.fromWire(_prefsRepo?.srsReviewReplayButton);
   Future<void> setSrsReviewReplayButton(SrsReviewReplayButton value) =>
       prefsRepo.setSrsReviewReplayButton(value.wire);
+  // 复习页卡面手势映射（透传 prefsRepo）。可空读：prefs 未装配 / 值读不出 = 默认映射。
+  SrsReviewGestureMap get srsReviewGestures =>
+      SrsReviewGestureMap.decode(_prefsRepo?.srsReviewGestures ?? '');
+  Future<void> setSrsReviewGestures(SrsReviewGestureMap value) =>
+      prefsRepo.setSrsReviewGestures(value.encode());
   // 复习卡面图片大小（透传 prefsRepo）。可空读：prefs 未装配 = 原样。
   SrsReviewImageSize get srsReviewImageSize =>
       SrsReviewImageSize.fromWire(_prefsRepo?.srsReviewImageSize);
