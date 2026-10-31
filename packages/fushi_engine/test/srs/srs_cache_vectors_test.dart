@@ -124,7 +124,6 @@ void main() {
     engine: FfiFsrsEngine.tryCreate(),
     trustedClock: SrsTrustedClock(
       wallClockMs: () => t += 1000,
-      monotonicMs: () => t,
       bootId: 'boot-vec',
     ),
     fallbackRolloverHour: () => 4,

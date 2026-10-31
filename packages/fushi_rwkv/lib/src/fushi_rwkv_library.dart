@@ -5,7 +5,7 @@ import 'dart:io';
 const String kFushiRwkvLibEnv = 'FUSHI_RWKV_LIB';
 
 /// Dart 绑定期望的 C ABI 版本，与 native/fushi_rwkv/src/lib.rs 的 `ABI_VERSION` 一致。
-const int kFushiRwkvAbiVersion = 3;
+const int kFushiRwkvAbiVersion = 4;
 
 /// `sizeof(FrwkvReview)`，与 lib.rs 一致（启动时核对）。
 const int kFrwkvReviewSize = 80;
