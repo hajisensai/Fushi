@@ -40,6 +40,7 @@
 | [BUG-3887](bugs/BUG-3887-dictionary-download-background-keep-alive.md) | ✅ | ✅ | 推荐词典下载 / 词典自动更新切到后台就停 |
 | [BUG-3887](bugs/BUG-3887-video-subtitle-list-toggle-jank.md) | ✅ | ✅ | video-subtitle-list-toggle-jank |
 | [BUG-3887](bugs/BUG-3887-popup-headword-drag-copy.md) | ✅ | ✅ | 查词弹窗拖选词头后 Ctrl+C 复制不了 |
+| [BUG-3887](bugs/BUG-3887-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
 | [BUG-3886](bugs/BUG-3886-eink-highlight-line-clipped-at-ruby-emphasis.md) | ✅ | ✅ | 墨水屏跟读线在注音 / 着重号处断开、字形被切（VN） |
 | [BUG-3885](bugs/BUG-3885-music-player-no-volume-and-bar-close.md) | ✅ | ✅ | music-player-no-volume-and-bar-close |
 | [BUG-3884](bugs/BUG-3884-maximize-button-hover-hides-caption.md) | ✅ | ✅ | maximize-button-hover-hides-caption |
