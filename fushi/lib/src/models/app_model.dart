@@ -317,6 +317,7 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
@@ -332,7 +333,8 @@ import 'package:fushi/src/media/music/music_library_scanner.dart'
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
-import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
+import 'package:fushi_music/fushi_music.dart'
+    show InstalledMusicPlugin, MusicPluginManager;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
@@ -1934,6 +1936,40 @@ class AppModel with ChangeNotifier {
     pluginLyrics: isMusicPluginSourcesAvailable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)
+        : null,
+    pluginSearch: isMusicPluginSourcesAvailable
+        ? (
+            String pluginId,
+            String title, {
+            String? artist,
+            String? album,
+            int? durationMs,
+            String? query,
+          }) => musicPluginManager
+              .source(pluginId)
+              .lyricsSearch(
+                title,
+                artist: artist,
+                album: album,
+                durationMs: durationMs,
+                query: query,
+              )
+        : null,
+    pluginFetch: isMusicPluginSourcesAvailable
+        ? (String pluginId, Object ref) =>
+              musicPluginManager.source(pluginId).lyricsFetch(ref)
+        : null,
+    providers: isMusicPluginSourcesAvailable
+        ? () async => enabledLyricsProviderIds(
+            mergeLyricsProviders(
+              parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
+              <String>[
+                for (final InstalledMusicPlugin p
+                    in await musicPluginManager.list())
+                  if (p.isLyricsSource) p.id,
+              ],
+            ),
+          )
         : null,
   );
 
