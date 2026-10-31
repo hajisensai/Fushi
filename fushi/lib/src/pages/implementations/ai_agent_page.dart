@@ -37,6 +37,7 @@ import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/src/pages/implementations/ai_agent_screen_text.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_sessions.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -323,7 +324,17 @@ Future<void> _showSidePanel(
   );
 }
 
-/// 整页外壳。
+/// 会话列表常驻在整页左侧的宽度（窗口宽于 [kAiAgentSidePanelBreakpoint] 时）。
+const double kAiAgentSessionsColumnWidth = 300;
+
+/// 「会话」按钮（弹出会话列表）。
+const ValueKey<String> kAiAgentSessionsButtonKey = ValueKey<String>(
+  'ai-agent-sessions',
+);
+
+/// 整页外壳。宽屏把会话列表常驻在对话左侧；窄屏在页头放「会话」按钮弹出列表。
+/// 远端会话没有本机存档（[AiAgentConversationController.sessionLibrary] 为 null），
+/// 两者都不出现。
 class AiAgentPage extends StatelessWidget {
   const AiAgentPage({required this.controller, this.uiContext, super.key});
 
@@ -332,21 +343,50 @@ class AiAgentPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AiAgentSessionLibrary? library = controller.sessionLibrary;
+    final bool sideList =
+        library != null &&
+        MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint;
     return FushiPageScaffold(
       title: t.ai_agent_title,
+      actions: <Widget>[
+        if (library != null && !sideList)
+          FushiIconButtonControl(
+            key: kAiAgentSessionsButtonKey,
+            tooltip: t.ai_agent_sessions_title,
+            onPressed: () =>
+                unawaited(showAiAgentSessionsSheet(context, library)),
+            icon: const FushiIcon(FushiIcons.history),
+          ),
+      ],
       body: SafeArea(
         top: false,
         bottom: false,
         child: Builder(
-          builder: (BuildContext bodyContext) => Padding(
-            padding: EdgeInsets.only(
-              top: MediaQuery.paddingOf(bodyContext).top,
-            ),
-            child: AiAgentConversation(
+          builder: (BuildContext bodyContext) {
+            final Widget conversation = AiAgentConversation(
               controller: controller,
               uiContext: uiContext,
-            ),
-          ),
+            );
+            return Padding(
+              padding: EdgeInsets.only(
+                top: MediaQuery.paddingOf(bodyContext).top,
+              ),
+              child: sideList
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        SizedBox(
+                          width: kAiAgentSessionsColumnWidth,
+                          child: AiAgentSessionList(library: library),
+                        ),
+                        const FushiVerticalDivider(width: 1),
+                        Expanded(child: conversation),
+                      ],
+                    )
+                  : conversation,
+            );
+          },
         ),
       ),
     );
@@ -562,6 +602,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
               onPressed: () => unawaited(_undoAll()),
               child: Text(t.ai_agent_undo_all(n: '$undoable')),
             ),
+          ?_sessionsButton(context),
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-new-session'),
             tooltip: t.ai_agent_new_session,
@@ -579,6 +620,18 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             ),
         ],
       ),
+    );
+  }
+
+  /// 浮层 / 侧栏顶栏的「会话」按钮：弹出会话列表（远端会话没有本机存档，不出现）。
+  Widget? _sessionsButton(BuildContext context) {
+    final AiAgentSessionLibrary? library = _controller.sessionLibrary;
+    if (library == null) return null;
+    return FushiIconButtonControl(
+      key: kAiAgentSessionsButtonKey,
+      tooltip: t.ai_agent_sessions_title,
+      onPressed: () => unawaited(showAiAgentSessionsSheet(context, library)),
+      icon: const FushiIcon(FushiIcons.history),
     );
   }
 
