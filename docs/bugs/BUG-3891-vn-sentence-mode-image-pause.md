@@ -1,4 +1,4 @@
-## BUG-3887 · VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义
+## BUG-3891 · VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义
 - **报告**：2026-10-31（用户：「歌词模式有插画的时候应该跳出来停留，跟视觉小说一样，但是现在视觉小说好像不会停留，可以顺便修一下，并且支持自定义停留多少秒。」）
 - **真实性**：✅ 真 bug（按句分屏）+ 设计缺口（秒数只有四档）。沿真实代码路径用真 Chrome 跑生产 VN shell + 生产 `audiobook_bridge.dart` 高亮 JS（`__fushiHighlightSentenceAudioCueById` → VN `highlightSentenceAudioCue` → `pauseAtCrossedMediaScreen`）逐句推进核对：
   1. **按块分屏（默认 `vn_screen_mode = block`）链路是通的**：开图片暂停时 cue 从图前一句推进到图后一句，先整屏停在插图并发 `onImageDetected`，再次跟随落到句子屏；`<img>` 与 `<svg><image>` 两种插图形状都一样。
