@@ -72,7 +72,7 @@ import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiDesktopTitleBar, FushiTitleBarColorScope, fushiTitleBarColorsOn;
+    show FushiTitleBarColorScope, fushiTitleBarColorsOn;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -2058,9 +2058,7 @@ class _TitleBarScope extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiTitleBarColorScope(
-    colors: FushiDesktopTitleBar.immersivePagesFillWindow
-        ? fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface)
-        : null,
+    colors: fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface),
     child: child,
   );
 }

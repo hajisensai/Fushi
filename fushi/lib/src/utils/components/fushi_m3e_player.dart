@@ -118,7 +118,7 @@ class _ThrottledFrameDriver {
 /// 底板圆角：MD3 extra-large（28，与底部弹层同档）。
 const double _kPlateRadius = FushiRadii.sheetValue;
 
-/// 底板矩形解析：[page] 是去掉 bleedTop 的页面尺寸，[padding] 是系统安全区。
+/// 底板矩形解析：[page] 是页面尺寸，[padding] 是系统安全区。
 /// 返回 null = 不画底板。
 typedef FushiMeshPlateResolver = Rect? Function(Size page, EdgeInsets padding);
 
@@ -126,15 +126,7 @@ typedef FushiMeshPlateResolver = Rect? Function(Size page, EdgeInsets padding);
 /// secondary 容器色 + 一团低透明 primary），可再垫一块半透明底板。动效关闭
 /// （减少动态效果 / 墨水屏）或 [animate] = false 时静止在相位 0。
 class FushiMeshBackdrop extends StatefulWidget {
-  const FushiMeshBackdrop({
-    super.key,
-    this.bleedTop = 0,
-    this.plateRect,
-    this.animate = true,
-  });
-
-  /// 画布顶上延伸到标题栏底下的高度（歌词模式桌面标题栏里画同一张背景）。
-  final double bleedTop;
+  const FushiMeshBackdrop({super.key, this.plateRect, this.animate = true});
 
   /// 底板矩形（页面坐标）；null / 返回 null = 不画。
   final FushiMeshPlateResolver? plateRect;
@@ -191,8 +183,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
 
   void _onFrame(int frameMicros) {
     // 漂移极慢，30fps 足够顺；整屏渐变每帧重画是白花 GPU。相位取本帧 vsync 时刻
-    // 并量化到 33ms 一档：桌面标题栏里画的是同一张背景的另一个实例（bleedTop），
-    // 两个实例同一帧必须是同一相位，接缝处才连续。
+    // 并量化到 33ms 一档。
     final int frame = frameMicros ~/ _kMeshFrameMicros;
     if (frame == _lastFrame) return;
     _lastFrame = frame;
@@ -218,12 +209,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final Size size = constraints.biggest;
-          // 底板按页面尺寸（画布去掉顶上延伸的一截）算，再整体下移回画布坐标。
-          final double bleed = widget.bleedTop;
-          final Size page = Size(size.width, math.max(0, size.height - bleed));
-          final Rect? plate = widget.plateRect
-              ?.call(page, padding)
-              ?.translate(0, bleed);
+          final Rect? plate = widget.plateRect?.call(size, padding);
           return CustomPaint(
             size: size,
             isComplex: true,

@@ -191,8 +191,8 @@ void main() {
     //    重建标题栏视图、复位 standardWindowButton.isHidden，退出时必须经
     //    reassertMacTrafficLights 按真值重申。
     expect(titleBar,
-        contains('setMacOSTrafficLightsHidden(_contentFullscreen.value)'),
-        reason: '红绿灯显隐必须跟内容全屏真值走');
+        contains('(_contentFullscreen.value && !nativeFullscreen)'),
+        reason: '红绿灯显隐必须跟内容全屏真值走（原生全屏交给系统标题栏）');
     expect(
         methodBody(titleBar, 'void _onMacosFullscreenChanged() {'),
         contains('FushiDesktopTitleBar.reassertMacTrafficLights()'),
