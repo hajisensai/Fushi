@@ -391,6 +391,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 内置 libtorrent 引擎 DLL：vcpkg 编 libtorrent + bridge，产物随发布包（下面
       # flutter build 的 copy-if-present 拷到 fushi.exe 旁）。发布版必须带上，故此步
       # 失败即让发布失败（不静默出无内置引擎的包）。
@@ -1578,6 +1581,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 互联 P2P 隧道（iroh）dylib（只出 arm64：macOS 版不再支持 Intel Mac，Runner 工程
       # 的 EXCLUDED_ARCHS = x86_64 让 app 本体也只有 arm64）：Runner 的「Bundle fushi_p2p
       # dylib」构建阶段 copy-if-present 进
@@ -2712,6 +2718,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # See build-multiplatform.yml ios job: flutter_native_splash 2.4.4 ships a
       # broken SPM Package.swift and its 2.4.5+ fix conflicts with our pinned
       # archive ^3.6.1 / xml ^6.3.0. iOS deps are CocoaPods-managed, so disable

@@ -488,6 +488,9 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
 
     # 内置 libtorrent 引擎的 Android .so：vcpkg 交叉编 libtorrent + bridge，产物落
     # native/fushi_torrent/prebuilt/android/arm64-v8a/，由 fushi/android/app/
@@ -1911,6 +1914,9 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
 
     - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
       uses: actions/download-artifact@v7
