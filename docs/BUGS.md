@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3530 条。点号进各自文件。
+> 共 3531 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3926](bugs/BUG-3926-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
+| [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
 | [BUG-3924](bugs/BUG-3924-srs-webview-blank-tap-needs-lookup.md) | ✅ | ✅ | srs-webview-blank-tap-needs-lookup |
