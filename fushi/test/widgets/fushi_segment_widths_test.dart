@@ -59,8 +59,8 @@ void main() {
       for (int i = 0; i < w.length; i++) {
         expect(w[i], greaterThanOrEqualTo(content[i] + extra[i] - 1e-9));
       }
-      // 两个窄段被抬到同一水位。
-      expect(w[0], closeTo(w[1], 1e-9));
+      // 水位 86：只有最窄段（60）被抬起，88 / 102 保持自然宽。
+      expect(w, <double>[86, 88, 102, 102, 102]);
     });
 
     test('自然宽也放不下：按比例收内边距，内容一律不截断', () {
@@ -82,9 +82,11 @@ void main() {
         available: 300,
       );
       expect(sum(w), closeTo(300, 1e-9));
+      // 削峰水位 64：44 完整保留，其余（72 / 86）削到 64。
       expect(w[0], 44);
-      expect(w[1], 72);
-      expect(w[2], closeTo((300 - 44 - 72) / 3, 1e-9));
+      for (int i = 1; i < w.length; i++) {
+        expect(w[i], closeTo(64, 1e-9));
+      }
     });
   });
 
