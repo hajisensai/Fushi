@@ -1,4 +1,4 @@
-## BUG-3915 · continue-card-volume-number
+## BUG-3921 · continue-card-volume-number
 - **报告**：2026-10-31（用户：阅读器开着「安達としまむら3」（三章，46.7%），首页「继续」卡标题「安達としまむら」、副标题「阅读 · 安達としまむら3」，进度条右侧却是「第 13 卷」；阅读器导航面板的卷切换 chip 顺序也是乱的（安達としまむら5、安達としまむら8…））
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/pages/implementations/home_dashboard_page.dart`（修前 `:171-178` `dashboardBookVolumeNumber`）：卷号判据要求**合集全体成员**同系列（`sharedBookSeriesKey(memberTitles)`），这个合集混了番外（如 `安達としまむらSS`，系列键与正篇不同），于是整组退回「合集内第几个」（`memberOrdinal = idx + 1`，`:2174`）。合集存储顺序本身又被打乱（导航面板 chip 乱序即同一份 `media_collection_items.sortIndex`，另案修 `_healSeriesOrder`），第 3 卷排在第 13 位，徽标就把存储位置说成「第 13 卷」。书架合集卡「N 卷 · 读到第 X 卷」（`reader_fushi_history_page.dart` `_collectionStatusLabel`，修前 `:2484`）直接拿组内位置 `index + 1` 当卷号，同病。
 - **[x] ① 已修复** — 新增唯一判据 `collectionMemberVolumeNumber`（`packages/fushi_engine/lib/media/collections/book_series_key.dart`）：只看**本卷所在系列**在合集里是否至少两卷，是就取书名卷号（无卷号且同系列只它没卷号、又没有别卷自称第 1 卷 → 第 1 卷）；番外 / 主题合集单本 / 认不出卷号才退回合集内序号（与合集详情页同序）。首页续读卡徽标与书架合集卡「读到第 N 卷」都改走它，删掉首页私有的 `dashboardBookVolumeNumber`。

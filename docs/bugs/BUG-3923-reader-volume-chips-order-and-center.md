@@ -1,4 +1,4 @@
-## BUG-3915 · 导航侧板目录页的卷 chip 行顺序错乱、当前卷不居中
+## BUG-3923 · 导航侧板目录页的卷 chip 行顺序错乱、当前卷不居中
 - **报告**：2026-10-31（用户：「目录的第一个是 5，3 在最后面，而且没有默认居中」；书是《安達としまむら》系列合集，当前在第 3 卷）
 - **真实性**：✅ 真 bug（两处）。沿真实代码路径：
   1. **顺序（根因在持久化的合集序，不在阅读器）**：卷 chip 的 `labels` 来自 `_tocVolumeSwitch()`（`fushi/lib/src/pages/implementations/reader_fushi/chrome.part.dart`）→ `ReaderVolumeContext.volumes` → `loadReaderVolumeContext`（`fushi/lib/src/reader/reader_collection_volumes.dart:80-97`）按合集成员 `sortIndex` 取序——与合集详情页同一份存储序，这一层本身没错。错的是存储序：手动「建系列 / 并入合集」按选择顺序尾插，归组时的卷序自愈 `BookSeriesGrouper._healSeriesOrder` 经 `BookSeriesOrder.orderOf` 判能否定序，旧判据要求**整张合集同一系列键**（修前 `packages/fushi_engine/lib/media/collections/book_series_grouper.dart:436`）——合集里混进一本「安達としまむらSS」这类番外（系列键 `安達としまむらss` ≠ `安達としまむら`）或外传，整张合集永远不排，乱序原样落在 `sortIndex` 里、进了阅读器（目录与图库两处卷 chip 行同错）。（用户库的具体成员未取证，以上是代码上能产生该现象的路径。）

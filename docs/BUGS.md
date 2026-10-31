@@ -33,44 +33,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3521 条。点号进各自文件。
+> 共 3529 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
+| [BUG-3924](bugs/BUG-3924-srs-webview-blank-tap-needs-lookup.md) | ✅ | ✅ | srs-webview-blank-tap-needs-lookup |
+| [BUG-3923](bugs/BUG-3923-reader-volume-chips-order-and-center.md) | ✅ | ✅ | 导航侧板目录页的卷 chip 行顺序错乱、当前卷不居中 |
+| [BUG-3922](bugs/BUG-3922-installer-and-onboarding-localization.md) | ✅ | ✅ | 安装器只有中文、onboarding 部分文字没翻译 |
+| [BUG-3921](bugs/BUG-3921-continue-card-volume-number.md) | ✅ | ✅ | continue-card-volume-number |
+| [BUG-3920](bugs/BUG-3920-subtitle-search-sheet-header-scrolls-away.md) | ✅ | ✅ | subtitle-search-sheet-header-scrolls-away |
+| [BUG-3919](bugs/BUG-3919-collapsible-header-dialog-intrinsics.md) | 🚧 | 🚧 | collapsible-header-dialog-intrinsics |
+| [BUG-3918](bugs/BUG-3918-home-hero-multi-episode-still-nondeterministic.md) | ✅ | ✅ | home-hero-multi-episode-still-nondeterministic |
 | [BUG-3917](bugs/BUG-3917-lyrics-choose-source-plugin-track-crash.md) | ✅ | ✅ | lyrics-choose-source-plugin-track-crash |
 | [BUG-3916](bugs/BUG-3916-lyrics-plugin-merge-stale-on-parser-bump.md) | ✅ | ✅ | lyrics-plugin-merge-stale-on-parser-bump |
 | [BUG-3915](bugs/BUG-3915-lyrics-plugin-cache-key-collision.md) | ✅ | ✅ | lyrics-plugin-cache-key-collision |
-> 共 3519 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3915](bugs/BUG-3915-home-hero-multi-episode-still-nondeterministic.md) | ✅ | ✅ | home-hero-multi-episode-still-nondeterministic |
-> 共 3520 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3916](bugs/BUG-3916-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
-| [BUG-3915](bugs/BUG-3915-subtitle-search-sheet-header-scrolls-away.md) | ✅ | ✅ | subtitle-search-sheet-header-scrolls-away |
-> 共 3519 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3915](bugs/BUG-3915-continue-card-volume-number.md) | ✅ | ✅ | continue-card-volume-number |
-> 共 3519 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3915](bugs/BUG-3915-installer-and-onboarding-localization.md) | ✅ | ✅ | 安装器只有中文、onboarding 部分文字没翻译 |
-> 共 3519 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3915](bugs/BUG-3915-reader-volume-chips-order-and-center.md) | ✅ | ✅ | 导航侧板目录页的卷 chip 行顺序错乱、当前卷不居中 |
-> 共 3519 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3915](bugs/BUG-3915-srs-webview-blank-tap-needs-lookup.md) | ✅ | ✅ | srs-webview-blank-tap-needs-lookup |
 | [BUG-3914](bugs/BUG-3914-ort-webgpu-provider-probe.md) | ✅ | ✅ | ort-webgpu-provider-probe |
 | [BUG-3913](bugs/BUG-3913-webview-resize-vram-leak.md) | ✅ | ✅ | webview-resize-vram-leak |
 | [BUG-3912](bugs/BUG-3912-audio-source-refused-reported-as-dns.md) | ✅ | ✅ | 音频源「连接被拒」被报成「无法解析 host」 |
