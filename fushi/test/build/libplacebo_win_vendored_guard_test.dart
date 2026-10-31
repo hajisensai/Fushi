@@ -41,6 +41,37 @@ void main() {
     }
   });
 
+  // DLL 不入库（2026-11-01）：tool/vendored_binaries.json 钉 sha256 + release 资产，
+  // .gitignore 按原路径排除，bootstrap / CI 用 tool/vendored_binaries.py fetch 取回。
+  // 全量对账在 vendored_binaries_manifest_guard_test.dart，这里钉本目录这一条。
+  test('DLL 由 vendored-binaries 清单钉住、gitignore、与 SHA256SUMS 同哈希', () {
+    final Map<String, dynamic> manifest =
+        jsonDecode(File('../tool/vendored_binaries.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final List<String> sums = File(
+      '$root/bin/SHA256SUMS',
+    ).readAsLinesSync().where((String l) => l.trim().isNotEmpty).toList();
+    final Set<String> ignore = File(
+      '../.gitignore',
+    ).readAsLinesSync().map((String l) => l.trim()).toSet();
+    for (final String line in sums) {
+      final List<String> parts = line.split(RegExp(r'\s+'));
+      final String path = 'third_party/libplacebo-win/bin/${parts.last}';
+      final Map<String, dynamic>? entry = (manifest['files'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .where((Map<String, dynamic> e) => e['path'] == path)
+          .firstOrNull;
+      expect(
+        entry,
+        isNotNull,
+        reason: '$path 必须登记在 tool/vendored_binaries.json',
+      );
+      expect(entry!['sha256'], parts.first.toLowerCase());
+      expect(entry['group'], 'windows');
+      expect(ignore, contains('/$path'), reason: '$path 必须被 .gitignore 精确排除');
+    }
+  });
+
   test('PL_API_VER == DLL 名里的版本 == fork placebo_pass.cc 的 kPlaceboDll', () {
     final String config = File(
       '$root/include/libplacebo/config.h',

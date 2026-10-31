@@ -126,7 +126,9 @@ Write-Host "OK i18n json 合并驱动已注册(merge.fushi-i18n-json)" -Foregrou
 
 # --- bootstrap(pub get + 打补丁) ------------------------------------------
 if ($SkipBootstrap) {
-    Write-Host "`n已跳过 bootstrap。跑 flutter test 前请先: pwsh -File tool/bootstrap.ps1" -ForegroundColor Cyan
+    # 不入库的预编译二进制（tool/vendored_binaries.json）也由 bootstrap 取回；跳过 bootstrap
+    # 时它们缺席，读 libmpv / FFmpegKit / LunaHook 的构建和测试会报文件不存在。
+    Write-Host "`n已跳过 bootstrap。跑 flutter test / build 前请先: pwsh -File tool/bootstrap.ps1（含取回不入库的预编译二进制；只要二进制: pwsh -File tool/vendored_binaries.ps1）" -ForegroundColor Cyan
     return
 }
 

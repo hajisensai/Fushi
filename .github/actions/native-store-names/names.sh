@@ -63,6 +63,21 @@ tree_hash() {
   { printf '%s\n' "$listing"; printf 'identity: %s\n' "$extra"; } | sha256 | cut -c1-64
 }
 
+# vendored_identity <path>... : sha256 over the pinned sha256s of the prebuilt binaries
+# under <path>s. They are gitignored (tool/vendored_binaries.json, fetched by
+# .github/actions/fetch-vendored-binaries), so `git ls-tree` no longer sees them; without
+# this a LunaHook / jogamp bump would keep serving the artifact built from the old bytes.
+vendored_identity() {
+  local py=python3 listing
+  python3 -c '' >/dev/null 2>&1 || py=python
+  listing="$("$py" tool/vendored_binaries.py identity "$@")"
+  if [ -z "$listing" ]; then
+    echo "::error title=native-store-names::tool/vendored_binaries.json has no entry under: $*" >&2
+    exit 1
+  fi
+  printf '%s\n' "$listing" | sha256 | cut -c1-64
+}
+
 TORRENT=(native/fushi_torrent)
 P2P=(native/fushi_p2p)
 # iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv + fushi_music + fushi_corpus in one
@@ -75,12 +90,14 @@ ANKI_SYNC=(native/fushi_anki_sync .github/actions/setup-fushi-anki-sync)
 names=()
 case "$platform" in
   windows)
+    mihon_vendored="$(vendored_identity "${MIHON[@]}")"
+    galgame_vendored="$(vendored_identity "${GALGAME[@]}")"
     names+=(
       "torrent=win-x64-fushi-torrent-dll-v2-$image-$(tree_hash "$toolchain_env" "${TORRENT[@]}")"
       "p2p=win-x64-fushi-p2p-dll-v2-rust$P2P_RUST-$image-$(tree_hash "$toolchain_env rust=$P2P_RUST" "${P2P[@]}")"
       # Mihon runtime: JDK and server commit are pinned inside tool/mihon; no image input.
-      "mihon=win-x64-mihon-runtime-v2-$(tree_hash "" "${MIHON[@]}")"
-      "galgame=win-galgame-helper-dist-v2-$image-$(tree_hash "$toolchain_env" "${GALGAME[@]}")"
+      "mihon=win-x64-mihon-runtime-v2-$(tree_hash "vendored=$mihon_vendored" "${MIHON[@]}")"
+      "galgame=win-galgame-helper-dist-v2-$image-$(tree_hash "$toolchain_env vendored=$galgame_vendored" "${GALGAME[@]}")"
       "anki_sync_release=win-x64-fushi-anki-sync-release-v2-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
       "anki_sync_debug=win-x64-fushi-anki-sync-debug-v2-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
     )
