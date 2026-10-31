@@ -281,16 +281,13 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
     required ValueChanged<String> onChanged,
   }) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-    child: TextFormField(
+    child: FushiTextField(
       key: key,
       initialValue: initial,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        errorText: error,
-        border: const OutlineInputBorder(),
-        isDense: true,
-      ),
+      labelText: label,
+      hintText: hint,
+      errorText: error,
+      variant: FushiTextFieldVariant.outlined,
       minLines: 1,
       maxLines: 3,
       onChanged: onChanged,
@@ -393,23 +390,23 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
           child: Row(
             children: <Widget>[
-              IconButton(
+              FushiIconButton(
                 tooltip: t.gal_line_tts_move_up,
-                onPressed: index == 0 ? null : () => _moveRule(index, -1),
-                icon: const Icon(Icons.arrow_upward),
+                enabled: index != 0,
+                onTap: () => _moveRule(index, -1),
+                icon: FushiIcons.arrowUp,
               ),
-              IconButton(
+              FushiIconButton(
                 tooltip: t.gal_line_tts_move_down,
-                onPressed: index == _settings.rules.length - 1
-                    ? null
-                    : () => _moveRule(index, 1),
-                icon: const Icon(Icons.arrow_downward),
+                enabled: index != _settings.rules.length - 1,
+                onTap: () => _moveRule(index, 1),
+                icon: FushiIcons.arrowDown,
               ),
               const Spacer(),
-              IconButton(
+              FushiIconButton(
                 tooltip: t.gal_line_tts_delete,
-                onPressed: () => _removeRule(index),
-                icon: Icon(FushiIcons.delete),
+                onTap: () => _removeRule(index),
+                icon: FushiIcons.delete,
               ),
             ],
           ),
@@ -505,10 +502,10 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
           alignment: AlignmentDirectional.centerEnd,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-            child: IconButton(
+            child: FushiIconButton(
               tooltip: t.gal_line_tts_delete,
-              onPressed: () => _removeFix(index),
-              icon: Icon(FushiIcons.delete),
+              onTap: () => _removeFix(index),
+              icon: FushiIcons.delete,
             ),
           ),
         ),
@@ -547,16 +544,13 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: TextField(
+          child: FushiTextField(
             key: const ValueKey<String>('gal-tts-test-input'),
             controller: _sample,
             minLines: 1,
             maxLines: 4,
-            decoration: InputDecoration(
-              labelText: t.gal_line_tts_test_input,
-              border: const OutlineInputBorder(),
-              isDense: true,
-            ),
+            labelText: t.gal_line_tts_test_input,
+            variant: FushiTextFieldVariant.outlined,
             onChanged: (_) => setState(() {}),
           ),
         ),
