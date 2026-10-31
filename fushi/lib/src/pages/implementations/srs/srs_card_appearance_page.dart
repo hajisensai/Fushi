@@ -746,6 +746,13 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             a.showTranslation,
             (bool v) => a.copyWith(showTranslation: v),
           ),
+          if (a.showTranslation)
+            _switch(
+              'blur-translation',
+              t.srs_card_appearance_blur_translation,
+              a.blurTranslation,
+              (bool v) => a.copyWith(blurTranslation: v),
+            ),
           _switch(
             'show-frequency',
             t.srs_card_appearance_show_frequency,
