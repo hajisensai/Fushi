@@ -388,19 +388,27 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     // 折叠头：标题 + 尾随箭头拼成整头，整头可点、可焦点驱动展开/收起。焦点驱动走
     // 与设置行一致的 _SettingsRowFocusTarget（Enter/手柄 A 触发 Activate），保证纯
     // 手柄/键盘用户也能展开折叠 section；无焦点根时退回平台原生可点组件。
-    final Widget header = Row(
-      children: <Widget>[
-        Expanded(child: label),
-        if (titleTrailing != null)
-          Padding(
-            padding: EdgeInsets.only(
-              right: cupertino
-                  ? 12
-                  : (glassDesign ? 16 : tokens.spacing.rowHorizontal),
+    // 尾随区（摘要 + 箭头）是非 flex 子，量到的是无界宽，摘要会整句铺开、把 `Expanded`
+    // 的标题挤到只剩几个字宽（手机上「功能提供商」折成三行）。给它设半宽上限：摘要
+    // 在自己的 `Flexible` 里省略，标题至少保有一半。摘要不长时上限不起作用。
+    final Widget header = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) => Row(
+        children: <Widget>[
+          Expanded(child: label),
+          if (titleTrailing != null)
+            Padding(
+              padding: EdgeInsets.only(
+                right: cupertino
+                    ? 12
+                    : (glassDesign ? 16 : tokens.spacing.rowHorizontal),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: constraints.maxWidth / 2),
+                child: titleTrailing!,
+              ),
             ),
-            child: titleTrailing!,
-          ),
-      ],
+        ],
+      ),
     );
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     // 玻璃：iOS 单元格口径的实色行（按下 systemFill）。无焦点根时行自己是 Tab
