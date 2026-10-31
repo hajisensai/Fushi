@@ -8,7 +8,7 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class VideoSubtitleRegistry {
   VideoSubtitleRegistry(Iterable<VideoSubtitleProvider> providers)
-      : providers = List<VideoSubtitleProvider>.unmodifiable(providers);
+    : providers = List<VideoSubtitleProvider>.unmodifiable(providers);
 
   final List<VideoSubtitleProvider> providers;
 
@@ -32,22 +32,20 @@ class VideoSubtitleRegistry {
       });
     final List<ProviderBatchResult<VideoSubtitleCandidate>> results =
         await Future.wait(
-      applicable.map(
-        (VideoSubtitleProvider provider) async {
-          try {
-            return await provider.search(request);
-          } on Object catch (error) {
-            return ProviderBatchResult<VideoSubtitleCandidate>.failure(
-              ExternalProviderFailure.fromException(
-                providerId: provider.id,
-                operation: 'search',
-                error: error,
-              ),
-            );
-          }
-        },
-      ),
-    );
+          applicable.map((VideoSubtitleProvider provider) async {
+            try {
+              return await provider.search(request);
+            } on Object catch (error) {
+              return ProviderBatchResult<VideoSubtitleCandidate>.failure(
+                ExternalProviderFailure.fromException(
+                  providerId: provider.id,
+                  operation: 'search',
+                  error: error,
+                ),
+              );
+            }
+          }),
+        );
     final ProviderBatchResult<VideoSubtitleCandidate> merged =
         ProviderBatchResult.merge(results);
     return ProviderBatchResult<VideoSubtitleCandidate>(
@@ -55,6 +53,28 @@ class VideoSubtitleRegistry {
       failures: merged.failures,
       successfulProviderCount: merged.successfulProviderCount,
     );
+  }
+
+  /// 一次搜索**一条候选都没拿到**时，逐来源说明各自怎么了，如
+  /// `jimaku: no match; opensubtitles: provider request timed out`。
+  ///
+  /// 不能只报 `failures.first`：正常应答但零命中的来源不进 failures，于是「Jimaku
+  /// 没搜到这部作品」会被另一家的超时盖住，用户看到「超时」去查网络，真正该查的
+  /// 身份问题无人知晓（BUG-3892）。
+  String describeEmptySearch(
+    ProviderBatchResult<VideoSubtitleCandidate> result,
+  ) {
+    final Map<String, String> failed = <String, String>{};
+    for (final ExternalProviderFailure failure in result.failures) {
+      failed.putIfAbsent(failure.providerId, () => failure.message);
+    }
+    return <String>[
+      for (final VideoSubtitleProvider provider in providers)
+        '${provider.id}: ${failed.remove(provider.id) ?? 'no match'}',
+      // 不属于任何已登记来源的失败（理论上没有）也要说出来，不吞。
+      for (final MapEntry<String, String> rest in failed.entries)
+        '${rest.key}: ${rest.value}',
+    ].join('; ');
   }
 
   /// 这条候选的来源 provider 是否允许为「正文语言探测」白下载一次。
@@ -72,9 +92,7 @@ class VideoSubtitleRegistry {
     return false;
   }
 
-  Future<VideoSubtitleDownload> download(
-    VideoSubtitleCandidate candidate,
-  ) {
+  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) {
     VideoSubtitleProvider? provider;
     for (final VideoSubtitleProvider value in providers) {
       if (value.id == candidate.providerId) {

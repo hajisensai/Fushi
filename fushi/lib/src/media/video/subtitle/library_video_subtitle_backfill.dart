@@ -12,6 +12,10 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
+    show VideoMediaReference;
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
+    show downloadConfirmedReferenceForVideoPath, mergeDownloadConfirmedIdentity;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -149,6 +153,18 @@ libraryVideoSubtitleTarget(
   }
   final int? season = episode == null ? null : (parsed.season ?? 1);
   final String? series = collection?.name.trim().toLowerCase();
+  final VideoMediaReference scraped = identityMediaReference(
+    providerId: primary.provider,
+    kind: work.mediaType == 'movie'
+        ? VideoMetadataMediaKind.movie
+        : VideoMetadataMediaKind.tv,
+    externalIds: libraryWorkExternalIds(identities),
+    title: work.title,
+    originalTitle: work.originalTitle,
+    year: work.year,
+    season: season,
+    episode: episode,
+  );
   return (
     target: SubtitleBackfillTarget(
       bookUid: book.bookUid,
@@ -157,17 +173,10 @@ libraryVideoSubtitleTarget(
         book.subtitleSource,
         embeddedSelectionBlocks: embeddedSelectionBlocks,
       ),
-      media: identityMediaReference(
-        providerId: primary.provider,
-        kind: work.mediaType == 'movie'
-            ? VideoMetadataMediaKind.movie
-            : VideoMetadataMediaKind.tv,
-        externalIds: libraryWorkExternalIds(identities),
-        title: work.title,
-        originalTitle: work.originalTitle,
-        year: work.year,
-        season: season,
-        episode: episode,
+      media: await withDownloadConfirmedIdentity(
+        database,
+        videoPath: book.videoPath,
+        media: scraped,
       ),
       scrapedRuntimeMinutes: work.runtimeMinutes,
       contentLanguage: book.language,
@@ -178,6 +187,23 @@ libraryVideoSubtitleTarget(
     ),
     reason: null,
   );
+}
+
+/// 补字幕身份 = 库内刮削身份 + 产出这个文件的下载任务确认过的身份（只补缺）。
+///
+/// 刮削后自动补、下载后缺字幕重试、控制通道补字幕都经这里，三条路对同一个文件
+/// 搜的是同一份身份：刮削主源是 TMDB 时库内身份不带 AniList，Jimaku 就找不到
+/// 条目（BUG-3892）。规则见 [mergeDownloadConfirmedIdentity]。
+Future<VideoMediaReference> withDownloadConfirmedIdentity(
+  FushiDatabase database, {
+  required String videoPath,
+  required VideoMediaReference media,
+}) async {
+  final VideoMediaReference? confirmed =
+      await downloadConfirmedReferenceForVideoPath(database, videoPath);
+  return confirmed == null
+      ? media
+      : mergeDownloadConfirmedIdentity(media, confirmed);
 }
 
 /// 库里存的主字幕源是否算「已有字幕」、挡住补字幕。null / 空不挡；`off:`（用户
