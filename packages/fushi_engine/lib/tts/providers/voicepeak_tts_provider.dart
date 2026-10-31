@@ -351,21 +351,115 @@ class VoicepeakTtsProvider extends TtsProvider {
       } on FileSystemException {
         // 删不掉就让 CLI 覆盖；下面按产物长度判成败。
       }
-      await _run(
+      final _VoicepeakRun run = await _run(
         synthesisArguments(trimmed, outputPath),
         cancel: cancel,
         timeout: synthesisTimeout,
       );
       final int length = out.existsSync() ? out.lengthSync() : 0;
-      if (length == 0) {
-        throw const TtsFailure.withRetry(
-          TtsFailureCode.badResponse,
-          detail: 'no output',
-          transient: true,
-        );
+      if (run.exitCode != 0 || length == 0) {
+        throw await _synthesisFailure(run, cancel);
       }
     });
     return const TtsResult(format: TtsAudioFormat.wav);
+  }
+
+  /// 合成失败（非零退出 / 没出文件）的归类。仍持有 CLI 锁，诊断命令不会与别的调用并发。
+  ///
+  /// 永久错误不靠猜 CLI 的报错文案，而是问 CLI 自己装了什么：
+  ///  - `--list-narrator` 正常退出却一个旁白都没有 → [TtsFailureCode.notConfigured]
+  ///    （没装旁白 / 授权没激活，重试同一句不会好）；
+  ///  - 配置的旁白不在列表里 → [TtsFailureCode.rejected]（旁白名错 / 已卸载）；
+  ///  - 配置的情感名不在该旁白的 `--list-emotion` 里 → rejected。
+  /// 以上都对得上才算临时失败（CLI 偶发起不来），交给重试层。诊断本身起不来 / 超时也按
+  /// 临时失败报原始原因。detail 一律带上退出码与 stderr 尾巴。
+  Future<TtsFailure> _synthesisFailure(
+    _VoicepeakRun run,
+    TtsCancelToken cancel,
+  ) async {
+    final String detail = voicepeakFailureDetail(
+      run.exitCode != 0 ? 'exit ${run.exitCode}' : 'no output',
+      run.stderr,
+    );
+    _log?.call('VOICEPEAK synthesis failed: $detail');
+    final TtsFailure transient = TtsFailure.withRetry(
+      TtsFailureCode.badResponse,
+      detail: detail,
+      transient: true,
+    );
+    final _VoicepeakRun narrators;
+    try {
+      narrators = await _run(
+        const <String>['--list-narrator'],
+        cancel: cancel,
+        timeout: listTimeout,
+      );
+    } on TtsFailure catch (e) {
+      if (e.code == TtsFailureCode.cancelled) rethrow;
+      return transient;
+    }
+    if (narrators.exitCode != 0) return transient;
+    final List<String> installed = parseVoicepeakList(narrators.stdout);
+    if (installed.isEmpty) {
+      return TtsFailure(
+        TtsFailureCode.notConfigured,
+        'no narrators available (not installed or license inactive); $detail',
+      );
+    }
+    if (!installed.contains(narrator)) {
+      return TtsFailure(
+        TtsFailureCode.rejected,
+        'narrator "$narrator" is not installed; $detail',
+      );
+    }
+    if (emotion.isEmpty) return transient;
+    final _VoicepeakRun emotions;
+    try {
+      emotions = await _run(
+        <String>['--list-emotion', narrator],
+        cancel: cancel,
+        timeout: listTimeout,
+      );
+    } on TtsFailure catch (e) {
+      if (e.code == TtsFailureCode.cancelled) rethrow;
+      return transient;
+    }
+    final List<String> known = parseVoicepeakList(emotions.stdout);
+    if (emotions.exitCode != 0 || known.isEmpty) return transient;
+    final List<String> unknown = <String>[
+      for (final String part in emotion.split(','))
+        if (part.contains('=') && !known.contains(part.split('=').first.trim()))
+          part.split('=').first.trim(),
+    ];
+    if (unknown.isNotEmpty) {
+      return TtsFailure(
+        TtsFailureCode.rejected,
+        'emotion ${unknown.join(',')} not available for "$narrator"; $detail',
+      );
+    }
+    return transient;
+  }
+
+  /// 列表命令：非零退出带上 stderr 报（交给调用方，列表不走合成重试层）。
+  Future<String> _list(List<String> arguments, TtsCancelToken? cancel) async {
+    final _VoicepeakRun run = await _run(
+      arguments,
+      cancel: cancel,
+      timeout: listTimeout,
+    );
+    if (run.exitCode != 0) {
+      final String detail = voicepeakFailureDetail(
+        'exit ${run.exitCode}',
+        run.stderr,
+      );
+      _log?.call('VOICEPEAK ${arguments.first} failed: $detail');
+      throw TtsFailure.withRetry(
+        TtsFailureCode.badResponse,
+        detail: detail,
+        transient: true,
+      );
+    }
+    return run.stdout;
   }
 
   @override
@@ -375,11 +469,7 @@ class VoicepeakTtsProvider extends TtsProvider {
     }
     final String output = await _serialized(
       cancel,
-      () => _run(
-        const <String>['--list-narrator'],
-        cancel: cancel,
-        timeout: listTimeout,
-      ),
+      () => _list(const <String>['--list-narrator'], cancel),
     );
     return <TtsVoice>[
       for (final String name in parseVoicepeakList(output))
@@ -397,11 +487,7 @@ class VoicepeakTtsProvider extends TtsProvider {
     }
     final String output = await _serialized(
       cancel,
-      () => _run(
-        <String>['--list-emotion', narrator.trim()],
-        cancel: cancel,
-        timeout: listTimeout,
-      ),
+      () => _list(<String>['--list-emotion', narrator.trim()], cancel),
     );
     return parseVoicepeakList(output);
   }
@@ -442,10 +528,9 @@ class VoicepeakTtsProvider extends TtsProvider {
     }
   }
 
-  /// 跑一次 CLI，返回 stdout。失败映射：起不来 → notConfigured；取消 → cancelled
-  /// （杀进程）；超时 → timeout（杀进程）；非零退出 → badResponse（CLI 偶发启动失败，
-  /// 按临时失败交给重试层）。
-  Future<String> _run(
+  /// 跑一次 CLI，返回退出码、stdout 与 stderr（非零退出由调用方归类）。抛出的只有：
+  /// 起不来 → notConfigured；取消 → cancelled（杀进程）；超时 → timeout（杀进程）。
+  Future<_VoicepeakRun> _run(
     List<String> arguments, {
     required TtsCancelToken? cancel,
     required Duration timeout,
@@ -501,20 +586,32 @@ class VoicepeakTtsProvider extends TtsProvider {
         outDone,
         errDone,
       ]).timeout(const Duration(seconds: 5), onTimeout: () => <void>[]);
-      if (code != 0) {
-        _log?.call('VOICEPEAK exited with $code');
-        throw TtsFailure.withRetry(
-          TtsFailureCode.badResponse,
-          detail: 'exit $code',
-          transient: true,
-        );
-      }
-      return stdout.toString();
+      if (code != 0) _log?.call('VOICEPEAK exited with $code');
+      return (
+        exitCode: code,
+        stdout: stdout.toString(),
+        stderr: stderr.toString(),
+      );
     } finally {
       timer.cancel();
       unregister?.call();
     }
   }
+}
+
+/// 一次 CLI 运行的结果。
+typedef _VoicepeakRun = ({int exitCode, String stdout, String stderr});
+
+/// 失败诊断：`<原因>: <stderr 末尾，空白压成单空格，最多 300 字>`（stderr 为空只给原因）。
+/// 本机 CLI 的输出，不含密钥；截尾是因为它会进日志与错误提示。
+String voicepeakFailureDetail(String reason, String stderr) {
+  final String flat = stderr.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (flat.isEmpty) return reason;
+  const int max = 300;
+  final String tail = flat.length > max
+      ? '…${flat.substring(flat.length - max)}'
+      : flat;
+  return '$reason: $tail';
 }
 
 /// `--list-narrator` / `--list-emotion` 的输出：一行一个名字（去空白、去空行）。
