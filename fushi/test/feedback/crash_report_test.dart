@@ -2,6 +2,7 @@
 // 合并窗口、「以后自动发送」开关（默认关、落盘）、提交载荷带日志且重试复用幂等键、
 // 启动即闪退的提前提交并入反馈中心、启动前提示的放行。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -329,33 +330,131 @@ void main() {
       expect(keys.first, keys.last);
       expect(again.pendingCount, 0);
     });
+
+    test('两次尝试之间新来的闪退：不顶着旧键重发、不被清掉，进下一份报告（新键）', () async {
+      int now = 1000000;
+      final List<http.Request> requests = <http.Request>[];
+      bool fail = true;
+      final FeedbackService service = _service(dir, requests, (
+        http.Request q,
+      ) async {
+        if (fail && q.url.path == '/v1/feedback') {
+          return _json(<String, dynamic>{'error': 'internal'}, 500);
+        }
+        return null;
+      });
+      const int crashA = 5000;
+      const int crashB = 7200000;
+      String at(int ms) =>
+          DateTime.fromMillisecondsSinceEpoch(ms).toIso8601String();
+      final CrashReporter r = CrashReporter(nowMs: () => now)
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict(atMs: crashA));
+      await expectLater(r.submit(service, _draft), throwsA(anything));
+
+      // 「下次启动」：又闪退了一次 B，然后重试上一份。
+      fail = false;
+      final CrashReporter again = CrashReporter(nowMs: () => now)
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict(atMs: crashB));
+      expect(again.pendingCount, 2);
+      expect(
+        again.currentOffer()!.occurrences.single.atMs,
+        crashA,
+        reason: '先重发没交上去的那批（只含 A）',
+      );
+      await again.submit(service, _draft);
+
+      List<Map<String, dynamic>> bodies() => <Map<String, dynamic>>[
+        for (final http.Request q in requests)
+          if (q.url.path == '/v1/feedback')
+            jsonDecode(q.body) as Map<String, dynamic>,
+      ];
+      expect(bodies(), hasLength(2));
+      expect(bodies()[1]['submissionKey'], bodies()[0]['submissionKey']);
+      expect(bodies()[1]['body'], contains(at(crashA)));
+      expect(bodies()[1]['body'], isNot(contains(at(crashB))));
+      // B 没跟着 A 的回执被清掉，落盘也还在。
+      expect(again.pendingCount, 1);
+      expect((CrashReporter()..attach(dir, enabled: true)).pendingCount, 1);
+
+      // 合并窗口过后：B 单独成一份，新幂等键。
+      now += kCrashReportMergeWindow.inMilliseconds;
+      expect(again.currentOffer()!.occurrences.single.atMs, crashB);
+      await again.submit(service, _draft);
+      expect(bodies(), hasLength(3));
+      expect(bodies()[2]['submissionKey'], isNot(bodies()[0]['submissionKey']));
+      expect(bodies()[2]['body'], contains(at(crashB)));
+      expect(bodies()[2]['body'], isNot(contains(at(crashA))));
+      expect(again.pendingCount, 0);
+    });
+
+    test('旧格式状态（顶层幂等键）：当时的待报整批按那个键重发', () {
+      final File f = File('${dir.path}/$kCrashReportStateFileName');
+      f.writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'autoSend': false,
+          'pending': <Object?>[
+            CrashOccurrence.fromVerdict(_verdict(atMs: 11)).toJson(),
+          ],
+          'droppedCount': 2,
+          'submissionKey': 'legacy-key',
+          'lastSubmittedAt': 0,
+        }),
+      );
+      final CrashReportState state = CrashReportStore(f).read();
+      expect(state.inFlight?.submissionKey, 'legacy-key');
+      expect(state.inFlight?.offer.totalCount, 3);
+      expect(state.pending, isEmpty);
+    });
   });
 
   group('启动即闪退', () {
-    test('自动发送：初始化前提交到 spool，首页出来后并入反馈中心（含没传上去的日志）', () async {
+    test('自动发送：不等网络就放行初始化；后台提交到 spool，首页出来后并入反馈中心'
+        '（含没传上去的日志）', () async {
       final List<http.Request> requests = <http.Request>[];
       final CrashReporter r = CrashReporter()
         ..attach(dir, enabled: true)
         ..setAutoSend(true)
         ..recordVerdict(_verdict(duringStartup: true));
+      // 弱网：正文请求一直不回，直到测试放行。
+      final Completer<void> network = Completer<void>();
       final FeedbackService spool = _service(r.spoolDir!, requests, (
         http.Request q,
       ) async {
+        if (q.url.path == '/v1/feedback') await network.future;
         if (q.url.path.endsWith('/log')) {
           return _json(<String, dynamic>{'error': 'internal'}, 503);
         }
         return null;
       });
-      await runCrashReportStartupGate(r, spoolService: spool);
+      await runCrashReportStartupGate(
+        r,
+        spoolService: spool,
+        markAwaitingDecision: (_) => fail('自动发送不进入等用户选择'),
+      );
+      // 闸门已返回（初始化放行），而正文请求还卡在网络上。
+      expect(network.isCompleted, isFalse);
       expect(crashReportStartupPrompt.value, isNull, reason: '自动发送不弹提示');
-      expect(r.pendingCount, 0);
       expect(r.handledThisSession, isTrue);
+      expect(r.pendingCount, 1, reason: '还没交上去：这批留在状态文件里');
+      expect(
+        (CrashReporter()..attach(dir, enabled: true)).pendingCount,
+        1,
+        reason: '本机落盘先于网络：此刻进程没了下次启动照样重发',
+      );
 
       final Directory dataRoot = Directory('${dir.path}/data')..createSync();
       final FeedbackService main = _service(dataRoot, requests, (_) async {
         return null;
       });
-      await r.adoptSpool(main);
+      // 首页出来后并入 spool：先等后台提交跑完，不会把还在写的 spool 并走。
+      final Future<void> adopted = r.adoptSpool(main);
+      await Future<void>.delayed(Duration.zero);
+      expect(main.byId('abcdefghij'), isNull);
+      network.complete();
+      await adopted;
+      expect(r.pendingCount, 0);
       expect(main.byId('abcdefghij'), isNotNull);
       expect(main.pendingSlots('abcdefghij'), <String>{'log'});
       expect(r.spoolDir!.existsSync(), isFalse);
@@ -386,6 +485,82 @@ void main() {
       expect(released, isTrue);
       expect(crashReportStartupPrompt.value, isNull);
       expect(r.pendingCount, 0);
+    });
+
+    test('停在启动前提示上被关掉 / 杀掉：下次启动按用户结束，不算又一次启动即闪退', () async {
+      // 本次会话标记接到 PreviousExitLog（真实装配：闸门默认就写它）。
+      await PreviousExitLog.collect(
+        appDir: dir,
+        version: '1.2.4',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+        nowMs: 1000,
+      );
+      final File markerFile = File(
+        '${dir.path}${Platform.pathSeparator}session_marker.json',
+      );
+      bool awaitingOnDisk() =>
+          (jsonDecode(markerFile.readAsStringSync())
+              as Map<String, dynamic>)['awaitingCrashReportDecision'] ==
+          true;
+
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict(duringStartup: true));
+      final Future<void> gate = runCrashReportStartupGate(
+        r,
+        spoolService: _service(r.spoolDir!, <http.Request>[], (_) async {
+          return null;
+        }),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(crashReportStartupPrompt.value, isNotNull);
+      expect(awaitingOnDisk(), isTrue, reason: '提示出现时已落盘');
+
+      // 此刻进程被杀：下次启动读到的就是这份标记。
+      final PreviousSession killed = PreviousSession.tryParse(
+        markerFile.readAsStringSync(),
+      )!;
+      expect(killed.clean, isFalse);
+      expect(killed.initialised, isFalse);
+      final ExitReportEntry entry = describeUncleanPreviousSession(killed)!;
+      final PreviousExitVerdict v = classifyPreviousExit(
+        <ExitReportEntry>[entry],
+        version: '1.2.4',
+        nowMs: 9000,
+      )!;
+      expect(v.kind, PreviousExitKind.userStopped);
+      expect(v.worthReporting, isFalse);
+      expect(entry.severe, isFalse);
+      // 平台另有崩溃证据时照常按崩溃算。
+      expect(
+        classifyPreviousExit(
+          <ExitReportEntry>[
+            entry,
+            const ExitReportEntry(
+              kWindowsCrashSummarySource,
+              'exception=0xC0000005',
+              severe: true,
+              kind: PreviousExitKind.nativeCrash,
+            ),
+          ],
+          version: '1.2.4',
+          nowMs: 9000,
+        )!.worthReporting,
+        isTrue,
+      );
+
+      // 用户选完：标记清掉，之后初始化里再没了照常算启动即闪退。
+      crashReportStartupPrompt.value!.finish();
+      await gate;
+      expect(awaitingOnDisk(), isFalse);
+      final ExitReportEntry later = describeUncleanPreviousSession(
+        PreviousSession.tryParse(markerFile.readAsStringSync()),
+      )!;
+      expect(later.kind, PreviousExitKind.unexpected);
+      expect(later.duringStartup, isTrue);
     });
 
     test('不是启动即闪退：不拦初始化（交给首页出来后的提示）', () async {
