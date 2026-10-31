@@ -51,6 +51,11 @@
 |---|:--:|:--:|---|
 | [BUG-3916](bugs/BUG-3916-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
 | [BUG-3915](bugs/BUG-3915-subtitle-search-sheet-header-scrolls-away.md) | ✅ | ✅ | subtitle-search-sheet-header-scrolls-away |
+> 共 3519 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3915](bugs/BUG-3915-continue-card-volume-number.md) | ✅ | ✅ | continue-card-volume-number |
 | [BUG-3914](bugs/BUG-3914-ort-webgpu-provider-probe.md) | ✅ | ✅ | ort-webgpu-provider-probe |
 | [BUG-3913](bugs/BUG-3913-webview-resize-vram-leak.md) | ✅ | ✅ | webview-resize-vram-leak |
 | [BUG-3912](bugs/BUG-3912-audio-source-refused-reported-as-dns.md) | ✅ | ✅ | 音频源「连接被拒」被报成「无法解析 host」 |
