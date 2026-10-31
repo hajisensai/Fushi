@@ -14,8 +14,6 @@ DioError _dio(Object inner) => DioError(
 );
 
 void main() {
-  setUp(() => LocaleSettings.setLocale(AppLocale.en));
-
   test('Connection refused (Android errno 111) is not reported as DNS', () {
     final String text = WordAudioResolver.describeAudioSourceFetchError(
       _dio(
