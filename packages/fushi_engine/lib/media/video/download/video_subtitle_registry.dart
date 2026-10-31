@@ -57,6 +57,28 @@ class VideoSubtitleRegistry {
     );
   }
 
+  /// 一次搜索**一条候选都没拿到**时，逐来源说明各自怎么了，如
+  /// `jimaku: no match; opensubtitles: provider request timed out`。
+  ///
+  /// 不能只报 `failures.first`：正常应答但零命中的来源不进 failures，于是「Jimaku
+  /// 没搜到这部作品」会被另一家的超时盖住，用户看到「超时」去查网络，真正该查的
+  /// 身份问题无人知晓（BUG-3926）。
+  String describeEmptySearch(
+    ProviderBatchResult<VideoSubtitleCandidate> result,
+  ) {
+    final Map<String, String> failed = <String, String>{};
+    for (final ExternalProviderFailure failure in result.failures) {
+      failed.putIfAbsent(failure.providerId, () => failure.message);
+    }
+    return <String>[
+      for (final VideoSubtitleProvider provider in providers)
+        '${provider.id}: ${failed.remove(provider.id) ?? 'no match'}',
+      // 不属于任何已登记来源的失败（理论上没有）也要说出来，不吞。
+      for (final MapEntry<String, String> rest in failed.entries)
+        '${rest.key}: ${rest.value}',
+    ].join('; ');
+  }
+
   /// 这条候选的来源 provider 是否允许为「正文语言探测」白下载一次。
   ///
   /// 判据必须落在 **provider 有没有下载配额** 上（见
