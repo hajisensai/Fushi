@@ -837,15 +837,20 @@ function searchTerm(q) {
 
 /**
  * 开发者回复 / 改状态的写库语句，每条带自己的参数。devUpdate 与 scripts/feedback.mjs reply 执行同一份 SQL。
- * @param {{id: string, devId: string, reply: string, timelineStatus: string | null, status: string, now: number}} p
- *   reply 可为空串（只改状态）；timelineStatus = 时间线里记的新状态（没改状态为 null）；status = 改后的状态。
+ * @param {{id: string, devId: string, reply: string, timelineStatus: string | null, status: string | null, now: number}} p
+ *   reply 可为空串（只改状态）；timelineStatus = 时间线里记的新状态（没改状态为 null）；status = 改后的状态，
+ *   null = 不改状态（UPDATE 不写 status 列，不会撤回并发的改状态）。
  * @returns {Array<[string, Array<string | number | null>]>}
  */
 export function devReplyStatements({ id, devId, reply, timelineStatus, status, now }) {
   return [
     [`INSERT INTO feedback_messages (feedback_id, author, account_id, body, status, created_at)
       VALUES (?1, 'dev', ?2, ?3, ?4, ?5)`, [id, devId, reply, timelineStatus, now]],
-    ['UPDATE feedback SET status = ?2, dev_reply_at = ?3, updated_at = ?3 WHERE id = ?1', [id, status, now]],
+    // status === null：只回复、不改状态。UPDATE 不碰 status 列——把早先读到的状态原样写回
+    // 会在「读」与「写」之间别人结案时把它静默撤回（CLI 回复与处理台纯回复都踩过）。
+    status === null
+      ? ['UPDATE feedback SET dev_reply_at = ?2, updated_at = ?2 WHERE id = ?1', [id, now]]
+      : ['UPDATE feedback SET status = ?2, dev_reply_at = ?3, updated_at = ?3 WHERE id = ?1', [id, status, now]],
   ];
 }
 
@@ -867,7 +872,7 @@ export async function devUpdate(env, dev, row, body, now, ctx = null) {
   const changed = status !== null && status !== row.status;
   if (!changed && !reply) throw new HttpError(400, 'nothing_to_update');
   const statements = devReplyStatements({
-    id: row.id, devId: dev.id, reply, timelineStatus: changed ? status : null, status: changed ? status : row.status, now,
+    id: row.id, devId: dev.id, reply, timelineStatus: changed ? status : null, status: changed ? status : null, now,
   });
   await env.DB.batch(statements.map(([sql, args]) => env.DB.prepare(sql).bind(...args)));
   const after = changed ? status : row.status;

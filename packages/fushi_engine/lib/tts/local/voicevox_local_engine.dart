@@ -1147,9 +1147,13 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
       await _save(settings.copyWith(installedAccel: pkg.accel));
     } else if (previousDir != root && previous.installedAccel != null) {
       // 换到新位置没装成（下载 / 解压失败或取消），旧位置那份能用的引擎还在：
-      // 记录回到旧安装，不让它变成「删除」也找不到的孤儿。新位置下到一半的
-      // 分卷留在原处（`downloads/*.part`），再选同一位置安装时接着续传。
+      // 记录回到旧安装，不让它变成「删除」也找不到的孤儿。
       await _save(previous);
+      // 记录一回退，新位置的专属子目录（下到一半的分卷，可能几个 GB）就没有任何
+      // 记录指向它了，「删除」永远找不到——当场把它清掉。安装器此时已退出（下载
+      // client 已关、解压子进程已回收），不会和它抢文件。删不掉抛
+      // [LocalInstallRemoveException]（带路径），由界面提示用户手动清理。
+      await deleteLocalInstallDir(root);
     } else {
       _layoutCache = null;
       notifyListeners();
