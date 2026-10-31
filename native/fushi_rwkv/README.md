@@ -42,7 +42,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 | 符号 | 作用 |
 |---|---|
-| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 4）；Dart 侧不一致即判不可用 |
+| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 5）；Dart 侧不一致即判不可用 |
 | `size_t frwkv_review_struct_size(void)` | `sizeof(FrwkvReview)`（80），核对结构体布局 |
 | `FrwkvModel* frwkv_model_load(const uint8_t* bytes, size_t len)` | 从内存里的权重文件建模型，按内容识别大 / 小模型（`ARWKVWEIGHTS1` f32 两者皆可，`ARWKVWEIGHTS8PC1` int8 逐行仅小模型）；失败 NULL |
 | `int32_t frwkv_model_kind(const FrwkvModel*)` | 1 = 大模型，2 = 小模型；空指针 `-1` |

@@ -818,7 +818,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
       }
       final bool restored = await _serial(() async {
         try {
-          await backend.restore(await c.snap.readAsBytes());
+          await backend.restoreFromFile(c.snap.path);
         } catch (error) {
           // 检查点坏了（截断 / 写坏 / 属于别的模型或精度）：与主快照（[_restoreSnapshot]）同一处置——不用它，
           // 删掉、试下一份，都不行就全量重建。backend 里半恢复的状态由下一份检查点的 restore 或重建的 reset
