@@ -1633,6 +1633,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'ai/Let paired devices use the AI assistant':
       'test/sync/app_agent_assistant_host_test.dart + '
       'test/settings/ai_agent_peer_access_setting_test.dart',
+  // 外部 AI 访问（MCP）：生效点是 MCP 服务端连上来时的令牌 / 开关门（harness 里没有
+  // MCP 客户端）。专项测试咬住默认关、AI 写不进去、令牌只在设置页生成、设备本地；
+  // 工具宿主测试咬住关着时拒绝调用。
+  'ai/External AI access (MCP)':
+      'test/settings/ai_mcp_access_setting_test.dart + '
+      'test/ai/mcp/ai_mcp_tool_host_test.dart',
   // 联网资料内置站开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
   // 站点集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
   // 测试咬住「只请求传入的站点」。
