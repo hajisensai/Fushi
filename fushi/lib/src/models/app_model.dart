@@ -333,7 +333,8 @@ import 'package:fushi/src/media/music/music_library_scanner.dart'
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
-import 'package:fushi_music/fushi_music.dart' show InstalledMusicPlugin, MusicPluginManager;
+import 'package:fushi_music/fushi_music.dart'
+    show InstalledMusicPlugin, MusicPluginManager;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
