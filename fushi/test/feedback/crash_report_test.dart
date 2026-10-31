@@ -425,8 +425,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey<String>('crash-report-retry')), findsOne);
     await tester.tap(find.byKey(const ValueKey<String>('crash-report-retry')));
-    await tester.pumpAndSettle();
+    // 发送成功后卡片停在「正在发送」（转圈不停），由外层收起：不能 pumpAndSettle。
+    await tester.pump(); // 切到「正在发送」，切换动画从这一帧开始
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(); // 切换动画走完后移除旧子树的那一帧
     expect(sends, <bool>[true, true]);
+    expect(
+      find.byKey(const ValueKey<String>('crash-report-sending')),
+      findsOne,
+    );
     expect(
       find.byKey(const ValueKey<String>('crash-report-skip')),
       findsNothing,
