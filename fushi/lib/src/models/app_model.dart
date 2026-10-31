@@ -230,6 +230,8 @@ import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
+    show DownloadConfirmedIdentityResolver;
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -884,6 +886,7 @@ class AppModel with ChangeNotifier {
           database: database,
           service: _videoSubtitleBackfillService,
           videoId: videoId,
+          confirmedIdentities: DownloadConfirmedIdentityResolver(database),
           language: language,
           seriesLanguage: _seriesSubtitleLanguage,
         ),
@@ -6430,6 +6433,9 @@ class AppModel with ChangeNotifier {
     final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
     if (service == null || service.registry.providers.isEmpty) return;
     _downloadSubtitleRetryRunning = true;
+    // 一轮共用一个解析器（惰性：没有到期行就不扫）。
+    final DownloadConfirmedIdentityResolver confirmedIdentities =
+        DownloadConfirmedIdentityResolver(database);
     try {
       final DownloadSubtitleRetryReport report =
           await retryUnavailableDownloadSubtitles(
@@ -6439,6 +6445,7 @@ class AppModel with ChangeNotifier {
               database: database,
               service: service,
               videoId: videoId,
+              confirmedIdentities: confirmedIdentities,
               seriesLanguage: _seriesSubtitleLanguage,
               embeddedSelectionBlocks: false,
             ),
@@ -7351,7 +7358,18 @@ class AppModel with ChangeNotifier {
               notice.work.collection!.name.trim().toLowerCase(),
             ),
     );
-    for (final SubtitleBackfillTarget target in targets) {
+    // 整季共用一个解析器：下载文件行只扫一次，不是逐集全表扫描。
+    final DownloadConfirmedIdentityResolver confirmedIdentities =
+        DownloadConfirmedIdentityResolver(database);
+    for (final SubtitleBackfillTarget scraped in targets) {
+      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3926）。
+      final SubtitleBackfillTarget target = scraped.withMedia(
+        await withDownloadConfirmedIdentity(
+          confirmedIdentities,
+          videoPath: scraped.videoPath,
+          media: scraped.media,
+        ),
+      );
       final SubtitleBackfillResult result = await service.backfill(target);
       if (result.installed) {
         debugPrint(

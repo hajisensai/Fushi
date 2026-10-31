@@ -12,6 +12,10 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
+    show VideoMediaReference;
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
+    show DownloadConfirmedIdentityResolver, mergeDownloadConfirmedIdentity;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -31,11 +35,12 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
 /// `unavailable`。[language] 是这次显式要的字幕语言（硬过滤），null 时用
 /// [seriesLanguage] 查到的每系列记忆，再没有就按服务的全局链。
 ///
-/// [embeddedSelectionBlocks] 见 [libraryVideoSubtitleTarget]。
+/// [embeddedSelectionBlocks] 与 [confirmedIdentities] 见 [libraryVideoSubtitleTarget]。
 Future<VideoSubtitleBackfillReport?> backfillLibraryVideoSubtitle({
   required FushiDatabase database,
   required VideoSubtitleBackfillService? service,
   required String videoId,
+  required DownloadConfirmedIdentityResolver confirmedIdentities,
   String? language,
   String? Function(String seriesKey)? seriesLanguage,
   bool embeddedSelectionBlocks = true,
@@ -52,6 +57,7 @@ Future<VideoSubtitleBackfillReport?> backfillLibraryVideoSubtitle({
       await libraryVideoSubtitleTarget(
         database,
         book,
+        confirmedIdentities: confirmedIdentities,
         explicitLanguage: language,
         seriesLanguage: seriesLanguage,
         embeddedSelectionBlocks: embeddedSelectionBlocks,
@@ -79,10 +85,14 @@ Future<VideoSubtitleBackfillReport?> backfillLibraryVideoSubtitle({
 /// 「已有字幕」：下载后缺字幕重试用它——那一集本该由下载流水线装上 sidecar，内嵌轨
 /// 只是没有 sidecar 时的退路（实测 Crunchyroll 片源的第 0 条内嵌轨是英文）。
 /// `off:` 与外挂文件路径无论如何都挡住。
+///
+/// [confirmedIdentities] 补下载确认身份（见 [withDownloadConfirmedIdentity]）：一批
+/// 目标（一轮下载后重试）共用调用方建的同一个实例，单个视频的入口新建一个。
 Future<({SubtitleBackfillTarget? target, String? reason})>
 libraryVideoSubtitleTarget(
   FushiDatabase database,
   VideoBookRow book, {
+  required DownloadConfirmedIdentityResolver confirmedIdentities,
   String? explicitLanguage,
   String? Function(String seriesKey)? seriesLanguage,
   bool embeddedSelectionBlocks = true,
@@ -149,6 +159,18 @@ libraryVideoSubtitleTarget(
   }
   final int? season = episode == null ? null : (parsed.season ?? 1);
   final String? series = collection?.name.trim().toLowerCase();
+  final VideoMediaReference scraped = identityMediaReference(
+    providerId: primary.provider,
+    kind: work.mediaType == 'movie'
+        ? VideoMetadataMediaKind.movie
+        : VideoMetadataMediaKind.tv,
+    externalIds: libraryWorkExternalIds(identities),
+    title: work.title,
+    originalTitle: work.originalTitle,
+    year: work.year,
+    season: season,
+    episode: episode,
+  );
   return (
     target: SubtitleBackfillTarget(
       bookUid: book.bookUid,
@@ -157,17 +179,10 @@ libraryVideoSubtitleTarget(
         book.subtitleSource,
         embeddedSelectionBlocks: embeddedSelectionBlocks,
       ),
-      media: identityMediaReference(
-        providerId: primary.provider,
-        kind: work.mediaType == 'movie'
-            ? VideoMetadataMediaKind.movie
-            : VideoMetadataMediaKind.tv,
-        externalIds: libraryWorkExternalIds(identities),
-        title: work.title,
-        originalTitle: work.originalTitle,
-        year: work.year,
-        season: season,
-        episode: episode,
+      media: await withDownloadConfirmedIdentity(
+        confirmedIdentities,
+        videoPath: book.videoPath,
+        media: scraped,
       ),
       scrapedRuntimeMinutes: work.runtimeMinutes,
       contentLanguage: book.language,
@@ -178,6 +193,27 @@ libraryVideoSubtitleTarget(
     ),
     reason: null,
   );
+}
+
+/// 补字幕身份 = 库内刮削身份 + 产出这个文件的下载任务确认过的身份（只补缺）。
+///
+/// 刮削后自动补、下载后缺字幕重试、控制通道补字幕都经这里，三条路对同一个文件
+/// 搜的是同一份身份：刮削主源是 TMDB 时库内身份不带 AniList，Jimaku 就找不到
+/// 条目（BUG-3926）。规则见 [mergeDownloadConfirmedIdentity]。
+///
+/// [confirmedIdentities] 由批量调用方建一次、整批共用（见
+/// [DownloadConfirmedIdentityResolver]）：逐集新建就是逐集全表扫描下载文件行。
+Future<VideoMediaReference> withDownloadConfirmedIdentity(
+  DownloadConfirmedIdentityResolver confirmedIdentities, {
+  required String videoPath,
+  required VideoMediaReference media,
+}) async {
+  final VideoMediaReference? confirmed = await confirmedIdentities.referenceFor(
+    videoPath,
+  );
+  return confirmed == null
+      ? media
+      : mergeDownloadConfirmedIdentity(media, confirmed);
 }
 
 /// 库里存的主字幕源是否算「已有字幕」、挡住补字幕。null / 空不挡；`off:`（用户
