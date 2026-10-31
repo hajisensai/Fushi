@@ -271,7 +271,7 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 | D2 | 提供商不支持 tool calling 时 | 降级成「只回一个 JSON 动作」协议，同一管线；不拒用 |
 | D3 | 撤销记录保留多久 | 推荐 30 天（与软删回收站同期），过期只删记录和快照，不动已生效的改动 |
 | D4 | 入口放哪 | **悬浮球已拍板**（§6.4）。其余推荐：① 首页 dashboard 一张「AI 助手」卡 ② 桌面全局快捷键（如 Ctrl+K）呼出同一个浮层 ③ 各页顶栏「问 AI」（带当前页面上下文，走 `adaptiveOverflow`）。不新增主导航页签。**2026-10-29 所有者拍板砍掉 ③**：各页顶栏按钮与首页 / 悬浮球重复，只留 ①② 与悬浮球（悬浮球本就按当前场景带上下文） |
-| D5 | 对话历史保存 | 本机保存最近 30 天，不同步、不备份（与 AI 配置同为设备本地） |
+| D5 | 对话历史保存 | 本机保存最近 30 天，不同步、不备份（与 AI 配置同为设备本地）。**2026-10-31 多会话（反馈 uILXKiYRhl）**：会话按 Profile 归属（v140 `ai_agent_sessions.profile_uid`），会话列表可随时新建 / 切换续接 / 重命名 / 删除，见 §12.5 |
 | D6 | iOS | 页面保留；工具集按 `StoreRestrictedCapability` 过滤（扩展、在线源、下载中心对 AI 不可见），判据只认那一处 |
 | D7 | 控制通道目录从 `platform/desktop/ctl/` 搬到 `ops/` | 搬；一次性机械改名，单独一个 PR，先于 P1 合入，避免长期双份路径 |
 | D8 | 补 CLI 的范围是否包括 `fushi_server ctl` 对齐 | 本期只补 `fushi_cli`；服务端在 P3 用同一 `FushiOp` 描述自己的 admin 操作，不追求两边命令一一对应 |
@@ -322,6 +322,13 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 
 ### 12.3 顺带修掉的问题
 BUG-3783（字幕补全把已存在的同名字幕报成「已安装」）、BUG-3784（并发 `ensureDefaultProfile` 撞唯一约束；`_copyProfile` 找不到时回退成源 Profile）、BUG-3785（删音乐扫描根留下孤儿曲目）、BUG-3786（LNReader 卸载静默删除插件登录态）；`PUT /api/admin/ai/providers/:id` 现在认显式空串。
+
+### 12.5 多会话（2026-10-31，反馈 uILXKiYRhl）
+
+- **数据结构**：一行 `ai_agent_sessions` = 一场会话，消息（条目 + 模型历史 + 用量）整场序列化在 `payload_json` 里随会话存取——本来就撑得起多会话，缺的是归属与标题语义。v140 加 `profile_uid`（所属 Profile 的全局身份；用 uid 不用自增 id，因为本表设备本地、覆盖恢复后原样回灌而 `profiles` 随备份恢复），存量存档按迁移时的激活 Profile 回填，解析不出 uid 的留空串（对所有 Profile 可见）。操作记录仍不分 Profile。
+- **写入口唯一**：本机 AI 页与互联 host 替远端跑的会话都走 `saveAiAgentSessionArchive` → `FushiDatabase.saveAiAgentSessionSnapshot`。首次落库定标题（首条用户消息摘要，空白折叠、60 码点截断）、归属与创建时刻；之后整场重存只更新场景 / 内容 / 用量 / `updated_at`，用户重命名的标题不会被下一轮对话冲掉，中途切 Profile 也不改换门庭。
+- **会话库**：`AiAgentController` 实现 `AiAgentSessionLibrary`（`ai_agent_conversation_controller.dart`）：列表只投影元数据列（不读 `payload_json`），切换前先存好当前这场，删除当前这场换成新对话、在途一轮的收尾存档不写回已删会话；切过 Profile 后再打开 AI 助手，手上属于别的 Profile 的那场换成新对话。远端会话（`RemoteAiAgentSession`）没有本机存档，`sessionLibrary` 为 null，不出会话入口。
+- **界面**：`ai_agent_sessions.dart` 的 `AiAgentSessionList`：宽屏整页常驻对话左侧，窄屏整页与浮层 / 侧栏顶栏点「会话」按钮弹出；删除先确认，确认文案说明操作记录保留、仍可在「AI 操作记录」撤销。
 
 ### 12.4 已知缺口
 - 没有真机 / 模拟器端到端验证（焦点驱动集成测试的三条脚本未跑）；验证靠单测、路由测试与撤销往返测试。

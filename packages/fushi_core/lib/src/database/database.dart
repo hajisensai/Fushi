@@ -892,7 +892,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 139;
+  int get schemaVersion => 140;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2704,6 +2704,21 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
           }
+          if (from < 140) {
+            // v140：AI 助手多会话——ai_agent_sessions 加 profile_uid（会话所属 Profile 的
+            // 全局身份，会话列表按它过滤）。存量存档按迁移时的激活 Profile 回填（与
+            // resolveActiveProfileId 同一判据：偏好里的 id 仍存在就用它，否则最早建的
+            // Profile）；那个 Profile 还没有 uid 时留空串 = 归属不明、对所有 Profile 可见。
+            // 幂等：v136 步按当前定义建表时已带这一列，跳过加列；回填只碰空串行。
+            if (await _tableExists('ai_agent_sessions')) {
+              if (!await _columnExists(
+                  'ai_agent_sessions', aiAgentSessions.profileUid.name)) {
+                await m.addColumn(aiAgentSessions, aiAgentSessions.profileUid);
+              }
+              await _backfillAiAgentSessionProfiles();
+              await _ensureAiAgentSessionProfileIndex();
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -2721,6 +2736,7 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureSrsIndexes();
           await _ensureMusicIndexes();
           await _ensureAiAgentIndexes();
+          await _ensureAiAgentSessionProfileIndex();
         },
         beforeOpen: (details) async {
           // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen

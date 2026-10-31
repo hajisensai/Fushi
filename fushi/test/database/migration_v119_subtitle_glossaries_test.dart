@@ -61,7 +61,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 139);
+    expect(migrated.schemaVersion, 140);
     final VideoMetadataCharacterRow? character = await migrated
         .getVideoMetadataCharacter('character:mal:7');
     expect(character?.name, 'Hirasawa, Yui');
@@ -110,7 +110,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 139);
+    expect(probe.select('PRAGMA user_version').first.values.first, 140);
     expect(
       columnsOf(probe, 'video_metadata_characters'),
       contains('original_name'),
@@ -150,6 +150,6 @@ void main() {
 
     final sqlite.Database probe2 = sqlite.sqlite3.open(path);
     addTearDown(probe2.dispose);
-    expect(probe2.select('PRAGMA user_version').first.values.first, 139);
+    expect(probe2.select('PRAGMA user_version').first.values.first, 140);
   });
 }

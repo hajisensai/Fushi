@@ -20,15 +20,21 @@ void main() {
     <Object?>[index],
   ).isNotEmpty;
 
-  AiAgentSessionsCompanion session(String id, int at) =>
-      AiAgentSessionsCompanion.insert(
-        id: id,
-        title: 'title $id',
-        scene: 'general',
-        payloadJson: '{"turns":[]}',
-        createdAt: at,
-        updatedAt: at,
-      );
+  Future<void> saveSession(
+    FushiDatabase db,
+    String id,
+    int at, {
+    int createdAt = -1,
+    int totalTokens = 0,
+  }) => db.saveAiAgentSessionSnapshot(
+    id: id,
+    title: 'title $id',
+    scene: 'general',
+    payloadJson: '{"turns":[]}',
+    totalTokens: totalTokens,
+    createdAt: createdAt < 0 ? at : createdAt,
+    updatedAt: at,
+  );
   AiAgentActionsCompanion action(String sessionId, int at) =>
       AiAgentActionsCompanion.insert(
         sessionId: sessionId,
@@ -61,13 +67,13 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 139);
-    await migrated.upsertAiAgentSession(session('s1', 10));
+    expect(migrated.schemaVersion, 140);
+    await saveSession(migrated, 's1', 10);
     final int actionId = await migrated.insertAiAgentAction(action('s1', 11));
     await migrated.close();
 
     raw = sqlite.sqlite3.open(path);
-    expect(raw.select('PRAGMA user_version').first.values.first, 139);
+    expect(raw.select('PRAGMA user_version').first.values.first, 140);
     for (final String t in tables) {
       expect(tableExists(raw, t), isTrue, reason: t);
     }
@@ -104,20 +110,19 @@ void main() {
     );
     addTearDown(db.close);
 
-    await db.upsertAiAgentSession(session('old', 100));
-    await db.upsertAiAgentSession(session('new', 300));
+    await saveSession(db, 'old', 100);
+    await saveSession(db, 'new', 300);
     // 同 id 覆盖：整场重存，updatedAt 前移。
-    await db.upsertAiAgentSession(
-      session('old', 100).copyWith(
-        updatedAt: const Value<int>(200),
-        totalTokens: const Value<int>(42),
-      ),
-    );
-    final List<AiAgentSessionRow> sessions = await db.listAiAgentSessions();
-    expect(sessions.map((AiAgentSessionRow r) => r.id), <String>['new', 'old']);
+    await saveSession(db, 'old', 200, createdAt: 100, totalTokens: 42);
+    final List<AiAgentSessionSummary> sessions = await db
+        .listAiAgentSessionSummaries();
+    expect(sessions.map((AiAgentSessionSummary r) => r.id), <String>[
+      'new',
+      'old',
+    ]);
     expect(sessions.last.totalTokens, 42);
-    expect(sessions.first.totalTokens, 0, reason: 'totalTokens 默认 0');
-    expect(await db.listAiAgentSessions(limit: 1), hasLength(1));
+    expect(sessions.first.totalTokens, 0);
+    expect(await db.listAiAgentSessionSummaries(limit: 1), hasLength(1));
 
     final int a1 = await db.insertAiAgentAction(action('old', 100));
     final int a2 = await db.insertAiAgentAction(action('old', 250));
@@ -150,7 +155,7 @@ void main() {
     expect(await db.getAiAgentAction(a4), isNotNull);
 
     // prune：只删 before（不含）之前的会话（updatedAt）与记录（createdAt）。
-    await db.upsertAiAgentSession(session('keep', 250));
+    await saveSession(db, 'keep', 250);
     final int removed = await db.pruneAiAgentHistory(before: 250);
     expect(removed, 2, reason: '会话 old(200) + 记录 a1(100)');
     expect(await db.getAiAgentSession('old'), isNull);

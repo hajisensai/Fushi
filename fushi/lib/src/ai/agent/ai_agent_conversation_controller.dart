@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
@@ -60,4 +61,44 @@ abstract interface class AiAgentConversationController implements Listenable {
 
   /// 在哪台设备上执行（远端会话 = 那台设备的名字；本机 = null）。
   String? get executorLabel;
+
+  /// 多会话管理（新建 / 切换 / 浏览历史 / 重命名 / 删除）。本机会话才有；远端
+  /// 会话为 null——整场对话存在执行设备上，这台设备没有它的存档可列。
+  AiAgentSessionLibrary? get sessionLibrary;
+}
+
+/// AI 助手的会话库：本机对话存档（`ai_agent_sessions`，按当前 Profile 过滤）加上
+/// 「正在说的是哪一场」。会话列表界面只依赖这一面。
+///
+/// 监听约定同 [AiAgentConversationController]：当前会话 / 运行状态变了通知监听者；
+/// 存档列表的变化另走 [sessionsRevision]。
+abstract interface class AiAgentSessionLibrary implements Listenable {
+  /// 一轮正在跑：此时不切换 / 不新建（与「新对话」按钮同一判据），免得半截打断。
+  bool get running;
+
+  /// 当前这场的 id；还没开过会话（或刚点了新对话、尚未说话）时为 null。
+  String? get currentSessionId;
+
+  /// 当前这场还没落库（新会话说第一句话之前）：列表里要单独画一行「新对话」。
+  bool get currentSessionUnsaved;
+
+  /// 会话列表需要重新读取的信号：存档写入 / 改名 / 删除 / 切换都会加一。
+  ValueListenable<int> get sessionsRevision;
+
+  /// 当前 Profile 的会话（最近更新的在前），含归属不明的旧存档。
+  Future<List<AiAgentSessionSummary>> listSessions();
+
+  /// 切到一场存档会话（先把当前这场存好）。存档不在 / 读不出 / 没指派提供商时
+  /// 返回 false，当前会话不动。
+  Future<bool> switchToSession(String sessionId);
+
+  /// 开一场新对话（当前这场已在存档里）。
+  Future<void> newSession();
+
+  /// 重命名；[title] 去首尾空白后为空则不改。
+  Future<void> renameSession(String sessionId, String title);
+
+  /// 删除一场会话的存档（操作记录保留，仍可在「AI 操作记录」里撤销）。删的是
+  /// 当前这场时，先停下正在跑的一轮，再换成一场新对话。
+  Future<void> deleteSession(String sessionId);
 }

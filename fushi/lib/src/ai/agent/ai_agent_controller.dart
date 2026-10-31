@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -15,6 +14,7 @@ import 'package:fushi_engine/ai/ai_settings.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
+import 'package:fushi/src/ai/agent/ai_agent_session_archive.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -82,8 +82,12 @@ class AiAgentUiHost implements AgentHost {
 
 /// 一场进行中的 AI 助手对话 + 它的存档。整页与浮层拿同一个对象，展开 / 收回
 /// 都不丢对话（spec §6.4）。
+///
+/// 同时是本机的会话库（[AiAgentSessionLibrary]）：随时新建 / 切换 / 续接存档会话、
+/// 重命名、删除。存档每轮对话后整场重存；标题与所属 Profile 首次落库时定下，之后
+/// 不随重存改写（[FushiDatabase.saveAiAgentSessionSnapshot]）。
 class AiAgentController extends ChangeNotifier
-    implements AiAgentConversationController {
+    implements AiAgentConversationController, AiAgentSessionLibrary {
   AiAgentController._({
     required this.database,
     required this.settings,
@@ -149,6 +153,16 @@ class AiAgentController extends ChangeNotifier
   String _scene = 'general';
   bool _pruned = false;
 
+  /// 当前这场所属 Profile 的 uid：续接存档时取存档的，新会话在第一句话前按激活
+  /// Profile 解析。null = 还没解析（新会话尚未说话）。
+  String? _sessionProfileUid;
+
+  /// 删掉的会话 id：在途一轮结束时的收尾存档不能把它写回来。
+  final Set<String> _deletedSessionIds = <String>{};
+
+  final ValueNotifier<int> _sessionsRevision = ValueNotifier<int>(0);
+  bool _disposed = false;
+
   AgentSession? get session => _session;
 
   bool get hasProvider => resolveAiAgentProvider(settings) != null;
@@ -191,6 +205,18 @@ class AiAgentController extends ChangeNotifier
   @override
   String? get executorLabel => null;
 
+  @override
+  AiAgentSessionLibrary get sessionLibrary => this;
+
+  @override
+  String? get currentSessionId => _session?.id;
+
+  @override
+  bool get currentSessionUnsaved => _session?.entries.isEmpty ?? true;
+
+  @override
+  ValueListenable<int> get sessionsRevision => _sessionsRevision;
+
   AiAgentToolbox get toolbox => _toolbox ??= AiAgentToolbox(
     invoker: _invoker ??= buildInProcessOpInvoker(
       _opContext,
@@ -223,7 +249,7 @@ class AiAgentController extends ChangeNotifier
             },
             summary: status.summary,
           )
-          .whenComplete(_save),
+          .whenComplete(() => _save(session)),
     );
   }
 
@@ -254,11 +280,12 @@ class AiAgentController extends ChangeNotifier
     List<AiChatImage> images = const <AiChatImage>[],
   }) async {
     final AgentSession session = ensureSession(scene: context?.scene ?? _scene);
+    _sessionProfileUid ??= await database.resolveActiveProfileUid();
     unawaited(_pruneOnce());
     try {
       await session.send(text, context: context, images: images);
     } finally {
-      await _save();
+      await _save(session);
     }
   }
 
@@ -271,20 +298,31 @@ class AiAgentController extends ChangeNotifier
   /// 开一场新对话（旧的已在存档里）。
   @override
   Future<void> newSession() async {
+    final AgentSession? previous = _session;
     cancel();
-    await _save();
+    if (previous != null) await _save(previous);
     _detach();
     notifyListeners();
+    _sessionsRevision.value++;
   }
 
-  /// 恢复一场存档对话。
+  /// 续接一场存档对话（「AI 操作记录」页与控制通道 `ai.ask --resume` 也走这里）。
+  /// 切走之前先把当前这场存好；切到的就是当前这场时什么都不做。
   Future<bool> resume(String sessionId) async {
+    final AgentSession? current = _session;
+    if (current != null && current.id == sessionId) return true;
     final AiProviderConfig? provider = resolveAiAgentProvider(settings);
     final AiAgentSessionRow? row = await database.getAiAgentSession(sessionId);
     if (provider == null || row == null) return false;
-    final Object? json = jsonDecode(row.payloadJson);
+    final Object? json;
+    try {
+      json = jsonDecode(row.payloadJson);
+    } on FormatException {
+      return false;
+    }
     if (json is! Map) return false;
     cancel();
+    if (current != null) await _save(current);
     _detach();
     _scene = row.scene;
     _attach(
@@ -296,8 +334,51 @@ class AiAgentController extends ChangeNotifier
         clock: _clock,
       ),
     );
+    _sessionProfileUid = row.profileUid;
     notifyListeners();
+    _sessionsRevision.value++;
     return true;
+  }
+
+  @override
+  Future<bool> switchToSession(String sessionId) => resume(sessionId);
+
+  @override
+  Future<List<AiAgentSessionSummary>> listSessions() async =>
+      database.listAiAgentSessionSummaries(
+        profileUid: await database.resolveActiveProfileUid(),
+      );
+
+  @override
+  Future<void> renameSession(String sessionId, String title) async {
+    final String trimmed = title.trim();
+    if (trimmed.isEmpty) return;
+    await database.renameAiAgentSession(sessionId, trimmed);
+    _sessionsRevision.value++;
+  }
+
+  @override
+  Future<void> deleteSession(String sessionId) async {
+    _deletedSessionIds.add(sessionId);
+    if (_session?.id == sessionId) {
+      cancel();
+      _detach();
+      notifyListeners();
+    }
+    await database.deleteAiAgentSession(sessionId);
+    _sessionsRevision.value++;
+  }
+
+  /// 切过 Profile 之后再打开 AI 助手：手上这场属于别的 Profile（它不会出现在当前
+  /// 会话列表里），没在跑就换成一场新对话；归属不明的旧存档、还没说话的新会话不动。
+  Future<void> syncWithActiveProfile() async {
+    final AgentSession? session = _session;
+    final String? owner = _sessionProfileUid;
+    if (session == null || running || owner == null || owner.isEmpty) return;
+    final String active = await database.resolveActiveProfileUid();
+    // 解析期间会话换了 / 开始跑了：以那边为准，不在这里抢着换。
+    if (owner == active || !identical(session, _session) || running) return;
+    await newSession();
   }
 
   @override
@@ -307,7 +388,7 @@ class AiAgentController extends ChangeNotifier
       return const AgentUndoResult(AgentUndoStatus.notUndoable);
     }
     final AgentUndoResult result = await session.undoEntry(entryId);
-    await _save();
+    await _save(session);
     return result;
   }
 
@@ -316,7 +397,7 @@ class AiAgentController extends ChangeNotifier
     final AgentSession? session = _session;
     if (session == null) return const <AgentUndoResult>[];
     final List<AgentUndoResult> results = await session.undoAll();
-    await _save();
+    await _save(session);
     return results;
   }
 
@@ -339,32 +420,31 @@ class AiAgentController extends ChangeNotifier
     _changes = null;
     _session?.dispose();
     _session = null;
+    _sessionProfileUid = null;
   }
 
-  Future<void> _save() async {
-    final AgentSession? session = _session;
-    if (session == null || session.entries.isEmpty) return;
-    final int now = _clock().millisecondsSinceEpoch;
-    final String firstUser = session.entries
-        .firstWhere(
-          (AgentEntry e) => e.kind == AgentEntryKind.user,
-          orElse: () => session.entries.first,
-        )
-        .text;
-    await database.upsertAiAgentSession(
-      AiAgentSessionsCompanion.insert(
-        id: session.id,
-        title: firstUser.length > 60
-            ? '${firstUser.substring(0, 60)}…'
-            : firstUser,
-        scene: _scene,
-        payloadJson: jsonEncode(session.toJson()),
-        totalTokens: Value<int>(session.totalTokens),
-        createdAt: session.entries.first.createdAt,
-        updatedAt: now,
-      ),
+  /// 存 [session] 这一场（显式传入：在途一轮收尾时当前会话可能已经换成别的）。
+  /// 删掉的会话不写回。已不是当前这场时只更新内容（标题 / 归属 / 场景首次落库时
+  /// 已定，[FushiDatabase.saveAiAgentSessionSnapshot] 重存不改它们）。
+  Future<void> _save(AgentSession session) async {
+    if (session.entries.isEmpty || _deletedSessionIds.contains(session.id)) {
+      return;
+    }
+    final bool current = identical(session, _session);
+    await saveAiAgentSessionArchive(
+      database,
+      session,
+      scene: current ? _scene : await _archivedSceneOf(session.id),
+      now: _clock(),
+      profileUid: current ? _sessionProfileUid : null,
     );
+    // 控制器已销毁（在途一轮的收尾存档晚到）：存档照写，只是没人再听列表信号。
+    if (!_disposed) _sessionsRevision.value++;
   }
+
+  /// 已切走的会话收尾存档时沿用它存档里的场景（没有存档就是还没落过库的新会话）。
+  Future<String> _archivedSceneOf(String sessionId) async =>
+      (await database.getAiAgentSession(sessionId))?.scene ?? 'general';
 
   Future<void> _pruneOnce() async {
     if (_pruned) return;
@@ -388,8 +468,10 @@ class AiAgentController extends ChangeNotifier
   @override
   void dispose() {
     host.pending.removeListener(notifyListeners);
+    _disposed = true;
     cancel();
     _detach();
+    _sessionsRevision.dispose();
     _toolbox?.dispose();
     _client?.close();
     super.dispose();

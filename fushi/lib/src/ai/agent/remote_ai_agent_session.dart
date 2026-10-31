@@ -102,6 +102,10 @@ class RemoteAiAgentSession extends ChangeNotifier
   @override
   String? get executorLabel => _target.label;
 
+  /// 整场对话存在执行设备上，这台设备没有存档可列（见接口注释）。
+  @override
+  AiAgentSessionLibrary? get sessionLibrary => null;
+
   @override
   List<AgentEntry> get entries {
     if (_notices.isEmpty) return _hostEntries;
