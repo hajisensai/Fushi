@@ -33,6 +33,8 @@ class AdvancedMiningController extends ChangeNotifier {
 
   AdvancedMiningSections get sections => capabilities.sections;
   AdvancedMiningDeckSection? get deckSection => capabilities.deck;
+  AdvancedMiningWordAudioSection? get wordAudioSection =>
+      capabilities.wordAudio;
   AdvancedMiningSentenceSection? get sentenceSection => sections.sentence;
   AdvancedMiningAudioSection? get audioSection => sections.audio;
   AdvancedMiningVideoImageSection? get videoSection => sections.videoImage;
@@ -57,6 +59,7 @@ class AdvancedMiningController extends ChangeNotifier {
   Future<void> load() async {
     await Future.wait(<Future<void>>[
       _loadSentenceThenAudio(),
+      if (wordAudioSection != null) _loadWordAudio(),
       if (mangaSection != null) _loadManga(),
       if (stillSection != null) _loadStill(),
     ]);
@@ -426,6 +429,8 @@ class AdvancedMiningController extends ChangeNotifier {
     final int gen = ++_previewGen;
     previewing = true;
     _notify();
+    // 两段试听不叠着响：句子音频起播前先掐掉单词发音。
+    await stopWordAudioPreview();
     RangePlayback? playback;
     try {
       playback = await section.preview(audioStartDeltaMs, audioEndDeltaMs);
@@ -473,6 +478,133 @@ class AdvancedMiningController extends ChangeNotifier {
     if (section != null) await _stopHostPreview(section);
     previewing = false;
     _notify();
+  }
+
+  // ───────────────────────────── 单词音频 ─────────────────────────────
+
+  /// 当前词的全部候选（按音频源配置顺序；第一项 = 一键「+」会用的那条）。
+  List<AdvancedMiningWordAudioChoice> wordAudioChoices =
+      const <AdvancedMiningWordAudioChoice>[];
+  bool wordAudioLoaded = false;
+
+  /// 选中的候选下标；[kWordAudioOmitted] = 「不要」。默认 0：与一键「+」一致。
+  int wordAudioIndex = 0;
+
+  /// [wordAudioIndex] 取这个值表示「不要单词音频」。
+  static const int kWordAudioOmitted = -1;
+
+  /// 正在试听的候选下标；null = 没在试听。只驱动按钮外观（单词发音只有一两秒，
+  /// 宿主不交播放句柄，起播后按「已开始」显示，再点一次就是重播）。
+  int? wordAudioPreviewing;
+
+  /// 自上次停止以来是否真的起播过单词发音。没播过就不去叫宿主停止：宿主的停止是
+  /// 全局的单词音频播放器，白停一次可能掐掉别处的声音。
+  bool _wordAudioPlayed = false;
+
+  bool get omitWordAudio => wordAudioIndex == kWordAudioOmitted;
+
+  /// 选中的候选；「不要」/ 还没加载 / 没有候选时为 null。
+  AdvancedMiningWordAudioChoice? get selectedWordAudio =>
+      wordAudioIndex >= 0 && wordAudioIndex < wordAudioChoices.length
+      ? wordAudioChoices[wordAudioIndex]
+      : null;
+
+  Future<void> _loadWordAudio() async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null) return;
+    List<AdvancedMiningWordAudioChoice> choices;
+    try {
+      choices = await section.listChoices();
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.listWordAudio: $e\n$stack');
+      choices = const <AdvancedMiningWordAudioChoice>[];
+    }
+    if (_disposed) return;
+    wordAudioChoices = List<AdvancedMiningWordAudioChoice>.unmodifiable(
+      choices,
+    );
+    wordAudioLoaded = true;
+    // 加载途中用户已点了「不要」：保留那个选择。
+    if (!omitWordAudio) wordAudioIndex = 0;
+    _notify();
+  }
+
+  void selectWordAudio(int index) {
+    if (locked || index == wordAudioIndex) return;
+    if (index != kWordAudioOmitted &&
+        (index < 0 || index >= wordAudioChoices.length)) {
+      return;
+    }
+    wordAudioIndex = index;
+    if (index == kWordAudioOmitted) unawaited(stopWordAudioPreview());
+    _notify();
+  }
+
+  /// 试听第 [index] 个候选（同时选中它）。返回是否真的开始播放。
+  Future<bool> previewWordAudio(int index) async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null || locked) return false;
+    if (index < 0 || index >= wordAudioChoices.length) return false;
+    selectWordAudio(index);
+    // 两段试听不叠着响：单词发音起播前先停句子音频。
+    await stopPreview();
+    wordAudioPreviewing = index;
+    _notify();
+    bool ok;
+    try {
+      ok = await section.preview(wordAudioChoices[index].url);
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.previewWordAudio: $e\n$stack');
+      ok = false;
+    }
+    if (ok) _wordAudioPlayed = true;
+    if (_disposed) return ok;
+    if (wordAudioPreviewing == index) {
+      wordAudioPreviewing = null;
+      _notify();
+    }
+    return ok;
+  }
+
+  Future<void> stopWordAudioPreview() async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null) return;
+    if (wordAudioPreviewing != null) {
+      wordAudioPreviewing = null;
+      _notify();
+    }
+    if (!_wordAudioPlayed) return;
+    _wordAudioPlayed = false;
+    try {
+      await section.stopPreview();
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.stopWordAudioPreview: $e\n$stack');
+    }
+  }
+
+  /// 确认时交给 [AdvancedMiningConfirm] 的 `wordAudioUrl`（语义见该 typedef）：
+  /// 没动 / 选的就是第一项 → null（一键「+」本来就用它）；「不要」→ 空串；
+  /// 其余 → 那一条的 URL。
+  ///
+  /// 选了非默认项时**重新解析一遍**再按源身份找回：互联源的 URL 带 5 分钟令牌，
+  /// 对话框开着的时间可能比它长，拿旧 URL 制卡会得到一个空 `[sound:]`
+  /// （popup.js TODO-766 同一个坑）。重新解析失败 / 找不到同一源时退回打开时那条。
+  Future<String?> resolveWordAudioUrl() async {
+    final AdvancedMiningWordAudioSection? section = wordAudioSection;
+    if (section == null) return null;
+    if (omitWordAudio) return '';
+    final AdvancedMiningWordAudioChoice? chosen = selectedWordAudio;
+    if (chosen == null || wordAudioIndex == 0) return null;
+    try {
+      final List<AdvancedMiningWordAudioChoice> fresh = await section
+          .listChoices();
+      for (final AdvancedMiningWordAudioChoice c in fresh) {
+        if (c.sameSourceAs(chosen)) return c.url;
+      }
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.resolveWordAudio: $e\n$stack');
+    }
+    return chosen.url;
   }
 
   // ───────────────────────────── 视频图片 ─────────────────────────────
@@ -840,8 +972,10 @@ class AdvancedMiningController extends ChangeNotifier {
   Future<void> resetToDefaults() async {
     if (locked) return;
     unawaited(stopPreview());
+    unawaited(stopWordAudioPreview());
     deckName = _initialDeckName;
     setDeckAsDefault = false;
+    wordAudioIndex = 0;
     omitAudio = false;
     audioStartDeltaMs = 0;
     audioEndDeltaMs = 0;

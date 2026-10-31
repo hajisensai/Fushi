@@ -91,7 +91,7 @@ class AdvancedMiningDialog extends StatefulWidget {
 }
 
 /// 窄屏里折叠成摘要行的分区。
-enum _Fold { deck, audio, image }
+enum _Fold { deck, wordAudio, audio, image }
 
 class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
   late final AdvancedMiningController _c = AdvancedMiningController(
@@ -114,6 +114,7 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
   void dispose() {
     if (!_finished) {
       unawaited(_c.stopPreview());
+      unawaited(_c.stopWordAudioPreview());
       unawaited(_c.restoreSentenceSnapshot());
     }
     _c.dispose();
@@ -134,6 +135,7 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     _c.busy = true;
     // 关窗前先停试听：对话框没了但音频还在放，用户没有任何入口能停下来。
     await _c.stopPreview();
+    await _c.stopWordAudioPreview();
     // 还原到打开时的上下文：取消不把半调整的草稿留给后续一键「+」。
     await _c.restoreSentenceSnapshot();
     if (!mounted) return;
@@ -155,12 +157,18 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     if (_c.locked) return;
     // 制卡走了，试听不该继续响。不 await——制卡不等它。
     unawaited(_c.stopPreview());
+    unawaited(_c.stopWordAudioPreview());
     _c.busy = true;
     bool mined = false;
     try {
       final MiningRequestOverrides overrides = _c.buildOverrides();
+      // 选了非默认音源时会重新解析一次（互联源 URL 带短时令牌），所以在 busy 里等。
+      final String? wordAudioUrl = await _c.resolveWordAudioUrl();
       await _applyDefaultDeck();
-      mined = await widget.capabilities.onConfirm(overrides);
+      mined = await widget.capabilities.onConfirm(
+        overrides,
+        wordAudioUrl: wordAudioUrl,
+      );
     } catch (e, stack) {
       // 宿主抛错与「没点到」对用户是同一件事：卡没制出来。照常关窗 + 提示。
       fushiDebugPrint('AdvancedMiningDialog.confirm: $e\n$stack');
@@ -204,6 +212,16 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
       // 没有可试听的音频：如实说一声，不留一个「像在放但没声音」的按钮。
       FushiToast.show(
         msg: t.popup_ctx_preview_unavailable,
+        severity: ToastSeverity.info,
+      );
+    }
+  }
+
+  Future<void> _previewWordAudio(int index) async {
+    final bool ok = await _c.previewWordAudio(index);
+    if (!ok && mounted) {
+      FushiToast.show(
+        msg: t.popup_advanced_mining_word_audio_preview_failed,
         severity: ToastSeverity.info,
       );
     }
@@ -268,6 +286,7 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     final bool hasLeft = _c.sentenceSection != null || _c.mangaSection != null;
     final bool hasRight =
         _c.deckSection != null ||
+        _c.wordAudioSection != null ||
         _c.audioSection != null ||
         _c.videoSection != null ||
         _c.stillSection != null ||
@@ -396,6 +415,11 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
           );
     final List<Widget> right = <Widget>[
       if (_c.deckSection != null) AdvancedMiningDeckPanel(controller: _c),
+      if (_c.wordAudioSection != null)
+        AdvancedMiningWordAudioPanel(
+          controller: _c,
+          onPreview: (int i) => unawaited(_previewWordAudio(i)),
+        ),
       if (manga && _c.sentenceSection != null)
         AdvancedMiningSentencePanel(
           controller: _c,
@@ -484,6 +508,11 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
         ),
       if (!fold) ...<Widget>[
         if (_c.deckSection != null) AdvancedMiningDeckPanel(controller: _c),
+        if (_c.wordAudioSection != null)
+          AdvancedMiningWordAudioPanel(
+            controller: _c,
+            onPreview: (int i) => unawaited(_previewWordAudio(i)),
+          ),
         if (_c.audioSection != null)
           AdvancedMiningAudioPanel(
             controller: _c,
@@ -557,6 +586,18 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
         expanded: _expanded.contains(_Fold.deck),
         onTap: () => _toggleFold(_Fold.deck),
         child: AdvancedMiningDeckPanel(controller: _c, embedded: true),
+      ),
+    if (foldInline && _c.wordAudioSection != null)
+      _FoldRow(
+        label: t.popup_advanced_mining_word_audio_section,
+        value: advancedMiningWordAudioSummary(_c),
+        expanded: _expanded.contains(_Fold.wordAudio),
+        onTap: () => _toggleFold(_Fold.wordAudio),
+        child: AdvancedMiningWordAudioPanel(
+          controller: _c,
+          embedded: true,
+          onPreview: (int i) => unawaited(_previewWordAudio(i)),
+        ),
       ),
     if (foldInline && _c.audioSection != null)
       _FoldRow(

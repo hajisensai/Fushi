@@ -683,6 +683,205 @@ class _DefaultDeckToggle extends StatelessWidget {
   }
 }
 
+// ───────────────────────────── 单词音频 ─────────────────────────────
+
+/// 一条单词音频候选的显示名：「源名 · 变体」；两者都空（别的设备给的默认一条）时
+/// 显示「默认音源」。
+String advancedMiningWordAudioLabel(AdvancedMiningWordAudioChoice choice) {
+  final String name = choice.name.trim();
+  final String variant = choice.variant.trim();
+  if (name.isEmpty && variant.isEmpty) {
+    return t.popup_advanced_mining_word_audio_default_source;
+  }
+  if (name.isEmpty) return variant;
+  if (variant.isEmpty) return name;
+  return '$name · $variant';
+}
+
+/// 窄屏摘要行的值：选中的源 / 「不要」/ 「暂无」。
+String advancedMiningWordAudioSummary(AdvancedMiningController c) {
+  if (c.omitWordAudio) return t.popup_advanced_mining_audio_none;
+  if (!c.wordAudioLoaded) return '…';
+  final AdvancedMiningWordAudioChoice? chosen = c.selectedWordAudio;
+  if (chosen == null) return t.popup_advanced_mining_word_audio_unavailable;
+  return advancedMiningWordAudioLabel(chosen);
+}
+
+/// 单词音频分区：每个启用音频源解析出的候选一行一条（左侧试听钮、右侧选中标记），
+/// 末尾一条「不要」。点行 = 选中并试听，与查词弹窗 ♪ 的「选择音频源」菜单同一份数据。
+class AdvancedMiningWordAudioPanel extends StatelessWidget {
+  const AdvancedMiningWordAudioPanel({
+    super.key,
+    required this.controller,
+    required this.onPreview,
+    this.embedded = false,
+  });
+
+  final AdvancedMiningController controller;
+
+  /// 试听第 i 条（由对话框统一处理播放失败提示）。
+  final ValueChanged<int> onPreview;
+  final bool embedded;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final Widget body;
+    if (!c.wordAudioLoaded) {
+      body = const SizedBox(
+        height: 56,
+        child: Center(child: FushiLoadingView(compact: true)),
+      );
+    } else {
+      body = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (c.wordAudioChoices.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _caption(
+                context,
+                t.popup_advanced_mining_word_audio_unavailable,
+              ),
+            ),
+          for (final (int i, AdvancedMiningWordAudioChoice choice)
+              in c.wordAudioChoices.indexed)
+            _WordAudioRow(
+              label: advancedMiningWordAudioLabel(choice),
+              selected: c.wordAudioIndex == i,
+              loading: c.wordAudioPreviewing == i,
+              onPreview: c.locked ? null : () => onPreview(i),
+              onSelect: c.locked ? null : () => c.selectWordAudio(i),
+            ),
+          _WordAudioRow(
+            label: t.popup_advanced_mining_audio_none,
+            selected: c.omitWordAudio,
+            onSelect: c.locked
+                ? null
+                : () => c.selectWordAudio(
+                    AdvancedMiningController.kWordAudioOmitted,
+                  ),
+          ),
+          if (c.wordAudioChoices.length > 1) ...<Widget>[
+            const SizedBox(height: 6),
+            _caption(context, t.popup_advanced_mining_word_audio_hint),
+          ],
+        ],
+      );
+    }
+    return AdvancedMiningSectionShell(
+      title: t.popup_advanced_mining_word_audio_section,
+      embedded: embedded,
+      child: FushiAnimatedSize(
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+        alignment: Alignment.topCenter,
+        child: body,
+      ),
+    );
+  }
+}
+
+/// 单词音频的一行：试听钮（「不要」那行没有）+ 源名 + 选中勾。点行选中并试听，
+/// 点试听钮只试听（同样会选中，见 [AdvancedMiningController.previewWordAudio]）。
+class _WordAudioRow extends StatelessWidget {
+  const _WordAudioRow({
+    required this.label,
+    required this.selected,
+    required this.onSelect,
+    this.onPreview,
+    this.loading = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onSelect;
+
+  /// null = 这一行不能试听（「不要」）或已锁住。
+  final VoidCallback? onPreview;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final VoidCallback? tap = onPreview ?? onSelect;
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: tap,
+      child: FushiPressScale(
+        enabled: tap != null,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: const BorderRadius.all(Radius.circular(14)),
+            onTap: tap,
+            child: AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected
+                    ? scheme.secondaryContainer
+                    : Colors.transparent,
+                borderRadius: const BorderRadius.all(Radius.circular(14)),
+              ),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: onPreview == null && !loading
+                        ? FushiIcon(
+                            FushiIcons.close,
+                            size: 18,
+                            color: scheme.onSurfaceVariant,
+                          )
+                        : loading
+                        ? const Center(child: FushiLoadingView(compact: true))
+                        : FushiIconButtonControl(
+                            tooltip: t.popup_ctx_preview_audio,
+                            padding: EdgeInsets.zero,
+                            onPressed: onPreview,
+                            icon: const FushiIcon(FushiIcons.play, size: 20),
+                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.fushiType.bodyMedium.copyWith(
+                        color: selected
+                            ? scheme.onSecondaryContainer
+                            : scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  AnimatedOpacity(
+                    opacity: selected ? 1 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: FushiIcon(
+                      FushiIcons.check,
+                      size: 20,
+                      color: scheme.onSecondaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ───────────────────────────── 句子音频 ─────────────────────────────
 
 /// 句子音频分区：「跟随句子 / 不要」、区间条、起止各 ±一步、时间标签、试听。

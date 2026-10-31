@@ -917,7 +917,7 @@ function buildSentenceContextPicker() {
 // BUG-763/766：「制卡前调整」对话框是 app 原生顶层 Flutter 对话框（现为「高级制卡」，
 // 宿主经 openAdvancedMining 桥接弹出），不画在查词弹窗 WebView 内（那受弹窗表面
 // 尺寸/半透明限制，句子框重叠、显示不全）。这里只保留词条上的入口按钮 →
-// callHandler('openAdvancedMining', {entryIndex, matched, expression})，与确认制卡回点用的
+// callHandler('openAdvancedMining', {entryIndex, matched, expression, reading})，与确认制卡回点用的
 // fushiPopupMineEntryByIndex（见文件末尾）。
 
 
@@ -5820,7 +5820,7 @@ function createEntryHeader(entry, idx) {
                 if (advancedMining) {
                     window.flutter_inappwebview.callHandler(
                         'openAdvancedMining',
-                        { entryIndex: idx, matched: matched, expression: expression });
+                        { entryIndex: idx, matched: matched, expression: expression, reading: reading || '' });
                 } else {
                     window.flutter_inappwebview.callHandler(
                         'openSentenceContextModal',
