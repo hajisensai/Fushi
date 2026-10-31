@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Включите, чтобы сделать картинку резче с помощью встроенного в mpv высококачественного масштабирования. Подходит как для аниме, так и для фильмов и сериалов. Для большего эффекта с шейдерами вроде Anime4K откройте «Улучшение изображения» во время воспроизведения и выберите уровень.",
   "video_quality_load_failed": "Не удалось загрузить варианты качества для этого видео.",
   "video_quality_loading": "Загрузка доступных вариантов качества…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Качество: $label",
   "video_recently_added_badge": "НОВОЕ",
   "video_remote_all": "All videos",

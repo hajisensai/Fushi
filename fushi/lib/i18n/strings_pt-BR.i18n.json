@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Ative isto para deixar a imagem mais nítida com a escala de alta qualidade integrada do mpv. Funciona tanto para anime quanto para filmes e séries em ação ao vivo. Para ir além com shaders como o Anime4K, abra o Aprimoramento de imagem com um vídeo em reprodução e escolha um nível ali.",
   "video_quality_load_failed": "Não foi possível carregar as qualidades deste vídeo.",
   "video_quality_loading": "Carregando qualidades disponíveis…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Qualidade: $label",
   "video_recently_added_badge": "NOVO",
   "video_remote_all": "All videos",

@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Turn this on to sharpen the picture with mpv's built-in high-quality scaling. Works for anime as well as live-action shows and movies. To go further with shaders like Anime4K, open Image enhancement while a video is playing and pick a level there.",
   "video_quality_load_failed": "Couldn't load qualities for this video.",
   "video_quality_loading": "Loading available qualities…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Quality: $label",
   "video_recently_added_badge": "NEW",
   "video_remote_all": "All videos",

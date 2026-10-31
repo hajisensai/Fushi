@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "オンにすると mpv 内蔵の高画質スケーリングで映像がくっきりします。アニメはもちろん実写ドラマや映画にも使えます。Anime4K などのシェーダーでさらに強化したいときは、動画の再生中に「画質強化」を開いてレベルを選んでください。",
   "video_quality_load_failed": "この動画の画質を読み込めませんでした。",
   "video_quality_loading": "利用可能な画質を読み込み中…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "画質: $label",
   "video_recently_added_badge": "NEW",
   "video_remote_all": "All videos",

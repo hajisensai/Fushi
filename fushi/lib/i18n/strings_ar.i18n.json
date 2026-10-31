@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "فعّل هذا لزيادة حدّة الصورة باستخدام التحجيم عالي الجودة المدمج في mpv. يعمل مع الأنمي وكذلك المسلسلات والأفلام الحية. للمزيد عبر مظلِّلات مثل Anime4K، افتح «تحسين الصورة» أثناء تشغيل فيديو واختر المستوى هناك.",
   "video_quality_load_failed": "تعذر تحميل الجودات المتاحة لهذا الفيديو.",
   "video_quality_loading": "جارٍ تحميل الجودات المتاحة…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "الجودة: $label",
   "video_recently_added_badge": "جديد",
   "video_remote_all": "All videos",

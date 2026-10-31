@@ -159,12 +159,90 @@ void main() {
         'Future<void> _recoverFromExternalAudioFailure() async {',
       );
       expect(start, greaterThanOrEqualTo(0));
-      final String body = src.substring(start, start + 2000);
+      final String body = _methodBody(src, start);
       expect(body, contains('controller.externalAudioTrackFailed'));
       expect(body, contains('t.video_audio_track_load_failed'));
       expect(body, contains('mediaUri: fallback,'));
       expect(body, isNot(contains('externalAudioTrackUrl:')));
       expect(body, contains('t.video_audio_track_fallback_muxed'));
     });
+
+    // PR #2688 review：共享 bool 在重叠载入下失效、回退不看集序号。在途 / 作废 / 被拒
+    // 的判据全在 SeparatedAudioLoadGuard（纯逻辑单测见 separated_audio_load_guard_test），
+    // 这里钉住页面确实把三条载入路径与回退都交给它。
+    test('不再用共享 bool 记在途', () {
+      expect(src, isNot(contains('_separatedAudioLoadInFlight')));
+    });
+
+    test('三条挂分离音轨的载入都经令牌在途记账，回退经 guard 按集序号作废', () {
+      expect(
+        RegExp(r'_separatedAudio\.runLoad<void>\(').allMatches(src).length,
+        2,
+        reason: '远端起播 + YouTube 切档（回退那程在 guard.recover 内部 runLoad）',
+      );
+      final int start = src.indexOf(
+        'Future<void> _recoverFromExternalAudioFailure() async {',
+      );
+      expect(_methodBody(src, start), contains('_separatedAudio.recover('));
+      expect(
+        src,
+        contains('if (_separatedAudio.loadInFlight) return;'),
+        reason: '控制器失败回调在有载入在途时只记账',
+      );
+    });
+
+    test('YouTube 切档：被拒后不再挂同一条音频流，await 前后校验集序号', () {
+      final int start = src.indexOf(
+        'Future<void> _switchYoutubeVariant(int index) async {',
+      );
+      expect(start, greaterThanOrEqualTo(0));
+      final String body = _methodBody(src, start);
+      final int refusedAt = body.indexOf(
+        'if (_separatedAudio.separatedAudioRefused) {',
+      );
+      final int relayAt = body.indexOf('await relayYoutubeStreamUrl(');
+      final int loadAt = body.indexOf('_separatedAudio.runLoad<void>(');
+      final int osdAt = body.indexOf('t.video_quality_switched(');
+      expect(refusedAt, greaterThanOrEqualTo(0), reason: '被拒后必须早退');
+      expect(refusedAt, lessThan(relayAt));
+      expect(body, contains('t.video_quality_separated_audio_refused'));
+      final int seqCheckAfterRelay = body.indexOf(
+        '_separatedAudio.isCurrent(seq)',
+        relayAt,
+      );
+      expect(seqCheckAfterRelay, greaterThan(relayAt));
+      expect(seqCheckAfterRelay, lessThan(loadAt), reason: '中继 await 后、重载前校验');
+      final int seqCheckAfterLoad = body.indexOf(
+        '_separatedAudio.isCurrent(seq)',
+        loadAt,
+      );
+      expect(seqCheckAfterLoad, greaterThan(loadAt));
+      expect(
+        seqCheckAfterLoad,
+        lessThan(osdAt),
+        reason: '重载 await 后、弹 OSD 前校验',
+      );
+    });
+
+    test('画质菜单在被拒后禁用分离档并说明原因', () {
+      expect(
+        src,
+        contains(
+          'final bool separatedRefused = _separatedAudio.separatedAudioRefused;',
+        ),
+      );
+      expect(
+        RegExp(r'enabled: !separatedRefused,').allMatches(src).length,
+        2,
+        reason: '「自动」档与各具体档都禁用',
+      );
+      expect(src, contains("'video-quality-youtube-separated-audio-refused'"));
+    });
   });
+}
+
+/// 从 [start]（方法签名处）切到该方法的结束花括号（part 成员 2 空格缩进）。
+String _methodBody(String src, int start) {
+  final int end = src.indexOf('\n  }\n', start);
+  return src.substring(start, end < 0 ? src.length : end);
 }

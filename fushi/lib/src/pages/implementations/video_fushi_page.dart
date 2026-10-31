@@ -172,6 +172,7 @@ import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/separated_audio_load_guard.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show
         WebVideoPlaybackState,
@@ -3333,11 +3334,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [separatedAudioFallbackStreamUrl]）；null = 无可回退，只能提示无声。每集起播重算。
   String? _separatedAudioFallbackUrl;
 
-  /// 页上有一程会挂分离音轨的载入在途（远端起播 / YouTube 切档 / 音轨回退）。在途期间
-  /// 音轨失败只由控制器记账（[VideoPlayerController.externalAudioTrackFailed]），等这程
-  /// 载入收尾后再处理——避免在 `_applyLoad` 半途再起一程 `_applyLoad`（首开时
-  /// `_controller` 尚未落定，会新建出第二个控制器）。
-  bool _separatedAudioLoadInFlight = false;
+  /// 会挂分离音轨的载入（远端起播 / YouTube 切档 / 音轨回退）的在途记账、被拒回退与
+  /// 「本集分离音轨已被拒」。在途期间音轨失败只由控制器记账
+  /// （[VideoPlayerController.externalAudioTrackFailed]），等这程载入收尾后再处理——避免在
+  /// `_applyLoad` 半途再起一程 `_applyLoad`（首开时 `_controller` 尚未落定，会新建出第二个
+  /// 控制器）。在途按令牌归属最新那程、回退按 [_episodeLoadSeq] 作废，见
+  /// [SeparatedAudioLoadGuard]。
+  late final SeparatedAudioLoadGuard _separatedAudio = SeparatedAudioLoadGuard(
+    currentEpisodeSeq: () => _episodeLoadSeq,
+    isAlive: () => mounted,
+  );
 
   bool _clipExportMarking = false;
   bool _clipExporting = false;
@@ -4784,9 +4790,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (seq != _episodeLoadSeq || !mounted) return;
       _currentEpisode = index;
       _separatedAudioFallbackUrl = separatedAudioFallbackStreamUrl(urls);
-      _separatedAudioLoadInFlight = true;
-      try {
-        await _applyLoad(
+      await _separatedAudio.runLoad<void>(
+        () => _applyLoad(
           videoPath: null,
           mediaUri: urls.streamUrl,
           cues: cues,
@@ -4800,10 +4805,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           externalAudioTrackUrl: urls.audioStreamUrl,
           // 蓝光标题：host 下发段表，按本地蓝光同一套 EDL 播放（光盘菜单远端不可用）。
           remoteDiscTitle: urls.discTitle,
-        );
-      } finally {
-        _separatedAudioLoadInFlight = false;
-      }
+        ),
+      );
       if (seq == _episodeLoadSeq && mounted && !_failed) {
         _startRemotePlaybackSession(client, info, initialPositionMs);
         // 互联「自动」画质档：新的一条流，重新开始观察网况（换集与换档都经这里）。
