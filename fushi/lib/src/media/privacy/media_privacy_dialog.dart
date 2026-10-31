@@ -59,6 +59,10 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
   /// 作品自己的开关拨不掉它。
   List<MediaCollectionRow>? _privateCollections;
 
+  /// 本作品所属的、开着隐私开关的来源库（v140；null = 没有或还在读，配合
+  /// [_privateCollections] 判是否读完）。非 null 时作品的私密来自来源库。
+  MediaSourceRow? _privateSource;
+
   /// 读当前状态失败的原因（null = 没失败）。失败时 fail-closed：开关保持禁用，
   /// 明示「读不到」并给重试——绝不当成「公开、可改」显示。
   Object? _loadError;
@@ -73,9 +77,15 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
   Future<void> _load() async {
     final bool private;
     final List<MediaCollectionRow> collections;
+    final MediaSourceRow? source;
     try {
       private = await widget.db.isMediaPrivate(widget.kind, widget.entryKey);
       collections = await privateCollectionsContaining(
+        widget.db,
+        widget.kind,
+        widget.entryKey,
+      );
+      source = await privateSourceLibraryContaining(
         widget.db,
         widget.kind,
         widget.entryKey,
@@ -88,6 +98,7 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
     setState(() {
       _private = private;
       _privateCollections = collections;
+      _privateSource = source;
     });
   }
 
@@ -125,7 +136,9 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
     final bool? own = _private;
     final List<MediaCollectionRow>? collections = _privateCollections;
     final bool loaded = own != null && collections != null;
-    final bool inherited = collections != null && collections.isNotEmpty;
+    final MediaSourceRow? source = _privateSource;
+    final bool inherited =
+        (collections != null && collections.isNotEmpty) || source != null;
     final bool effective = (own ?? false) || inherited;
     return FushiAlertDialog(
       title: Text('${t.media_privacy_action} · ${widget.title}'),
@@ -159,11 +172,15 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
                         ),
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          t.media_privacy_inherited_note(
-                            collections: collections
-                                .map((MediaCollectionRow c) => c.name)
-                                .join(' / '),
-                          ),
+                          source != null
+                              ? t.media_privacy_inherited_source_note(
+                                  source: source.label,
+                                )
+                              : t.media_privacy_inherited_note(
+                                  collections: collections!
+                                      .map((MediaCollectionRow c) => c.name)
+                                      .join(' / '),
+                                ),
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,

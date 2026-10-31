@@ -237,6 +237,13 @@ Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选�
 **未实测**：Workers 出站 `fetch` 与 APNs 的 HTTP/2 握手要等配好密钥后用真机验证一次（日志里看
 `apns: push ... failed` 有没有出现）。
 
+### Apple Music developer token
+
+`GET /v1/musickit/token` → `{token, expiresAt}`（`src/musickit.js`）：用 secret `MUSICKIT_KEY_P8` /
+`MUSICKIT_KEY_ID` / `MUSICKIT_TEAM_ID` 签 ES256 JWT，一天有效、同一 isolate 过半才重签；无账户，按 IP
+过 `READ_LIMITER`，`no-store`。缺 secret 回 `503 musickit_not_configured`。密钥来历与 `secret put`
+命令见 [`docs/agent/apple-signing.md`](../../docs/agent/apple-signing.md)「MusicKit 密钥」。
+
 反馈系统（回执、附件、开发者处理、防投毒、清理策略）设计见
 [`docs/specs/2026-10-08-feedback.md`](../../docs/specs/2026-10-08-feedback.md)。
 

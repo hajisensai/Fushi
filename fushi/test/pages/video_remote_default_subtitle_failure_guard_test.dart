@@ -84,11 +84,18 @@ void main() {
       'if (seq != _episodeLoadSeq || !mounted) return;',
       src.indexOf('} else if (urls.subtitleUrl != null) {'),
     );
-    final int applyAt = src.indexOf('await _applyLoad(', guardAt);
+    // 起播可能包在 `_separatedAudio.runLoad(() => _applyLoad(...))` 里（TODO-1280
+    // 分离音轨按 token 归属），所以只找 `_applyLoad(`，但必须紧跟守卫。
+    final int applyAt = src.indexOf('_applyLoad(', guardAt);
     expect(
       applyAt,
       greaterThan(guardAt),
       reason: '守卫之后应紧接 _applyLoad，字幕失败不阻断起播',
+    );
+    expect(
+      applyAt - guardAt,
+      lessThan(400),
+      reason: '_applyLoad 应紧跟换集守卫，中间不得插入可失败的字幕步骤',
     );
     // 流 URL 协商失败仍是真正的播放失败：方法外层 catch 保留 _failed = true。
     final int outerCatch = src.indexOf(

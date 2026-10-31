@@ -18,6 +18,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
+import 'package:fushi/src/srs/srs_card_translation_blur.dart';
 
 /// 卡面配色来源。
 enum SrsCardColorSource {
@@ -66,6 +67,7 @@ class SrsCardAppearance {
     this.dictUnified = true,
     this.showPicture = true,
     this.showTranslation = true,
+    this.blurTranslation = false,
     this.showFrequency = true,
     this.showSource = true,
     this.glossaryExpanded = true,
@@ -105,6 +107,11 @@ class SrsCardAppearance {
 
   final bool showPicture;
   final bool showTranslation;
+
+  /// 例句翻译默认模糊、点按才显示（只在 [showTranslation] 开时生效）。原生 Fushi 卡片视图与
+  /// 模板卡面（宿主类 [kSrsCardBlurTranslationClass] + srs_card_translation_blur.dart 的样式 /
+  /// 脚本，只认 Fushi 卡片模板的 `.fc-translation`）同一套规则。
+  final bool blurTranslation;
   final bool showFrequency;
   final bool showSource;
 
@@ -146,6 +153,7 @@ class SrsCardAppearance {
     bool? dictUnified,
     bool? showPicture,
     bool? showTranslation,
+    bool? blurTranslation,
     bool? showFrequency,
     bool? showSource,
     bool? glossaryExpanded,
@@ -164,6 +172,7 @@ class SrsCardAppearance {
     dictUnified: dictUnified ?? this.dictUnified,
     showPicture: showPicture ?? this.showPicture,
     showTranslation: showTranslation ?? this.showTranslation,
+    blurTranslation: blurTranslation ?? this.blurTranslation,
     showFrequency: showFrequency ?? this.showFrequency,
     showSource: showSource ?? this.showSource,
     glossaryExpanded: glossaryExpanded ?? this.glossaryExpanded,
@@ -209,6 +218,7 @@ class SrsCardAppearance {
       dictUnified: _bool(json['dictUnified'], d.dictUnified),
       showPicture: _bool(json['showPicture'], d.showPicture),
       showTranslation: _bool(json['showTranslation'], d.showTranslation),
+      blurTranslation: _bool(json['blurTranslation'], d.blurTranslation),
       showFrequency: _bool(json['showFrequency'], d.showFrequency),
       showSource: _bool(json['showSource'], d.showSource),
       glossaryExpanded: _bool(json['glossaryExpanded'], d.glossaryExpanded),
@@ -239,6 +249,7 @@ class SrsCardAppearance {
     'dictUnified': dictUnified,
     'showPicture': showPicture,
     'showTranslation': showTranslation,
+    'blurTranslation': blurTranslation,
     'showFrequency': showFrequency,
     'showSource': showSource,
     'glossaryExpanded': glossaryExpanded,
@@ -455,7 +466,11 @@ String srsCardAppearanceCss({
   final String spacing =
       ':root .card.card{--fc-gap:${_fmt(tokens.gap(a.density))}px;'
       '--fc-pad:${_fmt(tokens.pad(a.density))}px;}';
-  return '${chain.fontFaces}$vars$spacing';
+  // 翻译模糊：开着才下发（关 = 零注入）；规则本身也挂在宿主类名下。
+  final String blur = a.showTranslation && a.blurTranslation
+      ? kSrsCardTranslationBlurCss
+      : '';
+  return '${chain.fontFaces}$vars$spacing$blur';
 }
 
 /// 卡面圆角：模板 `--fc-radius` / `--fc-radius-small` / `--fc-radius-inner` 由当前设计系统的
@@ -475,6 +490,7 @@ String srsCardAppearanceClasses(SrsCardAppearance a) => <String>[
   if (a.dictUnified) 'fushi-srs-dict-unified',
   if (!a.showPicture) 'fushi-srs-hide-picture',
   if (!a.showTranslation) 'fushi-srs-hide-translation',
+  if (a.showTranslation && a.blurTranslation) kSrsCardBlurTranslationClass,
   if (!a.showFrequency) 'fushi-srs-hide-frequency',
   if (a.aggregateFrequency) 'fushi-srs-freq-aggregate',
   if (!a.showSource) 'fushi-srs-hide-source',

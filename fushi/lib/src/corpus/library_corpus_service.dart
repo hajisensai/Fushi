@@ -19,6 +19,8 @@ import 'package:fushi_music/fushi_music.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/corpus/corpus_documents.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart'
+    show parseStoredMusicLyrics;
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -680,9 +682,14 @@ class LibraryCorpusService {
       if (cache != null && row.timelineVersion == FushiLyrics.parserVersion) {
         t = decodeLyricTimeline(cache);
       } else {
-        final Uint8List raw = row.raw;
-        final String hint = row.isUserEdited ? 'ttml' : row.format;
-        t = await _parseLyricsInBackground(raw, hint);
+        // 与歌词服务同一条「落库行 → 时间轴」：插件原始各轨要重新合并，手动指定的 ASS 行按
+        // ASS 解析，不在这里另猜解析提示。
+        t = await parseStoredMusicLyrics(
+          row.raw,
+          row.format,
+          isUserEdited: row.isUserEdited,
+          parse: _parseLyricsInBackground,
+        );
       }
       return t.copyWith(offsetMs: row.offsetMs);
     } on Object catch (error, stack) {
@@ -694,7 +701,10 @@ class LibraryCorpusService {
   static Future<LyricTimeline> _parseLyricsInBackground(
     Uint8List raw,
     String hint,
-  ) => Isolate.run(() => FushiLyrics.parse(raw, hint: hint));
+    int? durationMs,
+  ) => Isolate.run(
+    () => FushiLyrics.parse(raw, hint: hint, durationMs: durationMs),
+  );
 
   /// 游戏：语料文档由 `galgame_text_lines`（v134，台词唯一的持久副本，随备份走）派生，
   /// 一个游戏按本机 id 每 [kGalgameTextLineChunkSize] 行一块（part = id ~/ 块大小），新台词

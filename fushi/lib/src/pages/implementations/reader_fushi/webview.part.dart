@@ -2766,7 +2766,13 @@ updateLive: function(patch) {
 
         controller.addJavaScriptHandler(
           handlerName: 'onImageDetected',
-          callback: (_) => _audiobookController?.triggerImagePause(),
+          // 歌词模式下插图停留由歌词插图状态机发起（只认连续播放经过、同一张
+          // 一次经过只停一次、红点模式不停，见 lyrics.part.dart
+          // `_observeLyricsIllustrations`），正文 WebView 的跨图信号不再重复触发。
+          callback: (_) {
+            if (_lyricsMode) return;
+            _audiobookController?.triggerImagePause();
+          },
         );
 
         // TODO-1289 / BUG-898：JS 揭开防剧透图后回传稳定 key（extractDir 相对归一路径）。

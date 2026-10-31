@@ -268,7 +268,11 @@ test('页面接线：设置页 / 侧边栏加载组件，侧栏嵌入资源带�
     assert.match(html, /href="material\.css"/, page);
   }
   const popup = fs.readFileSync(path.join(__dirname, 'vendor', 'action-popup.html'), 'utf8');
-  assert.doesNotMatch(popup, /<select/, '工具栏菜单出现 select 时要同样加载 glass-select.js');
+  // 反馈 biLEesNqWb：工具栏菜单有了「Fushi 配置」下拉 → 同样加载组件与材质层。
+  if (/<select/.test(popup)) {
+    assert.match(popup, /<script src="\.\.\/glass-select\.js"><\/script>/, '工具栏菜单出现 select 时要同样加载 glass-select.js');
+    assert.match(popup, /href="\.\.\/material\.css"/);
+  }
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
   assert.ok(manifest.web_accessible_resources.some((r) => r.resources.includes('glass-select.js')));
   const sp = fs.readFileSync(path.join(__dirname, 'side-panel.html'), 'utf8');

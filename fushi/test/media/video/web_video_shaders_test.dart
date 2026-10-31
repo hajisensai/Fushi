@@ -80,15 +80,34 @@ void main() {
       contains('shader_enabled = placebo_ && placebo_->enabled();'),
       reason: '是否允许重采样必须只由显式 shader 状态决定',
     );
+    // BUG-3895 / BUG-3913 起共享纹理按容量分配（见
+    // test/build/webview_texture_capacity_guard_test.dart），不再与捕获源等大，
+    // 所以 1:1 的落点从「CopyResource 整张拷」换成「CopySubresourceRegion 拷进
+    // 左上角」。这里钉的语义不变：只有显式 shader 才重采样，普通 WebView 的可见
+    // 区域 = WGC 有效内容，原样 1:1 拷贝。
+    final int processStart = bridgeSrc.indexOf(
+      'void TextureBridgeGpu::ProcessFrame(',
+    );
+    final int processEnd = bridgeSrc.indexOf(
+      'bool TextureBridgeGpu::SetShaders(',
+      processStart,
+    );
+    expect(processStart, greaterThanOrEqualTo(0));
+    expect(processEnd, greaterThan(processStart));
+    final String processSrc = bridgeSrc.substring(processStart, processEnd);
     expect(
-      bridgeSrc,
-      contains('const auto width = shader_enabled && output_size_.width > 0'),
+      processSrc,
+      contains(
+        'const Size visible = shader_enabled && output_size_.width > 0 &&\n'
+        '      output_size_.height > 0\n'
+        '      ? output_size_\n'
+        '      : content;',
+      ),
       reason: '普通 WebView 必须沿用 WGC 源尺寸，不能拿晚到的 output 尺寸触发缩放',
     );
-    expect(bridgeSrc, contains('const bool same_size ='));
     expect(
       bridgeSrc,
-      isNot(contains('const bool needs_placebo = !same_size')),
+      isNot(contains('needs_placebo')),
       reason: '1px 的 DPI 取整差不是超分请求，不能自动送进 libplacebo',
     );
     expect(
@@ -96,13 +115,47 @@ void main() {
       contains('requested_scale_factor_ == scale_factor'),
       reason: '重复逻辑尺寸 + DPI 不得再次反馈 WebView 并重建 WGC pool',
     );
+    final int shaderGate = processSrc.indexOf('if (shader_enabled) {');
+    final int render = processSrc.indexOf('placebo_->Render(');
+    final int shaderGateEnd = processSrc.indexOf('#endif', shaderGate);
+    final int plainCopy = processSrc.indexOf(
+      'CopyIntoSurface(src_texture.get(), content);',
+    );
     expect(
-      bridgeSrc,
+      shaderGate,
+      greaterThanOrEqualTo(0),
+      reason: '重采样分支必须由显式 shader 状态把门',
+    );
+    expect(
+      render,
+      greaterThan(shaderGate),
+      reason: 'libplacebo 只能在 shader 分支里调用',
+    );
+    expect(shaderGateEnd, greaterThan(render));
+    expect(
+      processSrc.indexOf('placebo_->Render(', render + 1),
+      -1,
+      reason: 'shader 分支之外不得再有 libplacebo 渲染入口',
+    );
+    expect(
+      plainCopy,
+      greaterThan(shaderGateEnd),
+      reason: '普通 WebView 必须在 shader 分支之外按 WGC 有效内容尺寸 1:1 拷贝',
+    );
+    final int copyStart = bridgeSrc.indexOf(
+      'void TextureBridgeGpu::CopyIntoSurface(',
+    );
+    expect(copyStart, greaterThanOrEqualTo(0));
+    final String copySrc = bridgeSrc.substring(
+      copyStart,
+      bridgeSrc.indexOf('void TextureBridgeGpu::ProcessFrame(', copyStart),
+    );
+    expect(
+      copySrc,
       contains(
-        'if (!shader_enabled && same_size) {\n'
-        '      device_context->CopyResource',
+        'device_context->CopySubresourceRegion(surface_.get(), 0, 0, 0, 0, src, 0,',
       ),
-      reason: '普通 WebView 必须在捕获尺寸上 1:1 CopyResource，保持文字锐度',
+      reason: '普通 WebView 的落点必须是无缩放的像素拷贝（左上角对齐），保持文字锐度',
     );
     expect(
       passSrc,

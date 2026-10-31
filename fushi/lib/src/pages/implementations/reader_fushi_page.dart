@@ -159,6 +159,8 @@ import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart';
+import 'package:fushi/src/reader/lyrics_cue_search.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
 import 'package:fushi/src/reader/image_actions_sheet.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
@@ -174,6 +176,7 @@ import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/webview/parked_webview_slot.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
@@ -2178,7 +2181,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ++_lyricsLoadGeneration;
       _lyricsReadyFinalizingGeneration = null;
       _lyricsDocumentLoadGeneration = null;
-      _lyricsController = null;
+      _lyricsWebViewController = null;
       _lyricsPageReady = false;
       if (_caretSurface == CaretSurface.lyrics) {
         _caretSurface = CaretSurface.none;
@@ -2375,10 +2378,29 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // WebView（[_lyricsController]）。正文 WebView（[_controller]）在下面照常存活、
   // 照常跟随音频翻页 / 高亮，阅读统计（账本字数、StudyClock 时长）也照常由正文
   // 这条路产生——歌词层不写任何统计。
-  InAppWebViewController? _lyricsController;
+  //
+  // BUG-3913：歌词 WebView 第一次进歌词模式时创建，之后**整页存活期间复用同一个
+  // 实例**——退出时不卸载，按 [_lyricsWebViewKey] 停到屏外（[ParkedWebViewSlot]），
+  // 再进入时搬回覆盖层、重装歌词文档。Windows 上每新建一个 WebView 都留下一份不归还
+  // 的显存，旧实现每进出一轮就新建一个。
+  InAppWebViewController? _lyricsWebViewController;
+
+  /// 歌词 WebView 已经挂上过（第一次进入歌词模式之后恒真）：此后不在歌词模式时
+  /// 它停在屏外，不卸载。
+  bool _lyricsWebViewRetained = false;
+
+  /// 离开覆盖层那一刻歌词 WebView 的尺寸：停放时按它摆，尺寸不变就不触发 Windows
+  /// 侧重新下发尺寸 / 扩纹理容量。
+  Size? _lyricsWebViewParkedSize;
+
+  /// 当前可交互的歌词文档控制器：只在歌词模式里非 null。停放中的实例不算——
+  /// 所有往歌词文档推 cue / 主题 / caret 的路径都经它，停放期间自然全部短路。
+  InAppWebViewController? get _lyricsController =>
+      _lyricsMode ? _lyricsWebViewController : null;
 
   /// 歌词 WebView 的 RenderBox 钥匙：查词弹窗屏障的点击 / 悬停要映射回歌词文档的
   /// 局部坐标（正文用 [_webViewKey]），歌词选区矩形也要映射回页面 Stack 坐标。
+  /// 它同时是歌词 WebView 在「覆盖层 ↔ 屏外停放」之间搬家的身份（BUG-3913）。
   final GlobalKey _lyricsWebViewKey = GlobalKey(
     debugLabel: 'reader_lyrics_webview',
   );
@@ -2392,6 +2414,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 歌词模式的书中插图状态（进歌词模式时异步探测装入，退出时丢弃）；null =
   /// 不在歌词模式 / 还没探测完 / 这本书没有可显示的插图。
   LyricsIllustrationController? _lyricsIllustrations;
+
+  /// 「弹出停留」在途：控制器（停留结束 / 用户按播放或暂停）与插图状态机（用户
+  /// 手动关卡）两头都听，任一头先到就收尾。
+  ({AudiobookPlayerController ctrl, LyricsIllustrationController ill})?
+  _lyricsIllustrationStay;
+
+  /// 上一次喂插图状态机时的（控制器跳转序号, 音频位置），判「连续播放」用。
+  ({int jumpSerial, int audioMs})? _lyricsIllustrationLastObservation;
 
   /// 插图探测的代次：退出歌词模式（或重进）后，在途的探测结果作废。
   int _lyricsIllustrationGeneration = 0;
@@ -3573,6 +3603,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (_lyricsMode) _audiobookController?.setReaderFollowOverride(false);
     // 可见性是本页喂的；会话比本页活得久，撤掉本页的「后台」判断（BUG-3777 D）。
     _audiobookController?.setReaderVisible(true);
+    // 歌词模式插图「弹出停留」挂在控制器上的监听随页面一起摘（控制器比本页活得久）。
+    _endLyricsIllustrationStay();
     // 控制器是会话对象、可能比页面活得久：解绑前把播放态监听摘掉。
     _audiobookController = null;
     _syncChromePlaybackListener();

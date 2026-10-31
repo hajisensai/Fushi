@@ -31,6 +31,10 @@ import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial, FushiGlassTheme;
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsRow;
 import 'package:fushi/src/settings/settings_destination.dart'
     show debugSettingsForceExpandAllSections;
 import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
@@ -326,13 +330,29 @@ void main() {
     /// 区块从树上摘掉时 **ProviderScope 原位保留**：整棵树换掉会连 AppModel 与
     /// PreferencesRepository 一起 dispose，dispose-flush 的异步写就会撞上一个已
     /// 释放的 repo——那是 harness 假象，不是生产行为。
-    Widget harness({AiChatClientFactory? clientFactory}) => ProviderScope(
+    Widget harness({
+      AiChatClientFactory? clientFactory,
+      double width = 640,
+      double textScale = 1,
+      bool apple = false,
+    }) => ProviderScope(
       overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
-        theme: ThemeData(useMaterial3: true),
+        theme: ThemeData(
+          useMaterial3: true,
+          extensions: <ThemeExtension<dynamic>>[
+            FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+          ],
+        ),
+        builder: (BuildContext context, Widget? child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
         home: Scaffold(
           body: SizedBox(
-            width: 640,
+            width: width,
             child: SingleChildScrollView(
               child: AiProviderSettingsSection(clientFactory: clientFactory),
             ),
@@ -344,11 +364,21 @@ void main() {
     Future<void> pumpSection(
       WidgetTester tester, {
       AiChatClientFactory? clientFactory,
+      double width = 640,
+      double textScale = 1,
+      bool apple = false,
     }) async {
       tester.view.physicalSize = const Size(900, 4000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness(clientFactory: clientFactory));
+      await tester.pumpWidget(
+        harness(
+          clientFactory: clientFactory,
+          width: width,
+          textScale: textScale,
+          apple: apple,
+        ),
+      );
       await tester.pumpAndSettle();
     }
 
@@ -692,6 +722,101 @@ void main() {
       await tester.tap(find.text(t.ai_features_section));
       await tester.pumpAndSettle();
       expect(featureRow, findsOneWidget, reason: '点分组头展开后功能行出现');
+    });
+
+    testWidgets('手机宽度：功能行的说明不被下拉按钮挤成一字一行，按钮落到说明下一行', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'LM Studio (local, long provider name)'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      // 测试字体（Ahem）的字形远宽于真字体：缩到 0.5 倍让折叠头等无关部件不溢出，
+      // 本测试只量设置行的堆叠判据。
+      await pumpSection(tester, width: 360, textScale: 0.5);
+
+      final Finder summary = find.text(
+        t.ai_feature_galgame_text_process_summary,
+      );
+      final Finder button = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+        ),
+      );
+      await tester.ensureVisible(summary);
+      await tester.pumpAndSettle();
+
+      // 堆叠前标题 / 说明只剩十几 dp（BUG-2550 同款挤压）；堆叠后拿到整行宽。
+      expect(tester.getSize(summary).width, greaterThan(200));
+      expect(
+        tester.getTopLeft(button).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(summary).dy),
+        reason: '窄行里下拉按钮应在说明下面，而不是挤在它右边',
+      );
+    });
+
+    for (final bool apple in <bool>[false, true]) {
+      testWidgets(
+        '[${apple ? 'Apple' : 'MD3'}] 功能行声明的 trailingWidth 就是下拉按钮的真实最大宽',
+        (WidgetTester tester) async {
+          // 名字远超当前值文字上限：按钮顶到最大宽。
+          await prefs.setAiProviders(<AiProviderConfig>[
+            _config(
+              id: 'p1',
+              name: 'An extremely long provider name that never fits the cap',
+            ),
+          ]);
+          await prefs.setAiFeatureAssignments(
+            const AiFeatureAssignments(defaultProviderId: 'p1'),
+          );
+          await pumpSection(tester, width: 900, apple: apple);
+
+          final Finder button = find.byKey(
+            ValueKey<String>(
+              'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+            ),
+          );
+          await tester.ensureVisible(button);
+          await tester.pumpAndSettle();
+          final AdaptiveSettingsRow row = tester.widget<AdaptiveSettingsRow>(
+            find.ancestor(
+              of: button,
+              matching: find.byType(AdaptiveSettingsRow),
+            ),
+          );
+          final double declared = row.trailingWidth!;
+          // 堆叠判据按 declared 算：它与按钮实宽对不上，窄屏就会误判行内 / 堆叠。
+          expect(tester.getSize(button).width, closeTo(declared, 0.5));
+        },
+      );
+    }
+
+    testWidgets('[Apple] 手机宽度：功能行的下拉按钮落到说明下一行', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'LM Studio (local, long provider name)'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      await pumpSection(tester, width: 360, textScale: 0.5, apple: true);
+
+      final Finder summary = find.text(
+        t.ai_feature_galgame_text_process_summary,
+      );
+      final Finder button = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+        ),
+      );
+      await tester.ensureVisible(summary);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(button).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(summary).dy),
+        reason: '窄行里下拉按钮应在说明下面，而不是挤在它右边',
+      );
     });
 
     testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (WidgetTester tester) async {
