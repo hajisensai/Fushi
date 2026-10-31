@@ -136,15 +136,20 @@ class OnnxRuntime {
   /// [FlutterOnnxruntimePlatform.getRuntimeInfo].
   Future<Map<String, dynamic>?> getRuntimeInfo() => FlutterOnnxruntimePlatform.instance.getRuntimeInfo();
 
+  /// The execution providers the native runtime reports that this Dart API can
+  /// request.
+  ///
+  /// Fushi fork: a name with no [OrtProvider] value is dropped instead of
+  /// throwing. ORT keeps adding EPs (Android 1.28 reports `WEBGPU`), and one
+  /// unknown name used to fail the whole query, hiding every provider the app
+  /// could actually use. A provider [OrtProvider] cannot name cannot be passed
+  /// to [createSession] either, so leaving it out is the exact answer.
   Future<List<OrtProvider>> getAvailableProviders() async {
-    final providers = await FlutterOnnxruntimePlatform.instance.getAvailableProviders();
-    return providers.map((p) {
-      final provider = OrtProvider.values.firstWhere(
-        (e) => e.name == p,
-        orElse: () => throw ArgumentError('Provider $p is not a valid OrtProvider.'),
-      );
-      return provider;
-    }).toList();
+    final List<String> providers = await FlutterOnnxruntimePlatform.instance.getAvailableProviders();
+    final Map<String, OrtProvider> byName = <String, OrtProvider>{
+      for (final OrtProvider provider in OrtProvider.values) provider.name: provider,
+    };
+    return providers.map((String name) => byName[name]).whereType<OrtProvider>().toList();
   }
 }
 

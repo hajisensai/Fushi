@@ -185,6 +185,9 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
             "QNN" -> "QNN"
             "ROCM" -> "ROCM"
             "TENSOR_RT" -> "TENSOR_RT"
+            // Fushi fork: ORT 1.28 Java OrtProvider spells it WEBGPU;
+            // the Dart enum is WEB_GPU.
+            "WEBGPU" -> "WEB_GPU"
             "XNNPACK" -> "XNNPACK"
             else -> providerName
         }

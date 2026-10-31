@@ -303,3 +303,15 @@ built against the same ORT revision (and its manifest in
 `gpu_runtime_pack.dart`), update the nupkg SHA-256, and keep both runtime DLLs
 in `flutter_onnxruntime_bundled_libraries`. `kOrtApiVersionUsed` must stay at
 or below the API version of the downloaded DirectML core.
+
+15. `OnnxRuntime.getAvailableProviders` drops runtime EP names that have no
+    `OrtProvider` value instead of throwing `ArgumentError`, and the Android
+    plugin maps Java's `WEBGPU` to the Dart `WEB_GPU`
+    (`lib/src/onnxruntime.dart`, `FlutterOnnxruntimePlugin.kt`
+    `mapProviderNameToEnumName`). ORT 1.28 on Android (delta #14) reports
+    `WEBGPU`; upstream's `firstWhere(orElse: throw)` turned that one name into
+    a failure of the whole query, so the app's GPU probe reported "Provider
+    WEBGPU is not a valid OrtProvider" and planned CPU on every Android phone.
+    A name the enum cannot express cannot be requested by `createSession`
+    either, so dropping it is the exact answer, not a hidden error. Test:
+    `fushi/test/onnx/onnxruntime_available_providers_test.dart`.
