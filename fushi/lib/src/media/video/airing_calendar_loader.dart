@@ -1,4 +1,5 @@
 import 'package:http/http.dart' as http;
+import 'package:meta/meta.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
@@ -29,11 +30,17 @@ const Duration kAiringCalendarPageInterval = Duration(milliseconds: 700);
 class AiringCalendarRequest {
   const AiringCalendarRequest({
     required this.weekStart,
+    this.day,
     this.force = false,
     this.isCancelled,
   });
 
   final DateTime weekStart;
+
+  /// 只要这一本地日（[weekStart] 所在周内）的放送：发现页「今日放送」只显示今天，
+  /// 不必等整周拉完（冷启动整周 = 数页串行 + 页间 700ms，弱网下长时间骨架屏）。
+  /// 本周整周缓存命中时直接从中截取当天，不发请求；null = 整周（完整日历页）。
+  final DateTime? day;
 
   /// true = 用户点刷新，绕过两层缓存。
   final bool force;
@@ -114,54 +121,111 @@ Future<List<AniListAiringEpisode>> _fetchAiringWeekEpisodes(
   AppModel appModel, {
   required AiringCalendarRequest request,
   required List<int>? filterIds,
-}) async {
-  final DateTime weekStart = request.weekStart;
-  final int weekStartSeconds = weekStart.millisecondsSinceEpoch ~/ 1000;
-  final int weekEndSeconds =
-      DateTime(
-        weekStart.year,
-        weekStart.month,
-        weekStart.day + 7,
-      ).millisecondsSinceEpoch ~/
-      1000;
-  final String signature = airingCacheSignature(
-    weekStartEpochSeconds: weekStartSeconds,
-    mediaIds: filterIds,
-  );
-  final int nowMs = DateTime.now().millisecondsSinceEpoch;
-  if (!request.force) {
-    final AiringScheduleCache? memory = AiringMemoryCache.get(
-      signature,
-      nowMs: nowMs,
-    );
-    if (memory != null) return memory.episodes;
-    final String raw =
+}) {
+  return fetchAiringScheduleEpisodes(
+    request: request,
+    filterIds: filterIds,
+    readPersisted: () =>
         appModel.prefsRepo.getPref(
               kAiringCalendarCachePrefKey,
               defaultValue: '',
             )
-            as String;
-    final AiringScheduleCache? persisted = decodeAiringScheduleCache(
-      raw,
-      signature: signature,
-      nowMs: nowMs,
+            as String,
+    writePersisted: (String raw) =>
+        appModel.prefsRepo.setPref(kAiringCalendarCachePrefKey, raw),
+    createHttpClient: appModel.createDownloadHttpClient,
+  );
+}
+
+/// 放送表取数的缓存与分页口径（与 [AppModel] 解耦，便于单测）。
+///
+/// - 整周请求（`request.day == null`）：签名 `<周一>|all`，按 内存 → 偏好 → 分页拉取。
+/// - 单日请求：先查**整周**缓存，命中就截取当天、不发请求；未命中再查单日缓存
+///   （签名 `day:<当日 00:00>|all`，与整周签名不会相撞），最后只拉这一天的窗口
+///   （一天的条目通常一两页）。单日结果也写进两层缓存：它只会顶掉已经失效的整周
+///   缓存（整周有效时根本走不到拉取），之后进完整日历页时整周按签名未命中照常拉。
+/// - 分页仍串行 + 页间 [pageInterval]（AniList 约 90 req/min 的限流是真约束）。
+@visibleForTesting
+Future<List<AniListAiringEpisode>> fetchAiringScheduleEpisodes({
+  required AiringCalendarRequest request,
+  required List<int>? filterIds,
+  required String Function() readPersisted,
+  required Future<void> Function(String raw) writePersisted,
+  required Future<http.Client> Function() createHttpClient,
+  int? nowMs,
+  Duration pageInterval = kAiringCalendarPageInterval,
+}) async {
+  final DateTime weekStart = request.weekStart;
+  final int weekStartSeconds = _epochSeconds(weekStart);
+  final int weekEndSeconds = _epochSeconds(
+    DateTime(weekStart.year, weekStart.month, weekStart.day + 7),
+  );
+  final String weekSignature = airingCacheSignature(
+    weekStartEpochSeconds: weekStartSeconds,
+    mediaIds: filterIds,
+  );
+  final DateTime? day = request.day;
+  final int windowStartSeconds;
+  final int windowEndSeconds;
+  final String windowSignature;
+  if (day == null) {
+    windowStartSeconds = weekStartSeconds;
+    windowEndSeconds = weekEndSeconds;
+    windowSignature = weekSignature;
+  } else {
+    windowStartSeconds = _epochSeconds(DateTime(day.year, day.month, day.day));
+    windowEndSeconds = _epochSeconds(
+      DateTime(day.year, day.month, day.day + 1),
     );
-    if (persisted != null) {
-      AiringMemoryCache.put(persisted);
-      return persisted.episodes;
+    windowSignature = airingDayCacheSignature(
+      dayStartEpochSeconds: windowStartSeconds,
+      mediaIds: filterIds,
+    );
+  }
+  final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+  if (!request.force) {
+    final String raw = readPersisted();
+    AiringScheduleCache? lookup(String signature) {
+      final AiringScheduleCache? memory = AiringMemoryCache.get(
+        signature,
+        nowMs: now,
+      );
+      if (memory != null) return memory;
+      final AiringScheduleCache? persisted = decodeAiringScheduleCache(
+        raw,
+        signature: signature,
+        nowMs: now,
+      );
+      if (persisted != null) AiringMemoryCache.put(persisted);
+      return persisted;
+    }
+
+    final AiringScheduleCache? week = lookup(weekSignature);
+    if (week != null) {
+      if (day == null) return week.episodes;
+      return <AniListAiringEpisode>[
+        for (final AniListAiringEpisode e in week.episodes)
+          if (e.airingAtSeconds >= windowStartSeconds &&
+              e.airingAtSeconds < windowEndSeconds)
+            e,
+      ];
+    }
+    if (day != null) {
+      final AiringScheduleCache? dayCache = lookup(windowSignature);
+      if (dayCache != null) return dayCache.episodes;
     }
   }
-  final http.Client httpClient = await appModel.createDownloadHttpClient();
+  final http.Client httpClient = await createHttpClient();
   final AniListClient client = AniListClient(client: httpClient);
   try {
     final List<AniListAiringEpisode> all = <AniListAiringEpisode>[];
     int page = 1;
     while (true) {
-      // airingAt_greater 是严格大于：-1 让周一 00:00 整点的条目也进窗口。
+      // airingAt_greater 是严格大于：-1 让窗口起点整点的条目也进窗口。
       final AniListAiringPage result = await client
           .fetchAiringSchedulePage(
-            airingAtGreater: weekStartSeconds - 1,
-            airingAtLesser: weekEndSeconds,
+            airingAtGreater: windowStartSeconds - 1,
+            airingAtLesser: windowEndSeconds,
             mediaIds: filterIds,
             page: page,
           )
@@ -171,20 +235,19 @@ Future<List<AniListAiringEpisode>> _fetchAiringWeekEpisodes(
       // 调用方已销毁就停止翻页：省的是后续网络请求。
       if (request.isCancelled?.call() ?? false) break;
       page += 1;
-      await Future<void>.delayed(kAiringCalendarPageInterval);
+      await Future<void>.delayed(pageInterval);
     }
     final AiringScheduleCache cache = AiringScheduleCache(
-      fetchedAtMs: nowMs,
-      signature: signature,
+      fetchedAtMs: now,
+      signature: windowSignature,
       episodes: all,
     );
     AiringMemoryCache.put(cache);
-    await appModel.prefsRepo.setPref(
-      kAiringCalendarCachePrefKey,
-      encodeAiringScheduleCache(cache),
-    );
+    await writePersisted(encodeAiringScheduleCache(cache));
     return all;
   } finally {
     client.close();
   }
 }
+
+int _epochSeconds(DateTime time) => time.millisecondsSinceEpoch ~/ 1000;
