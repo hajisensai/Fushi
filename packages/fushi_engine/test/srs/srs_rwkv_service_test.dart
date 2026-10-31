@@ -42,7 +42,6 @@ class _FakeBackend implements SrsRwkvBackend {
   int appends = 0;
   int unappends = 0;
   int rewinds = 0;
-  bool journalFromEmpty = true;
 
   /// 分数表重算过的行数（[updateScores] 的行 + [requeryScores] 的项）。
   int scoredRows = 0;
@@ -83,10 +82,10 @@ class _FakeBackend implements SrsRwkvBackend {
   }
 
   @override
-  Future<int?> rewindFrom(int atMs) async {
+  Future<int?> rewindFrom(int atMs, int floorMs) async {
+    if (floorMs >= atMs) return null;
     final int keep = journal.indexWhere(((int, int, int) e) => e.$3 >= atMs);
     final int from = keep < 0 ? journal.length : keep;
-    if (from == 0 && !journalFromEmpty) return null;
     rewinds++;
     final int n = journal.length - from;
     for (int i = 0; i < n; i++) {
@@ -164,7 +163,6 @@ class _FakeBackend implements SrsRwkvBackend {
   @override
   Future<void> replay(RwkvRows rows) async {
     journal.clear();
-    if (rows.length > 0) journalFromEmpty = false;
     for (int i = 0; i < rows.length; i++) {
       replayedCards.add(rows.cardIdAt(i));
       scores.remove(rows.cardIdAt(i));
@@ -187,7 +185,6 @@ class _FakeBackend implements SrsRwkvBackend {
   Future<void> restore(Uint8List snapshot) async {
     restores++;
     journal.clear();
-    journalFromEmpty = false;
     scores.clear();
     replayedCards
       ..clear()
@@ -202,7 +199,6 @@ class _FakeBackend implements SrsRwkvBackend {
     if (resetGate != null && !resetEntered.isCompleted) resetEntered.complete();
     await resetGate?.future;
     journal.clear();
-    journalFromEmpty = true;
     scores.clear();
     replayedCards.clear();
   }
@@ -507,42 +503,45 @@ void main() {
       await service.close();
     });
 
-    test('同步来的评分插在已回放的行中间（同一天早几分钟、早几天）：按撤销日志退回再按时间顺序追加，与全量回放顺序相同，不重建、一直就绪', () async {
-      final _Fixture f = await _Fixture.create();
-      final List<String> cards = await f.cards(3);
-      await f.graduate(cards);
-      final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
-      final SrsRwkvService service = f.service(backend);
-      f.store.rwkv = service;
-      await service.start();
-      await _settled(service);
-      f.advance(kDay);
-      await f.store.answer(cards[0], 3);
-      expect(await service.refresh(), isTrue);
-      f.advance(60000);
-      await f.store.answer(cards[2], 3);
-      expect(await service.refresh(), isTrue);
-      expect(backend.rewinds, 0, reason: 'later ratings are plain appends');
+    test(
+      '同步来的评分插在已回放的行中间（同一天早几分钟、早几天）：按撤销日志退回再按时间顺序追加，与全量回放顺序相同，不重建、一直就绪',
+      () async {
+        final _Fixture f = await _Fixture.create();
+        final List<String> cards = await f.cards(3);
+        await f.graduate(cards);
+        final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
+        final SrsRwkvService service = f.service(backend);
+        f.store.rwkv = service;
+        await service.start();
+        await _settled(service);
+        f.advance(kDay);
+        await f.store.answer(cards[0], 3);
+        expect(await service.refresh(), isTrue);
+        f.advance(60000);
+        await f.store.answer(cards[2], 3);
+        expect(await service.refresh(), isTrue);
+        expect(backend.rewinds, 0, reason: 'later ratings are plain appends');
 
-      // 早 5 分钟（对端设备时钟慢 / 离线一会儿）：插在 cards[0]、cards[2] 两条之前。
-      f.advance(-6 * 60 * 1000);
-      await f.store.answer(cards[1], 3);
-      expect(await service.refresh(), isTrue);
-      expect(service.ready, isTrue);
-      expect(backend.resets, 1, reason: 'no full rebuild');
-      expect(backend.rewinds, 1);
-      expect(backend.replayedCards, await _fullReplayOrder(f));
+        // 早 5 分钟（对端设备时钟慢 / 离线一会儿）：插在 cards[0]、cards[2] 两条之前。
+        f.advance(-6 * 60 * 1000);
+        await f.store.answer(cards[1], 3);
+        expect(await service.refresh(), isTrue);
+        expect(service.ready, isTrue);
+        expect(backend.resets, 1, reason: 'no full rebuild');
+        expect(backend.rewinds, 1);
+        expect(backend.replayedCards, await _fullReplayOrder(f));
 
-      // 早两天（离线多天的设备）：仍在撤销日志里，照样就地退回。
-      f.advance(-2 * kDay);
-      await f.store.answer(cards[2], 3);
-      expect(await service.refresh(), isTrue);
-      expect(service.ready, isTrue);
-      expect(backend.resets, 1);
-      expect(backend.rewinds, 2);
-      expect(backend.replayedCards, await _fullReplayOrder(f));
-      await service.close();
-    });
+        // 早两天（离线多天的设备）：仍在撤销日志里，照样就地退回。
+        f.advance(-2 * kDay);
+        await f.store.answer(cards[2], 3);
+        expect(await service.refresh(), isTrue);
+        expect(service.ready, isTrue);
+        expect(backend.resets, 1);
+        expect(backend.rewinds, 2);
+        expect(backend.replayedCards, await _fullReplayOrder(f));
+        await service.close();
+      },
+    );
 
     test('撤销日志够不着（重启后从快照恢复）：从前一天的检查点恢复、只回放它之后的行，与全量回放顺序相同，不全量重建', () async {
       final _Fixture f = await _Fixture.create();

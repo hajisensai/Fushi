@@ -103,7 +103,7 @@ class _CountingBackend implements SrsRwkvBackend {
   }
 
   @override
-  Future<int?> rewindFrom(int atMs) async => null;
+  Future<int?> rewindFrom(int atMs, int floorMs) async => null;
 
   @override
   Future<bool> unappend(int tag) async => false;

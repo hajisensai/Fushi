@@ -169,8 +169,16 @@ typedef _AppendDart =
     );
 typedef _UnappendC = Int32 Function(Pointer<Void>, Uint64);
 typedef _UnappendDart = int Function(Pointer<Void>, int);
-typedef _RewindFromC = Int32 Function(Pointer<Void>, Int64, Pointer<Uint64>);
-typedef _RewindFromDart = int Function(Pointer<Void>, int, Pointer<Uint64>);
+typedef _RewindFromC =
+    Int32 Function(Pointer<Void>, Int64, Int64, Pointer<Uint64>);
+typedef _RewindFromDart =
+    int Function(Pointer<Void>, int, int, Pointer<Uint64>);
+
+/// [RwkvNativeRuntime.rewindFrom] 的 floor：reset 之后日志之前什么都没有。
+const int kRwkvFloorEmpty = -0x8000000000000000;
+
+/// [RwkvNativeRuntime.rewindFrom] 的 floor：不知道日志之前的行最晚到哪（退不到）。
+const int kRwkvFloorUnknown = 0x7fffffffffffffff;
 typedef _LookupC =
     Int32 Function(
       Pointer<Void>,
@@ -457,13 +465,14 @@ class RwkvNativeRuntime implements Finalizable {
   }
 
   /// 退到时刻 [atMs] 之前（`frwkv_runtime_rewind_from`）：撤掉撤销日志里全部时刻 ≥ [atMs] 的条目，返回
-  /// 撤了几条；状态与「只回放过时刻 < [atMs] 的行」逐位相同。退不到（日志之前还有时刻未知的行）返回
-  /// null，什么都不改。
-  int? rewindFrom(int atMs) {
+  /// 撤了几条；状态与「只回放过时刻 < [atMs] 的行」逐位相同。[floorMs]：调用方保证最近一次
+  /// replay / restore / reset 之后不经撤销日志进来的行时刻都 ≤ 它（reset 后 = [kRwkvFloorEmpty]，不知道 =
+  /// [kRwkvFloorUnknown]）。这些行（及超出容量丢掉的条目）不早于 [atMs] 时退不到，返回 null，什么都不改。
+  int? rewindFrom(int atMs, int floorMs) {
     _alive();
     final Pointer<Uint64> out = malloc<Uint64>();
     try {
-      final int code = _b.rewindFrom(_handle, atMs, out);
+      final int code = _b.rewindFrom(_handle, atMs, floorMs, out);
       if (code < 0) throw _b.error(code);
       return code == 1 ? out.value : null;
     } finally {
