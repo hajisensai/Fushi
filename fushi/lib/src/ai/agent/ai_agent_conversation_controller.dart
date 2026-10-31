@@ -69,7 +69,13 @@ abstract interface class AiAgentConversationController implements Listenable {
 
 /// AI 助手的会话库：本机对话存档（`ai_agent_sessions`，按当前 Profile 过滤）加上
 /// 「正在说的是哪一场」。会话列表界面只依赖这一面。
-abstract interface class AiAgentSessionLibrary {
+///
+/// 监听约定同 [AiAgentConversationController]：当前会话 / 运行状态变了通知监听者；
+/// 存档列表的变化另走 [sessionsRevision]。
+abstract interface class AiAgentSessionLibrary implements Listenable {
+  /// 一轮正在跑：此时不切换 / 不新建（与「新对话」按钮同一判据），免得半截打断。
+  bool get running;
+
   /// 当前这场的 id；还没开过会话（或刚点了新对话、尚未说话）时为 null。
   String? get currentSessionId;
 
