@@ -41,6 +41,7 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -122,6 +123,14 @@ final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
     appProvider.select((AppModel app) => app.srsReviewHideHardEasy),
   ),
 );
+
+/// 复习页卡面手势映射（按 profile 偏好，默认 = 点空白切换顶栏、其余不绑）。
+final Provider<SrsReviewGestureMap> srsReviewGesturesProvider =
+    Provider<SrsReviewGestureMap>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsReviewGestures),
+      ),
+    );
 
 /// 复习页底部操作行一端的重播音频键（按 profile 偏好，默认不放）。
 final Provider<SrsReviewReplayButton> srsReviewReplayButtonProvider =

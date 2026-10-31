@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 180880 (10640 per locale)
+/// Strings: 181186 (10658 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11330,6 +11330,27 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_review_done => 'All done for today';
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  String get srs_review_gestures_action_none => 'Nothing';
+  String get srs_review_gestures_action_toggle_toolbar => 'Show / hide top bar';
+  String get srs_review_gestures_back => 'Answer side';
+  String get srs_review_gestures_double_tap => 'Double tap';
+  String get srs_review_gestures_front => 'Question side';
+  String get srs_review_gestures_hint =>
+      'Tap zones, double tap, long press and swipes on the card';
+  String get srs_review_gestures_long_press => 'Long press';
+  String get srs_review_gestures_note =>
+      'Taps and long presses only count on blank space: words, links, buttons and selected text keep their own behaviour. While the card can still scroll that way, a swipe is a scroll.';
+  String get srs_review_gestures_rating_hidden =>
+      'Inactive while only Again / Good are shown';
+  String get srs_review_gestures_reset => 'Restore defaults';
+  String get srs_review_gestures_swipe_down => 'Swipe down';
+  String get srs_review_gestures_swipe_left => 'Swipe left';
+  String get srs_review_gestures_swipe_right => 'Swipe right';
+  String get srs_review_gestures_swipe_up => 'Swipe up';
+  String get srs_review_gestures_tap_center => 'Tap center';
+  String get srs_review_gestures_tap_left => 'Tap left';
+  String get srs_review_gestures_tap_right => 'Tap right';
+  String get srs_review_gestures_title => 'Gestures';
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   String get srs_review_hide_hard_easy_hint =>
       'Keys 2 and 4 still rate Hard and Easy';
@@ -34309,6 +34330,46 @@ class _StringsAr extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'لا شيء';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'إظهار / إخفاء الشريط العلوي';
+  @override
+  String get srs_review_gestures_back => 'الوجه الخلفي';
+  @override
+  String get srs_review_gestures_double_tap => 'نقر مزدوج';
+  @override
+  String get srs_review_gestures_front => 'الوجه الأمامي';
+  @override
+  String get srs_review_gestures_hint =>
+      'مناطق النقر والنقر المزدوج والضغط المطوّل والسحب على البطاقة';
+  @override
+  String get srs_review_gestures_long_press => 'ضغط مطوّل';
+  @override
+  String get srs_review_gestures_note =>
+      'يُحتسب النقر والضغط المطوّل على المساحة الفارغة فقط: الكلمات والروابط والأزرار والنص المحدد تحتفظ بسلوكها. ما دامت البطاقة قابلة للتمرير في ذلك الاتجاه، فالسحب تمرير.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'غير فعّال عند عرض Again / Good فقط';
+  @override
+  String get srs_review_gestures_reset => 'استعادة الافتراضي';
+  @override
+  String get srs_review_gestures_swipe_down => 'السحب للأسفل';
+  @override
+  String get srs_review_gestures_swipe_left => 'السحب لليسار';
+  @override
+  String get srs_review_gestures_swipe_right => 'السحب لليمين';
+  @override
+  String get srs_review_gestures_swipe_up => 'السحب للأعلى';
+  @override
+  String get srs_review_gestures_tap_center => 'النقر في الوسط';
+  @override
+  String get srs_review_gestures_tap_left => 'النقر يسارًا';
+  @override
+  String get srs_review_gestures_tap_right => 'النقر يمينًا';
+  @override
+  String get srs_review_gestures_title => 'الإيماءات';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -60410,6 +60471,46 @@ class _StringsDe extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Nichts';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Obere Leiste ein- / ausblenden';
+  @override
+  String get srs_review_gestures_back => 'Rückseite';
+  @override
+  String get srs_review_gestures_double_tap => 'Doppeltippen';
+  @override
+  String get srs_review_gestures_front => 'Vorderseite';
+  @override
+  String get srs_review_gestures_hint =>
+      'Tippbereiche, Doppeltippen, langes Drücken und Wischen auf der Karte';
+  @override
+  String get srs_review_gestures_long_press => 'Lange drücken';
+  @override
+  String get srs_review_gestures_note =>
+      'Tippen und langes Drücken zählen nur auf leeren Flächen: Wörter, Links, Schaltflächen und markierter Text verhalten sich wie gewohnt. Solange die Karte in diese Richtung noch scrollen kann, ist Wischen ein Scrollen.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inaktiv, solange nur Again / Good angezeigt werden';
+  @override
+  String get srs_review_gestures_reset => 'Standard wiederherstellen';
+  @override
+  String get srs_review_gestures_swipe_down => 'Nach unten wischen';
+  @override
+  String get srs_review_gestures_swipe_left => 'Nach links wischen';
+  @override
+  String get srs_review_gestures_swipe_right => 'Nach rechts wischen';
+  @override
+  String get srs_review_gestures_swipe_up => 'Nach oben wischen';
+  @override
+  String get srs_review_gestures_tap_center => 'Mitte tippen';
+  @override
+  String get srs_review_gestures_tap_left => 'Links tippen';
+  @override
+  String get srs_review_gestures_tap_right => 'Rechts tippen';
+  @override
+  String get srs_review_gestures_title => 'Gesten';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -86633,6 +86734,46 @@ class _StringsEs extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Nada';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Mostrar / ocultar barra superior';
+  @override
+  String get srs_review_gestures_back => 'Reverso';
+  @override
+  String get srs_review_gestures_double_tap => 'Doble toque';
+  @override
+  String get srs_review_gestures_front => 'Anverso';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zonas de toque, doble toque, pulsación larga y deslizamientos en la tarjeta';
+  @override
+  String get srs_review_gestures_long_press => 'Pulsación larga';
+  @override
+  String get srs_review_gestures_note =>
+      'Los toques y pulsaciones largas solo cuentan en espacio vacío: palabras, enlaces, botones y texto seleccionado conservan su comportamiento. Mientras la tarjeta aún pueda desplazarse en esa dirección, deslizar es desplazar.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inactivo mientras solo se muestran Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Restaurar valores predeterminados';
+  @override
+  String get srs_review_gestures_swipe_down => 'Deslizar hacia abajo';
+  @override
+  String get srs_review_gestures_swipe_left => 'Deslizar a la izquierda';
+  @override
+  String get srs_review_gestures_swipe_right => 'Deslizar a la derecha';
+  @override
+  String get srs_review_gestures_swipe_up => 'Deslizar hacia arriba';
+  @override
+  String get srs_review_gestures_tap_center => 'Tocar en el centro';
+  @override
+  String get srs_review_gestures_tap_left => 'Tocar a la izquierda';
+  @override
+  String get srs_review_gestures_tap_right => 'Tocar a la derecha';
+  @override
+  String get srs_review_gestures_title => 'Gestos';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -112945,6 +113086,46 @@ class _StringsFr extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => 'Rien';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Afficher / masquer la barre supérieure';
+  @override
+  String get srs_review_gestures_back => 'Verso';
+  @override
+  String get srs_review_gestures_double_tap => 'Double toucher';
+  @override
+  String get srs_review_gestures_front => 'Recto';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zones de toucher, double toucher, appui long et balayages sur la carte';
+  @override
+  String get srs_review_gestures_long_press => 'Appui long';
+  @override
+  String get srs_review_gestures_note =>
+      'Les touchers et appuis longs ne comptent que sur les zones vides : mots, liens, boutons et texte sélectionné gardent leur comportement. Tant que la carte peut encore défiler dans ce sens, un balayage est un défilement.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inactif tant que seuls Again / Good sont affichés';
+  @override
+  String get srs_review_gestures_reset => 'Rétablir les valeurs par défaut';
+  @override
+  String get srs_review_gestures_swipe_down => 'Balayer vers le bas';
+  @override
+  String get srs_review_gestures_swipe_left => 'Balayer vers la gauche';
+  @override
+  String get srs_review_gestures_swipe_right => 'Balayer vers la droite';
+  @override
+  String get srs_review_gestures_swipe_up => 'Balayer vers le haut';
+  @override
+  String get srs_review_gestures_tap_center => 'Toucher au centre';
+  @override
+  String get srs_review_gestures_tap_left => 'Toucher à gauche';
+  @override
+  String get srs_review_gestures_tap_right => 'Toucher à droite';
+  @override
+  String get srs_review_gestures_title => 'Gestes';
+  @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -139019,6 +139200,46 @@ class _StringsId extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Tidak ada';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Tampilkan / sembunyikan bilah atas';
+  @override
+  String get srs_review_gestures_back => 'Sisi jawaban';
+  @override
+  String get srs_review_gestures_double_tap => 'Ketuk dua kali';
+  @override
+  String get srs_review_gestures_front => 'Sisi pertanyaan';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zona ketuk, ketuk dua kali, tekan lama, dan geser pada kartu';
+  @override
+  String get srs_review_gestures_long_press => 'Tekan lama';
+  @override
+  String get srs_review_gestures_note =>
+      'Ketukan dan tekan lama hanya berlaku di ruang kosong: kata, tautan, tombol, dan teks terpilih tetap berperilaku seperti biasa. Selama kartu masih bisa digulir ke arah itu, geseran adalah guliran.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Tidak aktif saat hanya Again / Good yang ditampilkan';
+  @override
+  String get srs_review_gestures_reset => 'Pulihkan bawaan';
+  @override
+  String get srs_review_gestures_swipe_down => 'Geser ke bawah';
+  @override
+  String get srs_review_gestures_swipe_left => 'Geser ke kiri';
+  @override
+  String get srs_review_gestures_swipe_right => 'Geser ke kanan';
+  @override
+  String get srs_review_gestures_swipe_up => 'Geser ke atas';
+  @override
+  String get srs_review_gestures_tap_center => 'Ketuk tengah';
+  @override
+  String get srs_review_gestures_tap_left => 'Ketuk kiri';
+  @override
+  String get srs_review_gestures_tap_right => 'Ketuk kanan';
+  @override
+  String get srs_review_gestures_title => 'Gestur';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -165136,6 +165357,46 @@ class _StringsIt extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => 'Nessuna';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Mostra / nascondi barra superiore';
+  @override
+  String get srs_review_gestures_back => 'Retro';
+  @override
+  String get srs_review_gestures_double_tap => 'Doppio tocco';
+  @override
+  String get srs_review_gestures_front => 'Fronte';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zone di tocco, doppio tocco, pressione prolungata e scorrimenti sulla carta';
+  @override
+  String get srs_review_gestures_long_press => 'Pressione prolungata';
+  @override
+  String get srs_review_gestures_note =>
+      'Tocchi e pressioni prolungate contano solo sugli spazi vuoti: parole, link, pulsanti e testo selezionato mantengono il loro comportamento. Finché la carta può ancora scorrere in quella direzione, lo scorrimento è uno scroll.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inattivo quando sono mostrati solo Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Ripristina predefiniti';
+  @override
+  String get srs_review_gestures_swipe_down => 'Scorri in basso';
+  @override
+  String get srs_review_gestures_swipe_left => 'Scorri a sinistra';
+  @override
+  String get srs_review_gestures_swipe_right => 'Scorri a destra';
+  @override
+  String get srs_review_gestures_swipe_up => 'Scorri in alto';
+  @override
+  String get srs_review_gestures_tap_center => 'Tocca al centro';
+  @override
+  String get srs_review_gestures_tap_left => 'Tocca a sinistra';
+  @override
+  String get srs_review_gestures_tap_right => 'Tocca a destra';
+  @override
+  String get srs_review_gestures_title => 'Gesti';
+  @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -190544,6 +190805,43 @@ class _StringsJa extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => 'なし';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '上部バーの表示 / 非表示';
+  @override
+  String get srs_review_gestures_back => '解答面';
+  @override
+  String get srs_review_gestures_double_tap => 'ダブルタップ';
+  @override
+  String get srs_review_gestures_front => '問題面';
+  @override
+  String get srs_review_gestures_hint => 'カード上のタップ領域、ダブルタップ、長押し、スワイプ';
+  @override
+  String get srs_review_gestures_long_press => '長押し';
+  @override
+  String get srs_review_gestures_note =>
+      'タップと長押しは空白部分でのみ反応します。文字・リンク・ボタン・選択中のテキストはそれぞれ本来の動作のままです。カードがまだその方向にスクロールできる間は、スワイプはスクロールになります。';
+  @override
+  String get srs_review_gestures_rating_hidden => '「Again / Good」のみ表示中は無効';
+  @override
+  String get srs_review_gestures_reset => 'デフォルトに戻す';
+  @override
+  String get srs_review_gestures_swipe_down => '下にスワイプ';
+  @override
+  String get srs_review_gestures_swipe_left => '左にスワイプ';
+  @override
+  String get srs_review_gestures_swipe_right => '右にスワイプ';
+  @override
+  String get srs_review_gestures_swipe_up => '上にスワイプ';
+  @override
+  String get srs_review_gestures_tap_center => '中央をタップ';
+  @override
+  String get srs_review_gestures_tap_left => '左をタップ';
+  @override
+  String get srs_review_gestures_tap_right => '右をタップ';
+  @override
+  String get srs_review_gestures_title => 'ジェスチャー';
+  @override
   String get srs_review_hide_hard_easy => '「Hard」と「Easy」ボタンを隠す';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -215686,6 +215984,43 @@ class _StringsKo extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => '없음';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '상단 바 표시 / 숨기기';
+  @override
+  String get srs_review_gestures_back => '답 면';
+  @override
+  String get srs_review_gestures_double_tap => '두 번 탭';
+  @override
+  String get srs_review_gestures_front => '질문 면';
+  @override
+  String get srs_review_gestures_hint => '카드의 탭 영역, 두 번 탭, 길게 누르기, 스와이프';
+  @override
+  String get srs_review_gestures_long_press => '길게 누르기';
+  @override
+  String get srs_review_gestures_note =>
+      '탭과 길게 누르기는 빈 공간에서만 동작합니다. 글자, 링크, 버튼, 선택한 텍스트는 원래 동작을 유지합니다. 카드가 그 방향으로 아직 스크롤될 수 있으면 스와이프는 스크롤이 됩니다.';
+  @override
+  String get srs_review_gestures_rating_hidden => '「Again / Good」만 표시할 때는 비활성';
+  @override
+  String get srs_review_gestures_reset => '기본값 복원';
+  @override
+  String get srs_review_gestures_swipe_down => '아래로 스와이프';
+  @override
+  String get srs_review_gestures_swipe_left => '왼쪽으로 스와이프';
+  @override
+  String get srs_review_gestures_swipe_right => '오른쪽으로 스와이프';
+  @override
+  String get srs_review_gestures_swipe_up => '위로 스와이프';
+  @override
+  String get srs_review_gestures_tap_center => '가운데 탭';
+  @override
+  String get srs_review_gestures_tap_left => '왼쪽 탭';
+  @override
+  String get srs_review_gestures_tap_right => '오른쪽 탭';
+  @override
+  String get srs_review_gestures_title => '제스처';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -241534,6 +241869,46 @@ class _StringsNl extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Niets';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Bovenbalk tonen / verbergen';
+  @override
+  String get srs_review_gestures_back => 'Achterkant';
+  @override
+  String get srs_review_gestures_double_tap => 'Dubbeltikken';
+  @override
+  String get srs_review_gestures_front => 'Voorkant';
+  @override
+  String get srs_review_gestures_hint =>
+      'Tikzones, dubbeltikken, lang drukken en vegen op de kaart';
+  @override
+  String get srs_review_gestures_long_press => 'Lang drukken';
+  @override
+  String get srs_review_gestures_note =>
+      'Tikken en lang drukken tellen alleen op lege plekken: woorden, links, knoppen en geselecteerde tekst werken zoals altijd. Zolang de kaart die kant nog op kan scrollen, is vegen scrollen.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inactief zolang alleen Again / Good worden getoond';
+  @override
+  String get srs_review_gestures_reset => 'Standaard herstellen';
+  @override
+  String get srs_review_gestures_swipe_down => 'Omlaag vegen';
+  @override
+  String get srs_review_gestures_swipe_left => 'Naar links vegen';
+  @override
+  String get srs_review_gestures_swipe_right => 'Naar rechts vegen';
+  @override
+  String get srs_review_gestures_swipe_up => 'Omhoog vegen';
+  @override
+  String get srs_review_gestures_tap_center => 'Midden tikken';
+  @override
+  String get srs_review_gestures_tap_left => 'Links tikken';
+  @override
+  String get srs_review_gestures_tap_right => 'Rechts tikken';
+  @override
+  String get srs_review_gestures_title => 'Gebaren';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -267683,6 +268058,46 @@ class _StringsPtBr extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => 'Nada';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Mostrar / ocultar barra superior';
+  @override
+  String get srs_review_gestures_back => 'Verso';
+  @override
+  String get srs_review_gestures_double_tap => 'Toque duplo';
+  @override
+  String get srs_review_gestures_front => 'Frente';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zonas de toque, toque duplo, toque longo e deslizes no cartão';
+  @override
+  String get srs_review_gestures_long_press => 'Toque longo';
+  @override
+  String get srs_review_gestures_note =>
+      'Toques e toques longos só contam em espaço vazio: palavras, links, botões e texto selecionado mantêm o próprio comportamento. Enquanto o cartão ainda puder rolar nessa direção, deslizar é rolar.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inativo enquanto só Again / Good são exibidos';
+  @override
+  String get srs_review_gestures_reset => 'Restaurar padrões';
+  @override
+  String get srs_review_gestures_swipe_down => 'Deslizar para baixo';
+  @override
+  String get srs_review_gestures_swipe_left => 'Deslizar para a esquerda';
+  @override
+  String get srs_review_gestures_swipe_right => 'Deslizar para a direita';
+  @override
+  String get srs_review_gestures_swipe_up => 'Deslizar para cima';
+  @override
+  String get srs_review_gestures_tap_center => 'Tocar no centro';
+  @override
+  String get srs_review_gestures_tap_left => 'Tocar à esquerda';
+  @override
+  String get srs_review_gestures_tap_right => 'Tocar à direita';
+  @override
+  String get srs_review_gestures_title => 'Gestos';
+  @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -293808,6 +294223,46 @@ class _StringsRu extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => 'Ничего';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Показать / скрыть верхнюю панель';
+  @override
+  String get srs_review_gestures_back => 'Оборотная сторона';
+  @override
+  String get srs_review_gestures_double_tap => 'Двойное касание';
+  @override
+  String get srs_review_gestures_front => 'Лицевая сторона';
+  @override
+  String get srs_review_gestures_hint =>
+      'Зоны касания, двойное касание, долгое нажатие и свайпы по карточке';
+  @override
+  String get srs_review_gestures_long_press => 'Долгое нажатие';
+  @override
+  String get srs_review_gestures_note =>
+      'Касания и долгие нажатия срабатывают только на пустом месте: слова, ссылки, кнопки и выделенный текст ведут себя как обычно. Пока карточку ещё можно прокрутить в эту сторону, свайп — это прокрутка.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Не действует, пока показаны только Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Сбросить по умолчанию';
+  @override
+  String get srs_review_gestures_swipe_down => 'Свайп вниз';
+  @override
+  String get srs_review_gestures_swipe_left => 'Свайп влево';
+  @override
+  String get srs_review_gestures_swipe_right => 'Свайп вправо';
+  @override
+  String get srs_review_gestures_swipe_up => 'Свайп вверх';
+  @override
+  String get srs_review_gestures_tap_center => 'Касание по центру';
+  @override
+  String get srs_review_gestures_tap_left => 'Касание слева';
+  @override
+  String get srs_review_gestures_tap_right => 'Касание справа';
+  @override
+  String get srs_review_gestures_title => 'Жесты';
+  @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -319685,6 +320140,46 @@ class _StringsTh extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'ไม่มี';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'แสดง / ซ่อนแถบด้านบน';
+  @override
+  String get srs_review_gestures_back => 'ด้านคำตอบ';
+  @override
+  String get srs_review_gestures_double_tap => 'แตะสองครั้ง';
+  @override
+  String get srs_review_gestures_front => 'ด้านคำถาม';
+  @override
+  String get srs_review_gestures_hint =>
+      'โซนแตะ แตะสองครั้ง กดค้าง และปัดบนการ์ด';
+  @override
+  String get srs_review_gestures_long_press => 'กดค้าง';
+  @override
+  String get srs_review_gestures_note =>
+      'การแตะและกดค้างนับเฉพาะพื้นที่ว่าง: คำ ลิงก์ ปุ่ม และข้อความที่เลือกยังทำงานตามเดิม ขณะที่การ์ดยังเลื่อนไปทางนั้นได้ การปัดคือการเลื่อน';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'ไม่มีผลขณะแสดงเฉพาะ Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'คืนค่าเริ่มต้น';
+  @override
+  String get srs_review_gestures_swipe_down => 'ปัดลง';
+  @override
+  String get srs_review_gestures_swipe_left => 'ปัดซ้าย';
+  @override
+  String get srs_review_gestures_swipe_right => 'ปัดขวา';
+  @override
+  String get srs_review_gestures_swipe_up => 'ปัดขึ้น';
+  @override
+  String get srs_review_gestures_tap_center => 'แตะกลาง';
+  @override
+  String get srs_review_gestures_tap_left => 'แตะซ้าย';
+  @override
+  String get srs_review_gestures_tap_right => 'แตะขวา';
+  @override
+  String get srs_review_gestures_title => 'ท่าทาง';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -345628,6 +346123,46 @@ class _StringsTr extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => 'Hiçbiri';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Üst çubuğu göster / gizle';
+  @override
+  String get srs_review_gestures_back => 'Cevap yüzü';
+  @override
+  String get srs_review_gestures_double_tap => 'Çift dokunma';
+  @override
+  String get srs_review_gestures_front => 'Soru yüzü';
+  @override
+  String get srs_review_gestures_hint =>
+      'Kart üzerinde dokunma bölgeleri, çift dokunma, uzun basma ve kaydırmalar';
+  @override
+  String get srs_review_gestures_long_press => 'Uzun basma';
+  @override
+  String get srs_review_gestures_note =>
+      'Dokunma ve uzun basma yalnızca boş alanda geçerlidir: kelimeler, bağlantılar, düğmeler ve seçili metin kendi davranışını korur. Kart o yöne hâlâ kaydırılabiliyorsa, kaydırma hareketi kaydırmadır.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Yalnızca Again / Good gösterilirken etkisiz';
+  @override
+  String get srs_review_gestures_reset => 'Varsayılanlara dön';
+  @override
+  String get srs_review_gestures_swipe_down => 'Aşağı kaydır';
+  @override
+  String get srs_review_gestures_swipe_left => 'Sola kaydır';
+  @override
+  String get srs_review_gestures_swipe_right => 'Sağa kaydır';
+  @override
+  String get srs_review_gestures_swipe_up => 'Yukarı kaydır';
+  @override
+  String get srs_review_gestures_tap_center => 'Ortaya dokun';
+  @override
+  String get srs_review_gestures_tap_left => 'Sola dokun';
+  @override
+  String get srs_review_gestures_tap_right => 'Sağa dokun';
+  @override
+  String get srs_review_gestures_title => 'Hareketler';
+  @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -371565,6 +372100,46 @@ class _StringsVi extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => 'Không';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Hiện / ẩn thanh trên cùng';
+  @override
+  String get srs_review_gestures_back => 'Mặt đáp án';
+  @override
+  String get srs_review_gestures_double_tap => 'Chạm hai lần';
+  @override
+  String get srs_review_gestures_front => 'Mặt câu hỏi';
+  @override
+  String get srs_review_gestures_hint =>
+      'Vùng chạm, chạm hai lần, nhấn giữ và vuốt trên thẻ';
+  @override
+  String get srs_review_gestures_long_press => 'Nhấn giữ';
+  @override
+  String get srs_review_gestures_note =>
+      'Chạm và nhấn giữ chỉ tính ở vùng trống: chữ, liên kết, nút và văn bản đang chọn vẫn hoạt động như cũ. Khi thẻ còn cuộn được theo hướng đó, vuốt là cuộn.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Không có tác dụng khi chỉ hiện Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Khôi phục mặc định';
+  @override
+  String get srs_review_gestures_swipe_down => 'Vuốt xuống';
+  @override
+  String get srs_review_gestures_swipe_left => 'Vuốt sang trái';
+  @override
+  String get srs_review_gestures_swipe_right => 'Vuốt sang phải';
+  @override
+  String get srs_review_gestures_swipe_up => 'Vuốt lên';
+  @override
+  String get srs_review_gestures_tap_center => 'Chạm ở giữa';
+  @override
+  String get srs_review_gestures_tap_left => 'Chạm bên trái';
+  @override
+  String get srs_review_gestures_tap_right => 'Chạm bên phải';
+  @override
+  String get srs_review_gestures_title => 'Cử chỉ';
+  @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -395912,6 +396487,43 @@ class _StringsZhCn extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) => '本次复习了 ${n} 张';
   @override
+  String get srs_review_gestures_action_none => '无';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '显示 / 隐藏顶栏';
+  @override
+  String get srs_review_gestures_back => '答案面';
+  @override
+  String get srs_review_gestures_double_tap => '双击';
+  @override
+  String get srs_review_gestures_front => '问题面';
+  @override
+  String get srs_review_gestures_hint => '卡面点按分区、双击、长按与滑动';
+  @override
+  String get srs_review_gestures_long_press => '长按';
+  @override
+  String get srs_review_gestures_note =>
+      '点按与长按只认空白处：字、链接、按钮和选中的文字照旧各管各的。卡面还能往那个方向滚时，滑动就是滚动。';
+  @override
+  String get srs_review_gestures_rating_hidden => '评分栏只留「重来 / 良好」时不生效';
+  @override
+  String get srs_review_gestures_reset => '恢复默认';
+  @override
+  String get srs_review_gestures_swipe_down => '向下滑';
+  @override
+  String get srs_review_gestures_swipe_left => '向左滑';
+  @override
+  String get srs_review_gestures_swipe_right => '向右滑';
+  @override
+  String get srs_review_gestures_swipe_up => '向上滑';
+  @override
+  String get srs_review_gestures_tap_center => '点中间';
+  @override
+  String get srs_review_gestures_tap_left => '点左侧';
+  @override
+  String get srs_review_gestures_tap_right => '点右侧';
+  @override
+  String get srs_review_gestures_title => '手势';
+  @override
   String get srs_review_hide_hard_easy => '隐藏「困难」和「简单」按钮';
   @override
   String get srs_review_hide_hard_easy_hint => '键盘 2 / 4 仍可评「困难」「简单」';
@@ -420189,6 +420801,43 @@ class _StringsZhHk extends _StringsEn {
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
   @override
+  String get srs_review_gestures_action_none => '無';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '顯示 / 隱藏頂欄';
+  @override
+  String get srs_review_gestures_back => '答案面';
+  @override
+  String get srs_review_gestures_double_tap => '雙擊';
+  @override
+  String get srs_review_gestures_front => '問題面';
+  @override
+  String get srs_review_gestures_hint => '卡面點按分區、雙擊、長按與滑動';
+  @override
+  String get srs_review_gestures_long_press => '長按';
+  @override
+  String get srs_review_gestures_note =>
+      '點按與長按只認空白處：字、連結、按鈕和選取的文字照舊各管各的。卡面還能往那個方向捲動時，滑動就是捲動。';
+  @override
+  String get srs_review_gestures_rating_hidden => '評分欄只留「Again / Good」時不生效';
+  @override
+  String get srs_review_gestures_reset => '恢復預設';
+  @override
+  String get srs_review_gestures_swipe_down => '向下滑';
+  @override
+  String get srs_review_gestures_swipe_left => '向左滑';
+  @override
+  String get srs_review_gestures_swipe_right => '向右滑';
+  @override
+  String get srs_review_gestures_swipe_up => '向上滑';
+  @override
+  String get srs_review_gestures_tap_center => '點中間';
+  @override
+  String get srs_review_gestures_tap_left => '點左側';
+  @override
+  String get srs_review_gestures_tap_right => '點右側';
+  @override
+  String get srs_review_gestures_title => '手勢';
+  @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
   String get srs_review_hide_hard_easy_hint =>
@@ -442942,6 +443591,42 @@ extension on _StringsEn {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nothing';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Show / hide top bar';
+      case 'srs_review_gestures_back':
+        return 'Answer side';
+      case 'srs_review_gestures_double_tap':
+        return 'Double tap';
+      case 'srs_review_gestures_front':
+        return 'Question side';
+      case 'srs_review_gestures_hint':
+        return 'Tap zones, double tap, long press and swipes on the card';
+      case 'srs_review_gestures_long_press':
+        return 'Long press';
+      case 'srs_review_gestures_note':
+        return 'Taps and long presses only count on blank space: words, links, buttons and selected text keep their own behaviour. While the card can still scroll that way, a swipe is a scroll.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactive while only Again / Good are shown';
+      case 'srs_review_gestures_reset':
+        return 'Restore defaults';
+      case 'srs_review_gestures_swipe_down':
+        return 'Swipe down';
+      case 'srs_review_gestures_swipe_left':
+        return 'Swipe left';
+      case 'srs_review_gestures_swipe_right':
+        return 'Swipe right';
+      case 'srs_review_gestures_swipe_up':
+        return 'Swipe up';
+      case 'srs_review_gestures_tap_center':
+        return 'Tap center';
+      case 'srs_review_gestures_tap_left':
+        return 'Tap left';
+      case 'srs_review_gestures_tap_right':
+        return 'Tap right';
+      case 'srs_review_gestures_title':
+        return 'Gestures';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -465054,6 +465739,42 @@ extension on _StringsAr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'لا شيء';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'إظهار / إخفاء الشريط العلوي';
+      case 'srs_review_gestures_back':
+        return 'الوجه الخلفي';
+      case 'srs_review_gestures_double_tap':
+        return 'نقر مزدوج';
+      case 'srs_review_gestures_front':
+        return 'الوجه الأمامي';
+      case 'srs_review_gestures_hint':
+        return 'مناطق النقر والنقر المزدوج والضغط المطوّل والسحب على البطاقة';
+      case 'srs_review_gestures_long_press':
+        return 'ضغط مطوّل';
+      case 'srs_review_gestures_note':
+        return 'يُحتسب النقر والضغط المطوّل على المساحة الفارغة فقط: الكلمات والروابط والأزرار والنص المحدد تحتفظ بسلوكها. ما دامت البطاقة قابلة للتمرير في ذلك الاتجاه، فالسحب تمرير.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'غير فعّال عند عرض Again / Good فقط';
+      case 'srs_review_gestures_reset':
+        return 'استعادة الافتراضي';
+      case 'srs_review_gestures_swipe_down':
+        return 'السحب للأسفل';
+      case 'srs_review_gestures_swipe_left':
+        return 'السحب لليسار';
+      case 'srs_review_gestures_swipe_right':
+        return 'السحب لليمين';
+      case 'srs_review_gestures_swipe_up':
+        return 'السحب للأعلى';
+      case 'srs_review_gestures_tap_center':
+        return 'النقر في الوسط';
+      case 'srs_review_gestures_tap_left':
+        return 'النقر يسارًا';
+      case 'srs_review_gestures_tap_right':
+        return 'النقر يمينًا';
+      case 'srs_review_gestures_title':
+        return 'الإيماءات';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -487222,6 +487943,42 @@ extension on _StringsDe {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nichts';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Obere Leiste ein- / ausblenden';
+      case 'srs_review_gestures_back':
+        return 'Rückseite';
+      case 'srs_review_gestures_double_tap':
+        return 'Doppeltippen';
+      case 'srs_review_gestures_front':
+        return 'Vorderseite';
+      case 'srs_review_gestures_hint':
+        return 'Tippbereiche, Doppeltippen, langes Drücken und Wischen auf der Karte';
+      case 'srs_review_gestures_long_press':
+        return 'Lange drücken';
+      case 'srs_review_gestures_note':
+        return 'Tippen und langes Drücken zählen nur auf leeren Flächen: Wörter, Links, Schaltflächen und markierter Text verhalten sich wie gewohnt. Solange die Karte in diese Richtung noch scrollen kann, ist Wischen ein Scrollen.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inaktiv, solange nur Again / Good angezeigt werden';
+      case 'srs_review_gestures_reset':
+        return 'Standard wiederherstellen';
+      case 'srs_review_gestures_swipe_down':
+        return 'Nach unten wischen';
+      case 'srs_review_gestures_swipe_left':
+        return 'Nach links wischen';
+      case 'srs_review_gestures_swipe_right':
+        return 'Nach rechts wischen';
+      case 'srs_review_gestures_swipe_up':
+        return 'Nach oben wischen';
+      case 'srs_review_gestures_tap_center':
+        return 'Mitte tippen';
+      case 'srs_review_gestures_tap_left':
+        return 'Links tippen';
+      case 'srs_review_gestures_tap_right':
+        return 'Rechts tippen';
+      case 'srs_review_gestures_title':
+        return 'Gesten';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -509394,6 +510151,42 @@ extension on _StringsEs {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nada';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Mostrar / ocultar barra superior';
+      case 'srs_review_gestures_back':
+        return 'Reverso';
+      case 'srs_review_gestures_double_tap':
+        return 'Doble toque';
+      case 'srs_review_gestures_front':
+        return 'Anverso';
+      case 'srs_review_gestures_hint':
+        return 'Zonas de toque, doble toque, pulsación larga y deslizamientos en la tarjeta';
+      case 'srs_review_gestures_long_press':
+        return 'Pulsación larga';
+      case 'srs_review_gestures_note':
+        return 'Los toques y pulsaciones largas solo cuentan en espacio vacío: palabras, enlaces, botones y texto seleccionado conservan su comportamiento. Mientras la tarjeta aún pueda desplazarse en esa dirección, deslizar es desplazar.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactivo mientras solo se muestran Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Restaurar valores predeterminados';
+      case 'srs_review_gestures_swipe_down':
+        return 'Deslizar hacia abajo';
+      case 'srs_review_gestures_swipe_left':
+        return 'Deslizar a la izquierda';
+      case 'srs_review_gestures_swipe_right':
+        return 'Deslizar a la derecha';
+      case 'srs_review_gestures_swipe_up':
+        return 'Deslizar hacia arriba';
+      case 'srs_review_gestures_tap_center':
+        return 'Tocar en el centro';
+      case 'srs_review_gestures_tap_left':
+        return 'Tocar a la izquierda';
+      case 'srs_review_gestures_tap_right':
+        return 'Tocar a la derecha';
+      case 'srs_review_gestures_title':
+        return 'Gestos';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -531577,6 +532370,42 @@ extension on _StringsFr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Rien';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Afficher / masquer la barre supérieure';
+      case 'srs_review_gestures_back':
+        return 'Verso';
+      case 'srs_review_gestures_double_tap':
+        return 'Double toucher';
+      case 'srs_review_gestures_front':
+        return 'Recto';
+      case 'srs_review_gestures_hint':
+        return 'Zones de toucher, double toucher, appui long et balayages sur la carte';
+      case 'srs_review_gestures_long_press':
+        return 'Appui long';
+      case 'srs_review_gestures_note':
+        return 'Les touchers et appuis longs ne comptent que sur les zones vides : mots, liens, boutons et texte sélectionné gardent leur comportement. Tant que la carte peut encore défiler dans ce sens, un balayage est un défilement.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactif tant que seuls Again / Good sont affichés';
+      case 'srs_review_gestures_reset':
+        return 'Rétablir les valeurs par défaut';
+      case 'srs_review_gestures_swipe_down':
+        return 'Balayer vers le bas';
+      case 'srs_review_gestures_swipe_left':
+        return 'Balayer vers la gauche';
+      case 'srs_review_gestures_swipe_right':
+        return 'Balayer vers la droite';
+      case 'srs_review_gestures_swipe_up':
+        return 'Balayer vers le haut';
+      case 'srs_review_gestures_tap_center':
+        return 'Toucher au centre';
+      case 'srs_review_gestures_tap_left':
+        return 'Toucher à gauche';
+      case 'srs_review_gestures_tap_right':
+        return 'Toucher à droite';
+      case 'srs_review_gestures_title':
+        return 'Gestes';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -553720,6 +554549,42 @@ extension on _StringsId {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Tidak ada';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Tampilkan / sembunyikan bilah atas';
+      case 'srs_review_gestures_back':
+        return 'Sisi jawaban';
+      case 'srs_review_gestures_double_tap':
+        return 'Ketuk dua kali';
+      case 'srs_review_gestures_front':
+        return 'Sisi pertanyaan';
+      case 'srs_review_gestures_hint':
+        return 'Zona ketuk, ketuk dua kali, tekan lama, dan geser pada kartu';
+      case 'srs_review_gestures_long_press':
+        return 'Tekan lama';
+      case 'srs_review_gestures_note':
+        return 'Ketukan dan tekan lama hanya berlaku di ruang kosong: kata, tautan, tombol, dan teks terpilih tetap berperilaku seperti biasa. Selama kartu masih bisa digulir ke arah itu, geseran adalah guliran.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Tidak aktif saat hanya Again / Good yang ditampilkan';
+      case 'srs_review_gestures_reset':
+        return 'Pulihkan bawaan';
+      case 'srs_review_gestures_swipe_down':
+        return 'Geser ke bawah';
+      case 'srs_review_gestures_swipe_left':
+        return 'Geser ke kiri';
+      case 'srs_review_gestures_swipe_right':
+        return 'Geser ke kanan';
+      case 'srs_review_gestures_swipe_up':
+        return 'Geser ke atas';
+      case 'srs_review_gestures_tap_center':
+        return 'Ketuk tengah';
+      case 'srs_review_gestures_tap_left':
+        return 'Ketuk kiri';
+      case 'srs_review_gestures_tap_right':
+        return 'Ketuk kanan';
+      case 'srs_review_gestures_title':
+        return 'Gestur';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -575872,6 +576737,42 @@ extension on _StringsIt {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nessuna';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Mostra / nascondi barra superiore';
+      case 'srs_review_gestures_back':
+        return 'Retro';
+      case 'srs_review_gestures_double_tap':
+        return 'Doppio tocco';
+      case 'srs_review_gestures_front':
+        return 'Fronte';
+      case 'srs_review_gestures_hint':
+        return 'Zone di tocco, doppio tocco, pressione prolungata e scorrimenti sulla carta';
+      case 'srs_review_gestures_long_press':
+        return 'Pressione prolungata';
+      case 'srs_review_gestures_note':
+        return 'Tocchi e pressioni prolungate contano solo sugli spazi vuoti: parole, link, pulsanti e testo selezionato mantengono il loro comportamento. Finché la carta può ancora scorrere in quella direzione, lo scorrimento è uno scroll.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inattivo quando sono mostrati solo Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Ripristina predefiniti';
+      case 'srs_review_gestures_swipe_down':
+        return 'Scorri in basso';
+      case 'srs_review_gestures_swipe_left':
+        return 'Scorri a sinistra';
+      case 'srs_review_gestures_swipe_right':
+        return 'Scorri a destra';
+      case 'srs_review_gestures_swipe_up':
+        return 'Scorri in alto';
+      case 'srs_review_gestures_tap_center':
+        return 'Tocca al centro';
+      case 'srs_review_gestures_tap_left':
+        return 'Tocca a sinistra';
+      case 'srs_review_gestures_tap_right':
+        return 'Tocca a destra';
+      case 'srs_review_gestures_title':
+        return 'Gesti';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -597958,6 +598859,42 @@ extension on _StringsJa {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'なし';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '上部バーの表示 / 非表示';
+      case 'srs_review_gestures_back':
+        return '解答面';
+      case 'srs_review_gestures_double_tap':
+        return 'ダブルタップ';
+      case 'srs_review_gestures_front':
+        return '問題面';
+      case 'srs_review_gestures_hint':
+        return 'カード上のタップ領域、ダブルタップ、長押し、スワイプ';
+      case 'srs_review_gestures_long_press':
+        return '長押し';
+      case 'srs_review_gestures_note':
+        return 'タップと長押しは空白部分でのみ反応します。文字・リンク・ボタン・選択中のテキストはそれぞれ本来の動作のままです。カードがまだその方向にスクロールできる間は、スワイプはスクロールになります。';
+      case 'srs_review_gestures_rating_hidden':
+        return '「Again / Good」のみ表示中は無効';
+      case 'srs_review_gestures_reset':
+        return 'デフォルトに戻す';
+      case 'srs_review_gestures_swipe_down':
+        return '下にスワイプ';
+      case 'srs_review_gestures_swipe_left':
+        return '左にスワイプ';
+      case 'srs_review_gestures_swipe_right':
+        return '右にスワイプ';
+      case 'srs_review_gestures_swipe_up':
+        return '上にスワイプ';
+      case 'srs_review_gestures_tap_center':
+        return '中央をタップ';
+      case 'srs_review_gestures_tap_left':
+        return '左をタップ';
+      case 'srs_review_gestures_tap_right':
+        return '右をタップ';
+      case 'srs_review_gestures_title':
+        return 'ジェスチャー';
       case 'srs_review_hide_hard_easy':
         return '「Hard」と「Easy」ボタンを隠す';
       case 'srs_review_hide_hard_easy_hint':
@@ -619994,6 +620931,42 @@ extension on _StringsKo {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return '없음';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '상단 바 표시 / 숨기기';
+      case 'srs_review_gestures_back':
+        return '답 면';
+      case 'srs_review_gestures_double_tap':
+        return '두 번 탭';
+      case 'srs_review_gestures_front':
+        return '질문 면';
+      case 'srs_review_gestures_hint':
+        return '카드의 탭 영역, 두 번 탭, 길게 누르기, 스와이프';
+      case 'srs_review_gestures_long_press':
+        return '길게 누르기';
+      case 'srs_review_gestures_note':
+        return '탭과 길게 누르기는 빈 공간에서만 동작합니다. 글자, 링크, 버튼, 선택한 텍스트는 원래 동작을 유지합니다. 카드가 그 방향으로 아직 스크롤될 수 있으면 스와이프는 스크롤이 됩니다.';
+      case 'srs_review_gestures_rating_hidden':
+        return '「Again / Good」만 표시할 때는 비활성';
+      case 'srs_review_gestures_reset':
+        return '기본값 복원';
+      case 'srs_review_gestures_swipe_down':
+        return '아래로 스와이프';
+      case 'srs_review_gestures_swipe_left':
+        return '왼쪽으로 스와이프';
+      case 'srs_review_gestures_swipe_right':
+        return '오른쪽으로 스와이프';
+      case 'srs_review_gestures_swipe_up':
+        return '위로 스와이프';
+      case 'srs_review_gestures_tap_center':
+        return '가운데 탭';
+      case 'srs_review_gestures_tap_left':
+        return '왼쪽 탭';
+      case 'srs_review_gestures_tap_right':
+        return '오른쪽 탭';
+      case 'srs_review_gestures_title':
+        return '제스처';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -642119,6 +643092,42 @@ extension on _StringsNl {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Niets';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Bovenbalk tonen / verbergen';
+      case 'srs_review_gestures_back':
+        return 'Achterkant';
+      case 'srs_review_gestures_double_tap':
+        return 'Dubbeltikken';
+      case 'srs_review_gestures_front':
+        return 'Voorkant';
+      case 'srs_review_gestures_hint':
+        return 'Tikzones, dubbeltikken, lang drukken en vegen op de kaart';
+      case 'srs_review_gestures_long_press':
+        return 'Lang drukken';
+      case 'srs_review_gestures_note':
+        return 'Tikken en lang drukken tellen alleen op lege plekken: woorden, links, knoppen en geselecteerde tekst werken zoals altijd. Zolang de kaart die kant nog op kan scrollen, is vegen scrollen.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactief zolang alleen Again / Good worden getoond';
+      case 'srs_review_gestures_reset':
+        return 'Standaard herstellen';
+      case 'srs_review_gestures_swipe_down':
+        return 'Omlaag vegen';
+      case 'srs_review_gestures_swipe_left':
+        return 'Naar links vegen';
+      case 'srs_review_gestures_swipe_right':
+        return 'Naar rechts vegen';
+      case 'srs_review_gestures_swipe_up':
+        return 'Omhoog vegen';
+      case 'srs_review_gestures_tap_center':
+        return 'Midden tikken';
+      case 'srs_review_gestures_tap_left':
+        return 'Links tikken';
+      case 'srs_review_gestures_tap_right':
+        return 'Rechts tikken';
+      case 'srs_review_gestures_title':
+        return 'Gebaren';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -664275,6 +665284,42 @@ extension on _StringsPtBr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nada';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Mostrar / ocultar barra superior';
+      case 'srs_review_gestures_back':
+        return 'Verso';
+      case 'srs_review_gestures_double_tap':
+        return 'Toque duplo';
+      case 'srs_review_gestures_front':
+        return 'Frente';
+      case 'srs_review_gestures_hint':
+        return 'Zonas de toque, toque duplo, toque longo e deslizes no cartão';
+      case 'srs_review_gestures_long_press':
+        return 'Toque longo';
+      case 'srs_review_gestures_note':
+        return 'Toques e toques longos só contam em espaço vazio: palavras, links, botões e texto selecionado mantêm o próprio comportamento. Enquanto o cartão ainda puder rolar nessa direção, deslizar é rolar.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inativo enquanto só Again / Good são exibidos';
+      case 'srs_review_gestures_reset':
+        return 'Restaurar padrões';
+      case 'srs_review_gestures_swipe_down':
+        return 'Deslizar para baixo';
+      case 'srs_review_gestures_swipe_left':
+        return 'Deslizar para a esquerda';
+      case 'srs_review_gestures_swipe_right':
+        return 'Deslizar para a direita';
+      case 'srs_review_gestures_swipe_up':
+        return 'Deslizar para cima';
+      case 'srs_review_gestures_tap_center':
+        return 'Tocar no centro';
+      case 'srs_review_gestures_tap_left':
+        return 'Tocar à esquerda';
+      case 'srs_review_gestures_tap_right':
+        return 'Tocar à direita';
+      case 'srs_review_gestures_title':
+        return 'Gestos';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -686435,6 +687480,42 @@ extension on _StringsRu {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Ничего';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Показать / скрыть верхнюю панель';
+      case 'srs_review_gestures_back':
+        return 'Оборотная сторона';
+      case 'srs_review_gestures_double_tap':
+        return 'Двойное касание';
+      case 'srs_review_gestures_front':
+        return 'Лицевая сторона';
+      case 'srs_review_gestures_hint':
+        return 'Зоны касания, двойное касание, долгое нажатие и свайпы по карточке';
+      case 'srs_review_gestures_long_press':
+        return 'Долгое нажатие';
+      case 'srs_review_gestures_note':
+        return 'Касания и долгие нажатия срабатывают только на пустом месте: слова, ссылки, кнопки и выделенный текст ведут себя как обычно. Пока карточку ещё можно прокрутить в эту сторону, свайп — это прокрутка.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Не действует, пока показаны только Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Сбросить по умолчанию';
+      case 'srs_review_gestures_swipe_down':
+        return 'Свайп вниз';
+      case 'srs_review_gestures_swipe_left':
+        return 'Свайп влево';
+      case 'srs_review_gestures_swipe_right':
+        return 'Свайп вправо';
+      case 'srs_review_gestures_swipe_up':
+        return 'Свайп вверх';
+      case 'srs_review_gestures_tap_center':
+        return 'Касание по центру';
+      case 'srs_review_gestures_tap_left':
+        return 'Касание слева';
+      case 'srs_review_gestures_tap_right':
+        return 'Касание справа';
+      case 'srs_review_gestures_title':
+        return 'Жесты';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -708555,6 +709636,42 @@ extension on _StringsTh {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'ไม่มี';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'แสดง / ซ่อนแถบด้านบน';
+      case 'srs_review_gestures_back':
+        return 'ด้านคำตอบ';
+      case 'srs_review_gestures_double_tap':
+        return 'แตะสองครั้ง';
+      case 'srs_review_gestures_front':
+        return 'ด้านคำถาม';
+      case 'srs_review_gestures_hint':
+        return 'โซนแตะ แตะสองครั้ง กดค้าง และปัดบนการ์ด';
+      case 'srs_review_gestures_long_press':
+        return 'กดค้าง';
+      case 'srs_review_gestures_note':
+        return 'การแตะและกดค้างนับเฉพาะพื้นที่ว่าง: คำ ลิงก์ ปุ่ม และข้อความที่เลือกยังทำงานตามเดิม ขณะที่การ์ดยังเลื่อนไปทางนั้นได้ การปัดคือการเลื่อน';
+      case 'srs_review_gestures_rating_hidden':
+        return 'ไม่มีผลขณะแสดงเฉพาะ Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'คืนค่าเริ่มต้น';
+      case 'srs_review_gestures_swipe_down':
+        return 'ปัดลง';
+      case 'srs_review_gestures_swipe_left':
+        return 'ปัดซ้าย';
+      case 'srs_review_gestures_swipe_right':
+        return 'ปัดขวา';
+      case 'srs_review_gestures_swipe_up':
+        return 'ปัดขึ้น';
+      case 'srs_review_gestures_tap_center':
+        return 'แตะกลาง';
+      case 'srs_review_gestures_tap_left':
+        return 'แตะซ้าย';
+      case 'srs_review_gestures_tap_right':
+        return 'แตะขวา';
+      case 'srs_review_gestures_title':
+        return 'ท่าทาง';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -730693,6 +731810,42 @@ extension on _StringsTr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Hiçbiri';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Üst çubuğu göster / gizle';
+      case 'srs_review_gestures_back':
+        return 'Cevap yüzü';
+      case 'srs_review_gestures_double_tap':
+        return 'Çift dokunma';
+      case 'srs_review_gestures_front':
+        return 'Soru yüzü';
+      case 'srs_review_gestures_hint':
+        return 'Kart üzerinde dokunma bölgeleri, çift dokunma, uzun basma ve kaydırmalar';
+      case 'srs_review_gestures_long_press':
+        return 'Uzun basma';
+      case 'srs_review_gestures_note':
+        return 'Dokunma ve uzun basma yalnızca boş alanda geçerlidir: kelimeler, bağlantılar, düğmeler ve seçili metin kendi davranışını korur. Kart o yöne hâlâ kaydırılabiliyorsa, kaydırma hareketi kaydırmadır.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Yalnızca Again / Good gösterilirken etkisiz';
+      case 'srs_review_gestures_reset':
+        return 'Varsayılanlara dön';
+      case 'srs_review_gestures_swipe_down':
+        return 'Aşağı kaydır';
+      case 'srs_review_gestures_swipe_left':
+        return 'Sola kaydır';
+      case 'srs_review_gestures_swipe_right':
+        return 'Sağa kaydır';
+      case 'srs_review_gestures_swipe_up':
+        return 'Yukarı kaydır';
+      case 'srs_review_gestures_tap_center':
+        return 'Ortaya dokun';
+      case 'srs_review_gestures_tap_left':
+        return 'Sola dokun';
+      case 'srs_review_gestures_tap_right':
+        return 'Sağa dokun';
+      case 'srs_review_gestures_title':
+        return 'Hareketler';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -752826,6 +753979,42 @@ extension on _StringsVi {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Không';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Hiện / ẩn thanh trên cùng';
+      case 'srs_review_gestures_back':
+        return 'Mặt đáp án';
+      case 'srs_review_gestures_double_tap':
+        return 'Chạm hai lần';
+      case 'srs_review_gestures_front':
+        return 'Mặt câu hỏi';
+      case 'srs_review_gestures_hint':
+        return 'Vùng chạm, chạm hai lần, nhấn giữ và vuốt trên thẻ';
+      case 'srs_review_gestures_long_press':
+        return 'Nhấn giữ';
+      case 'srs_review_gestures_note':
+        return 'Chạm và nhấn giữ chỉ tính ở vùng trống: chữ, liên kết, nút và văn bản đang chọn vẫn hoạt động như cũ. Khi thẻ còn cuộn được theo hướng đó, vuốt là cuộn.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Không có tác dụng khi chỉ hiện Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Khôi phục mặc định';
+      case 'srs_review_gestures_swipe_down':
+        return 'Vuốt xuống';
+      case 'srs_review_gestures_swipe_left':
+        return 'Vuốt sang trái';
+      case 'srs_review_gestures_swipe_right':
+        return 'Vuốt sang phải';
+      case 'srs_review_gestures_swipe_up':
+        return 'Vuốt lên';
+      case 'srs_review_gestures_tap_center':
+        return 'Chạm ở giữa';
+      case 'srs_review_gestures_tap_left':
+        return 'Chạm bên trái';
+      case 'srs_review_gestures_tap_right':
+        return 'Chạm bên phải';
+      case 'srs_review_gestures_title':
+        return 'Cử chỉ';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -774752,6 +775941,42 @@ extension on _StringsZhCn {
         return '今天的复习做完了';
       case 'srs_review_done_detail':
         return ({required Object n}) => '本次复习了 ${n} 张';
+      case 'srs_review_gestures_action_none':
+        return '无';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '显示 / 隐藏顶栏';
+      case 'srs_review_gestures_back':
+        return '答案面';
+      case 'srs_review_gestures_double_tap':
+        return '双击';
+      case 'srs_review_gestures_front':
+        return '问题面';
+      case 'srs_review_gestures_hint':
+        return '卡面点按分区、双击、长按与滑动';
+      case 'srs_review_gestures_long_press':
+        return '长按';
+      case 'srs_review_gestures_note':
+        return '点按与长按只认空白处：字、链接、按钮和选中的文字照旧各管各的。卡面还能往那个方向滚时，滑动就是滚动。';
+      case 'srs_review_gestures_rating_hidden':
+        return '评分栏只留「重来 / 良好」时不生效';
+      case 'srs_review_gestures_reset':
+        return '恢复默认';
+      case 'srs_review_gestures_swipe_down':
+        return '向下滑';
+      case 'srs_review_gestures_swipe_left':
+        return '向左滑';
+      case 'srs_review_gestures_swipe_right':
+        return '向右滑';
+      case 'srs_review_gestures_swipe_up':
+        return '向上滑';
+      case 'srs_review_gestures_tap_center':
+        return '点中间';
+      case 'srs_review_gestures_tap_left':
+        return '点左侧';
+      case 'srs_review_gestures_tap_right':
+        return '点右侧';
+      case 'srs_review_gestures_title':
+        return '手势';
       case 'srs_review_hide_hard_easy':
         return '隐藏「困难」和「简单」按钮';
       case 'srs_review_hide_hard_easy_hint':
@@ -796702,6 +797927,42 @@ extension on _StringsZhHk {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return '無';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '顯示 / 隱藏頂欄';
+      case 'srs_review_gestures_back':
+        return '答案面';
+      case 'srs_review_gestures_double_tap':
+        return '雙擊';
+      case 'srs_review_gestures_front':
+        return '問題面';
+      case 'srs_review_gestures_hint':
+        return '卡面點按分區、雙擊、長按與滑動';
+      case 'srs_review_gestures_long_press':
+        return '長按';
+      case 'srs_review_gestures_note':
+        return '點按與長按只認空白處：字、連結、按鈕和選取的文字照舊各管各的。卡面還能往那個方向捲動時，滑動就是捲動。';
+      case 'srs_review_gestures_rating_hidden':
+        return '評分欄只留「Again / Good」時不生效';
+      case 'srs_review_gestures_reset':
+        return '恢復預設';
+      case 'srs_review_gestures_swipe_down':
+        return '向下滑';
+      case 'srs_review_gestures_swipe_left':
+        return '向左滑';
+      case 'srs_review_gestures_swipe_right':
+        return '向右滑';
+      case 'srs_review_gestures_swipe_up':
+        return '向上滑';
+      case 'srs_review_gestures_tap_center':
+        return '點中間';
+      case 'srs_review_gestures_tap_left':
+        return '點左側';
+      case 'srs_review_gestures_tap_right':
+        return '點右側';
+      case 'srs_review_gestures_title':
+        return '手勢';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
