@@ -8,7 +8,7 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class VideoSubtitleRegistry {
   VideoSubtitleRegistry(Iterable<VideoSubtitleProvider> providers)
-    : providers = List<VideoSubtitleProvider>.unmodifiable(providers);
+      : providers = List<VideoSubtitleProvider>.unmodifiable(providers);
 
   final List<VideoSubtitleProvider> providers;
 
@@ -32,20 +32,22 @@ class VideoSubtitleRegistry {
       });
     final List<ProviderBatchResult<VideoSubtitleCandidate>> results =
         await Future.wait(
-          applicable.map((VideoSubtitleProvider provider) async {
-            try {
-              return await provider.search(request);
-            } on Object catch (error) {
-              return ProviderBatchResult<VideoSubtitleCandidate>.failure(
-                ExternalProviderFailure.fromException(
-                  providerId: provider.id,
-                  operation: 'search',
-                  error: error,
-                ),
-              );
-            }
-          }),
-        );
+      applicable.map(
+        (VideoSubtitleProvider provider) async {
+          try {
+            return await provider.search(request);
+          } on Object catch (error) {
+            return ProviderBatchResult<VideoSubtitleCandidate>.failure(
+              ExternalProviderFailure.fromException(
+                providerId: provider.id,
+                operation: 'search',
+                error: error,
+              ),
+            );
+          }
+        },
+      ),
+    );
     final ProviderBatchResult<VideoSubtitleCandidate> merged =
         ProviderBatchResult.merge(results);
     return ProviderBatchResult<VideoSubtitleCandidate>(
@@ -92,7 +94,9 @@ class VideoSubtitleRegistry {
     return false;
   }
 
-  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) {
+  Future<VideoSubtitleDownload> download(
+    VideoSubtitleCandidate candidate,
+  ) {
     VideoSubtitleProvider? provider;
     for (final VideoSubtitleProvider value in providers) {
       if (value.id == candidate.providerId) {

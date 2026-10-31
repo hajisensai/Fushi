@@ -1045,7 +1045,7 @@ class VideoDownloadPipelineService {
   /// 此刻任务已经完成并落库，端口抛的异常只记日志、不回滚任务——下载本身是
   /// 成功的，补救入口（任务面板的「配对」）仍在。
   final Future<void> Function(DiscoveryMediaKind kind, List<String> paths)?
-  onDownloadOnlyCompleted;
+      onDownloadOnlyCompleted;
 
   /// 手动任务 .torrent 元数据的落盘目录（`<jobId>.torrent`）。null 时手动
   /// 任务只接受磁力链接。
@@ -1885,11 +1885,10 @@ class VideoDownloadPipelineService {
     final int? target = subscription?.targetSourceId;
     if (target == null) return 0;
     final List<VideoDownloadJobRow> jobs = <VideoDownloadJobRow>[];
-    for (final String jobId
-        in await database.getVideoDownloadSubscriptionJobIds(subscriptionId)) {
-      final VideoDownloadJobRow? job = await database.getVideoDownloadJob(
-        jobId,
-      );
+    for (final String jobId in await database.getVideoDownloadSubscriptionJobIds(
+      subscriptionId,
+    )) {
+      final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
       if (job != null) jobs.add(job);
     }
     return _releaseCompletedSeeds(
@@ -2062,7 +2061,8 @@ class VideoDownloadPipelineService {
   /// 分类只在**投递**新种子时决定落点（[TorrentBackend.addTorrent]），不参与认领。
   static Future<List<TorrentSnapshot>> _listBackendTorrentsForJobs(
     TorrentBackend backend,
-  ) => backend.listTorrents();
+  ) =>
+      backend.listTorrents();
 
   /// 在 [backend] 里按 info hash 找任务行记的那颗种子；不在返回 null。
   static Future<TorrentSnapshot?> _findBackendTorrent(
@@ -2071,9 +2071,8 @@ class VideoDownloadPipelineService {
   ) async {
     final String id = torrentId.trim().toLowerCase();
     if (id.isEmpty) return null;
-    final List<TorrentSnapshot> snapshots = await _listBackendTorrentsForJobs(
-      backend,
-    );
+    final List<TorrentSnapshot> snapshots =
+        await _listBackendTorrentsForJobs(backend);
     for (final TorrentSnapshot snapshot in snapshots) {
       if (snapshot.hash.toLowerCase() == id) return snapshot;
     }
@@ -2256,8 +2255,7 @@ class VideoDownloadPipelineService {
       final int now = _now().millisecondsSinceEpoch;
       // 刮削阶段只有「资料源暂时不可用」可重试；其余（映射不回来源、待确认…）
       // 重试也不会变，交给人处理。
-      final bool scrapeNeedsHuman =
-          job.stage == VideoDownloadJobStage.scrape &&
+      final bool scrapeNeedsHuman = job.stage == VideoDownloadJobStage.scrape &&
           error is! VideoDownloadScrapeProviderUnavailable;
       if (scrapeNeedsHuman || !retryable) {
         await _markNeedsAttention(
@@ -4488,9 +4486,8 @@ class VideoDownloadPipelineService {
   Future<void> _notifyDownloadOnlyCompleted(VideoDownloadJobRow job) async {
     final Future<void> Function(DiscoveryMediaKind, List<String>)? hook =
         onDownloadOnlyCompleted;
-    final DiscoveryMediaKind? kind = downloadOnlyKindOfOrganizationPolicy(
-      job.organizationPolicy,
-    );
+    final DiscoveryMediaKind? kind =
+        downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy);
     if (hook == null || kind == null) return;
     final List<VideoDownloadJobFileRow> rows = await database
         .getVideoDownloadJobFiles(job.jobId);
@@ -4896,7 +4893,8 @@ class VideoDownloadPipelineService {
   /// 平手取列表里先出现的行）。旧行没记体积时按 0 参与比较。
   static VideoDownloadJobFileRow? _mainMovieRow(
     List<VideoDownloadJobFileRow> files,
-  ) => mainMovieDownloadFile(files);
+  ) =>
+      mainMovieDownloadFile(files);
 
   /// 并列正片的入库标题（BUG-2007）：优先文件名解析出的标题（剥字幕组/分辨率
   /// 噪音）；解析为空、与主片标题相同或与其他并列正片撞名时退回整理后文件名。

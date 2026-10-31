@@ -506,7 +506,10 @@ class VideoSubtitleBackfillService {
   /// 落 sidecar：`<video 基名>.<lang><ext>`。**已存在同名文件就不写**（上面已经
   /// 查过整目录的 sidecar，这里是防并发的第二道）。返回 true = 这次真写了；false =
   /// 同名文件已在（写之前就在，或对齐期间被别人落下），什么都没写。
-  Future<bool> _writeSidecar(File video, VideoSubtitleDownload download) async {
+  Future<bool> _writeSidecar(
+    File video,
+    VideoSubtitleDownload download,
+  ) async {
     final String target = sidecarPathFor(video.path, download);
     final File dest = File(target);
     if (await dest.exists()) return false;
