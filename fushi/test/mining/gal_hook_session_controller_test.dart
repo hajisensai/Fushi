@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
+import 'package:fushi/src/mining/gal_game_exit_watch.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -2905,6 +2906,7 @@ void main() {
   _playTrackerAttachWiring();
   _playTrackerWiringGuard();
   _bug950Guard();
+  _gameExitWatchTests();
 }
 
 /// P4 B1：游玩时长账本接线（`GalgamePlayTracker` → `galgame_sessions` +
@@ -4894,4 +4896,223 @@ class _GatedLoopbackSource extends _FakeLoopbackSource {
     await allowStop.future;
     await super.stop();
   }
+}
+
+/// BUG-3928 用的假进程表：`alive` 里的 PID 活着，`processes` 是全量枚举结果。
+class _FakeGameProcessProbe implements GalgameProcessProbe {
+  final Set<int> alive = <int>{};
+  final List<GalgameProcessInfo> processes = <GalgameProcessInfo>[];
+
+  @override
+  bool isProcessAlive(int pid) => alive.contains(pid);
+
+  @override
+  List<GalgameProcessInfo> listProcesses() => processes;
+
+  @override
+  String? processImagePath(int pid) => null;
+
+  @override
+  int? foregroundProcessId() => null;
+
+  @override
+  String? canonicalize(String path) => null;
+}
+
+/// BUG-3928：游戏进程退出后捕获会话自动结束（附着与启动两条路径都要）。
+void _gameExitWatchTests() {
+  GalHookSessionController buildController({
+    required _FakeGameProcessProbe probe,
+    required ChangeNotifier endpoints,
+    String? imagePath,
+  }) {
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+    );
+    return GalHookSessionController(
+      textService: TexthookerService.test(),
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      targetImagePathProbe: (_) => imagePath,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      gameProcessProbe: probe,
+      gameExitPollInterval: const Duration(milliseconds: 5),
+      gameExitConfirmSamples: 2,
+    );
+  }
+
+  Future<void> pumpUntil(bool Function() done) async {
+    for (int i = 0; i < 200 && !done(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
+  Iterable<String> codes(GalHookSessionController controller) =>
+      controller.events.map((GalHookEvent event) => event.code);
+
+  test('BUG-3928：附着的游戏关掉后会话回到 idle 并通知回首页', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(2468);
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    expect(controller.state.isActive, isTrue);
+    // 先让监视至少见它活一次，再关游戏。
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(controller.state.isActive, isTrue);
+
+    probe.alive.remove(2468);
+    await pumpUntil(() => controller.gameExitedCount.value > 0);
+
+    expect(controller.state.phase, GalHookSessionPhase.idle);
+    expect(controller.state.boundWindow, isNull);
+    expect(controller.state.gamePid, isNull);
+    expect(controller.gameExitedCount.value, 1);
+    expect(codes(controller), contains('session.game_exited'));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-3928：启动的游戏关掉后会话同样结束', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(4242);
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    expect(controller.state.isActive, isTrue);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    probe.alive.remove(4242);
+    await pumpUntil(() => controller.gameExitedCount.value > 0);
+
+    expect(controller.state.phase, GalHookSessionPhase.idle);
+    expect(codes(controller), contains('session.game_exited'));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-3928：从没判活成功（进程打不开）时不擅自结束会话', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe();
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+
+    expect(controller.state.isActive, isTrue);
+    expect(controller.gameExitedCount.value, 0);
+    expect(codes(controller), isNot(contains('session.game_exited')));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-3928：游戏目录下有接手进程（自重启）时继续监听', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(2468);
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+      imagePath: r'D:\Games\Title\Game.exe',
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    probe
+      ..alive.remove(2468)
+      ..alive.add(3001)
+      ..processes.add(
+        const GalgameProcessInfo(
+          pid: 3001,
+          imagePath: r'D:\Games\Title\Game.exe',
+        ),
+      );
+    await pumpUntil(
+      () => codes(controller).contains('session.game_process_handoff'),
+    );
+    expect(codes(controller), contains('session.game_process_handoff'));
+    expect(controller.state.isActive, isTrue);
+    expect(controller.gameExitedCount.value, 0);
+
+    // 接手的进程也退出，才算游戏真的关了。
+    probe.alive.remove(3001);
+    await pumpUntil(() => controller.gameExitedCount.value > 0);
+    expect(controller.state.phase, GalHookSessionPhase.idle);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-3928：盘符根下的 exe 不把整盘进程当接手', () {
+    expect(galGameExitWatchDirectory(r'D:\Game.exe'), isNull);
+    expect(galGameExitWatchDirectory(null), isNull);
+    expect(
+      galGameExitWatchDirectory(r'D:\Games\Title\Game.exe'),
+      'd:/games/title',
+    );
+  });
+
+  test('BUG-3928：手动停止后旧监视不再动作', () async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(2468);
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+    );
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'Game'),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    await controller.stopCapture();
+
+    probe.alive.remove(2468);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(controller.gameExitedCount.value, 0, reason: '手动停止不送回首页');
+    expect(codes(controller), isNot(contains('session.game_exited')));
+
+    await controller.close();
+    endpoints.dispose();
+  });
 }

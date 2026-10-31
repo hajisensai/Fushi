@@ -6,6 +6,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -82,6 +83,50 @@ void main() {
     expect(find.textContaining('1'), findsWidgets);
     expect(find.text('テスト台詞'), findsOneWidget);
     expect(find.byIcon(Icons.sports_esports_outlined), findsWidgets);
+  });
+
+  testWidgets('BUG-3928: game exit returns the workbench to the dashboard', (
+    WidgetTester tester,
+  ) async {
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: TexthookerService.test(),
+      isWindows: false,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    // 不走 close()：它的异步收尾在 widget 测试的假时钟里不会推进。会话从没启动，
+    // 这里只需释放监听。
+    addTearDown(() {
+      controller.dispose();
+      endpoints.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeGamePage(
+          controller: controller,
+          monitorBuilder: (_, __) => const Text('monitor-session'),
+          libraryBuilder: _testLibrary,
+          dashboardBuilder: _stubDashboard,
+          discoverBuilder: _stubDiscover,
+          streamBuilder: _stubStream,
+        ),
+      ),
+    );
+    gameSectionNotifier.value = GameSection.monitor;
+    await tester.pump();
+    expect(find.text('monitor-session'), findsOneWidget);
+
+    controller.debugNotifyGameExited();
+    await tester.pumpAndSettle();
+    expect(gameSectionNotifier.value, GameSection.dashboard);
+
+    // 用户在别的子区时不被拉走。
+    gameSectionNotifier.value = GameSection.library;
+    await tester.pumpAndSettle();
+    controller.debugNotifyGameExited();
+    await tester.pumpAndSettle();
+    expect(gameSectionNotifier.value, GameSection.library);
   });
 
   testWidgets('monitor state survives library/workbench switches', (
