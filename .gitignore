@@ -222,3 +222,6 @@ fushi/tool/dist_test/workers.local.json
 /third_party/media_kit_libs_macos_video/native/libmpv-xcframeworks-bluray.tar.gz
 /third_party/media_kit_libs_windows_video/vendored/ANGLE.7z
 /third_party/media_kit_libs_windows_video/vendored/mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1.7z
+
+# tool/vendored_binaries.py staging files left behind when a fetch is killed mid-copy.
+*.vendored-part

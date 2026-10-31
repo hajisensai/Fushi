@@ -59,6 +59,18 @@ void main() {
       expect(needs(<String>[fl, 'test'], r'D:\wt\fushi_other'), false);
       expect(needs(<String>[fl, 'test'], r'D:\wt'), false);
       expect(needs(<String>['powershell', 'x.ps1'], r'D:\wt\fushi'), false);
+      expect(
+        needs(<String>[
+          'powershell',
+          '-File',
+          r'tool\run_windows_itest.ps1',
+        ], r'D:\wt\fushi'),
+        true,
+      );
+      expect(
+        needs(<String>['pwsh', 'tool/run_windows_itest.ps1'], r'D:\wt\fushi'),
+        true,
+      );
       expect(needs(<String>[fl, 'test'], '/wt/Fushi', win: false), false);
     });
   });

@@ -40,6 +40,29 @@ Future<void> main(List<String> args) async {
   final File stamp = File('${app.path}/.dart_tool/$_stampName');
   final String inputs = inputsHash(app);
 
+  // Two heavy commands / git hooks in one worktree may race here: hold an
+  // exclusive OS lock (released by the OS if this process dies) across the
+  // stamp check and the regeneration, so the second waits and then sees an
+  // up-to-date stamp instead of rewriting the same 37 MB file concurrently.
+  final File lockFile = File('${app.path}/.dart_tool/fushi_gen_i18n.lock');
+  lockFile.parent.createSync(recursive: true);
+  final RandomAccessFile lock = lockFile.openSync(mode: FileMode.append);
+  lock.lockSync(FileLock.blockingExclusive);
+  try {
+    await _generateIfStale(app, output, stamp, inputs, force: force);
+  } finally {
+    lock.unlockSync();
+    lock.closeSync();
+  }
+}
+
+Future<void> _generateIfStale(
+  Directory app,
+  File output,
+  File stamp,
+  String inputs, {
+  required bool force,
+}) async {
   if (!force && output.existsSync() && stamp.existsSync()) {
     final Object? saved = _tryDecode(stamp.readAsStringSync());
     if (saved is Map &&
