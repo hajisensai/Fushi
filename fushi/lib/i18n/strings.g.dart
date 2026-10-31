@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 180829 (10637 per locale)
+/// Strings: 180846 (10638 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -13637,6 +13637,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_quality_load_failed =>
       'Couldn\'t load qualities for this video.';
   String get video_quality_loading => 'Loading available qualities…';
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   String video_quality_switched({required Object label}) => 'Quality: ${label}';
   String get video_recently_added_badge => 'NEW';
   String get video_remote_all => 'All videos';
@@ -38278,6 +38280,9 @@ class _StringsAr extends _StringsEn {
       'تعذر تحميل الجودات المتاحة لهذا الفيديو.';
   @override
   String get video_quality_loading => 'جارٍ تحميل الجودات المتاحة…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   @override
   String video_quality_switched({required Object label}) => 'الجودة: ${label}';
   @override
@@ -64418,6 +64423,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_quality_loading =>
       'Verfügbare Qualitätsstufen werden geladen…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   @override
   String video_quality_switched({required Object label}) =>
       'Qualität: ${label}';
@@ -90648,6 +90656,9 @@ class _StringsEs extends _StringsEn {
       'No se pudieron cargar las calidades para este vídeo.';
   @override
   String get video_quality_loading => 'Cargando calidades disponibles…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   @override
   String video_quality_switched({required Object label}) => 'Calidad: ${label}';
   @override
@@ -116954,6 +116965,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_quality_loading => 'Chargement des qualités disponibles…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) =>
       'Qualité : ${label}';
   @override
@@ -142980,6 +142994,9 @@ class _StringsId extends _StringsEn {
       'Tidak bisa memuat kualitas untuk video ini.';
   @override
   String get video_quality_loading => 'Memuat kualitas yang tersedia…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   @override
   String video_quality_switched({required Object label}) =>
       'Kualitas: ${label}';
@@ -169098,6 +169115,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_quality_loading => 'Caricamento qualità disponibili…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) => 'Qualità: ${label}';
   @override
   String get video_recently_added_badge => 'NUOVO';
@@ -194348,6 +194368,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_quality_loading => '利用可能な画質を読み込み中…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) => '画質: ${label}';
   @override
   String get video_recently_added_badge => 'NEW';
@@ -219487,6 +219510,9 @@ class _StringsKo extends _StringsEn {
   String get video_quality_load_failed => '이 동영상의 화질 목록을 불러올 수 없습니다.';
   @override
   String get video_quality_loading => '사용 가능한 화질 로딩 중…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   @override
   String video_quality_switched({required Object label}) => '화질: ${label}';
   @override
@@ -245472,6 +245498,9 @@ class _StringsNl extends _StringsEn {
       'Kon kwaliteiten voor deze video niet laden.';
   @override
   String get video_quality_loading => 'Beschikbare kwaliteiten laden…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   @override
   String video_quality_switched({required Object label}) =>
       'Kwaliteit: ${label}';
@@ -271617,6 +271646,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_quality_loading => 'Carregando qualidades disponíveis…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) =>
       'Qualidade: ${label}';
   @override
@@ -297721,6 +297753,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_quality_loading => 'Загрузка доступных вариантов качества…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) =>
       'Качество: ${label}';
   @override
@@ -323552,6 +323587,9 @@ class _StringsTh extends _StringsEn {
       'ไม่สามารถโหลดตัวเลือกคุณภาพสำหรับวิดีโอนี้';
   @override
   String get video_quality_loading => 'กำลังโหลดตัวเลือกคุณภาพ…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
   @override
   String video_quality_switched({required Object label}) => 'คุณภาพ: ${label}';
   @override
@@ -349511,6 +349549,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_quality_loading => 'Mevcut kaliteler yükleniyor…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) => 'Kalite: ${label}';
   @override
   String get video_recently_added_badge => 'YENİ';
@@ -375432,6 +375473,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_quality_loading => 'Đang tải các chất lượng khả dụng…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) =>
       'Chất lượng: ${label}';
   @override
@@ -399420,6 +399464,9 @@ class _StringsZhCn extends _StringsEn {
   String get video_quality_load_failed => '无法获取该视频的画质档。';
   @override
   String get video_quality_loading => '正在获取可选画质…';
+  @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube 拒绝了本视频的独立音频流，其他画质暂不可用。';
   @override
   String video_quality_switched({required Object label}) => '画质：${label}';
   @override
@@ -423822,6 +423869,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_quality_loading => '正在獲取可選畫質…';
   @override
+  String get video_quality_separated_audio_refused =>
+      'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
+  @override
   String video_quality_switched({required Object label}) => '畫質：${label}';
   @override
   String get video_recently_added_badge => '新';
@@ -446217,6 +446267,8 @@ extension on _StringsEn {
         return 'Couldn\'t load qualities for this video.';
       case 'video_quality_loading':
         return 'Loading available qualities…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Quality: ${label}';
       case 'video_recently_added_badge':
@@ -468318,6 +468370,8 @@ extension on _StringsAr {
         return 'تعذر تحميل الجودات المتاحة لهذا الفيديو.';
       case 'video_quality_loading':
         return 'جارٍ تحميل الجودات المتاحة…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'الجودة: ${label}';
       case 'video_recently_added_badge':
@@ -490495,6 +490549,8 @@ extension on _StringsDe {
         return 'Qualitätsstufen für dieses Video konnten nicht geladen werden.';
       case 'video_quality_loading':
         return 'Verfügbare Qualitätsstufen werden geladen…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Qualität: ${label}';
       case 'video_recently_added_badge':
@@ -512657,6 +512713,8 @@ extension on _StringsEs {
         return 'No se pudieron cargar las calidades para este vídeo.';
       case 'video_quality_loading':
         return 'Cargando calidades disponibles…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Calidad: ${label}';
       case 'video_recently_added_badge':
@@ -534835,6 +534893,8 @@ extension on _StringsFr {
         return 'Impossible de charger les qualités pour cette vidéo.';
       case 'video_quality_loading':
         return 'Chargement des qualités disponibles…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Qualité : ${label}';
       case 'video_recently_added_badge':
@@ -556961,6 +557021,8 @@ extension on _StringsId {
         return 'Tidak bisa memuat kualitas untuk video ini.';
       case 'video_quality_loading':
         return 'Memuat kualitas yang tersedia…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Kualitas: ${label}';
       case 'video_recently_added_badge':
@@ -579117,6 +579179,8 @@ extension on _StringsIt {
         return 'Impossibile caricare le qualità per questo video.';
       case 'video_quality_loading':
         return 'Caricamento qualità disponibili…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Qualità: ${label}';
       case 'video_recently_added_badge':
@@ -601158,6 +601222,8 @@ extension on _StringsJa {
         return 'この動画の画質を読み込めませんでした。';
       case 'video_quality_loading':
         return '利用可能な画質を読み込み中…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => '画質: ${label}';
       case 'video_recently_added_badge':
@@ -623194,6 +623260,8 @@ extension on _StringsKo {
         return '이 동영상의 화질 목록을 불러올 수 없습니다.';
       case 'video_quality_loading':
         return '사용 가능한 화질 로딩 중…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => '화질: ${label}';
       case 'video_recently_added_badge':
@@ -645335,6 +645403,8 @@ extension on _StringsNl {
         return 'Kon kwaliteiten voor deze video niet laden.';
       case 'video_quality_loading':
         return 'Beschikbare kwaliteiten laden…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Kwaliteit: ${label}';
       case 'video_recently_added_badge':
@@ -667483,6 +667553,8 @@ extension on _StringsPtBr {
         return 'Não foi possível carregar as qualidades deste vídeo.';
       case 'video_quality_loading':
         return 'Carregando qualidades disponíveis…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Qualidade: ${label}';
       case 'video_recently_added_badge':
@@ -689635,6 +689707,8 @@ extension on _StringsRu {
         return 'Не удалось загрузить варианты качества для этого видео.';
       case 'video_quality_loading':
         return 'Загрузка доступных вариантов качества…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Качество: ${label}';
       case 'video_recently_added_badge':
@@ -711744,6 +711818,8 @@ extension on _StringsTh {
         return 'ไม่สามารถโหลดตัวเลือกคุณภาพสำหรับวิดีโอนี้';
       case 'video_quality_loading':
         return 'กำลังโหลดตัวเลือกคุณภาพ…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'คุณภาพ: ${label}';
       case 'video_recently_added_badge':
@@ -733879,6 +733955,8 @@ extension on _StringsTr {
         return 'Bu video için kalite seçenekleri yüklenemedi.';
       case 'video_quality_loading':
         return 'Mevcut kaliteler yükleniyor…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Kalite: ${label}';
       case 'video_recently_added_badge':
@@ -756003,6 +756081,8 @@ extension on _StringsVi {
         return 'Không thể tải danh sách chất lượng cho video này.';
       case 'video_quality_loading':
         return 'Đang tải các chất lượng khả dụng…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => 'Chất lượng: ${label}';
       case 'video_recently_added_badge':
@@ -777883,6 +777963,8 @@ extension on _StringsZhCn {
         return '无法获取该视频的画质档。';
       case 'video_quality_loading':
         return '正在获取可选画质…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube 拒绝了本视频的独立音频流，其他画质暂不可用。';
       case 'video_quality_switched':
         return ({required Object label}) => '画质：${label}';
       case 'video_recently_added_badge':
@@ -799832,6 +799914,8 @@ extension on _StringsZhHk {
         return '無法獲取該影片的畫質檔。';
       case 'video_quality_loading':
         return '正在獲取可選畫質…';
+      case 'video_quality_separated_audio_refused':
+        return 'YouTube refused the separate audio stream of this video, so other qualities are unavailable.';
       case 'video_quality_switched':
         return ({required Object label}) => '畫質：${label}';
       case 'video_recently_added_badge':

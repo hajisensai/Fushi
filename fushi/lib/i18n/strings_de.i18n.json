@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Schalte dies ein, um das Bild mit mpvs integrierter hochwertiger Skalierung zu schärfen. Funktioniert sowohl bei Anime als auch bei Realfilm-Serien und Filmen. Für mehr mit Shadern wie Anime4K öffne während der Wiedergabe die Bildverbesserung und wähle dort eine Stufe.",
   "video_quality_load_failed": "Qualitätsstufen für dieses Video konnten nicht geladen werden.",
   "video_quality_loading": "Verfügbare Qualitätsstufen werden geladen…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Qualität: $label",
   "video_recently_added_badge": "NEU",
   "video_remote_all": "All videos",

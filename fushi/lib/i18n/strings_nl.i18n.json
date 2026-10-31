@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Schakel dit in om het beeld te verscherpen met de ingebouwde hoogwaardige schaling van mpv. Werkt zowel voor anime als voor live-action series en films. Voor verdergaande shaders zoals Anime4K open je Beeldverbetering terwijl een video speelt en kies je daar een niveau.",
   "video_quality_load_failed": "Kon kwaliteiten voor deze video niet laden.",
   "video_quality_loading": "Beschikbare kwaliteiten laden…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Kwaliteit: $label",
   "video_recently_added_badge": "NIEUW",
   "video_remote_all": "All videos",

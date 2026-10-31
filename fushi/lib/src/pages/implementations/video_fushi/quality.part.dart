@@ -206,10 +206,23 @@ extension _VideoQuality on _VideoFushiPageState {
 
   /// 切到第 [index] 档 YouTube 画质（-1=自动=解析器默认最佳）：换 video-only URL + 同
   /// audio-only 音轨重载，保持当前播放位置与现有字幕 cue。同档早退；重载后弹 OSD。
+  ///
+  /// 本集分离音轨已被拒（[SeparatedAudioLoadGuard.separatedAudioRefused]）时不再切：
+  /// 各档都要挂同一条被拒的 audio-only 流，切过去只会再无声一次、再回退一次。画质菜单
+  /// 此时已禁用这些档并说明原因，这里兜住快捷键等其它入口。
   Future<void> _switchYoutubeVariant(int index) async {
     if (index >= _youtubeVariants.length) return;
     if (index == _selectedYoutubeVariantIndex) {
       _hideVideoSidePanel();
+      return;
+    }
+    if (_separatedAudio.separatedAudioRefused) {
+      _hideVideoSidePanel();
+      _showOsd(
+        t.video_quality_separated_audio_refused,
+        icon: FushiIcons.volumeOff,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     // 自动 → 解析器默认最佳档（[_youtubeVariantsDefaultIndex]）的 URL。
@@ -218,6 +231,8 @@ extension _VideoQuality on _VideoFushiPageState {
       _hideVideoSidePanel();
       return;
     }
+    // 中继地址要 await：期间换集（集序号前进）或分离音轨被拒，这次切档作废。
+    final int seq = _episodeLoadSeq;
     // BUG-2507：googlevideo 直链只接受有界 Range，交给内核前换成本地分块中继地址
     // （与 [UrlStreamVideoClient.remoteVideoStreamUrls] 同一口径）。
     final Map<String, String> headers = _streamHttpHeaderFields;
@@ -229,7 +244,10 @@ extension _VideoQuality on _VideoFushiPageState {
     final String? audioUrl = audioRaw == null
         ? null
         : await relayYoutubeStreamUrl(audioRaw, headers);
-    if (!mounted) return;
+    if (!_separatedAudio.isCurrent(seq) ||
+        _separatedAudio.separatedAudioRefused) {
+      return;
+    }
     final VideoPlayerController? controller = _controller;
     final int posMs = controller?.resumePositionMs ?? 0;
     final List<AudioCue> cues = controller != null
@@ -240,9 +258,8 @@ extension _VideoQuality on _VideoFushiPageState {
     _rebuild(() => _selectedYoutubeVariantIndex = index);
     // detectHls=false：googlevideo URL 非 m3u8，且不碰 YouTube 档列表。音轨保持同一
     // audio-only 流（切档只换画面清晰度）。字幕经现有 cue + 当前 source 保留。
-    _separatedAudioLoadInFlight = true;
-    try {
-      await _applyLoad(
+    await _separatedAudio.runLoad<void>(
+      () => _applyLoad(
         videoPath: null,
         mediaUri: videoUrl,
         cues: cues,
@@ -252,11 +269,10 @@ extension _VideoQuality on _VideoFushiPageState {
         externalSubtitlePath: _currentSubtitleSource,
         externalAudioTrackUrl: audioUrl,
         detectHls: false,
-      );
-    } finally {
-      _separatedAudioLoadInFlight = false;
-    }
-    if (!mounted) return;
+      ),
+    );
+    // 重载期间换集 / 页面销毁：新集已接管，旧档的 OSD 与收尾一律作废。
+    if (!_separatedAudio.isCurrent(seq)) return;
     final String label = index < 0
         ? t.video_quality_auto
         : _youtubeVariants[index].label;
@@ -268,7 +284,7 @@ extension _VideoQuality on _VideoFushiPageState {
   /// 控制器报「本次 load 的外挂分离音轨打不开」（反馈 s3sOy3sD1J）。有载入在途时只等它
   /// 收尾（在途的那程会在结束后调 [_recoverFromExternalAudioFailure]），否则立即处理。
   void _handleExternalAudioTrackFailed() {
-    if (_separatedAudioLoadInFlight) return;
+    if (_separatedAudio.loadInFlight) return;
     unawaited(_recoverFromExternalAudioFailure());
   }
 
@@ -278,46 +294,46 @@ extension _VideoQuality on _VideoFushiPageState {
   ///   播放位置与字幕 cue），OSD 说明已换成低画质兼容流；
   /// - 没有：OSD 明确告诉用户音频流打不开、当前没有声音，而不是静默放无声画面。
   ///
-  /// 只在控制器确实记了本次 load 的音轨失败时动作；换成 muxed 后那程 load 不挂外挂音轨，
-  /// 失败标记随之复位，不会循环回退。
+  /// 只在控制器确实记了本次 load 的音轨失败时动作，并记下本集分离音轨已被拒（画质菜单
+  /// 据此禁用分离档）；换成 muxed 后那程 load 不挂外挂音轨，失败标记随之复位，不会循环
+  /// 回退。回退重载期间换集 / 页面销毁则静默作废（[SeparatedAudioLoadGuard.recover]）。
   Future<void> _recoverFromExternalAudioFailure() async {
-    if (!mounted || _separatedAudioLoadInFlight) return;
     final VideoPlayerController? controller = _controller;
-    if (controller == null || !controller.externalAudioTrackFailed) return;
-    final String? fallback = _separatedAudioFallbackUrl;
-    if (fallback == null) {
-      _showOsd(
-        t.video_audio_track_load_failed,
-        icon: FushiIcons.volumeOff,
+    if (controller == null) return;
+    await _separatedAudio.recover(
+      externalAudioFailed: () => controller.externalAudioTrackFailed,
+      fallbackUrl: _separatedAudioFallbackUrl,
+      onNoFallback: () {
+        // 画质菜单若开着，分离档随即变为禁用态。
+        _rebuild(() {});
+        _showOsd(
+          t.video_audio_track_load_failed,
+          icon: FushiIcons.volumeOff,
+          prominent: true,
+          severity: ToastSeverity.error,
+        );
+      },
+      reloadWithFallback: (String fallback) {
+        final int posMs = controller.resumePositionMs ?? 0;
+        final List<AudioCue> cues = List<AudioCue>.of(controller.cues);
+        _rebuild(() => _selectedYoutubeVariantIndex = -1);
+        return _applyLoad(
+          videoPath: null,
+          mediaUri: fallback,
+          cues: cues,
+          title: _title ?? '',
+          initialPositionMs: posMs,
+          startIntent: EpisodeStartIntent.explicitCue,
+          externalSubtitlePath: _currentSubtitleSource,
+          detectHls: false,
+        );
+      },
+      onFellBack: () => _showOsd(
+        t.video_audio_track_fallback_muxed,
+        icon: FushiIcons.volumeUp,
         prominent: true,
-        severity: ToastSeverity.error,
-      );
-      return;
-    }
-    final int posMs = controller.resumePositionMs ?? 0;
-    final List<AudioCue> cues = List<AudioCue>.of(controller.cues);
-    _rebuild(() => _selectedYoutubeVariantIndex = -1);
-    _separatedAudioLoadInFlight = true;
-    try {
-      await _applyLoad(
-        videoPath: null,
-        mediaUri: fallback,
-        cues: cues,
-        title: _title ?? '',
-        initialPositionMs: posMs,
-        startIntent: EpisodeStartIntent.explicitCue,
-        externalSubtitlePath: _currentSubtitleSource,
-        detectHls: false,
-      );
-    } finally {
-      _separatedAudioLoadInFlight = false;
-    }
-    if (!mounted) return;
-    _showOsd(
-      t.video_audio_track_fallback_muxed,
-      icon: FushiIcons.volumeUp,
-      prominent: true,
-      severity: ToastSeverity.warning,
+        severity: ToastSeverity.warning,
+      ),
     );
   }
 
@@ -701,14 +717,29 @@ extension _VideoQuality on _VideoFushiPageState {
         );
       }
       if (_youtubeVariants.isNotEmpty) {
+        // 本集分离音轨已被拒：各档都得挂同一条被拒的音频流，禁用并说明（而不是让用户
+        // 点了再无声一次、再回退一次）。
+        final bool separatedRefused = _separatedAudio.separatedAudioRefused;
         return ListView(
           padding: listPadding,
           children: <Widget>[
+            if (separatedRefused)
+              Padding(
+                key: const ValueKey<String>(
+                  'video-quality-youtube-separated-audio-refused',
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text(
+                  t.video_quality_separated_audio_refused,
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+              ),
             _buildYoutubeQualityTile(
               selectedFg,
               icon: Icons.auto_awesome,
               label: t.video_quality_auto,
               index: -1,
+              enabled: !separatedRefused,
             ),
             for (int i = 0; i < _youtubeVariants.length; i++)
               _buildYoutubeQualityTile(
@@ -716,6 +747,7 @@ extension _VideoQuality on _VideoFushiPageState {
                 icon: Icons.high_quality,
                 label: _youtubeVariants[i].label,
                 index: i,
+                enabled: !separatedRefused,
               ),
           ],
         );
@@ -808,16 +840,19 @@ extension _VideoQuality on _VideoFushiPageState {
     required IconData icon,
     required String label,
     required int index,
+    required bool enabled,
   }) {
     final bool selected = _selectedYoutubeVariantIndex == index;
     return FushiListTileControl(
+      key: ValueKey<String>('video-quality-youtube-$index'),
       dense: true,
+      enabled: enabled,
       leading: FushiIcon(icon),
       title: Text(label),
       selected: selected,
       selectedColor: selectedFg,
       trailing: selected ? FushiIcon(Icons.check, color: selectedFg) : null,
-      onTap: () => unawaited(_switchYoutubeVariant(index)),
+      onTap: enabled ? () => unawaited(_switchYoutubeVariant(index)) : null,
     );
   }
 }

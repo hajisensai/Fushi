@@ -27,9 +27,25 @@ void main() {
   });
 
   test('外挂音轨 URL 经 nativePlaybackUri 收口', () {
+    // 收口结果还要记进 `_externalAudioNativeUri`（判「本次外挂音轨打不开」，
+    // 反馈 s3sOy3sD1J），所以先绑定成局部变量，再交给 AudioTrack.uri。
+    const String binding =
+        'final String audioNativeUri = nativePlaybackUri(externalAudioTrackUrl);';
+    const String attach = 'AudioTrack.uri(audioNativeUri)';
+    final int bindAt = src.indexOf(binding);
+    final int attachAt = src.indexOf(attach);
+    expect(bindAt, greaterThanOrEqualTo(0), reason: '外挂音轨 URL 必须先过收口');
+    expect(attachAt, greaterThan(bindAt), reason: 'AudioTrack.uri 必须用收口后的值');
     expect(
-      src,
-      contains('AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))'),
+      src.substring(bindAt + binding.length, attachAt),
+      isNot(contains('audioNativeUri =')),
+      reason: '收口与 audio-add 之间不得改写 audioNativeUri',
+    );
+    // 唯一外挂入口：不存在把裸 URL（或任何别的值）交给 AudioTrack.uri 的第二处。
+    expect(
+      RegExp(r'AudioTrack\.uri\(').allMatches(src).length,
+      1,
+      reason: 'AudioTrack.uri 只允许出现在收口后的那一处',
     );
     expect(src, isNot(contains('AudioTrack.uri(externalAudioTrackUrl)')));
   });

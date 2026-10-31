@@ -9479,6 +9479,7 @@
   "video_quality_enhancement_hint": "Aktifkan ini untuk menajamkan gambar dengan penskalaan kualitas tinggi bawaan mpv. Cocok untuk anime maupun film/acara live-action. Untuk lebih jauh dengan shader seperti Anime4K, buka Peningkatan gambar saat video diputar dan pilih levelnya di sana.",
   "video_quality_load_failed": "Tidak bisa memuat kualitas untuk video ini.",
   "video_quality_loading": "Memuat kualitas yang tersedia…",
+  "video_quality_separated_audio_refused": "YouTube refused the separate audio stream of this video, so other qualities are unavailable.",
   "video_quality_switched": "Kualitas: $label",
   "video_recently_added_badge": "BARU",
   "video_remote_all": "All videos",
