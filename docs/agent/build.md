@@ -442,7 +442,7 @@ Flutter 3.47.6 下部分上游依赖未适配，两种补法并存（对个别�
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
 
-移动端 / Apple 的 libmpv（入库 jar / xcframework 归档）在两个 fork 里构建，**CI 都跑在私有镜像仓**：Android `hajisensai/libmpv-android-video-build` → `hajisensai/libmpv-android-build-fushi`（原 fork 的 Actions 被 GitHub 停用，任何触发回 422），Darwin `hajisensai/libmpv-darwin-build` → `hajisensai/libmpv-darwin-build-fushi`（2026-10-24 DVD 重编起，同一做法）。fork 仓保留源码分支与统一 FFmpeg 的 Release（`unified-ffmpeg-9.0.1-r<N>`），构建在镜像仓手动 dispatch；产物来源记在各自 `provenance.json`，当前 fork 补丁与顺序见 `tool/dvd/forks/README.md`。
+移动端 / Apple 的 libmpv（jar / xcframework 归档；字节在 `vendored-binaries` release，见「vendored 二进制」）在两个 fork 里构建，**CI 都跑在私有镜像仓**：Android `hajisensai/libmpv-android-video-build` → `hajisensai/libmpv-android-build-fushi`（原 fork 的 Actions 被 GitHub 停用，任何触发回 422），Darwin `hajisensai/libmpv-darwin-build` → `hajisensai/libmpv-darwin-build-fushi`（2026-10-24 DVD 重编起，同一做法）。fork 仓保留源码分支与统一 FFmpeg 的 Release（`unified-ffmpeg-9.0.1-r<N>`），构建在镜像仓手动 dispatch；产物来源记在各自 `provenance.json`，当前 fork 补丁与顺序见 `tool/dvd/forks/README.md`。
 
 第三种（native 依赖）：**vcpkg overlay ports**。`native/fushi_torrent/vcpkg-ports/` 是 libtorrent 2.0.11 port 的原样拷贝 + 本仓补丁（DHT 混合代理豁免，P2P 代理混合档依赖它），三个构建脚本（`build_windows_dll.ps1` / `build_android_so.ps1` / `build_android_so.sh`，含 CI）都用 `-DVCPKG_OVERLAY_PORTS` 挂上；overlay 无条件优先于 registry。补丁存在性/引用/挂载由 `fushi/test/torrent/download_http_client_proxy_test.dart` E 组守卫钉住，动机与清理条件见 `native/fushi_torrent/vcpkg-ports/README.md`。
 

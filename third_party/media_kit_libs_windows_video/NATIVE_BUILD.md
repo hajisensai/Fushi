@@ -271,7 +271,8 @@ not deliver what it would be for - a reproducible, reviewable rebuild:
   its configure line (install prefix) in `avutil`, and the 7z carries
   timestamps. A CI artifact could only be compared at manifest level, which
   `native-runtime-manifest.json` / `native-dependency-packages.json` already
-  record for the committed archive.
+  record for the vendored archive (bytes in the vendored-binaries release,
+  pinned by tool/vendored_binaries.json).
 * `verify_dovi_p5.py` and `verify_menu_render.py` render through ANGLE on
   D3D11; hosted Windows runners only offer WARP, so the render verifiers - the
   checks that caught BUG-2691 / BUG-3296 - would be skipped or untrustworthy

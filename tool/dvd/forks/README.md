@@ -59,7 +59,9 @@ bash tool/dvd/forks/apply.sh darwin  <fork 检出目录>
    Darwin 归档进 `third_party/media_kit_libs_{ios,macos}_video/native/`（`verify_darwin_archive.py`
    已要求 Mpv 链 `@rpath/libdvdnav.framework` 且归档里不私带 `libdvd*`），新 AAR / iOS
    xcframework（含 `libdvd{css,read,nav}.xcframework`，podspec 已登记）/ macOS 布局一起换；
-   `fushi/test/build` 下按补丁散列钉住产物的 6 条用例转绿。
+   `fushi/test/build` 下按补丁散列钉住产物的 6 条用例转绿。这些二进制**不入 git**（2026-11-01 起）：
+   放到原路径后 `python3 tool/vendored_binaries.py register --group <android|ios|macos> <路径>...`
+   → `publish`，只提交 `tool/vendored_binaries.json` 与各自钉值（见 `docs/agent/build.md`「vendored 二进制」）。
 4. **待定**：四份入库产物（Windows / Android / iOS / macOS）现在都带 `dvdvideo`，满足
    `tool/ffmpeg-unified/capabilities.json` 的提升条件；挪进 `demuxers` 下限需要同时决定
    `staged.configure`（下限没有 configure 槽位）与守卫 `ffmpeg_unified_dvd_guard_test` 的写法，
