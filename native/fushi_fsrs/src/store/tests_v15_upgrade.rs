@@ -95,12 +95,57 @@ fn diff_rows(table: &str, old: &Value, new: &Value) -> Option<String> {
   new only: {:?}", &only_old[..only_old.len().min(3)], &only_new[..only_new.len().min(3)]))
 }
 
+/// develop@6486c650c5（schema v8）`transport.rs` 的 `digest` 原样搬来（只把 ID 列换成解码后的文本）：16 桶按 ID
+/// 首字节分、桶内按 ID 文本顺序逐行哈希，根 = 16 个桶哈希顺序拼接再 BLAKE3。
+fn legacy_v8_digest(d: &Device, profile: &str) -> String {
+    let w = d.core.writer().unwrap();
+    let mut buckets: Vec<blake3::Hasher> = (0..16).map(|_| blake3::Hasher::new()).collect();
+    for (table, body, tag) in
+        [("srs_entities", "kind || payload_json", b'e'), ("srs_field_edits", "json", b'f'), ("srs_review_logs", "json", b'l')]
+    {
+        let mut stmt = w
+            .prepare(&format!(
+                "SELECT srs_idt(id) AS i, {body} FROM {table} WHERE profile_uid = srs_id(?1) ORDER BY i"
+            ))
+            .unwrap();
+        let mut q = stmt.query([profile]).unwrap();
+        while let Some(r) = q.next().unwrap() {
+            let id: String = r.get(0).unwrap();
+            let body: String = r.get(1).unwrap();
+            let h = &mut buckets[id.as_bytes().first().map_or(0, |c| (*c as usize) % 16)];
+            h.update(&[tag]);
+            h.update(&(id.len() as u64).to_le_bytes());
+            h.update(id.as_bytes());
+            h.update(&(body.len() as u64).to_le_bytes());
+            h.update(body.as_bytes());
+        }
+    }
+    let mut root = blake3::Hasher::new();
+    for h in buckets {
+        root.update(h.finalize().as_bytes());
+    }
+    root.finalize().to_hex().to_string()
+}
+
 #[test]
 fn a_real_v15_database_upgrades_row_for_row() {
-    let dir = tempdir::new("v15-up");
+    upgrades_row_for_row("v15");
+}
+
+/// 真实 v8 库（develop@6486c650c5，schema v8 的实现生成；生成器 tests/fixtures/srs_v8_generator.rs.txt）一路升到当前
+/// 版本（v9 … v18 的每一步：队列索引、寄存器重建、v12 性能、v13 Anki 数字 ID、v14 摘要桶重建、v15、v16 快照外置、
+/// v17 ID 编码、v18 瘦 JSON）：旧表逐表逐行无损、摘要逐位相同、升级后与新设备同步收到的日志与旧实现相同。
+#[test]
+fn a_real_v8_database_upgrades_row_for_row() {
+    upgrades_row_for_row("v8");
+}
+
+/// [ver] 的夹具 `srs_<ver>.db.zst` / `srs_<ver>_vectors.json.zst` 升到当前版本后与旧实现导出的逐项比。
+fn upgrades_row_for_row(ver: &str) {
+    let dir = tempdir::new(&format!("{ver}-up"));
     let path = dir.0.join("srs.db");
-    std::fs::write(&path, unzstd("srs_v15.db.zst")).unwrap();
-    let vectors: Value = serde_json::from_slice(&unzstd("srs_v15_vectors.json.zst")).unwrap();
+    std::fs::write(&path, unzstd(&format!("srs_{ver}.db.zst"))).unwrap();
+    let vectors: Value = serde_json::from_slice(&unzstd(&format!("srs_{ver}_vectors.json.zst"))).unwrap();
     let a = Device { core: SrsCore::open(&path).unwrap(), _dir: tempdir::new("unused") };
     assert_eq!(a.rows("SELECT value FROM srs_meta WHERE key = 'schema'")[1][0], crate::store::schema::SCHEMA_VERSION.to_string());
 
@@ -125,13 +170,27 @@ fn a_real_v15_database_upgrades_row_for_row() {
     }
     assert!(diffs.is_empty(), "{}", diffs.join("
 "));
-    // 摘要逐位相同。
-    assert_eq!(a.core.sync2_digest(P).unwrap(), vectors["digest"]);
+    let got = a.core.sync2_digest(P).unwrap();
+    if ver == "v8" {
+        // v12 把摘要换成按 blake3(id) 分 4096 桶的可增减和（sync2/digest.rs 文件头：「与旧格式不能比」，域分隔
+        // `fushi-srs-digest-v2`），v8 夹具里记的是旧算法（16 桶、按 ID 首字节、顺序哈希）的根，新旧根逐位不同是设计
+        // 使然。所以分两步钉死：① 用旧算法对升级后的数据重算，必须与 v8 实现当时算出的根逐位相同——摘要的全部输入
+        // （实体 `kind || payload_json`、修改记录 `json`、日志 `json`，按 ID 文本）无损；② 升级后由触发器维护的桶表
+        // 求出的根等于对同样数据从头扫描算的根——v14 的桶表全量重建没有漏行或多算。版本向量部分逐字相同。
+        assert_eq!(legacy_v8_digest(&a, P), vectors["digest"]["digest"].as_str().unwrap());
+        let w = a.core.writer().unwrap();
+        assert_eq!(got["digest"].as_str().unwrap(), super::sync2::digest::root_by_scan(&w, P).unwrap());
+        drop(w);
+        assert_eq!(got["vv"], vectors["digest"]["vv"]);
+    } else {
+        // 摘要逐位相同。
+        assert_eq!(got, vectors["digest"]);
+    }
 
     // 升级后与一台新设备在新位置同步：新设备收到的复习日志与旧实现（生成夹具时同样的操作）逐条相同。
     let t = 1_700_000_000_000 + 20 * DAY;
     let mut bucket = Bucket::default();
-    let c = Device::new("v15-fresh");
+    let c = Device::new(&format!("{ver}-fresh"));
     for _ in 0..2 {
         a.sync(&mut bucket, "fresh", t);
         c.sync(&mut bucket, "fresh", t);
