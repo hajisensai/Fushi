@@ -3,8 +3,9 @@
 // - 默认收起，不占布局；右键 / 点卡面空白在唤出与收起间切换，不自动收起。
 // - 没有卡面可点（复习完等）时顶栏常驻，否则连返回键都唤不出来。
 // - 「复习选项」里关掉 = 固定页头常驻，右键不再切换。
-// - 原生卡面的「点空白」判定（SrsBlankTapRegion）：点在带点击处理的子控件上、被圈出的
-//   释义 WebView 上、拖动、取词用掉的点按都不算空白。
+// - 原生卡面的「点空白」判定（SrsCardGestureRegion）：点在带点击处理的子控件上、被圈出的
+//   释义 WebView 上、拖动、取词用掉的点按都不算空白（手势的其余判定见
+//   srs_card_gesture_region_test.dart）。
 //
 // 走真实路径：内存库 + 确定性假排程内核 → SrsReviewPage。数据库读写放 tester.runAsync。
 
@@ -19,6 +20,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -72,7 +74,7 @@ Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
   }
 }
 
-/// 打开复习页；[faces] 收集每次构建的卡面（拿 onTapEmpty 模拟页内脚本回报）。
+/// 打开复习页；[faces] 收集每次构建的卡面（拿 onCardGesture 模拟页内脚本回报）。
 Future<void> _pumpReview(
   WidgetTester tester, {
   required SrsDbStore store,
@@ -186,12 +188,17 @@ void main() {
     final List<SrsCardFace> faces = <SrsCardFace>[];
     await _pumpReview(tester, store: store, faces: faces);
 
-    final VoidCallback? tapEmpty = faces.last.onTapEmpty;
-    expect(tapEmpty, isNotNull, reason: '复习页要接卡面的空白点按');
-    tapEmpty!();
+    final void Function(SrsCardGestureEvent)? onGesture =
+        faces.last.onCardGesture;
+    expect(onGesture, isNotNull, reason: '复习页要接卡面的空白点按');
+    final SrsCardGestureEvent tap = SrsCardGestureEvent(
+      SrsCardGestureKind.tap,
+      position: tester.getCenter(_surface),
+    );
+    onGesture!(tap);
     await _animate(tester);
     expect(_floatingBar, findsOneWidget);
-    faces.last.onTapEmpty!();
+    faces.last.onCardGesture!(tap);
     await _animate(tester);
     expect(_floatingBar, findsNothing);
     await _unmount(tester);
@@ -281,14 +288,16 @@ void main() {
     await _unmount(tester);
   });
 
-  group('SrsBlankTapRegion', () {
+  group('SrsCardGestureRegion：点空白', () {
     Future<List<String>> pumpRegion(WidgetTester tester) async {
       final List<String> calls = <String>[];
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SrsBlankTapRegion(
-            onTapEmpty: () => calls.add('empty'),
+          child: SrsCardGestureRegion(
+            onGesture: (SrsCardGestureEvent e) {
+              if (e.kind == SrsCardGestureKind.tap) calls.add('empty');
+            },
             tapTookLookup: () => false,
             child: Column(
               children: <Widget>[
@@ -299,7 +308,7 @@ void main() {
                   child: const SizedBox(width: 200, height: 100),
                 ),
                 // ColoredBox 与真卡面的底色一样会被命中（裸 SizedBox 不参与命中测试）。
-                SrsBlankTapRegion.excluded(
+                SrsCardGestureRegion.excluded(
                   child: const ColoredBox(
                     key: ValueKey<String>('webview'),
                     color: Color(0xFFEEEEEE),
@@ -345,8 +354,10 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SrsBlankTapRegion(
-            onTapEmpty: () => calls.add('empty'),
+          child: SrsCardGestureRegion(
+            onGesture: (SrsCardGestureEvent e) {
+              if (e.kind == SrsCardGestureKind.tap) calls.add('empty');
+            },
             tapTookLookup: () => true,
             child: const ColoredBox(
               color: Color(0xFFFFFFFF),
