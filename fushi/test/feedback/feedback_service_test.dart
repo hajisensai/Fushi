@@ -61,7 +61,7 @@ void main() {
     ),
     meta: () async => <String, Object?>{'platform': 'test'},
     installId: () async => _install,
-    logText: () => 'E/boom',
+    logText: ({required bool includeDebugLog}) => 'E/boom',
     logEncoder: _fakeGzip,
   );
 

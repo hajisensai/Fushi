@@ -31,6 +31,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/feedback/feedback_log_redaction.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
@@ -311,8 +312,12 @@ class CrashReportOffer {
   String get version => latest.version;
 }
 
-/// 组一份闪退报告反馈（分类 bug，附日志与设备信息）。[title] / [header] 由界面按语言给出。
-/// 正文 = 说明 + 每次退出的摘要（新的在前），截到 [FeedbackLimits.bodyMax]。
+/// 组一份闪退报告反馈（分类 bug，附错误日志与设备信息）。[title] / [header] 由界面按语言
+/// 给出。正文 = 说明 + 每次退出的摘要（新的在前，经 [redactFeedbackLog] 脱敏），截到
+/// [FeedbackLimits.bodyMax]。
+///
+/// 不带调试日志（`includeDebugLog: false`）：提示里用户同意的只是错误日志 + 设备信息 +
+/// 安装标识，调试日志是整段 `debugPrint` 原文，不在其列。
 FeedbackDraft buildCrashReportDraft(
   CrashReportOffer offer, {
   required String title,
@@ -333,7 +338,7 @@ FeedbackDraft buildCrashReportDraft(
       ..write(' version=${c.version}')
       ..write(' foreground=${c.foreground}')
       ..write(' duringStartup=${c.duringStartup}')
-      ..write('\n${c.summary}');
+      ..write('\n${redactFeedbackLog(c.summary)}');
   }
   String text = body.toString();
   if (text.length > FeedbackLimits.bodyMax) {
@@ -345,6 +350,7 @@ FeedbackDraft buildCrashReportDraft(
         ? title.substring(0, FeedbackLimits.titleMax)
         : title,
     body: text,
+    includeDebugLog: false,
     submissionKey: submissionKey,
   );
 }

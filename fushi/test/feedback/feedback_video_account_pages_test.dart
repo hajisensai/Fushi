@@ -192,7 +192,7 @@ void main() {
     supportRoot: () async => root,
     client: b.feedbackClient,
     meta: () async => <String, Object?>{'platform': 'test'},
-    logText: () => 'log',
+    logText: ({required bool includeDebugLog}) => 'log',
     logEncoder: (String s) =>
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
     // 测试宿主没有 ffmpeg：假转码 = 原样复制进工作目录。

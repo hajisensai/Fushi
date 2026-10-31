@@ -502,7 +502,7 @@ void main() {
     supportRoot: () async => root,
     client: b.feedbackClient,
     meta: () async => <String, Object?>{'platform': 'test'},
-    logText: () => 'log',
+    logText: ({required bool includeDebugLog}) => 'log',
     logEncoder: (String s) =>
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
   );

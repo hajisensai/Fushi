@@ -41,7 +41,7 @@ void main() {
       }),
     ),
     meta: () async => <String, Object?>{},
-    logText: () => 'E/boom',
+    logText: ({required bool includeDebugLog}) => 'E/boom',
     logEncoder: (String log) => Uint8List.fromList(utf8.encode(log)),
   );
 
