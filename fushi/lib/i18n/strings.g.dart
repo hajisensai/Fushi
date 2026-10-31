@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 180880 (10640 per locale)
+/// Strings: 180897 (10641 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -10590,6 +10590,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_browse_unsuspended => 'Cards unsuspended';
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  String get srs_card_appearance_blur_translation_desc =>
+      'Fushi cards only. Edited templates must keep the .fc-translation element';
   String get srs_card_appearance_color_app => 'Follow app theme';
   String get srs_card_appearance_color_custom => 'Custom accent';
   String get srs_card_appearance_compact_phone =>
@@ -33057,6 +33059,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'بطاقات Fushi فقط. يجب أن تحتفظ القوالب المعدّلة بالعنصر .fc-translation';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -59158,6 +59163,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Nur Fushi-Karten. Bearbeitete Vorlagen müssen das Element .fc-translation behalten';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -85381,6 +85389,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Solo tarjetas Fushi. Las plantillas editadas deben conservar el elemento .fc-translation';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -111693,6 +111704,9 @@ class _StringsFr extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Cartes Fushi uniquement. Les modèles modifiés doivent conserver l’élément .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -137767,6 +137781,9 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Hanya kartu Fushi. Templat yang diubah harus mempertahankan elemen .fc-translation';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -163884,6 +163901,9 @@ class _StringsIt extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Solo schede Fushi. I modelli modificati devono mantenere l’elemento .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -189292,6 +189312,9 @@ class _StringsJa extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Fushi カードのみ。テンプレートを編集した場合は .fc-translation 要素を残してください';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -214434,6 +214457,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Fushi 카드에만 적용됩니다. 템플릿을 수정했다면 .fc-translation 요소를 유지해야 합니다';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -240282,6 +240308,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Alleen Fushi-kaarten. Bewerkte sjablonen moeten het element .fc-translation behouden';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -266431,6 +266460,9 @@ class _StringsPtBr extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Somente cartões Fushi. Modelos editados devem manter o elemento .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -292556,6 +292588,9 @@ class _StringsRu extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Только для карточек Fushi. В изменённых шаблонах должен остаться элемент .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -318433,6 +318468,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'เฉพาะการ์ด Fushi เท่านั้น เทมเพลตที่แก้ไขต้องคงองค์ประกอบ .fc-translation ไว้';
   @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
@@ -344376,6 +344414,9 @@ class _StringsTr extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Yalnızca Fushi kartları. Düzenlenen şablonlar .fc-translation öğesini korumalıdır';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -370313,6 +370354,9 @@ class _StringsVi extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Chỉ thẻ Fushi. Mẫu đã chỉnh sửa phải giữ phần tử .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -394760,6 +394804,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_card_appearance_blur_translation => '翻译模糊，点按显示';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      '仅 Fushi 卡片生效；改过模板时需保留 .fc-translation 元素';
+  @override
   String get srs_card_appearance_color_app => '跟随 app 主题';
   @override
   String get srs_card_appearance_color_custom => '自定义强调色';
@@ -418937,6 +418984,9 @@ class _StringsZhHk extends _StringsEn {
   String get srs_card_appearance_blur_translation =>
       'Blur translation until tapped';
   @override
+  String get srs_card_appearance_blur_translation_desc =>
+      '只適用於 Fushi 卡片；改過範本時需保留 .fc-translation 元素';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -441855,6 +441905,8 @@ extension on _StringsEn {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Fushi cards only. Edited templates must keep the .fc-translation element';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -463967,6 +464019,8 @@ extension on _StringsAr {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'بطاقات Fushi فقط. يجب أن تحتفظ القوالب المعدّلة بالعنصر .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -486135,6 +486189,8 @@ extension on _StringsDe {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Nur Fushi-Karten. Bearbeitete Vorlagen müssen das Element .fc-translation behalten';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -508307,6 +508363,8 @@ extension on _StringsEs {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Solo tarjetas Fushi. Las plantillas editadas deben conservar el elemento .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -530490,6 +530548,8 @@ extension on _StringsFr {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Cartes Fushi uniquement. Les modèles modifiés doivent conserver l’élément .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -552633,6 +552693,8 @@ extension on _StringsId {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Hanya kartu Fushi. Templat yang diubah harus mempertahankan elemen .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -574785,6 +574847,8 @@ extension on _StringsIt {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Solo schede Fushi. I modelli modificati devono mantenere l’elemento .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -596871,6 +596935,8 @@ extension on _StringsJa {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Fushi カードのみ。テンプレートを編集した場合は .fc-translation 要素を残してください';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -618907,6 +618973,8 @@ extension on _StringsKo {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Fushi 카드에만 적용됩니다. 템플릿을 수정했다면 .fc-translation 요소를 유지해야 합니다';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -641032,6 +641100,8 @@ extension on _StringsNl {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Alleen Fushi-kaarten. Bewerkte sjablonen moeten het element .fc-translation behouden';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -663188,6 +663258,8 @@ extension on _StringsPtBr {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Somente cartões Fushi. Modelos editados devem manter o elemento .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -685348,6 +685420,8 @@ extension on _StringsRu {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Только для карточек Fushi. В изменённых шаблонах должен остаться элемент .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -707468,6 +707542,8 @@ extension on _StringsTh {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'เฉพาะการ์ด Fushi เท่านั้น เทมเพลตที่แก้ไขต้องคงองค์ประกอบ .fc-translation ไว้';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -729606,6 +729682,8 @@ extension on _StringsTr {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Yalnızca Fushi kartları. Düzenlenen şablonlar .fc-translation öğesini korumalıdır';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -751739,6 +751817,8 @@ extension on _StringsVi {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Chỉ thẻ Fushi. Mẫu đã chỉnh sửa phải giữ phần tử .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -773690,6 +773770,8 @@ extension on _StringsZhCn {
         return '已取消暂停';
       case 'srs_card_appearance_blur_translation':
         return '翻译模糊，点按显示';
+      case 'srs_card_appearance_blur_translation_desc':
+        return '仅 Fushi 卡片生效；改过模板时需保留 .fc-translation 元素';
       case 'srs_card_appearance_color_app':
         return '跟随 app 主题';
       case 'srs_card_appearance_color_custom':
@@ -795616,6 +795698,8 @@ extension on _StringsZhHk {
         return 'Cards unsuspended';
       case 'srs_card_appearance_blur_translation':
         return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return '只適用於 Fushi 卡片；改過範本時需保留 .fc-translation 元素';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':

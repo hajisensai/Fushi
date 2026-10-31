@@ -752,6 +752,8 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
               t.srs_card_appearance_blur_translation,
               a.blurTranslation,
               (bool v) => a.copyWith(blurTranslation: v),
+              // 模板卡面只认 Fushi 卡片模板的 `.fc-translation`（srs_card_translation_blur.dart）。
+              subtitle: t.srs_card_appearance_blur_translation_desc,
             ),
           _switch(
             'show-frequency',
@@ -818,10 +820,12 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     String key,
     String title,
     bool value,
-    SrsCardAppearance Function(bool v) change,
-  ) => AdaptiveSettingsSwitchRow(
+    SrsCardAppearance Function(bool v) change, {
+    String? subtitle,
+  }) => AdaptiveSettingsSwitchRow(
     key: ValueKey<String>('srs-card-$key'),
     title: title,
+    subtitle: subtitle,
     value: value,
     onChanged: (bool v) => _set(change(v)),
   );
