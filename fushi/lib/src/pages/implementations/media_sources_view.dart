@@ -35,6 +35,8 @@ import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
+import 'package:fushi/src/media/source_library/source_library_privacy.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -483,6 +485,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             ? () => _openFolder(row)
             : null,
       ),
+      // 隐私开关（v140）：只对会进排行榜 / Bangumi 的书、漫画、视频来源有意义；
+      // 音乐不上传任何公开路径，不给入口。
+      if (widget.mediaKind != 'music')
+        _SourceRowMenuAction(
+          key: ValueKey<String>('media_source_privacy_${row.id}'),
+          label: t.media_source_privacy_action,
+          icon: row.isPrivate ? FushiIcons.lock : FushiIcons.lockOpen,
+          onTap: busy ? null : () => _openPrivacy(row),
+        ),
       _SourceRowMenuAction(
         key: ValueKey<String>('media_source_remove_${row.id}'),
         label: t.media_source_remove,
@@ -516,11 +527,35 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Text(
-                      row.label,
-                      style: context.fushiType.titleSmallEmphasized,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            row.label,
+                            style: context.fushiType.titleSmallEmphasized,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // 隐私来源：名字后挂一把锁，一眼看出这一行不上排行榜。
+                        if (row.isPrivate) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            key: ValueKey<String>(
+                              'media_source_private_badge_${row.id}',
+                            ),
+                            message: t.media_source_privacy_badge,
+                            child: Semantics(
+                              label: t.media_source_privacy_badge,
+                              child: FushiIcon(
+                                FushiIcons.lock,
+                                size: 16,
+                                color: cs.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     Text(
                       _rowLocation(row),
@@ -1270,6 +1305,20 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       if (mounted) setState(() => _scraping.remove(row.id));
       onLibraryChanged?.call();
     }
+  }
+
+  /// 来源的隐私开关对话框。排行榜服务在 await 之前取（同 [_db] 的约定：async gap
+  /// 之后不再 `ref.read`）。
+  Future<void> _openPrivacy(SourceLibraryRow row) async {
+    final LeaderboardService leaderboard = ref.read(leaderboardServiceProvider);
+    final bool? changed = await showSourceLibraryPrivacyDialog(
+      context,
+      db: _db,
+      source: row,
+      withdrawFromLeaderboard: leaderboard.syncAfterPrivacyChange,
+    );
+    if (changed == null || !mounted) return;
+    await _load();
   }
 
   Future<void> _openVideoScrapeSettings(SourceLibraryRow row) async {

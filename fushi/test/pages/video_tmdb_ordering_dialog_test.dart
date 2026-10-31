@@ -86,6 +86,7 @@ void main() {
     mediaCount: 0,
     recursive: true,
     videoGroupingMode: 'series',
+    isPrivate: false,
     sortOrder: 0,
     createdAt: 1,
   );

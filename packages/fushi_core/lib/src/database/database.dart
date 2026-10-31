@@ -892,7 +892,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 139;
+  int get schemaVersion => 140;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2702,6 +2702,15 @@ class FushiDatabase extends _$FushiDatabase
                   await m.addColumn(musicPlayEvents, column);
                 }
               }
+            }
+          }
+          if (from < 140) {
+            // v140：media_sources 加隐私来源开关 is_private（反馈 kEAgATi1LF）。
+            // 存量来源 false（照旧上传排行榜）；幂等：早期步骤按当前定义建表时
+            // 已带这一列，跳过。
+            if (await _tableExists('media_sources') &&
+                !await _columnExists('media_sources', 'is_private')) {
+              await m.addColumn(mediaSources, mediaSources.isPrivate);
             }
           }
         },

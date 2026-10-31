@@ -42,7 +42,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 139);
+    expect(migrated.schemaVersion, 140);
     final List<CollectionMemberTombstoneRow> rows = await migrated
         .getAllCollectionMemberTombstones();
     expect(rows, hasLength(2), reason: '成员墓碑 + 合集级删除哨兵都保留');
@@ -58,7 +58,7 @@ void main() {
       columnsOf(probe, 'collection_member_tombstones'),
       contains('published_at'),
     );
-    expect(probe.select('PRAGMA user_version').first.values.first, 139);
+    expect(probe.select('PRAGMA user_version').first.values.first, 140);
     // 重跑：版本号写回 124 再开，列已存在的守卫让这一步 no-op。
     probe.execute('PRAGMA user_version = 124');
     probe.dispose();
