@@ -77,8 +77,9 @@ abstract interface class SrsRwkvBackend {
   Future<bool> unappend(int tag);
 
   /// 退到时刻 [atMs] 之前：撤掉撤销日志里时刻 ≥ [atMs] 的全部条目，返回撤了几条（状态与只回放过时刻
-  /// < [atMs] 的行逐位相同）。null = 退不到（日志之前还有时刻未知的行），什么都没改。
-  Future<int?> rewindFrom(int atMs);
+  /// < [atMs] 的行逐位相同）。[floorMs]：最近一次 replay / restore / reset 之后不经撤销日志进来的行最晚
+  /// 的时刻（[kRwkvFloorEmpty] / [kRwkvFloorUnknown]）。null = 退不到（那些行不早于 [atMs]），什么都没改。
+  Future<int?> rewindFrom(int atMs, int floorMs);
 
   /// 每行（查询行）此刻的 R；不合法的行是 NaN。
   Future<Float32List> query(RwkvRows rows);
@@ -114,7 +115,8 @@ class _WorkerBackend implements SrsRwkvBackend {
   @override
   Future<bool> unappend(int tag) => worker.unappend(tag);
   @override
-  Future<int?> rewindFrom(int atMs) => worker.rewindFrom(atMs);
+  Future<int?> rewindFrom(int atMs, int floorMs) =>
+      worker.rewindFrom(atMs, floorMs);
   @override
   Future<Float32List> query(RwkvRows rows) => worker.query(rows);
   @override
@@ -239,6 +241,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
   /// （保守：之后与它同时或更早的评分多走一次退回重放，结果照样精确）。
   int? _lastAt;
   int _appendsSinceSnapshot = 0;
+
+  /// 状态里不经撤销日志进来的行（整块 replay 的、快照 / 检查点里的）最晚的时刻：退回重放只能退到它之后
+  /// （[SrsRwkvBackend.rewindFrom] 的 floor）。每次 reset / restore / replay 时跟着改。
+  int _journalFloor = kRwkvFloorUnknown;
 
   /// 有新的追加 / 撤回、还没写进快照时，空闲这么久后存一次（以前每 50 次作答整份导出写盘，
   /// 快照几十到几百 MB）。关闭时也存。
@@ -451,6 +457,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         maxRowId: meta['maxRowId']! as int,
       );
       _lastAt = meta['lastAt'] as int?;
+      _journalFloor = _lastAt ?? kRwkvFloorEmpty;
       return true;
     } catch (error) {
       // 快照坏了或属于别的模型 / 精度：丢掉，全量重建。
@@ -594,6 +601,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
     );
     await _serial(() async {
       await backend.reset();
+      _journalFloor = kRwkvFloorEmpty;
       await _replayRows(backend, replay, _preparingProgress);
       _replayed = (count: replay.count, maxRowId: replay.maxRowId);
       _lastAt = replay.lastAt;
@@ -618,8 +626,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
   /// 之后晚到的评分落在这一段里就能就地退回重放（[_rebase]）。与原生日志容量（约 600 条）同量级。
   static const int _journalSeed = 500;
 
-  /// 把 [replay] 的行回放进 [backend]（已在 [_serial] 里）：前面的按 65,536 条一块 replay，最后
-  /// [_journalSeed] 条 append 进撤销日志。
+  /// 把 [replay] 的行回放进 [backend]（已在 [_serial] 里，调用方已按 reset / restore 设好 [_journalFloor]）：
+  /// 前面的按 65,536 条一块 replay，最后 [_journalSeed] 条 append 进撤销日志。
   Future<void> _replayRows(
     SrsRwkvBackend backend,
     SrsRwkvReplay replay,
@@ -643,8 +651,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
       );
       onProgress(end, rows.length);
     }
+    if (split > 0) _journalFloor = replay.ats[split - 1];
     if (split < rows.length) {
-      await backend.append(
+      await _append(
+        backend,
         RwkvRows.fromBytes(
           Uint8List.sublistView(bytes, split * kFrwkvReviewSize),
         ),
@@ -652,6 +662,18 @@ class SrsRwkvService implements SrsRwkvScheduling {
         replay.ats.sublist(split),
       );
       onProgress(rows.length, rows.length);
+    }
+  }
+
+  /// [SrsRwkvBackend.append]；模型不支持撤销日志（行已按普通回放进去）时把 [_journalFloor] 推到这些行。
+  Future<void> _append(
+    SrsRwkvBackend backend,
+    RwkvRows rows,
+    List<int> tags,
+    List<int> ats,
+  ) async {
+    if (!await backend.append(rows, tags, ats)) {
+      _journalFloor = max(_journalFloor, ats.last);
     }
   }
 
@@ -701,9 +723,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   /// 第 2 级（见文件头）：Rust 算出 [done] 之后的日志造成的分歧时刻与从那里起的行，原生侧按撤销日志退到
-  /// 它之前、再按时间顺序追加。true = 已对齐；null = 读的途中日志又变了，按新指纹重来；false = 删过日志，
-  /// 只能全量重建。撤销日志够不着时转第 3 级（[_recover]）并返回 true——那时已不在「就绪」。
-  Future<bool?> _rebase(SrsRwkvBackend backend, _LogPrint done) async {
+  /// 它之前、再按时间顺序追加（取行与指纹出自同一个快照，读的途中又落的日志留给下一次对齐）。true = 已对齐；
+  /// false = 删过日志，只能全量重建。撤销日志够不着时转第 3 级（[_recover]）并返回 true——那时已不在「就绪」。
+  Future<bool> _rebase(SrsRwkvBackend backend, _LogPrint done) async {
     final SrsRwkvReplay replay = await _fetchReplay(
       since: done.maxRowId,
       rebaseSince: done.maxRowId,
@@ -721,12 +743,12 @@ class SrsRwkvService implements SrsRwkvScheduling {
       int rewound = 0;
       final int? lastAt = _lastAt;
       if (lastAt != null && diverge <= lastAt) {
-        final int? n = await backend.rewindFrom(diverge);
+        final int? n = await backend.rewindFrom(diverge, _journalFloor);
         if (n == null) return false;
         rewound = n;
       }
       if (replay.rows.length > 0) {
-        await backend.append(replay.rows, replay.tags, replay.ats);
+        await _append(backend, replay.rows, replay.tags, replay.ats);
       }
       _replayed = now;
       _lastAt = replay.lastAt;
@@ -783,6 +805,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
       final Uint8List bytes = await c.snap.readAsBytes();
       await _serial(() async {
         await backend.restore(bytes);
+        _journalFloor = at;
         await _replayRows(backend, replay, _preparingProgress);
         _replayed = (count: replay.count, maxRowId: replay.maxRowId);
         _lastAt = replay.lastAt ?? at;
@@ -968,7 +991,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         if (pendingTags.isEmpty) return;
         final RwkvRows batch = RwkvRows(pending.length);
         pending.forEach(batch.addRows);
-        await backend.append(batch, pendingTags, pendingAts);
+        await _append(backend, batch, pendingTags, pendingAts);
         // 先记下：后面的撤回失败时，退回重放要从不晚于这些行的时刻退。
         _lastAt = max(_lastAt ?? pendingAts.last, pendingAts.last);
         pending = <RwkvRows>[];

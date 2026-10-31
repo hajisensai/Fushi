@@ -130,8 +130,9 @@ class RwkvWorker {
   /// 撤回最近一条 [append]（仅当标签是 [tag]）。
   Future<bool> unappend(int tag) => _call<bool>(_Op.unappend, tag);
 
-  /// 退到时刻 [atMs] 之前（[RwkvNativeRuntime.rewindFrom]）；null = 退不到，什么都没改。
-  Future<int?> rewindFrom(int atMs) => _call<int?>(_Op.rewindFrom, atMs);
+  /// 退到时刻 [atMs] 之前（[RwkvNativeRuntime.rewindFrom]，[floorMs] 见那里）；null = 退不到，什么都没改。
+  Future<int?> rewindFrom(int atMs, int floorMs) =>
+      _call<int?>(_Op.rewindFrom, (atMs, floorMs));
 
   Future<void> clearScores() => _call<void>(_Op.clearScores);
 
@@ -400,7 +401,8 @@ Object? _run(RwkvNativeRuntime runtime, _Command command) {
     case _Op.unappend:
       return runtime.unappend(command.argument! as int);
     case _Op.rewindFrom:
-      return runtime.rewindFrom(command.argument! as int);
+      final (int at, int floor) = command.argument! as (int, int);
+      return runtime.rewindFrom(at, floor);
     case _Op.clearScores:
       runtime.clearScores();
       return null;

@@ -255,10 +255,9 @@ pub struct RwkvRuntime {
     /// restore / reset）清空它。
     journal: Vec<(u64, i64, SmallUndo)>,
     journal_bytes: usize,
-    /// 撤销日志之前没有别的行（reset 之后只经 append 改过状态，也没丢过最早的条目）：这时可以一路
-    /// 退到空状态。replay / restore / 丢条目后为 false——日志之前的行时刻未知，只能退到日志里
-    /// 最早一条之后。
-    journal_from_empty: bool,
+    /// 因超出容量从撤销日志里丢掉的条目的最晚时刻（没丢过 = `i64::MIN`）；replay / restore / reset 清空
+    /// 日志时一起归位——那之前的行由调用方在 [Self::rewind_from] 的 `floor` 里交代。
+    trimmed_floor: i64,
     /// 常驻分数表：卡 id → 上次查询的 R（[Self::scores_update]）。回放 / 撤回一条复习时，
     /// 同一张卡与同一条笔记的项作废（它们的卡 / 笔记状态变了）；牌组 / 预设 / 全局状态的变化
     /// 不作废别的项——调用方在换日、换设置、同步合并后 [Self::scores_clear] 全量刷新。
@@ -333,7 +332,7 @@ impl RwkvRuntime {
             poisoned: false,
             journal: Vec::new(),
             journal_bytes: 0,
-            journal_from_empty: true,
+            trimmed_floor: i64::MIN,
             scores: HashMap::new(),
         })
     }
@@ -387,9 +386,6 @@ impl RwkvRuntime {
             inputs.push(input);
         }
         self.clear_journal();
-        if !inputs.is_empty() {
-            self.journal_from_empty = false;
-        }
         self.invalidate_scores(inputs.iter().filter(|input| input.ease.is_some()));
         let Self {
             inference,
@@ -575,7 +571,6 @@ impl RwkvRuntime {
         self.inference.restore_snapshot(bytes)?;
         self.poisoned = false;
         self.clear_journal();
-        self.journal_from_empty = false;
         self.scores.clear();
         Ok(())
     }
@@ -585,13 +580,13 @@ impl RwkvRuntime {
         self.inference.reset();
         self.poisoned = false;
         self.clear_journal();
-        self.journal_from_empty = true;
         self.scores.clear();
     }
 
     fn clear_journal(&mut self) {
         self.journal.clear();
         self.journal_bytes = 0;
+        self.trimmed_floor = i64::MIN;
     }
 
     /// 作废这些复习的卡与笔记在分数表里的项。
@@ -696,10 +691,8 @@ impl RwkvRuntime {
         let mut drop = 0;
         while drop < self.journal.len() && self.journal_bytes > JOURNAL_MAX_BYTES {
             self.journal_bytes -= self.journal[drop].2.bytes();
+            self.trimmed_floor = self.trimmed_floor.max(self.journal[drop].1);
             drop += 1;
-        }
-        if drop > 0 {
-            self.journal_from_empty = false;
         }
         self.journal.drain(..drop);
     }
@@ -722,19 +715,18 @@ impl RwkvRuntime {
     /// 撤完的状态与「只回放过时刻 < `at` 的那些行」逐位相同（日志按时刻有序，见 [Self::append]）。
     /// 调用方接着把时刻 ≥ `at` 的行（含新插进来的）按时间顺序 [Self::append]，就和全量回放逐位相同。
     ///
-    /// 退不到（返回 `None`，什么都不改）：日志之前还有别的行（replay / restore 进来的、超出容量丢掉的）
-    /// 而日志里最早一条的时刻已经 ≥ `at`——那些行里可能也有时刻 ≥ `at` 的，撤不掉；或者是大模型。
-    pub fn rewind_from(&mut self, at: i64) -> Result<Option<usize>, RwkvError> {
+    /// `floor`：调用方保证，最近一次 replay / restore / reset 之后不经撤销日志进来的行（replay 进来的、
+    /// 快照里的）时刻都 ≤ `floor`（reset 之后什么都没有 = `i64::MIN`；不知道 = `i64::MAX`）。超出容量
+    /// 丢掉的条目由这里自己记着。这些行里最晚的时刻 ≥ `at` 时退不到（返回 `None`，什么都不改）——它们
+    /// 撤不掉；大模型没有撤销日志，同样退不到。
+    pub fn rewind_from(&mut self, at: i64, floor: i64) -> Result<Option<usize>, RwkvError> {
         if self.poisoned {
             return Err(RwkvError::Poisoned);
         }
-        if !matches!(self.inference, Engine::Small(_)) {
+        if !matches!(self.inference, Engine::Small(_)) || floor.max(self.trimmed_floor) >= at {
             return Ok(None);
         }
         let keep = self.journal.partition_point(|entry| entry.1 < at);
-        if keep == 0 && !self.journal_from_empty {
-            return Ok(None);
-        }
         let count = self.journal.len() - keep;
         self.pop_journal(count);
         Ok(Some(count))
@@ -1377,8 +1369,8 @@ pub unsafe extern "C" fn frwkv_runtime_append(
     })
 }
 
-/// 退到时刻 `at_ms` 之前（[RwkvRuntime::rewind_from]）：返回 1 并把撤了几条写进 `out_count`；
-/// 退不到返回 0，状态不变——调用方改从检查点或全量回放重来。
+/// 退到时刻 `at_ms` 之前（[RwkvRuntime::rewind_from]，`floor_ms` 见那里）：返回 1 并把撤了几条写进
+/// `out_count`；退不到返回 0，状态不变——调用方改从检查点或全量回放重来。
 ///
 /// # Safety
 /// `runtime` 有效；`out_count` 可空。
@@ -1386,12 +1378,13 @@ pub unsafe extern "C" fn frwkv_runtime_append(
 pub unsafe extern "C" fn frwkv_runtime_rewind_from(
     runtime: *mut FrwkvRuntime,
     at_ms: i64,
+    floor_ms: i64,
     out_count: *mut u64,
 ) -> i32 {
     let mut rewound = None;
     let code = guarded(|| {
         let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
-        rewound = runtime.0.rewind_from(at_ms).map_err(rwkv_error)?;
+        rewound = runtime.0.rewind_from(at_ms, floor_ms).map_err(rwkv_error)?;
         Ok(())
     });
     if code != FRWKV_OK {

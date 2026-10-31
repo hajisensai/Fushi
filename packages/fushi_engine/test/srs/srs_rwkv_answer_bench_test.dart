@@ -37,7 +37,8 @@ class _Worker implements SrsRwkvBackend {
   @override
   Future<bool> unappend(int tag) => worker.unappend(tag);
   @override
-  Future<int?> rewindFrom(int atMs) => worker.rewindFrom(atMs);
+  Future<int?> rewindFrom(int atMs, int floorMs) =>
+      worker.rewindFrom(atMs, floorMs);
   @override
   Future<void> clearScores() => worker.clearScores();
   @override
