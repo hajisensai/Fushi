@@ -2692,7 +2692,7 @@
   "feedback_crash_kind_unexpected": "unexpected exit",
   "feedback_crash_notice_view": "View",
   "feedback_crash_prompt_always": "Always send",
-  "feedback_crash_prompt_body": "Send the logs to the developers to help fix it? You can follow it in Feedback.",
+  "feedback_crash_prompt_body": "Send the error log, device info (app version, OS, device model) and this install's identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.",
   "feedback_crash_prompt_decline": "No thanks",
   "feedback_crash_prompt_retry": "Retry",
   "feedback_crash_prompt_send": "Send to developers",

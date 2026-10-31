@@ -300,6 +300,51 @@ void main() {
       expect(service.byId('abcdefghij'), isNotNull);
     });
 
+    test('闪退报告只附错误日志：取日志时不带调试日志', () async {
+      final List<http.Request> requests = <http.Request>[];
+      final List<bool> flags = <bool>[];
+      final FeedbackService service = _service(
+        dir,
+        requests,
+        (_) async => null,
+        debugLogFlags: flags,
+      );
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict());
+      await r.submit(service, _draft);
+
+      expect(flags, <bool>[false]);
+      expect(
+        requests.map((http.Request q) => q.url.path),
+        contains('/v1/feedback/abcdefghij/attachments/log'),
+      );
+    });
+
+    test('闪退报告草稿：不带调试日志、退出摘要脱敏', () {
+      const CrashReportOffer offer = CrashReportOffer(<CrashOccurrence>[
+        CrashOccurrence(
+          kind: PreviousExitKind.nativeCrash,
+          count: 1,
+          atMs: 5000,
+          version: '1.2.3',
+          foreground: true,
+          duringStartup: false,
+          summary: r'module=C:\Users\alice\AppData\fushi.dll+0x10',
+        ),
+      ]);
+      final FeedbackDraft draft = buildCrashReportDraft(
+        offer,
+        title: 't',
+        header: 'h',
+        submissionKey: 'k',
+      );
+      expect(draft.includeLogs, isTrue);
+      expect(draft.includeDebugLog, isFalse);
+      expect(draft.body, contains(r'module=~\AppData\fushi.dll+0x10'));
+      expect(draft.body, isNot(contains('alice')));
+    });
+
     test('正文没交上去：待报留着，重试带同一个幂等键', () async {
       final List<http.Request> requests = <http.Request>[];
       bool fail = true;
@@ -622,11 +667,13 @@ FeedbackDraft _draft(CrashReportOffer offer, String key) =>
     crashReportDraftFor(offer, key);
 
 /// 一个连假服务端的反馈服务：[override] 返回 null 时按成功回应（提交回执 / 附件 201）。
+/// 每次取日志时把 `includeDebugLog` 记进 [debugLogFlags]（给了的话）。
 FeedbackService _service(
   Directory root,
   List<http.Request> requests,
-  Future<http.Response?> Function(http.Request r) override,
-) => FeedbackService(
+  Future<http.Response?> Function(http.Request r) override, {
+  List<bool>? debugLogFlags,
+}) => FeedbackService(
   supportRoot: () async => root,
   client: () => LeaderboardClient(
     baseUrl: Uri.parse('https://rank.example'),
@@ -647,6 +694,9 @@ FeedbackService _service(
     }),
   ),
   meta: () async => <String, Object?>{'platform': 'test'},
-  logText: () => '[Process.windowsCrashSummary] crash',
+  logText: ({required bool includeDebugLog}) {
+    debugLogFlags?.add(includeDebugLog);
+    return '[Process.windowsCrashSummary] crash';
+  },
   logEncoder: _fakeGzip,
 );
