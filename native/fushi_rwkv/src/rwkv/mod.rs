@@ -353,7 +353,7 @@ impl RwkvInference {
 
     /// Fushi: upstream `append_warm_up_snapshot_binary(path)` writing into any
     /// writer instead of appending to a file. Lossless (every state as
-    /// [serialize_module_state] gives it), unlike kuma3's offline state file,
+    /// [write_serialized_module_state] gives it), unlike kuma3's offline state file,
     /// which rounds deck, preset and global states to halves.
     fn write_warm_up_snapshot_binary(&self, out: &mut impl io::Write) -> io::Result<()> {
         let mut out = out;
@@ -361,16 +361,16 @@ impl RwkvInference {
         write_snapshot_state_map(&mut out, &self.warm_up_states.note)?;
         write_snapshot_state_map(&mut out, &self.warm_up_states.deck)?;
         write_snapshot_state_map(&mut out, &self.warm_up_states.preset)?;
-        write_snapshot_optional_bytes(
-            &mut out,
-            self.warm_up_states
-                .global
-                .as_ref()
-                .map(serialize_module_state)
-                .as_deref(),
-        )?;
-        let cache_state = self.cache_state();
-        write_snapshot_optional_bytes(&mut out, Some(&cache_state))
+        match &self.warm_up_states.global {
+            Some(state) => {
+                out.write_all(&[1])?;
+                write_snapshot_module_state(&mut out, state)?;
+            }
+            None => out.write_all(&[0])?,
+        }
+        out.write_all(&[1])?;
+        write_snapshot_u32(&mut out, self.runtime_cache_state_len())?;
+        self.write_runtime_cache_state(&mut out)
     }
 
     pub fn reset_warm_up_state(&mut self) {
@@ -421,10 +421,41 @@ impl RwkvInference {
     /// [Self::restore_snapshot] gives bit-identical results to never stopping.
     pub fn snapshot(&self) -> Vec<u8> {
         let mut out = Vec::new();
+        self.write_snapshot(&mut out)
+            .expect("writing to a Vec should not fail");
+        out
+    }
+
+    /// Writes the same lossless format as `snapshot` without a whole-file buffer.
+    pub fn write_snapshot(&self, out: &mut impl io::Write) -> io::Result<()> {
+        out.write_all(SNAPSHOT_MAGIC)?;
+        out.write_all(&[precision_code(self.precision())])?;
+        self.write_warm_up_snapshot_binary(out)
+    }
+
+    // Previous encoder retained only as a compatibility oracle in tests.
+    #[cfg(test)]
+    pub(crate) fn legacy_snapshot(&self) -> Vec<u8> {
+        let mut out = Vec::new();
         out.extend_from_slice(SNAPSHOT_MAGIC);
         out.push(precision_code(self.precision()));
-        self.write_warm_up_snapshot_binary(&mut out)
-            .expect("writing to a Vec should not fail");
+        for map in [&self.warm_up_states.card as &dyn StateMap, &self.warm_up_states.note,
+            &self.warm_up_states.deck, &self.warm_up_states.preset] {
+            write_snapshot_state_map(&mut out, map).unwrap();
+        }
+        if let Some(state) = &self.warm_up_states.global {
+            let mut bytes = Vec::new();
+            write_serialized_module_state(&mut bytes, state).unwrap();
+            out.push(1);
+            write_u32(&mut out, bytes.len() as u32);
+            out.extend_from_slice(&bytes);
+        } else {
+            out.push(0);
+        }
+        let features = self.cache_state();
+        out.push(1);
+        write_u32(&mut out, features.len() as u32);
+        out.extend_from_slice(&features);
         out
     }
 
@@ -432,9 +463,14 @@ impl RwkvInference {
     /// must come from a runtime with the same precision; nothing changes when
     /// it is refused.
     pub fn restore_snapshot(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.read_snapshot(&mut io::Cursor::new(bytes), bytes.len() as u64)
+    }
+
+    /// Reads a bounded snapshot; the old state remains intact on any error.
+    pub fn read_snapshot(&mut self, input: &mut impl io::Read, len: u64) -> io::Result<()> {
         let invalid =
             |message: &str| io::Error::new(io::ErrorKind::InvalidData, message.to_owned());
-        let mut cursor = Cursor::new(bytes);
+        let mut cursor = SnapshotReader::new(input, len);
         cursor.expect_magic(SNAPSHOT_MAGIC)?;
         if cursor.u8()? != precision_code(self.precision()) {
             return Err(invalid(
@@ -494,7 +530,7 @@ impl RwkvInference {
     /// `read_file_module_state`, made) and against this runtime's precision.
     fn read_snapshot_state(
         &self,
-        cursor: &mut Cursor<'_>,
+        cursor: &mut SnapshotReader<'_, impl io::Read>,
         module_id: usize,
     ) -> io::Result<ModuleState> {
         let damaged = || io::Error::new(io::ErrorKind::InvalidData, "damaged RWKV state");
@@ -1481,6 +1517,65 @@ fn missing_weight(name: &str) -> String {
     format!("missing weight: {name}")
 }
 
+/// Shared decoder for byte snapshots and buffered files. Its scratch buffer
+/// holds at most one serialized state or the feature cache, never the full file.
+struct SnapshotReader<'a, R> {
+    input: &'a mut R,
+    remaining: u64,
+    scratch: Vec<u8>,
+}
+
+impl<'a, R: io::Read> SnapshotReader<'a, R> {
+    fn new(input: &'a mut R, len: u64) -> Self {
+        Self { input, remaining: len, scratch: Vec::new() }
+    }
+
+    fn bytes(&mut self, len: usize) -> io::Result<&[u8]> {
+        if len as u64 > self.remaining {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "snapshot ended early"));
+        }
+        self.scratch.resize(len, 0);
+        self.input.read_exact(&mut self.scratch)?;
+        self.remaining -= len as u64;
+        Ok(&self.scratch)
+    }
+
+    fn expect_magic(&mut self, magic: &[u8]) -> io::Result<()> {
+        if self.bytes(magic.len())? != magic {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "unexpected file magic"));
+        }
+        Ok(())
+    }
+
+    fn u8(&mut self) -> io::Result<u8> {
+        Ok(self.bytes(1)?[0])
+    }
+
+    fn u32(&mut self) -> io::Result<u32> {
+        Ok(u32::from_le_bytes(self.bytes(4)?.try_into().unwrap()))
+    }
+
+    fn i64(&mut self) -> io::Result<i64> {
+        Ok(i64::from_le_bytes(self.bytes(8)?.try_into().unwrap()))
+    }
+
+    fn count(&mut self, entry_bytes: usize) -> io::Result<usize> {
+        let count = self.u32()? as usize;
+        if count as u64 > self.remaining / entry_bytes as u64 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "count larger than the data"));
+        }
+        Ok(count)
+    }
+
+    fn expect_end(&mut self) -> io::Result<()> {
+        let mut trailing = [0];
+        if self.remaining != 0 || self.input.read(&mut trailing)? != 0 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "trailing bytes in file"));
+        }
+        Ok(())
+    }
+}
+
 struct Cursor<'a> {
     data: &'a [u8],
     offset: usize,
@@ -2011,39 +2106,6 @@ impl ReviewStateMaps {
     }
 }
 
-fn serialize_module_state(state: &ModuleState) -> Vec<u8> {
-    if let Some(packed) = &state.packed {
-        return packed.clone();
-    }
-    let mut out = Vec::with_capacity(serialized_module_state_len(state));
-    out.extend_from_slice(b"ARWKVMODSTATE1");
-    write_u32(&mut out, state.layers.len() as u32);
-    for layer in &state.layers {
-        write_f32_slice(
-            &mut out,
-            layer
-                .time
-                .as_ref()
-                .map_or(&[][..], |time| time.x_shift.as_slice()),
-        );
-        write_f32_slice(
-            &mut out,
-            layer
-                .time
-                .as_ref()
-                .map_or(&[][..], |time| time.matrix.as_slice()),
-        );
-        write_f32_slice(
-            &mut out,
-            layer
-                .channel_shift
-                .as_ref()
-                .map_or(&[][..], |shift| shift.as_slice()),
-        );
-    }
-    out
-}
-
 fn serialized_module_state_len(state: &ModuleState) -> usize {
     if let Some(packed) = &state.packed {
         return packed.len();
@@ -2108,21 +2170,6 @@ fn write_snapshot_state_map(out: &mut impl io::Write, states: &dyn StateMap) -> 
         write_snapshot_module_state(out, &states.state(&identity).unwrap())?;
     }
     Ok(())
-}
-
-fn write_snapshot_optional_bytes(out: &mut impl io::Write, value: Option<&[u8]>) -> io::Result<()> {
-    match value {
-        Some(value) => {
-            out.write_all(&[1])?;
-            write_snapshot_bytes(out, value)
-        }
-        None => out.write_all(&[0]),
-    }
-}
-
-fn write_snapshot_bytes(out: &mut impl io::Write, value: &[u8]) -> io::Result<()> {
-    write_snapshot_u32(out, value.len())?;
-    out.write_all(value)
 }
 
 fn write_snapshot_u32(out: &mut impl io::Write, value: usize) -> io::Result<()> {
@@ -2261,18 +2308,6 @@ fn read_i64_map(cursor: &mut Cursor<'_>) -> io::Result<HashMap<i64, i64>> {
         values.insert(cursor.i64()?, cursor.i64()?);
     }
     Ok(values)
-}
-
-fn write_f32_slice(out: &mut Vec<u8>, values: &[f32]) {
-    write_u32(out, values.len() as u32);
-    let start = out.len();
-    out.resize(start + std::mem::size_of_val(values), 0);
-    for (bytes, value) in out[start..]
-        .chunks_exact_mut(std::mem::size_of::<f32>())
-        .zip(values)
-    {
-        bytes.copy_from_slice(&value.to_le_bytes());
-    }
 }
 
 fn write_state_cache_f32_slice(out: &mut impl io::Write, values: &[f32]) -> io::Result<()> {
