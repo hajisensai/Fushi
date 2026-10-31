@@ -147,6 +147,24 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
                     ),
                   ),
             ),
+          // 已有插件时也能再装：与空态同一条安装流程。
+          if (entries != null && entries.isNotEmpty)
+            FushiStaggeredEntrance(
+              index: entries.length + 1,
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiPressScale(
+                  child: FushiOutlinedButton.icon(
+                    key: const ValueKey<String>(
+                      'music_lyrics_provider_install_more',
+                    ),
+                    onPressed: () => unawaited(_install()),
+                    icon: const FushiIcon(FushiIcons.importFile),
+                    label: Text(t.music_lyrics_providers_install_action),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

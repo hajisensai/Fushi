@@ -66,7 +66,7 @@ import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.da
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
-    show musicPluginErrorText;
+    show musicLyricsCandidateTitle, musicPluginErrorText;
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
     show MusicKaraokeTrack, openMusicKaraokePage;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
@@ -709,7 +709,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         for (final MusicLyricsCandidate c in candidates)
           FushiChoiceOption<MusicLyricsCandidate>(
             value: c,
-            label: c.label,
+            label: musicLyricsCandidateTitle(c.source, c.label),
             subtitle: '${c.format} · ${c.timeline.timingQuality.dbName}',
           ),
       ],

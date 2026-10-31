@@ -5628,6 +5628,7 @@
   "music_plugins_install_failed": "Could not install the plugin: $error",
   "music_plugins_install_title": "Install this plugin?",
   "music_plugins_installed": "Installed $name",
+  "music_plugins_lyrics_privacy": "As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.",
   "music_plugins_perm_insecure_http": "Unencrypted HTTP connections",
   "music_plugins_perm_network": "Network access",
   "music_plugins_perm_storage": "Save data on this device",

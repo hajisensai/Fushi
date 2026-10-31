@@ -6,7 +6,9 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
+import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
@@ -170,5 +172,101 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(Switch), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('music_lyrics_provider_install_more')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('已有歌词插件时仍保留安装入口', (WidgetTester tester) async {
+    await build(tester, <InstalledMusicPlugin>[_plugin('a.one', 'One')]);
+    expect(find.byType(Switch), findsOneWidget);
+    final Finder more = find.byKey(
+      const ValueKey<String>('music_lyrics_provider_install_more'),
+    );
+    expect(more, findsOneWidget);
+    expect(
+      find.descendant(
+        of: more,
+        matching: find.text(t.music_lyrics_providers_install_action),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(find.text('One')).dy,
+      lessThan(tester.getTopLeft(more).dy),
+    );
+  });
+
+  group('安装确认框的隐私告知', () {
+    Future<void> pumpDetails(
+      WidgetTester tester,
+      List<String> capabilities,
+    ) async {
+      LocaleSettings.setLocale(AppLocale.en);
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: MusicPluginPackageDetails(
+                  info: MusicPluginPackageInfo(
+                    manifest: MusicPluginManifest(
+                      id: 'moe.example.lyrics',
+                      name: 'Example',
+                      version: '1.0.0',
+                      api: 1,
+                      capabilities: capabilities,
+                      searchTypes: const <String>[],
+                      permissions: const <String>['network'],
+                      networkDomains: const <String>['lyric-api.example.com'],
+                    ),
+                    digest: 'd',
+                    signer: null,
+                    files: const <String>[],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('歌词来源插件：写明会发出曲目信息，并列出声明的域名', (WidgetTester tester) async {
+      await pumpDetails(tester, const <String>['lyricsSearch', 'lyricsFetch']);
+      expect(
+        find.byKey(const ValueKey<String>('music-plugin-lyrics-privacy')),
+        findsOneWidget,
+      );
+      expect(find.text(t.music_plugins_lyrics_privacy), findsOneWidget);
+      expect(find.text('lyric-api.example.com'), findsOneWidget);
+    });
+
+    testWidgets('非歌词来源插件不显示这条告知', (WidgetTester tester) async {
+      await pumpDetails(tester, const <String>['stream', 'lyrics']);
+      expect(
+        find.byKey(const ValueKey<String>('music-plugin-lyrics-privacy')),
+        findsNothing,
+      );
+    });
+  });
+
+  test('选来源候选标题区分平台自带歌词与歌词插件', () {
+    LocaleSettings.setLocale(AppLocale.en);
+    expect(
+      musicLyricsCandidateTitle(MusicLyricsSource.plugin('p'), 'p'),
+      'p · ${t.music_plugins_cap_lyrics}',
+    );
+    expect(
+      musicLyricsCandidateTitle(MusicLyricsSource.lyricsPlugin('p'), 'p'),
+      'p · ${t.music_plugins_cap_lyrics_search}',
+    );
+    expect(
+      musicLyricsCandidateTitle(MusicLyricsSource.lrclib, 'LRCLIB'),
+      'LRCLIB',
+    );
   });
 }
