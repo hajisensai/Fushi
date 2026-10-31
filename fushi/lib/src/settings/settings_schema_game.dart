@@ -42,6 +42,14 @@ import 'package:fushi/utils.dart';
 /// 浏览器扩展页不属于游戏域（它是 Fushi API 的桌面扩展安装助手），其搜索入口登记在
 /// 「本机服务」分类（settings_schema_local_services 的 `local_services.browser_extension`），
 /// 不在此处。
+/// 台词 TTS 设置项拿控制器的唯一入口：先接上偏好来源（浮窗可能没启动，见
+/// [GalHookTextOverlayController.attachLineTtsPreferences]）。
+GalHookTextOverlayController _lineTtsController(
+  SettingsContext settingsContext,
+) =>
+    GalHookTextOverlayController.instance
+      ..attachLineTtsPreferences(settingsContext.appModel.prefsRepo);
+
 SettingsDestination buildGameDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.game,
@@ -97,7 +105,7 @@ SettingsDestination buildGameDestination() {
       // 「自动朗读」两颗键，这里是它们的全部配置；规则 / 语音修正在子页里。
       SettingsSection(
         title: t.gal_line_tts_section,
-        liveListenable: (_) => GalHookTextOverlayController.instance,
+        liveListenable: _lineTtsController,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'game.gal_line_tts_auto',
@@ -106,13 +114,13 @@ SettingsDestination buildGameDestination() {
             icon: FushiIcons.volumeUp,
             defaultValue: false,
             visible: (_) => Platform.isWindows,
-            value: (_) => GalHookTextOverlayController
-                .instance
-                .lineTtsSettings
-                .autoPlayEnabled,
+            value: (SettingsContext settingsContext) => _lineTtsController(
+              settingsContext,
+            ).lineTtsSettings.autoPlayEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              final GalHookTextOverlayController c =
-                  GalHookTextOverlayController.instance;
+              final GalHookTextOverlayController c = _lineTtsController(
+                settingsContext,
+              );
               await c.setLineTtsSettings(
                 c.lineTtsSettings.copyWith(autoPlayEnabled: value),
               );
@@ -136,19 +144,19 @@ SettingsDestination buildGameDestination() {
                 label: t.gal_line_tts_scope_all,
               ),
             ],
-            selected: (_) {
-              final GalLineTtsAutoPlay mode = GalHookTextOverlayController
-                  .instance
-                  .lineTtsSettings
-                  .autoPlay;
+            selected: (SettingsContext settingsContext) {
+              final GalLineTtsAutoPlay mode = _lineTtsController(
+                settingsContext,
+              ).lineTtsSettings.autoPlay;
               return mode == GalLineTtsAutoPlay.off
                   ? GalLineTtsAutoPlay.unvoicedOnly
                   : mode;
             },
             onChanged:
                 (SettingsContext settingsContext, GalLineTtsAutoPlay v) async {
-                  final GalHookTextOverlayController c =
-                      GalHookTextOverlayController.instance;
+                  final GalHookTextOverlayController c = _lineTtsController(
+                    settingsContext,
+                  );
                   await c.setLineTtsSettings(
                     c.lineTtsSettings.copyWith(autoPlay: v),
                   );
@@ -164,14 +172,12 @@ SettingsDestination buildGameDestination() {
             subtitleBuilder: (SettingsContext settingsContext) =>
                 galLineTtsVoiceLabel(
                   TtsServices.of(settingsContext.appModel.prefsRepo),
-                  GalHookTextOverlayController
-                      .instance
-                      .lineTtsSettings
-                      .presetId,
+                  _lineTtsController(settingsContext).lineTtsSettings.presetId,
                 ),
             onTap: (SettingsContext settingsContext) async {
-              final GalHookTextOverlayController c =
-                  GalHookTextOverlayController.instance;
+              final GalHookTextOverlayController c = _lineTtsController(
+                settingsContext,
+              );
               final ({String? presetId})? picked =
                   await showGalLineTtsVoicePicker(
                     settingsContext.context,
@@ -197,11 +203,12 @@ SettingsDestination buildGameDestination() {
             titleReadout: true,
             commitOnRelease: true,
             label: (double v) => '${(v * 100).round()}%',
-            value: (_) =>
-                GalHookTextOverlayController.instance.lineTtsSettings.volume,
+            value: (SettingsContext settingsContext) =>
+                _lineTtsController(settingsContext).lineTtsSettings.volume,
             onChanged: (SettingsContext settingsContext, double v) async {
-              final GalHookTextOverlayController c =
-                  GalHookTextOverlayController.instance;
+              final GalHookTextOverlayController c = _lineTtsController(
+                settingsContext,
+              );
               await c.setLineTtsSettings(c.lineTtsSettings.copyWith(volume: v));
               settingsContext.refresh();
             },
@@ -214,6 +221,7 @@ SettingsDestination buildGameDestination() {
             showIcon: true,
             visible: (_) => Platform.isWindows,
             onTap: (SettingsContext settingsContext) async {
+              _lineTtsController(settingsContext);
               await openGalLineTtsRulesPage(
                 settingsContext.context,
                 TtsServices.of(settingsContext.appModel.prefsRepo),

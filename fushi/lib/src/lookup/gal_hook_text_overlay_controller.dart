@@ -266,6 +266,18 @@ Map<String, Object?> galHookToolbarThemeArgs(GalHookToolbarPalette palette) =>
     };
 
 /// App 级 Windows Hook 台词浮窗控制器。
+/// 台词 TTS 失败的用户提示（浮窗 toast 与设置页试听共用）：按失败类型给原因，
+/// 不把「没配声音 / 引擎本平台不可用 / 鉴权失败」都说成「服务返回异常」。
+String galLineTtsErrorText(Object error) => switch (error) {
+  TtsFailure() => ttsFailureText(error),
+  GalLineTtsUnavailable(:final String reason) => switch (reason) {
+    'not_configured' => t.audiobook_tts_failure_not_configured,
+    'provider_unavailable' => t.audiobook_tts_failure_unsupported,
+    _ => t.gal_line_tts_no_voice,
+  },
+  _ => t.audiobook_tts_failure_bad_response,
+};
+
 class GalHookTextOverlayController extends ChangeNotifier {
   static const Duration _geometryAdmissionTimeout = Duration(seconds: 1);
   static const Duration _attachedSyncTimeout = Duration(seconds: 2);
@@ -418,6 +430,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 台词 TTS 设置（偏好 [kGalLineTtsSettingsPrefKey]，整份 JSON）。
   GalLineTtsSettings _ttsSettings = const GalLineTtsSettings();
 
+  /// 台词 TTS 设置的偏好来源（设置页接上的）。与浮窗启动解耦：游戏模块是本次启动
+  /// 之后才打开的（[start] 只在启动时按模块门调一次）、或启动链失败时，浮窗没启动，
+  /// 但设置页照样可见、照样要读写这份设置——以前写入走 `_appModel?.prefsRepo`，
+  /// 没启动就静默丢掉，界面上改了、重启就回去。
+  PreferencesRepository? _ttsPrefs;
+  bool _ttsSettingsLoaded = false;
+
   /// 台词 TTS 播放编排（换句打断 / 等配对证据 / 原声来了就让）。
   late final GalLineTtsPlayer _tts = GalLineTtsPlayer(
     settings: () => _ttsSettings,
@@ -549,6 +568,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _ttsSettings = GalLineTtsSettings.decode(
       _readPreference(kGalLineTtsSettingsPrefKey, ''),
     );
+    _ttsSettingsLoaded = true;
     _tts.lastError.addListener(_onTtsError);
     await _ingameLookup.start(
       appModel: appModel,
@@ -2107,14 +2127,35 @@ class GalHookTextOverlayController extends ChangeNotifier {
     );
   }
 
-  /// 写台词 TTS 设置（设置页 / 浮窗开关共用）：落偏好 + 刷新浮窗按钮高亮。
-  Future<void> setLineTtsSettings(GalLineTtsSettings settings) async {
-    _ttsSettings = settings;
-    _lastTtsErrorToast = null;
-    await _writeAttachedPreference(
-      kGalLineTtsSettingsPrefKey,
-      settings.encode(),
+  /// 设置入口（设置分组 / 规则页）在读写台词 TTS 设置前调：浮窗没启动时接上偏好
+  /// 来源并读一次已存设置；已启动或已接过则什么都不做。
+  void attachLineTtsPreferences(PreferencesRepository prefs) {
+    _ttsPrefs ??= prefs;
+    if (_ttsSettingsLoaded) return;
+    _ttsSettings = GalLineTtsSettings.decode(
+      prefs.getPref(kGalLineTtsSettingsPrefKey, defaultValue: ''),
     );
+    _ttsSettingsLoaded = true;
+  }
+
+  /// 写台词 TTS 设置（设置页 / 浮窗开关共用）：落偏好 + 刷新浮窗按钮高亮。
+  /// 没有任何偏好来源（既没启动、也没 [attachLineTtsPreferences]）是调用方漏接线，
+  /// 抛 [StateError]，不静默丢。
+  Future<void> setLineTtsSettings(GalLineTtsSettings settings) async {
+    final GalHookPreferenceWriter? writer = _preferenceWriter;
+    final PreferencesRepository? prefs = _appModel?.prefsRepo ?? _ttsPrefs;
+    if (writer != null) {
+      await writer(kGalLineTtsSettingsPrefKey, settings.encode());
+    } else if (prefs != null) {
+      await prefs.setPref(kGalLineTtsSettingsPrefKey, settings.encode());
+    } else {
+      throw StateError(
+        'galgame line TTS settings written before preferences were attached',
+      );
+    }
+    _ttsSettings = settings;
+    _ttsSettingsLoaded = true;
+    _lastTtsErrorToast = null;
     notifyListeners();
     if (_visible) await _syncVoiceState();
   }
@@ -2127,15 +2168,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   void _onTtsError() {
     final Object? error = _tts.lastError.value;
     if (error == null) return;
-    final String message = switch (error) {
-      TtsFailure() => ttsFailureText(error),
-      GalLineTtsUnavailable(:final String reason) => switch (reason) {
-        'not_configured' => t.audiobook_tts_failure_not_configured,
-        'provider_unavailable' => t.audiobook_tts_failure_unsupported,
-        _ => t.gal_line_tts_no_voice,
-      },
-      _ => t.audiobook_tts_failure_bad_response,
-    };
+    final String message = galLineTtsErrorText(error);
     if (message == _lastTtsErrorToast) return;
     _lastTtsErrorToast = message;
     FushiToast.show(msg: message, severity: ToastSeverity.error);
