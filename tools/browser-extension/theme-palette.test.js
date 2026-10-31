@@ -93,7 +93,9 @@ test('预设与 app theme_notifier.dart themePresets 同名同种子同变体（
   const P = loadPalette();
   const dart = fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'lib', 'src', 'models', 'theme_notifier.dart'), 'utf8');
   const block = /static const Map<String, ThemePreset> themePresets = \{([\s\S]*?)\n  \};/.exec(dart)[1];
-  const app = [...block.matchAll(/'(m3-[a-z]+)': \(\s*seed: Color\(0xFF([0-9A-F]{6})\),\s*variant: ([A-Za-z.]+),/g)]
+  // dart format 会把短条目折成单行并去掉尾逗号（`(seed: …, variant: …)`），长条目才
+  // 展开成多行带尾逗号：尾逗号可有可无，判据不依赖排版。
+  const app = [...block.matchAll(/'(m3-[a-z]+)': \(\s*seed: Color\(0xFF([0-9A-F]{6})\),\s*variant: ([A-Za-z.]+),?\s*\)/g)]
     .map((m) => ({ key: m[1], seed: '#' + m[2].toLowerCase(), variant: m[3] === 'kFushiDefaultSchemeVariant' ? 'vibrant' : m[3].split('.').pop() }));
   assert.ok(app.length >= 10, 'Dart 预设表解析失败');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(P.PRESETS.map((p) => ({ key: p.key, seed: p.seed, variant: p.variant })))), app);
