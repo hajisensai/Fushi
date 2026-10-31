@@ -82,6 +82,7 @@ class AnkiSyncState {
     this.lastError,
     this.lastSyncAt,
     this.message,
+    this.rateLimitedUntil,
   });
 
   final AnkiSyncPhase phase;
@@ -100,6 +101,11 @@ class AnkiSyncState {
 
   /// [AnkiSyncPhase.failed] / [AnkiSyncPhase.blocked] 的原因（服务器 / helper 原文）。
   final String? message;
+
+  /// 上一次同步因服务器限流（HTTP 429）失败时，冷却截止时刻（毫秒）；否则 null。
+  /// 冷却期内自动同步（制卡后 / 启动时）不发请求，到点自动重试一次；用户手动同步
+  /// 不受限。界面据此显示「限流、何时自动重试」，而不是 helper 原文。
+  final int? rateLimitedUntil;
 }
 
 /// 没登录时的加卡 / 查询。
@@ -118,6 +124,19 @@ class AnkiSyncHasUnsyncedNotes implements Exception {
 
   @override
   String toString() => 'AnkiSyncHasUnsyncedNotes($count)';
+}
+
+/// 同步服务器限流（HTTP 429）后的冷却期：第一次 [base]，冷却结束后再撞翻倍，封顶
+/// [max]。一次同步成功清零。
+Duration ankiSyncRateLimitCooldown(
+  int strikes, {
+  Duration base = const Duration(minutes: 10),
+  Duration max = const Duration(hours: 4),
+}) {
+  if (strikes <= 1) return base;
+  final int shift = strikes - 1 > 16 ? 16 : strikes - 1;
+  final Duration d = base * (1 << shift);
+  return d > max ? max : d;
 }
 
 /// Fushi 作为 Anki 同步客户端的会话：一个 helper 进程、一个本地 collection、
@@ -139,6 +158,9 @@ class AnkiSyncHasUnsyncedNotes implements Exception {
 ///   本地库当成「需要重开核对」。
 /// - 单条写入失败只标这一条（`lastError`），不挡住会话；加卡失败回滚日志条目。
 /// - helper 死了（panic / 被杀）自动丢弃，下次重新拉起。
+/// - 同步服务器限流（HTTP 429）：进入冷却（[ankiSyncRateLimitCooldown]，落盘在
+///   `rate_limit.json`，重启不清零）。冷却期内自动同步不发请求、到点自动补一次；
+///   手动同步照常。此前每次制卡后、每次启动都会再撞一次，限流窗口越拖越长。
 /// - 同步 / 登录 / 下载进行中（首次可能要拉整个媒体库）：查重直接放行、加卡只写日志，
 ///   结束时补进本地库再同步——查词和制卡不排队等同步。
 class AnkiSyncSession {
@@ -170,6 +192,14 @@ class AnkiSyncSession {
   Timer? _syncTimer;
   AnkiSyncJournal? _journalInstance;
   int? _lastSyncAt;
+
+  /// 限流冷却（见 [AnkiSyncState.rateLimitedUntil]）。首次用到时从盘上读。
+  int? _rateLimitedUntil;
+  int _rateLimitStrikes = 0;
+  bool _rateLimitLoaded = false;
+
+  /// 最近一次失败是不是限流（决定状态里带不带 [AnkiSyncState.rateLimitedUntil]）。
+  bool _lastFailureRateLimited = false;
   final StreamController<AnkiSyncState> _states =
       StreamController<AnkiSyncState>.broadcast();
   AnkiSyncState _state = const AnkiSyncState(phase: AnkiSyncPhase.signedOut);
@@ -367,14 +397,23 @@ class AnkiSyncSession {
     return id;
   }
 
-  /// [_syncDelay] 后同步一次（连续制卡只同步一次）。
-  void scheduleSync() {
+  /// [_syncDelay] 后同步一次（连续制卡只同步一次）。限流冷却期内推迟到冷却结束。
+  void scheduleSync() => _scheduleSyncIn(_syncDelay);
+
+  void _scheduleSyncIn(Duration delay) {
     if (_closed) return;
     _syncTimer?.cancel();
-    _syncTimer = Timer(_syncDelay, () => unawaited(_syncQuietly()));
+    _syncTimer = Timer(delay, () => unawaited(_syncQuietly()));
   }
 
+  /// 自动同步（[scheduleSync] 到点）。冷却期内不发请求，改排到冷却结束。
   Future<void> _syncQuietly() async {
+    await _loadRateLimit();
+    final int? until = _activeRateLimit();
+    if (until != null) {
+      _scheduleSyncIn(Duration(milliseconds: until - _clock()));
+      return;
+    }
     try {
       await syncNow();
     } catch (_) {
@@ -385,9 +424,12 @@ class AnkiSyncSession {
   /// 立即同步：先把日志里不在本地库的卡写进去，同步，成功后出日志「确实在本地库里」
   /// 的那些。服务器触发了整库下载时，被冲掉的卡再写一次、再同步一次。要求整库上传时
   /// 停在 [AnkiSyncPhase.blocked]。
+  ///
+  /// 这是用户手动同步的入口，不看限流冷却；限流时再撞会把冷却期加倍。
   Future<AnkiSyncState> syncNow() => _serial(() async {
     AnkiSyncAccount? acct = await account();
     if (acct == null) throw const AnkiSyncNotSignedIn();
+    await _loadRateLimit();
     _long = true;
     await _publish(AnkiSyncPhase.busy);
     try {
@@ -414,6 +456,7 @@ class AnkiSyncSession {
         )).present;
         await (await _journal()).remove(confirmed);
         _lastSyncAt = _clock();
+        await _clearRateLimit();
         // 整库下载冲掉的卡：下一轮写回去再推。
         if (!r.fullDownload) break;
       }
@@ -427,6 +470,9 @@ class AnkiSyncSession {
       // helper 可能已经换掉了本地库、甚至没能重新打开它：下次重开、重新核对。
       _opened = false;
       _long = false;
+      if (e is! FushiAnkiSyncException || !e.isRateLimited) {
+        _lastFailureRateLimited = false;
+      }
       await _publish(AnkiSyncPhase.failed, message: '$e');
       rethrow;
     }
@@ -466,13 +512,64 @@ class AnkiSyncSession {
     return _client = await _startClient();
   }
 
-  /// helper 调用的统一出口：调用失败且 helper 已经死了，标记要重开。
+  /// helper 调用的统一出口：调用失败且 helper 已经死了，标记要重开；服务器限流时
+  /// 进入冷却。
   Future<T> _guard<T>(Future<T> call) async {
     try {
       return await call;
-    } catch (_) {
+    } catch (e) {
       if (_client?.isDead ?? false) _opened = false;
+      if (e is FushiAnkiSyncException && e.isRateLimited) {
+        await _noteRateLimited();
+      }
       rethrow;
+    }
+  }
+
+  int? _activeRateLimit() {
+    final int? until = _rateLimitedUntil;
+    return until != null && until > _clock() ? until : null;
+  }
+
+  Future<void> _noteRateLimited() async {
+    await _loadRateLimit();
+    // 冷却期内（手动同步）再撞不再加倍——服务器给的窗口还没过，只是又试早了；
+    // 冷却过后仍被限流才说明窗口比上次估的长。
+    if (_activeRateLimit() == null) _rateLimitStrikes++;
+    _lastFailureRateLimited = true;
+    _rateLimitedUntil =
+        _clock() + ankiSyncRateLimitCooldown(_rateLimitStrikes).inMilliseconds;
+    try {
+      await _writeJson(await _rateLimitFile(), <String, Object?>{
+        'until': _rateLimitedUntil,
+        'strikes': _rateLimitStrikes,
+      });
+    } on FileSystemException {
+      // 写不下只丢掉跨重启的记忆，内存里的冷却照常生效。
+    }
+  }
+
+  Future<void> _clearRateLimit() async {
+    _rateLimitedUntil = null;
+    _rateLimitStrikes = 0;
+    _lastFailureRateLimited = false;
+    final File f = await _rateLimitFile();
+    if (f.existsSync()) await f.delete();
+  }
+
+  Future<void> _loadRateLimit() async {
+    if (_rateLimitLoaded) return;
+    _rateLimitLoaded = true;
+    final File f = await _rateLimitFile();
+    if (!f.existsSync()) return;
+    try {
+      final Map<String, Object?> json =
+          (jsonDecode(await f.readAsString()) as Map).cast<String, Object?>();
+      _rateLimitedUntil = json['until'] as int?;
+      _rateLimitStrikes = (json['strikes'] as int?) ?? 0;
+      _lastFailureRateLimited = _rateLimitStrikes > 0;
+    } on Object {
+      // 坏文件当作没有冷却。
     }
   }
 
@@ -605,6 +702,9 @@ class AnkiSyncSession {
       lastError: failing.isEmpty ? null : failing.first.lastError,
       lastSyncAt: _lastSyncAt,
       message: message ?? (next == _state.phase ? _state.message : null),
+      rateLimitedUntil: next == AnkiSyncPhase.failed && _lastFailureRateLimited
+          ? _rateLimitedUntil
+          : null,
     );
     if (!_states.isClosed) _states.add(_state);
   }
@@ -633,11 +733,16 @@ class AnkiSyncSession {
   Future<File> _accountFile() async =>
       File(p.join((await _root()).path, 'account.json'));
 
-  Future<void> _writeAccount(AnkiSyncAccount acct) async {
-    final File target = await _accountFile();
+  Future<File> _rateLimitFile() async =>
+      File(p.join((await _root()).path, 'rate_limit.json'));
+
+  Future<void> _writeAccount(AnkiSyncAccount acct) async =>
+      _writeJson(await _accountFile(), acct.toJson());
+
+  Future<void> _writeJson(File target, Map<String, Object?> json) async {
     await target.parent.create(recursive: true);
     final File tmp = File('${target.path}.tmp');
-    await tmp.writeAsString(jsonEncode(acct.toJson()), flush: true);
+    await tmp.writeAsString(jsonEncode(json), flush: true);
     await tmp.rename(target.path);
   }
 }

@@ -55,3 +55,25 @@ Future<T?> showAppDialog<T>({
     ),
   );
 }
+
+/// 关掉 [context] 所在的那个对话框路由，带回 [result]。
+///
+/// `Navigator.of(context).pop(result)` 弹的是导航器**栈顶**路由，不一定是自己：对话框
+/// 里 `await` 一个异步动作期间，别处在同一个导航器上叠出了新对话框（例如制卡链路里
+/// 「笔记类型未适配视频」的降级提示），动作回来后的 pop 就会把结果塞给那个新对话框——
+/// 结果类型对不上直接抛，两个对话框都关不掉（反馈 -EruTk-rWo）。异步动作结束后关闭
+/// 自身的对话框一律用这个。
+void popAppDialog<T>(BuildContext context, [T? result]) {
+  final ModalRoute<Object?>? route = ModalRoute.of(context);
+  if (route == null) {
+    Navigator.of(context).pop<T>(result);
+    return;
+  }
+  if (!route.isActive) return;
+  final NavigatorState navigator = route.navigator!;
+  if (route.isCurrent) {
+    navigator.pop<T>(result);
+  } else {
+    navigator.removeRoute<Object?>(route, result);
+  }
+}

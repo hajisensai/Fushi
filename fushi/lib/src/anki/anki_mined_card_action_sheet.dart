@@ -123,7 +123,9 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(
+    // 等待期间制卡链路可能在同一导航器上叠出别的对话框（降级提示），只关自己。
+    popAppDialog<AnkiMinedCardActionResult>(
+      context,
       AnkiMinedCardActionResult(
         mined: true,
         ankiConnect: r.ankiConnect,
@@ -149,7 +151,9 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(
+    // 等待期间制卡链路可能在同一导航器上叠出别的对话框（降级提示），只关自己。
+    popAppDialog<AnkiMinedCardActionResult>(
+      context,
       AnkiMinedCardActionResult(
         mined: true,
         ankiConnect: r.ankiConnect,
@@ -380,7 +384,9 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(
+    // 等待期间制卡链路可能在同一导航器上叠出别的对话框（降级提示），只关自己。
+    popAppDialog<AnkiMinedCardActionResult>(
+      context,
       AnkiMinedCardActionResult(
         mined: true,
         ankiConnect: r.ankiConnect,
@@ -682,7 +688,9 @@ class _UnverifiedMinedCardDialogState
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(
+    // 等待期间制卡链路可能在同一导航器上叠出别的对话框（降级提示），只关自己。
+    popAppDialog<AnkiMinedCardActionResult>(
+      context,
       AnkiMinedCardActionResult(
         mined: true,
         ankiConnect: r.ankiConnect,
@@ -710,7 +718,10 @@ class _UnverifiedMinedCardDialogState
     }
     if (!mounted) return;
     FushiToast.show(msg: t.anki_mined_forget_done);
-    Navigator.of(context).pop(const AnkiMinedCardActionResult(mined: false));
+    popAppDialog<AnkiMinedCardActionResult>(
+      context,
+      const AnkiMinedCardActionResult(mined: false),
+    );
   }
 
   @override

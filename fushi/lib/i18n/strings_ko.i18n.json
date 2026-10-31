@@ -733,6 +733,7 @@
   "anki_sync_client_status_failed": "마지막 동기화 실패: $error",
   "anki_sync_client_status_failing": "카드 $count장을 컬렉션에 기록할 수 없었으며 다시 시도합니다: $error",
   "anki_sync_client_status_last_sync": "마지막 동기화 $time",
+  "anki_sync_client_status_rate_limited": "The sync server is limiting requests (too many requests). Fushi will retry automatically after $time; your cards stay here until then.",
   "anki_sync_client_status_signed_in": "$server에 $user(으)로 로그인됨",
   "anki_sync_client_status_signed_out": "로그인하지 않음",
   "anki_sync_client_status_unsynced": "아직 동기화되지 않은 카드 $count장",
