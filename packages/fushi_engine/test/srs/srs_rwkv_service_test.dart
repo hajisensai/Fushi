@@ -972,7 +972,7 @@ void main() {
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[2]);
     });
 
-    test('忽略每日复习上限（缺省开）：按 R 合格的卡全部计入；关掉后按每日复习上限截断', () async {
+    test('忽略每日复习上限：没写过这一项的旧牌组按每日复习上限截断；开了按 R 合格的卡全部计入；新建牌组缺省开', () async {
       f.advance(kDay);
       for (int i = 0; i < 4; i++) {
         backend.setR(cards[i], 0.3);
@@ -984,17 +984,65 @@ void main() {
           SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 2},
         },
       );
-      expect(await f.reviewCount(), 4);
+      // 内置默认牌组从没写过 rwkvQueue（= 加这项设置之前就有的牌组）：用户的上限照旧生效。
+      expect(
+        (await f.store.deckTree())[f.store.defaultDeckId]!
+            .rwkvQueue
+            .ignoreReviewLimit,
+        isFalse,
+      );
+      expect(await f.reviewCount(), 2);
       await f.store.editFields(
         SrsEntityKind.deck,
         f.store.defaultDeckId,
         <String, Object?>{
           SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
-            ignoreReviewLimit: false,
+            ignoreReviewLimit: true,
           ).toValue(),
         },
       );
+      expect(await f.reviewCount(), 4, reason: '计数在 Rust 内核里按牌组寄存器算');
+      expect(await f.store.nextCard(f.store.defaultDeckId), isNotNull);
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
+        },
+      );
       expect(await f.reviewCount(), 2);
+      // 新建的牌组建时写上「忽略每日复习上限」。
+      final String fresh = await f.store.createDeck('New RWKV deck');
+      expect(
+        (await f.store.deckTree())[fresh]!.rwkvQueue,
+        SrsRwkvQueueSettings.forNewDeck,
+      );
+    });
+
+    test('新卡计划：按复习量多出（increased）与关掉调整都在内核计数里生效', () async {
+      final String id = f.store.defaultDeckId;
+      await f.store.editFields(SrsEntityKind.deck, id, <String, Object?>{
+        SrsFieldKeys.deckLimits: <String, Object?>{'new': 4, 'review': 200},
+        SrsFieldKeys.deckNewPlan: const SrsNewCardPlan(
+          boostPercent: 50,
+        ).toValue(),
+      });
+      SrsDeckSummary s = (await f.store.deckSummaries()).firstWhere(
+        (SrsDeckSummary d) => d.deck.id == id,
+      );
+      expect(s.newBudget.reason, SrsNewCardBudgetReason.increased);
+      expect(s.newBudget.allowed, greaterThan(4));
+      await f.store.editFields(SrsEntityKind.deck, id, <String, Object?>{
+        SrsFieldKeys.deckNewPlan: const SrsNewCardPlan(
+          autoLoad: false,
+        ).toValue(),
+      });
+      s = (await f.store.deckSummaries()).firstWhere(
+        (SrsDeckSummary d) => d.deck.id == id,
+      );
+      expect(s.newBudget.reason, isNull);
+      expect(s.newBudget.allowed, 4);
+      expect(s.newBudget.reviewBudget, 0);
     });
 
     test('没写过步长的 RWKV 牌组不用步长；写过的照用；FSRS 牌组仍是默认步长', () async {

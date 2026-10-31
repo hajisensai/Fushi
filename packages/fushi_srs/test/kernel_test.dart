@@ -544,82 +544,9 @@ void main() {
     });
   });
 
-  group('新卡预算', () {
-    test('数据不足按上限 × 10；超 2 倍预算暂停；中间按比例', () {
-      SrsNewCardBudget b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 100,
-        reviewsPerDayLast30: <int>[50],
-      );
-      expect(b.allowed, 20);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 401,
-        reviewsPerDayLast30: <int>[50],
-      );
-      expect(b.reason, SrsNewCardBudgetReason.paused);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 300,
-        reviewsPerDayLast30: <int>[50],
-      );
-      expect(b.reason, SrsNewCardBudgetReason.reduced);
-      expect(b.allowed, 10);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 250,
-        reviewsPerDayLast30: <int>[
-          for (int i = 0; i < 30; i++) i.isEven ? 300 : 0,
-        ],
-      );
-      expect(b.reviewBudget, 450, reason: '只按有复习的天平均');
-      expect(b.allowed, 20);
-    });
-
-    final List<int> steady = <int>[for (int i = 0; i < 30; i++) 100];
-
-    test('关掉按复习量调整：到期再多也按基数出', () {
-      final SrsNewCardBudget b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 5000,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(autoLoad: false),
-      );
-      expect(b.allowed, 20);
-      expect(b.reason, isNull);
-    });
-
-    test('预算百分比：100% 时日均 100 → 预算 = max(100, 上限 × 10)', () {
-      final SrsNewCardBudget b = srsComputeNewCardBudget(
-        newPerDayLimit: 5,
-        dueReviews: 150,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(budgetPercent: 100),
-      );
-      expect(b.reviewBudget, 100);
-      expect(b.reason, SrsNewCardBudgetReason.reduced);
-      expect(b.allowed, 2);
-    });
-
-    test('复习少时多出：0 到期时 +boost%，一半预算处不加', () {
-      SrsNewCardBudget b = srsComputeNewCardBudget(
-        newPerDayLimit: 10,
-        dueReviews: 0,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(boostPercent: 50),
-      );
-      expect(b.reason, SrsNewCardBudgetReason.increased);
-      expect(b.allowed, 15);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 10,
-        dueReviews: 75,
-        reviewsPerDayLast30: steady,
-        plan: const SrsNewCardPlan(boostPercent: 50),
-      );
-      expect(b.allowed, 10);
-      expect(b.reason, isNull);
-    });
-
+  // 新卡预算的计算规则在 Rust 排队内核（native/fushi_fsrs/src/store/study.rs 的
+  // budget_matches_dart_rules / budget_follows_the_new_card_plan），这里只测牌组上的值对象。
+  group('新卡计划', () {
     test('新卡计划值对象：缺省 / 坏值回落，越界夹住，往返不变', () {
       expect(SrsNewCardPlan.fromValue(null), const SrsNewCardPlan());
       expect(
