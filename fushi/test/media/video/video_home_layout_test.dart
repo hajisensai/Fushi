@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoMetadataImageRow;
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 
 /// TODO-2486 视频首页布局/筛选纯函数单测（与页面实现同源消费）。
 void main() {
+  orderedEpisodeStillsTests();
   group('videoCardOrientationForAspect', () {
     test('null（未解码/无封面）默认竖卡', () {
       expect(
@@ -710,6 +712,42 @@ void main() {
       ];
       expect(latestPlayedSeriesIndex(members), 14, reason: '锚点 = 第 15 集');
       expect(nextEpisodeAfterLatestPlayed(members), 15, reason: '下一集 = 第 16 集');
+    });
+  });
+}
+
+
+VideoMetadataImageRow _img(String kind, int position, {int id = 1}) =>
+    VideoMetadataImageRow(
+      id: id,
+      provider: 'tmdb',
+      kind: kind,
+      position: position,
+      remoteUrl: 'https://img/$kind/$position',
+      updatedAt: 0,
+    );
+
+void orderedEpisodeStillsTests() {
+  group('orderedEpisodeStills', () {
+    test('keeps only thumb images, ordered by position', () {
+      final List<VideoMetadataImageRow> out = orderedEpisodeStills(
+        <VideoMetadataImageRow>[
+          _img('thumb', 2),
+          _img('poster', 0),
+          _img('backdrop', 0),
+          _img('thumb', 0),
+        ],
+      );
+      expect(out.map((VideoMetadataImageRow r) => r.position), <int>[0, 2]);
+      expect(out.every((VideoMetadataImageRow r) => r.kind == 'thumb'), isTrue);
+    });
+
+    test('no thumb means empty, so the hero falls back to the poster chain', () {
+      expect(
+        orderedEpisodeStills(<VideoMetadataImageRow>[_img('poster', 0)]),
+        isEmpty,
+      );
+      expect(orderedEpisodeStills(const <VideoMetadataImageRow>[]), isEmpty);
     });
   });
 }
