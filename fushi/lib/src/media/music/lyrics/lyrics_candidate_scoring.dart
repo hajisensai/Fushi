@@ -23,8 +23,9 @@ class LyricsCandidate {
 /// 时长容差（各家同一首的版本 / 剪辑差几秒很常见）。
 const int kOnlineLyricsDurationToleranceMs = 5000;
 
-// TODO(lyrics-plugins): 本 worktree 的 lrclib_client.dart 还没有 lrclibStripBrackets /
-// lrclibTitleParts（只在 samu 分支）；合并 samu 后改为复用并删掉下面两个私有副本。
+/// 去掉标题 / 艺人里的括注（`(feat. X)`、`【MV】`、`「…」` 等）与尾部省略号，合并空白。
+/// 只有候选评分与查询词构造用：LRCLIB 走服务端精确匹配（`/api/get`）与用户手挑的模糊搜索，
+/// 宿主不对它的结果打分，所以没有第二份实现。
 String _stripBrackets(String s) {
   String out = s;
   const List<List<String>> pairs = <List<String>>[

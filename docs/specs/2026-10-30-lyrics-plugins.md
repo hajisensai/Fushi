@@ -79,10 +79,18 @@ LyricText { format: 'lrc'|'yrc'|'qrc'|'krc'|'ttml'|'txt', text, language? }   //
 1. 插件曲目的「自带歌词」（现有 ③'，`lyrics` 能力，键 `provider:plugin:<id>`）仍排最前——它按平台曲目 id 取，最准；
 2. **LRCLIB**（固定第一，`provider:lrclib`，精确匹配 + 现有逻辑，不变）；
 3. 用户启用的歌词插件，按用户排序，逐个：缓存命中（含负缓存）→ 否则 `lyricsSearch` → 评分挑 → `lyricsFetch` →
-   落库 `provider:plugin:<id>`；第一个拿到歌词的胜出，其余不问。
+   落库 `provider:lyrics:<id>`；第一个拿到歌词的胜出，其余不问。
 
-缓存键沿用 `provider:plugin:<id>`：同一插件对同一曲目只会走「自带」或「搜索」其中一条路，不冲突；
-`MusicLyricsSource.isPlugin` / `pluginIdOf` 无需改。负缓存 1 天（`kPluginLyricsNegativeCacheTtl`）逐来源记录。
+缓存键**不与**自带歌词共用：同一个插件可以同时声明 `lyrics` 与 `lyricsSearch` / `lyricsFetch`，它自己的平台曲目
+先走 ③'，③' 没结果时还会在 ⑤ 里被问一次；共用 `provider:plugin:<id>` 会让 ③' 的负缓存挡住 ⑤ 一天、⑤ 的模糊
+搜索结果又被 ③' 当成平台自带歌词命中。所以歌词插件搜到的结果记 `provider:lyrics:<id>`
+（`MusicLyricsSource.lyricsPlugin` / `isLyricsPlugin` / `lyricsPluginIdOf`），选来源面板按来源标出是哪一种。
+负缓存 1 天（`kPluginLyricsNegativeCacheTtl`）逐来源记录。
+
+有译文时落库的是插件给的**原始各轨**（format `plugin-tracks`，`MusicPluginLyrics.toJson` 的 JSON），不是合并后的
+TTML：合并规则随 `FushiLyrics.parserVersion` 变，缓存版本对不上时 ③' 与 ⑤ 共用 `parseStoredMusicLyrics` 用当前
+解析器就地重新合并，不必回插件重取（离线也能修好），语料索引也走同一个函数。早期落成合并 TTML 的 ③' 旧行在版本
+对不上时仍回插件重取（取不到先用旧结果、不回写版本）。
 用户重排 / 启停来源后不清缓存；缓存里有高优先级来源的有效行就直接用，不会被低优先级覆盖。
 
 ## 4. 宿主侧评分
@@ -96,7 +104,8 @@ LyricText { format: 'lrc'|'yrc'|'qrc'|'krc'|'ttml'|'txt', text, language? }   //
 - `lyricsNameSimilarity`（原 `onlineLyricsNameSimilarity`：相等 1 / 包含 0.85 / 二元组 Jaccard）；
 - `lyricsQueries(title, artist, {max = 4})`（原 `onlineLyricsQueries`）与 `searchWithFallbackQueries` 回退循环
   （累计候选，一旦能挑出像样的就停，按 `ref|title|artist` 去重）；
-- 复用本分支已有的 `lrclibTitleParts` / `lrclibStripBrackets`（`lrclib_client.dart:100,126`），不复制。
+- 括注清理 / 标题拆段只在本文件实现一份（`lrclib_client.dart` 没有对应函数：LRCLIB 走服务端精确匹配与用户
+  手挑的模糊搜索，宿主不给它打分）。
 
 行为注记：一次解析里评分只用于「自动采用」。LRCLIB 的模糊候选仍只给用户手选（沿用现状），歌词插件的候选
 **自动采用**（用户已显式启用该插件）。「手动从某插件搜歌词」入口 v1 不做（§9）。
@@ -127,8 +136,10 @@ LyricText { format: 'lrc'|'yrc'|'qrc'|'krc'|'ttml'|'txt', text, language? }   //
 - 其后 `ReorderableListView`：每行 = 拖拽柄 + 插件名 / 版本 + `Switch`；列表错峰进场用
   `FushiEntranceScope` + `fushiStaggeredItemBuilder`，行按压用 `FushiPressScale`，时长取 `fushiMotionDuration`
   （守卫 `fushi_entrance_wiring_guard_test`）；拖拽排序同时给「上移 / 下移」菜单项（焦点 / 手柄可用）；
-- 空态：说明「没有歌词插件」+ 按钮「安装插件」跳到「插件音源」分区的安装流程（复用 `music_plugin_settings.dart`
-  的安装入口，不另写）；
+- 空态：说明「没有歌词插件」+ 按钮「安装插件」；列表非空时列表下方也保留「安装插件」入口。两处都走
+  `music_plugin_settings.dart` 的 `pickAndInstallMusicPlugin`，不另写；
+- 隐私告知：新装的歌词插件默认启用，所以安装确认框就是启用前最后一道告知——声明了歌词来源能力的包，确认框
+  明写「查歌词时会把曲目标题 / 艺人 / 专辑 / 时长交给插件，插件可发往它声明的网络域名」，并照常列出声明的域名；
 - 「插件音源」页：`musicPluginCapabilityLabel`（`:23`）补 `lyricsSearch` / `lyricsFetch`，详情页权限 / 能力照列；
   纯歌词插件的卡片标「歌词来源」，不显示登录 / 浏览入口；
 - 移动端 / 桌面都用同一页面；不新增工具栏。

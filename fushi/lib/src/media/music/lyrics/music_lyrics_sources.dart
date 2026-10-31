@@ -21,6 +21,21 @@ abstract final class MusicLyricsSource {
   static String? pluginIdOf(String source) =>
       isPlugin(source) ? source.substring(_pluginPrefix.length) : null;
 
+  /// 歌词插件（`lyricsSearch` + `lyricsFetch`，LRCLIB 之后按用户排序）按标题 / 艺人搜到的
+  /// 歌词：`provider:lyrics:<插件 id>`。与 [plugin] 分开成两条缓存：同一个插件既给平台曲目
+  /// 自带歌词、又做歌词来源时，两条路径的结果（与负缓存）互不覆盖。
+  static const String _lyricsPluginPrefix = 'provider:lyrics:';
+
+  static String lyricsPlugin(String pluginId) =>
+      '$_lyricsPluginPrefix$pluginId';
+
+  static bool isLyricsPlugin(String source) =>
+      source.startsWith(_lyricsPluginPrefix);
+
+  static String? lyricsPluginIdOf(String source) => isLyricsPlugin(source)
+      ? source.substring(_lyricsPluginPrefix.length)
+      : null;
+
   /// 自动来源的优先级（高 → 低），不含 [user]。
   static const List<String> automaticPriority = <String>[
     sidecar,
