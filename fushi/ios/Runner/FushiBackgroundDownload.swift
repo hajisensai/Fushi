@@ -73,6 +73,8 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
   private var lastProgressAt: [String: TimeInterval] = [:]
   /// 持久化注册表（Dart id → 记录）。
   private var records: [String: Record] = [:]
+  /// 本进程发起的 id：`recover` 只交出上一个进程留下的，正在本进程里等着的不算。
+  private var startedHere: Set<String> = []
   /// 各会话 `getAllTasks` 的接回扫描；`recover` / `attach` 等它们全部完成再答。
   private let scanGroup = DispatchGroup()
 
@@ -128,9 +130,9 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
         }
       case "recover":
         shared.whenScanned {
-          let list: [[String: Any]] = shared.records.map { id, record in
-            ["id": id, "meta": record.meta]
-          }
+          let list: [[String: Any]] = shared.records
+            .filter { !shared.startedHere.contains($0.key) }
+            .map { id, record in ["id": id, "meta": record.meta] }
           DispatchQueue.main.async { result(list) }
         }
       case "attach":
@@ -285,6 +287,7 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
       task.taskDescription = id
       self.liveTasks[id] = task
       self.destinations[id] = dest
+      self.startedHere.insert(id)
       if let meta {
         self.records[id] = Record(
           url: url.absoluteString, dest: dest, meta: meta, proxyMode: proxy.mode,
