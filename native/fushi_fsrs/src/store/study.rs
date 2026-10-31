@@ -17,7 +17,10 @@
 //!
 //! 请求 `{"deck"?: 根牌组, "now", "utcOff", "rollover", "exclude"?: [卡], "pick"?: bool,
 //!        "rwkv"?: {"decks": {牌组: [目标保留率, 每天最少, 间隔次数, 间隔秒数]}, "cands": [[卡, 牌组, 上次作答|null, R]]}}`；
-//! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因|null]}, "next", "after", "eligible"}`。
+//! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 调整原因|null]}, "next", "after", "eligible"}`
+//! （调整原因 = Dart `SrsNewCardBudgetReason` 的名字：reduced / paused / increased）。
+//! 牌组设置里影响计数的「新卡计划」（`newPlan`）与 RWKV 的「忽略每日复习上限」（`rwkvQueue.ignoreLimit`）都从牌组树读
+//! （[NewCardPlan::of] / `DeckTree::ignores_review_limit`）。
 //! 没给 `deck` = 全部牌组（牌组列表）；给了但不在树里 = `counts` 为 null。
 
 use std::collections::{HashMap, HashSet};
@@ -33,6 +36,8 @@ use crate::store::sync2::sql;
 /// 卡「可出」：可见、未暂停、归 Fushi 排程、没埋或埋到期（绑定一个参数：今天）。与 queue.rs `Row::live` 同一判据。
 const LIVE: &str = "hidden = 0 AND suspended = 0 AND scheduler = 'fushi' AND (buried_until_day IS NULL OR buried_until_day <= ?)";
 const DAY_MS: i64 = 86_400_000;
+/// 「忽略每日复习上限」的牌组这一层的剩余复习额度（实际出卡数由合格的卡数决定）。
+const UNLIMITED_REVIEWS: i64 = 1 << 30;
 
 /// 一个牌组自己（或整棵子树）的原始卡数与今天的学习量。
 #[derive(Clone, Copy, Default, Debug)]
@@ -60,36 +65,89 @@ impl Tally {
     }
 }
 
-/// 今天的新卡配额（Dart `srsComputeNewCardBudget`）。
+/// 今天的新卡配额（Dart 侧只剩结果类型 `SrsNewCardBudget`，规则只在这里）。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Budget {
     pub limit: i64,
     pub allowed: i64,
     pub review_budget: i64,
-    /// None / "reduced" / "paused"。
+    /// None / "reduced" / "paused" / "increased"（Dart `SrsNewCardBudgetReason` 的名字）。
     pub reason: Option<&'static str>,
 }
 
-/// 新卡数按复习量自动调节：预算 = 最近 30 天有复习的天的日均 × 1.5（不低于上限 × 10；有复习的天不足 7 天
-/// 时就是上限 × 10）；到期数 ≤ 预算不缩减，超过 2 倍预算当天不出新卡，其间线性缩减。
-pub(crate) fn new_card_budget(limit: i64, due: i64, last30: &[i64]) -> Budget {
+/// 新卡计划（牌组自己的 `newPlan` 寄存器，物化视图键 `npl`；Dart 值对象 `SrsNewCardPlan`）：缺项 / 坏值回落
+/// 默认，越界的夹到合法范围，与 `SrsNewCardPlan.fromValue` 同一条规则。缺省 = 按复习量只减不增、预算 150%，
+/// 与加这项设置之前的行为相同。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct NewCardPlan {
+    pub auto_load: bool,
+    pub budget_percent: i64,
+    pub boost_percent: i64,
+}
+
+impl NewCardPlan {
+    pub const DEFAULT_BUDGET_PERCENT: i64 = 150;
+    pub const MIN_BUDGET_PERCENT: i64 = 50;
+    pub const MAX_BUDGET_PERCENT: i64 = 1000;
+    pub const MAX_BOOST_PERCENT: i64 = 200;
+
+    pub fn of(v: &Value) -> NewCardPlan {
+        let read = |k: &str, fallback: i64, lo: i64, hi: i64| v.get(k).and_then(Value::as_i64).map_or(fallback, |n| n.clamp(lo, hi));
+        if !v.is_object() {
+            return NewCardPlan::default();
+        }
+        NewCardPlan {
+            auto_load: v.get("auto") != Some(&Value::Bool(false)),
+            budget_percent: read("budget", Self::DEFAULT_BUDGET_PERCENT, Self::MIN_BUDGET_PERCENT, Self::MAX_BUDGET_PERCENT),
+            boost_percent: read("boost", 0, 0, Self::MAX_BOOST_PERCENT),
+        }
+    }
+}
+
+impl Default for NewCardPlan {
+    fn default() -> Self {
+        NewCardPlan { auto_load: true, budget_percent: Self::DEFAULT_BUDGET_PERCENT, boost_percent: 0 }
+    }
+}
+
+/// 新卡数按复习量自动调节（[NewCardPlan::auto_load] 关掉时恒为每日上限、预算记 0）：
+/// - 预算 = 最近 30 天有复习的天的日均 × `budget_percent`%（四舍五入，远离零），不低于上限 × 10；有复习的天
+///   不足 7 天时就是上限 × 10；
+/// - 到期数 ≤ 预算不变；超过 2 倍预算当天不出新卡；其间线性缩减；
+/// - 到期数 < 预算一半且 `boost_percent` > 0：从一半预算到 0 线性增加，最多 +boost_percent%（"increased"）。
+pub(crate) fn new_card_budget(limit: i64, due: i64, last30: &[i64], plan: NewCardPlan) -> Budget {
+    let result = |allowed: i64, review_budget: i64, reason: Option<&'static str>| Budget { limit, allowed, review_budget, reason };
+    if !plan.auto_load {
+        return result(limit, 0, None);
+    }
     let active: Vec<i64> = last30.iter().copied().filter(|n| *n > 0).collect();
     let floor = limit * 10;
     let budget = if active.len() < 7 {
         floor
     } else {
         let avg = active.iter().sum::<i64>() as f64 / active.len() as f64;
-        ((avg * 1.5).round() as i64).max(floor)
+        ((avg * plan.budget_percent as f64 / 100.0).round() as i64).max(floor)
     };
-    if budget <= 0 || due <= budget {
-        return Budget { limit, allowed: limit, review_budget: budget, reason: None };
+    if budget <= 0 {
+        return result(limit, budget, None);
     }
     if due > budget * 2 {
-        return Budget { limit, allowed: 0, review_budget: budget, reason: Some("paused") };
+        return result(0, budget, Some("paused"));
     }
-    let factor = 1.0 - (due - budget) as f64 / budget as f64;
-    let allowed = ((limit as f64 * factor).floor() as i64).max(0).min(limit);
-    Budget { limit, allowed, review_budget: budget, reason: if allowed < limit { Some("reduced") } else { None } }
+    if due > budget {
+        let factor = 1.0 - (due - budget) as f64 / budget as f64;
+        let allowed = ((limit as f64 * factor).floor() as i64).max(0).min(limit);
+        return result(allowed, budget, if allowed < limit { Some("reduced") } else { None });
+    }
+    let half = budget as f64 / 2.0;
+    if plan.boost_percent > 0 && (due as f64) < half {
+        let share = 1.0 - due as f64 / half;
+        let allowed = limit + ((limit * plan.boost_percent) as f64 / 100.0 * share).floor() as i64;
+        if allowed > limit {
+            return result(allowed, budget, Some("increased"));
+        }
+    }
+    result(limit, budget, None)
 }
 
 /// 牌组树里一个节点的计数。
@@ -290,9 +348,13 @@ fn count_tree(ctx: &Ctx<'_>, tallies: &HashMap<String, Tally>, ids: &[String], r
             learn_sum += cc.learn_count;
         }
         let view = &ctx.tree.decks[id].view;
-        let budget = new_card_budget(int(view, "np", 20), sub.due, ctx.logs.last30());
+        // 新卡计划与每日上限一样只看牌组自己的值（不随参数继承）。
+        let budget = new_card_budget(int(view, "np", 20), sub.due, ctx.logs.last30(), NewCardPlan::of(&view["npl"]));
         let new_remaining = (budget.allowed - sub.new_done).max(0);
-        let review_remaining = (int(view, "rp", 200) - sub.review_done).max(0);
+        // RWKV 牌组开了「忽略每日复习上限」（上游 Anki 的 Ignore review limit）：按 R 合格的卡全部出，这一层不截断
+        // （祖先没开的照样按自己的上限截）。
+        let review_remaining =
+            if ctx.tree.ignores_review_limit(id) { UNLIMITED_REVIEWS } else { (int(view, "rp", 200) - sub.review_done).max(0) };
         let r = Count {
             sub,
             budget,
@@ -557,22 +619,64 @@ mod tests {
     use crate::store::SrsCore;
     use std::sync::atomic::Ordering as AtomicOrdering;
 
-    /// 与 Dart `srsComputeNewCardBudget` 的几个边界逐项一致（fushi_srs test/new_card_budget_test.dart 同组数）。
+    /// 缺省新卡计划下与旧 Dart `srsComputeNewCardBudget`（已删）的边界逐项一致。
     #[test]
     fn budget_matches_dart_rules() {
+        let d = NewCardPlan::default();
         // 数据不足（有复习的天 < 7）：预算 = 上限 × 10。
-        assert_eq!(new_card_budget(20, 150, &[5; 3]), Budget { limit: 20, allowed: 20, review_budget: 200, reason: None });
+        assert_eq!(new_card_budget(20, 150, &[5; 3], d), Budget { limit: 20, allowed: 20, review_budget: 200, reason: None });
+        assert_eq!(new_card_budget(20, 100, &[50], d).allowed, 20);
         // 超 2 倍预算：暂停。
-        assert_eq!(new_card_budget(20, 401, &[0; 30]).reason, Some("paused"));
-        assert_eq!(new_card_budget(20, 401, &[0; 30]).allowed, 0);
+        assert_eq!(new_card_budget(20, 401, &[0; 30], d).reason, Some("paused"));
+        assert_eq!(new_card_budget(20, 401, &[0; 30], d).allowed, 0);
         // 预算到 2 倍之间线性缩减：300 / 200 → 系数 0.5。
-        assert_eq!(new_card_budget(20, 300, &[0; 30]), Budget { limit: 20, allowed: 10, review_budget: 200, reason: Some("reduced") });
+        assert_eq!(new_card_budget(20, 300, &[0; 30], d), Budget { limit: 20, allowed: 10, review_budget: 200, reason: Some("reduced") });
         // 日均 100（30 天都有复习）× 1.5 = 150 < 地板 200。
-        assert_eq!(new_card_budget(20, 0, &[100; 30]).review_budget, 200);
+        assert_eq!(new_card_budget(20, 0, &[100; 30], d).review_budget, 200);
         // 日均 333 × 1.5 = 499.5 → 四舍五入 500（Dart `round` 远离零）。
-        assert_eq!(new_card_budget(20, 0, &[333; 30]).review_budget, 500);
+        assert_eq!(new_card_budget(20, 0, &[333; 30], d).review_budget, 500);
+        // 只按有复习的天平均：隔天 300 → 预算 450。
+        let alt: Vec<i64> = (0..30).map(|i| if i % 2 == 0 { 300 } else { 0 }).collect();
+        assert_eq!(new_card_budget(20, 250, &alt, d), Budget { limit: 20, allowed: 20, review_budget: 450, reason: None });
         // 上限 0：预算 0 → 不缩减分支。
-        assert_eq!(new_card_budget(0, 10, &[0; 30]), Budget { limit: 0, allowed: 0, review_budget: 0, reason: None });
+        assert_eq!(new_card_budget(0, 10, &[0; 30], d), Budget { limit: 0, allowed: 0, review_budget: 0, reason: None });
+    }
+
+    /// 新卡计划（PR #2663 原写在已删的 Dart 计数路径上）：关掉按复习量调整、预算百分比、复习少时多出。
+    #[test]
+    fn budget_follows_the_new_card_plan() {
+        let steady = [100i64; 30];
+        let plan = |auto_load: bool, budget_percent: i64, boost_percent: i64| NewCardPlan { auto_load, budget_percent, boost_percent };
+        // 关掉：到期再多也按每日上限出，预算记 0。
+        assert_eq!(new_card_budget(20, 5000, &steady, plan(false, 150, 0)), Budget { limit: 20, allowed: 20, review_budget: 0, reason: None });
+        // 预算 100%：日均 100 → 预算 max(100, 5 × 10) = 100；到期 150 → 系数 0.5 → 2。
+        assert_eq!(new_card_budget(5, 150, &steady, plan(true, 100, 0)), Budget { limit: 5, allowed: 2, review_budget: 100, reason: Some("reduced") });
+        // 预算 300%：同样的到期量不再缩减。
+        assert_eq!(new_card_budget(5, 150, &steady, plan(true, 300, 0)), Budget { limit: 5, allowed: 5, review_budget: 300, reason: None });
+        // 多出 50%：0 到期 → 10 + 5；一半预算（75 / 150）处不加；其间线性（20 → share 0.733 → +3.67 → +3）。
+        assert_eq!(new_card_budget(10, 0, &steady, plan(true, 150, 50)), Budget { limit: 10, allowed: 15, review_budget: 150, reason: Some("increased") });
+        assert_eq!(new_card_budget(10, 75, &steady, plan(true, 150, 50)), Budget { limit: 10, allowed: 10, review_budget: 150, reason: None });
+        assert_eq!(new_card_budget(10, 20, &steady, plan(true, 150, 50)).allowed, 13);
+        // 多出的量向下取整到 0 时不报 increased。
+        assert_eq!(new_card_budget(1, 70, &steady, plan(true, 150, 10)), Budget { limit: 1, allowed: 1, review_budget: 150, reason: None });
+        // 数据不足时同样按上限 × 10 的预算多出。
+        assert_eq!(new_card_budget(10, 0, &[], plan(true, 150, 200)).allowed, 30);
+    }
+
+    /// `npl` 视图值 → 计划：与 Dart `SrsNewCardPlan.fromValue` 同规则（缺项 / 坏值回落，越界夹住）。
+    #[test]
+    fn new_card_plan_parses_like_dart() {
+        assert_eq!(NewCardPlan::of(&Value::Null), NewCardPlan::default());
+        assert_eq!(NewCardPlan::of(&json!("x")), NewCardPlan::default());
+        assert_eq!(
+            NewCardPlan::of(&json!({"auto": "x", "budget": 5, "boost": 99999})),
+            NewCardPlan { auto_load: true, budget_percent: NewCardPlan::MIN_BUDGET_PERCENT, boost_percent: NewCardPlan::MAX_BOOST_PERCENT }
+        );
+        assert_eq!(
+            NewCardPlan::of(&json!({"auto": false, "budget": 200, "boost": 30})),
+            NewCardPlan { auto_load: false, budget_percent: 200, boost_percent: 30 }
+        );
+        assert_eq!(NewCardPlan::of(&json!({"budget": 1.5, "boost": -3})), NewCardPlan { auto_load: true, budget_percent: 150, boost_percent: 0 });
     }
 
     /// L2 的逐条 SQL 排队（2026-10-29 搬进常驻会话之前的生产实现，原样保留）：会话实现的对拍基准。每次排队按子树
@@ -1001,6 +1105,98 @@ mod tests {
         assert!(builds_seen < 60, "rebuilt {builds_seen} times");
         // 700 步 × 6 个根：大多数轮次真的出了卡（不是一直在比空结果）。
         assert!(picked > 3000, "picked {picked}");
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 新卡计划与「忽略每日复习上限」从牌组寄存器（`newPlan` / `rwkvQueue`）读进排队计数（PR #2663：以前只写在
+    /// 已删的 Dart 计数路径上，设置能存、出卡不认）。
+    /// - `rwkvQueue.ignoreLimit: true` 的 RWKV 牌组：到期卡全部计入，不按每日复习上限截；
+    /// - 同样写了 true 的 FSRS 牌组、没有这个键的旧 RWKV 牌组：照旧截断；
+    /// - `newPlan.boost`：没有到期复习时新卡配额按比例多出，原因是 "increased"；`auto: false` 时恒为每日上限。
+    #[test]
+    fn study_counts_read_new_plan_and_ignore_limit_from_deck_registers() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_study_plan_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let day = Day { utc_offset_min: 0, rollover_hour: 4 };
+        let now = 1_760_000_000_000i64;
+        let today = day.index(now);
+        let mut n = 0i64;
+        let decks = ["IGN", "OLD", "FS", "BOOST", "OFF"];
+        for d in decks {
+            exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')", vec![Sql::Text(d.into()), Sql::Text(P.into())]);
+            edit(&core, &mut n, d, "limits", json!({"new": 10, "review": 2}));
+        }
+        let ignore = json!({"minReviews": 0, "repeatReviews": 5, "repeatSeconds": 30, "refreshEvery": 1, "ignoreLimit": true});
+        edit(&core, &mut n, "IGN", "rwkvQueue", ignore.clone());
+        edit(&core, &mut n, "OLD", "rwkvQueue", json!({"minReviews": 0, "repeatReviews": 5, "repeatSeconds": 30, "refreshEvery": 1}));
+        edit(&core, &mut n, "FS", "algorithm", json!({"alg": "fsrs7", "auto": false}));
+        edit(&core, &mut n, "FS", "rwkvQueue", ignore);
+        edit(&core, &mut n, "BOOST", "newPlan", json!({"auto": true, "budget": 150, "boost": 50}));
+        edit(&core, &mut n, "OFF", "newPlan", json!({"auto": false, "budget": 150, "boost": 50}));
+        let mut k = 0;
+        let mut card = |deck: &str, queue: &str| {
+            k += 1;
+            let id = format!("{deck}-{k:03}");
+            exec(
+                &core,
+                CARD_UPSERT,
+                vec![
+                    Sql::Text(id),
+                    Sql::Text(P.into()),
+                    Sql::Text(deck.into()),
+                    Sql::Integer(0),
+                    Sql::Null,
+                    Sql::Integer(0),
+                    Sql::Text(queue.into()),
+                    Sql::Integer(today - 1),
+                    Sql::Null,
+                    Sql::Real(2.0),
+                    Sql::Integer(now - 5 * DAY_MS),
+                    Sql::Text("fushi".into()),
+                    Sql::Integer(k),
+                    Sql::Integer(k),
+                    Sql::Null,
+                ],
+            );
+        };
+        for d in ["IGN", "OLD", "FS"] {
+            for _ in 0..7 {
+                card(d, "review");
+            }
+        }
+        for d in ["BOOST", "OFF"] {
+            for _ in 0..30 {
+                card(d, "new");
+            }
+        }
+        let req = json!({"now": now, "utcOff": day.utc_offset_min, "rollover": day.rollover_hour});
+        let got = core.study(P, &req).unwrap();
+        // 与逐条 SQL 的旧实现（同一个 count_tree）对拍，确认会话路径也走了同样的读法。
+        assert_eq!(got, core.read_visible(|c| oracle::study(c, P, &req)).unwrap());
+        let row = |d: &str| got["counts"][d].clone();
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        assert_eq!(row("IGN")[2], json!(7), "忽略上限：7 张到期全部计入");
+        assert_eq!(row("OLD")[2], json!(2), "旧牌组没有 ignoreLimit 键：上限照旧生效");
+        assert_eq!(row("FS")[2], json!(2), "FSRS 牌组不认 ignoreLimit");
+        // 没有复习日志：预算 = 10 × 10 = 100；到期 0 → 多出 50%。
+        assert_eq!(row("BOOST"), json!([15, 0, 0, 30, 10, 15, 100, "increased"]));
+        assert_eq!(row("OFF"), json!([10, 0, 0, 30, 10, 10, 0, null]));
+        // 今天已复习过 2 张之后：旧牌组没有剩余额度、不再出复习卡；忽略上限的牌组照出。
+        let mut logs = 0i64;
+        for d in ["IGN", "OLD"] {
+            for i in 1..=2 {
+                log(&core, &mut logs, &format!("{d}-{:03}", if d == "IGN" { i } else { 7 + i }), now - 60_000, "review", 3, "review");
+            }
+        }
+        for (d, want_next, want_due) in [("IGN", true, json!(7)), ("OLD", false, json!(0))] {
+            let r = core.study(P, &json!({"now": now, "utcOff": 0, "rollover": 4, "deck": d, "pick": true})).unwrap();
+            assert_eq!(r["counts"][d][2], want_due, "{d}");
+            assert_eq!(!r["next"].is_null(), want_next, "{d}: {r}");
+        }
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
     }

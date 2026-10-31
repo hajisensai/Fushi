@@ -165,6 +165,19 @@ impl DeckTree {
         out
     }
 
+    /// 参数归属的 own 祖先的算法是 RWKV（`resolveLocalAlgorithm`：没写过 = 缺省 RWKV；本机不认识的值不是）。
+    fn owner_uses_rwkv(owner: &DeckNode) -> bool {
+        owner.view["alg"].as_str().unwrap_or("rwkv") == "rwkv"
+    }
+
+    /// 牌组按 RWKV 排程，且（参数归属的 own 祖先上）开了「忽略每日复习上限」（`SrsRwkvQueueSettings.ignoreReviewLimit`：
+    /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的旧牌组照旧按每日复习上限截断，新建牌组建时写上 true）。
+    pub fn ignores_review_limit(&self, deck: &str) -> bool {
+        let id = self.effective(deck);
+        let Some(owner) = self.params_owner(&id) else { return false };
+        Self::owner_uses_rwkv(owner) && owner.view["rw"].get("ignoreLimit") == Some(&Value::Bool(true))
+    }
+
     /// 某牌组复习时实际用的排程配置（`SrsDeckTree.schedulingConfig`）。
     pub fn config(&self, deck: &str) -> Config {
         let id = self.effective(deck);
@@ -183,7 +196,7 @@ impl DeckTree {
             .unwrap_or_default();
         let params = if params.len() == alg.param_count() { params } else { Vec::new() };
         // 没写过步长的 RWKV 牌组不用步长（`SrsDeckView.learnStepsFor`）。
-        let rwkv = alg_wire == "rwkv";
+        let rwkv = Self::owner_uses_rwkv(owner);
         let pick = |v: &Value, default: &[f64]| if rwkv && !v.is_array() { Vec::new() } else { steps(v, default) };
         Config {
             learn_steps: pick(&me.view["ls"], &DEFAULT_LEARN),
