@@ -71,7 +71,11 @@ void main() {
       profileUid: kProfile,
       deviceId: 'd',
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot-d'),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => t,
+        bootClockMs: () => t,
+        bootId: 'boot-d',
+      ),
       fallbackRolloverHour: () => 4,
     );
     final SrsStatsData d = (await loadSrsStats(reopened)).data;

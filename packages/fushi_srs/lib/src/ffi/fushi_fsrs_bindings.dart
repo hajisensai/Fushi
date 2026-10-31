@@ -235,6 +235,8 @@ typedef _MaterializeDart =
     );
 typedef _AbiVersionC = ffi.Int32 Function();
 typedef _AbiVersionDart = int Function();
+typedef _BootTimeC = ffi.Int64 Function();
+typedef _BootTimeDart = int Function();
 
 /// `ffsrs_*` 符号表。构造时就把全部符号解析完：缺符号 = 库不对，立刻抛
 /// [ArgumentError]，由 `FushiFsrs.tryLoad` 转成「不可用」。
@@ -260,6 +262,10 @@ class FushiFsrsBindings {
       ),
       ffsrs_abi_version = lib.lookupFunction<_AbiVersionC, _AbiVersionDart>(
         'ffsrs_abi_version',
+      ),
+      ffsrs_boot_time_ms = lib.lookupFunction<_BootTimeC, _BootTimeDart>(
+        'ffsrs_boot_time_ms',
+        isLeaf: true,
       ),
       ffsrs_search_dupe_norm_batch = lib
           .lookupFunction<_DupeNormC, _DupeNormDart>(
@@ -346,6 +352,10 @@ class FushiFsrsBindings {
   final void Function(ffi.Pointer<ffi.Uint8> ptr, int len) ffsrs_free_bytes;
 
   final int Function() ffsrs_abi_version;
+
+  /// 自本次开机以来的毫秒，**含睡眠**、不受改系统时间影响（native/fushi_fsrs/src/boot_clock.rs）；
+  /// 取不到返回 -1。可信时间（`SrsTrustedClock`）按它推算。
+  final int Function() ffsrs_boot_time_ms;
 
   /// AnkiConnect 查重规范形，批量；返回 `[u32 LE 偏移 × (n+1)][UTF-8]`，由 [ffsrs_free_bytes] 释放。
   final ffi.Pointer<ffi.Uint8> Function(

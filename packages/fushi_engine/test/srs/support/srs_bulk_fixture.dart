@@ -23,8 +23,11 @@ const String kBulkUid = '01928c3e-0000-7000-8000-0000000b0175';
 const int kBulkNowMs = 1780272000000;
 
 /// 时钟不走的可信时钟：逐条与成批两条路径的 HLC / 时刻逐位相同，状态可以逐字节比较。
-SrsTrustedClock fixedTrustedClock() =>
-    SrsTrustedClock(wallClockMs: () => kBulkNowMs, bootId: 'bulk');
+SrsTrustedClock fixedTrustedClock() => SrsTrustedClock(
+  wallClockMs: () => kBulkNowMs,
+  bootClockMs: () => kBulkNowMs,
+  bootId: 'bulk',
+);
 
 class BulkFixture {
   BulkFixture._(this.db, this.store, this.counter);

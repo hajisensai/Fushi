@@ -615,8 +615,13 @@ F. 【修3】【修8】时间、排序键与服务器时间 S。
        · 每次同步成功时，从同步后端取服务器时间，记下锚点 (服务器时间, 开机单调时钟读数, 本次开机 ID)。
          开机单调时钟用「含睡眠」的那种（Android elapsedRealtime、Linux CLOCK_BOOTTIME、Darwin mach_continuous_time、
          Windows QueryInterruptTime），手动改系统时间不影响它；第 0 步逐平台确认可用。
-       · 写事件时，若本次开机已有锚点：可信时间 = 锚点服务器时间 + 单调时钟经过量，timeSource = anchored。
-         开机后还没同步过：可信时间 = 墙钟，timeSource = wall。
+         实现：Rust `ffsrs_boot_time_ms`（native/fushi_fsrs/src/boot_clock.rs：Linux / Android `CLOCK_BOOTTIME`，
+         Apple `CLOCK_MONOTONIC`（即 mach_continuous_time），Windows `GetTickCount64`）；服务器时间与写 head 那次上传
+         前后两次读数的中点配对（BUG-3900）。Dart Stopwatch 不计睡眠、「墙钟 + 偏移」随改系统时间跳，都不能代替。
+       · 写事件时，若本进程已有锚点：可信时间 = 锚点服务器时间 + 单调时钟经过量，timeSource = anchored；墙钟与它的
+         偏差每次现算（校时后改系统时间也报得出来）。
+         本进程还没同步过：可信时间 = 墙钟 + 上一个进程留下的「可信时间 − 墙钟」偏移（没有则 0），timeSource = wall。
+         锚点只在写下它的进程里接着用（重启后开机时钟归零，读数对不上）。
        · occurredAt、HLC 物理部分、学习卡的 dueAt 全部由可信时间算出。同一次开机内用户把系统时间改快改慢，
          记录下来的时间不受影响。
    - 【修8】事件创建即不可变（A-1 / A-2）。

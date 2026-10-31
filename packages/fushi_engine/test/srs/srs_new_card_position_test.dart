@@ -207,7 +207,11 @@ void main() {
       profileUid: kPosProfile,
       deviceId: 'a',
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot-a'),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => t,
+        bootClockMs: () => t,
+        bootId: 'boot-a',
+      ),
       fallbackRolloverHour: () => 4,
     );
 

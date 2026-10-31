@@ -40,7 +40,11 @@ void main() {
       profileUid: await db.profileUidOf(profileId),
       deviceId: 'dev',
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(wallClockMs: () => now, bootId: 'b'),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => now,
+        bootClockMs: () => now,
+        bootId: 'b',
+      ),
       fallbackRolloverHour: () => 4,
     );
     // 日志的 UTC 偏移取 profile 设置（没有时是本机偏移，随跑测试的机器变）：钉成 JST，期望日期可以写死。
