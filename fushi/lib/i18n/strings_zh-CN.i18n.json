@@ -7303,6 +7303,7 @@
   "srs_browse_undo_partial": "有 $n 张卡片已在其它设备上复习过，无法撤销",
   "srs_browse_undone": "已撤销",
   "srs_browse_unsuspended": "已取消暂停",
+  "srs_card_appearance_blur_translation": "翻译模糊，点按显示",
   "srs_card_appearance_color_app": "跟随 app 主题",
   "srs_card_appearance_color_custom": "自定义强调色",
   "srs_card_appearance_compact_phone": "手机精简背面（长释义收起）",
