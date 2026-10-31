@@ -150,9 +150,10 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
     encoder GPU idle ~85% of the time for lack of queued work, which is what
     the Dart-side pipeline rewrite (`AsrBatchPipeline`) addresses.
 
-**The Dart API under `lib/` carries three deltas (#8, the
+**The Dart API under `lib/` carries four deltas (#8, the
 `freeDimensionOverrides` option, #10, `getDeviceMemoryInfo`, and #13,
-`probeCuda` / `registerCudaRuntime`); everything
+`probeCuda` / `registerCudaRuntime`, and #15, native provider-name
+normalisation); everything
 else there is byte-for-byte upstream.** The Apple, Android and Linux native
 trees are untouched; the Windows tree carries deltas 6–11 and 13 — provider
 wiring, error-string encoding, free-dimension overrides, worker-thread
@@ -186,7 +187,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#14.
+Copy the new upstream version over this folder, then re-apply deltas #1–#15.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
