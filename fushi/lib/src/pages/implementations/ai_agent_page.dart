@@ -52,6 +52,11 @@ import 'package:url_launcher/url_launcher.dart';
 /// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
 const double kAiAgentSidePanelBreakpoint = 840;
 
+/// 浮层 / 侧栏里对话区可用高度低于它（横屏手机弹出软键盘时只剩 130~175dp）就进
+/// 「紧凑」排版：藏掉标题栏和上下文 chip，只留对话列表 + 输入栏。否则标题栏 + chip
+/// 把高度吃光，输入框被裁掉，用户既输入不了也滚不动。
+const double kAiAgentTightHeight = 200;
+
 /// 装扩展类操作（D9）：确认卡片换成「要安装这个扩展吗？」的标题。
 final RegExp _kExtensionInstallOp = RegExp(
   r'^online\.(extension\.(install|update)\w*|repo\.add)$',
@@ -271,10 +276,14 @@ Future<void> _showSidePanel(
           Animation<double> secondaryAnimation,
         ) {
           final ColorScheme scheme = Theme.of(dialogContext).colorScheme;
+          // 软键盘把面板整块抬到键盘上方（对话框路由不会自己让位）。
+          final double keyboard = MediaQuery.viewInsetsOf(dialogContext).bottom;
           return Align(
             alignment: AlignmentDirectional.centerEnd,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
+            child: AnimatedPadding(
+              duration: fushiMotionDuration(dialogContext, FushiMotion.short),
+              curve: FushiMotion.standard,
+              padding: EdgeInsets.all(12) + EdgeInsets.only(bottom: keyboard),
               child: Material(
                 color: scheme.surfaceContainerLow,
                 elevation: 6,
@@ -524,9 +533,24 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<AgentEntry> entries = _controller.entries;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool tight =
+            widget.compact && constraints.maxHeight < kAiAgentTightHeight;
+        return _conversationColumn(context, tokens, entries, tight: tight);
+      },
+    );
+  }
+
+  Widget _conversationColumn(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    List<AgentEntry> entries, {
+    required bool tight,
+  }) {
     return Column(
       children: <Widget>[
-        if (widget.compact) _compactHeader(context),
+        if (widget.compact && !tight) _compactHeader(context),
         if (!widget.compact && _controller.executorLabel != null)
           _executorBar(context),
         if (!widget.compact &&
@@ -558,7 +582,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             ],
           ),
         ),
-        _composer(context),
+        _composer(context, tight: tight),
       ],
     );
   }
@@ -1186,7 +1210,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   /// MD3 下是**一层**悬浮面板：chip、输入框、按钮都直接放在面板上，输入框不再另套
   /// 一层不同底色的圆角框（面板套面板显得臃肿），按钮贴底对齐（多行输入时不悬在
   /// 中间）。Apple / 墨水屏没有外层面板，输入框自己带底色 / 描边。
-  Widget _composer(BuildContext context) {
+  Widget _composer(BuildContext context, {bool tight = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
@@ -1277,8 +1301,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              AiAgentScreenTextChip(attachment: _screenText),
-              if (contextTitle != null)
+              if (!tight) AiAgentScreenTextChip(attachment: _screenText),
+              if (contextTitle != null && !tight)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2, left: 4),
                   child: FushiInputChip(
