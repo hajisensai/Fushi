@@ -1055,6 +1055,46 @@ class FeedbackService extends ChangeNotifier {
     ];
     await _persist();
   }
+
+  /// 把另一处数据根（[spoolRoot]，结构同 `<数据根>`）里提交的反馈并进本机清单：回执
+  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的截图 / 日志挪进本机
+  /// 待传区，然后删掉 [spoolRoot]。返回并入的条数。
+  ///
+  /// 用于启动即闪退时的闪退报告（crash_report.dart）：那时数据库还没打开、数据根未解析，
+  /// 提交先落在错误日志目录下，初始化完成后由这里接手，反馈中心照常看得到进度、能重试。
+  Future<int> adoptSpool(Directory spoolRoot) async {
+    if (!spoolRoot.existsSync()) return 0;
+    await load();
+    final List<FeedbackTicket> adopted = await FeedbackTicketStore(
+      spoolRoot,
+    ).read();
+    if (adopted.isNotEmpty) {
+      final Set<String> ids = <String>{
+        for (final FeedbackTicket t in adopted) t.id,
+      };
+      _tickets = <FeedbackTicket>[
+        ...adopted,
+        for (final FeedbackTicket t in _tickets)
+          if (!ids.contains(t.id)) t,
+      ];
+      _accountTickets = _withoutLocal(_accountTickets);
+      await _persist();
+    }
+    final FeedbackPendingStore from = FeedbackPendingStore(spoolRoot);
+    final FeedbackPendingStore to = await _pendingFor();
+    final Map<String, Set<String>> pending = await from.scan();
+    for (final MapEntry<String, Set<String>> e in pending.entries) {
+      for (final String slot in e.value) {
+        final Uint8List? bytes = await from.read(e.key, slot);
+        if (bytes == null) continue;
+        await to.put(e.key, slot, bytes);
+        (_pending[e.key] ??= <String>{}).add(slot);
+      }
+    }
+    await spoolRoot.delete(recursive: true);
+    notifyListeners();
+    return adopted.length;
+  }
 }
 
 /// 一个附件槽位这次上传的结局。
