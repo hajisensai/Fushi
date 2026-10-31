@@ -212,6 +212,130 @@ void main() {
     );
   });
 
+  group('name / tag filter (heavy.dart --name/--plain-name/--tags)', () {
+    // What `flutter test --plain-name=x a b` reports when neither suite has a
+    // test named x (seen 2026-10-31): both suites load, `done: success`, no
+    // test, exit 79 (package:test's "no tests ran").
+    List<String> unmatched(List<String> suites) => <String>[
+      jsonEncode(<String, Object?>{
+        'type': 'start',
+        'protocolVersion': '0.1.1',
+      }),
+      for (int i = 0; i < suites.length; i++)
+        jsonEncode(<String, Object?>{
+          'type': 'suite',
+          'suite': <String, Object?>{
+            'id': i,
+            'path': '/abs/fushi/${suites[i]}',
+          },
+        }),
+      jsonEncode(<String, Object?>{'type': 'done', 'success': true}),
+    ];
+    DistBatchResult filtered(
+      List<String> lines, {
+      int exitCode = 0,
+      List<String> suites = files,
+    }) => DistBatchResult(
+      batchId: 1,
+      worker: 'w',
+      files: suites,
+      exitCode: exitCode,
+      lines: lines,
+      elapsed: Duration.zero,
+      filtered: true,
+    );
+
+    test('which options count as a filter', () {
+      expect(distTestFilterActive(<String>['--plain-name=x']), isTrue);
+      expect(distTestFilterActive(<String>['--name=x']), isTrue);
+      expect(distTestFilterActive(<String>['--tags=x']), isTrue);
+      expect(
+        distTestFilterActive(<String>['--exclude-tags', 'golden']),
+        isTrue,
+      );
+      expect(distTestFilterActive(<String>['-n', 'x']), isTrue);
+      expect(distTestFilterActive(<String>['--coverage']), isFalse);
+      expect(distTestFilterActive(const <String>[]), isFalse);
+    });
+
+    test('a batch whose suites match nothing is green under a filter', () {
+      final DistBatchResult none = filtered(
+        unmatched(files),
+        exitCode: kTestNoTestsRanExitCode,
+      );
+      expect(none.failure, isNull);
+      // ... but the same stream without a filter stays red (zero tests).
+      expect(
+        _result(
+          files,
+          unmatched(files),
+          exitCode: kTestNoTestsRanExitCode,
+        ).failure,
+        isNotNull,
+      );
+      // A chunked local batch: one process matched, the other did not.
+      expect(
+        filtered(<String>[
+          ..._run(<String>[files.first]),
+          ...unmatched(<String>[files.last]),
+        ], exitCode: kTestNoTestsRanExitCode).failure,
+        isNull,
+      );
+    });
+
+    test('a filter does not hide a real failure', () {
+      // Another exit code, a failed `done`, no `done` at all, a suite that
+      // never loaded: all still red.
+      expect(filtered(unmatched(files), exitCode: 1).failure, isNotNull);
+      expect(
+        filtered(
+          _run(files, success: false),
+          exitCode: kTestNoTestsRanExitCode,
+        ).failure,
+        isNotNull,
+      );
+      expect(
+        filtered(
+          unmatched(files)..removeLast(),
+          exitCode: kTestNoTestsRanExitCode,
+        ).failure,
+        isNotNull,
+      );
+      expect(
+        filtered(
+          unmatched(<String>[files.first]),
+          exitCode: kTestNoTestsRanExitCode,
+        ).failure,
+        contains('produced no events'),
+      );
+      expect(filtered(const <String>[], exitCode: 1).failure, isNotNull);
+    });
+
+    test('the run as a whole must still run a test', () {
+      final DistBatchResult none = filtered(
+        unmatched(files),
+        exitCode: kTestNoTestsRanExitCode,
+      );
+      final DistBatchResult some = filtered(_run(files));
+      expect(
+        DistRunVerdict(
+          results: <DistBatchResult>[none, some],
+          unplaced: <String>[],
+          filtered: true,
+        ).failure,
+        isNull,
+      );
+      expect(
+        DistRunVerdict(
+          results: <DistBatchResult>[none],
+          unplaced: <String>[],
+          filtered: true,
+        ).failure,
+        contains('no test matched'),
+      );
+    });
+  });
+
   group('classification re-runs', () {
     // An `error` event on the test of suite [index] in a [_run] stream.
     List<String> failing(List<String> suites, int index) {

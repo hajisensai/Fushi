@@ -355,6 +355,7 @@ Future<void> main(List<String> args) async {
 
   final DistRunVerdict verdict = DistRunVerdict(
     results: scheduler.results,
+    filtered: distTestFilterActive(options.flutterArgs),
     unplaced: <String>[
       for (final DistUnit u in <DistUnit>[...unplaceable, ...queue.remaining])
         '${u.path} (${u.label})',
@@ -436,6 +437,9 @@ class _Scheduler {
   final List<String> coverage = <String>[];
 
   bool get _coverage => flutterArgs.contains('--coverage');
+
+  /// Tests are selected by name / tag (dist_results.dart).
+  bool get _filtered => distTestFilterActive(flutterArgs);
 
   /// Three times what [worker]'s own speed predicts, plus slack, plus the
   /// fixed coverage cost of every test process the batch runs as there.
@@ -625,6 +629,7 @@ class _Scheduler {
         lines: run.lines,
         elapsed: sw.elapsed,
         infraError: run.infraError,
+        filtered: _filtered,
       );
       results.add(result);
       coverage.addAll(run.coverage);
@@ -802,6 +807,7 @@ class _Scheduler {
                 lines: run.lines,
                 elapsed: sw.elapsed,
                 infraError: run.infraError ?? run.busy,
+                filtered: _filtered,
               ),
             );
             reruns.add(
