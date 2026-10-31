@@ -10,7 +10,9 @@ void main() {
   group('videoCardOrientationForAspect', () {
     test('null（未解码/无封面）默认竖卡', () {
       expect(
-          videoCardOrientationForAspect(null), VideoCardOrientation.portrait);
+        videoCardOrientationForAspect(null),
+        VideoCardOrientation.portrait,
+      );
     });
 
     test('阈值与封面组件同一真相源（kCoverLandscapeAspectThreshold）', () {
@@ -26,9 +28,13 @@ void main() {
 
     test('典型输入：2:3 海报竖卡、16:9 截帧横卡、方图竖卡', () {
       expect(
-          videoCardOrientationForAspect(2 / 3), VideoCardOrientation.portrait);
-      expect(videoCardOrientationForAspect(16 / 9),
-          VideoCardOrientation.landscape);
+        videoCardOrientationForAspect(2 / 3),
+        VideoCardOrientation.portrait,
+      );
+      expect(
+        videoCardOrientationForAspect(16 / 9),
+        VideoCardOrientation.landscape,
+      );
       expect(videoCardOrientationForAspect(1.0), VideoCardOrientation.portrait);
     });
   });
@@ -57,8 +63,9 @@ void main() {
   group('videoRowCoverHeightForPortraitWidth', () {
     test('横滚行横卡宽 = 竖卡目标宽 × 1.5，不再是库墙的 8/3 倍', () {
       const double cardWidth = 240;
-      final double rowCoverHeight =
-          videoRowCoverHeightForPortraitWidth(cardWidth);
+      final double rowCoverHeight = videoRowCoverHeightForPortraitWidth(
+        cardWidth,
+      );
       expect(
         videoCardWidthForOrientation(
           orientation: VideoCardOrientation.landscape,
@@ -140,7 +147,10 @@ void main() {
         videoDiscoveryHeroHeightForViewport(1920, 1125),
         closeTo(1080, 0.001),
       );
-      expect(videoDiscoveryHeroHeightForViewport(1280, 900), closeTo(720, 0.001));
+      expect(
+        videoDiscoveryHeroHeightForViewport(1280, 900),
+        closeTo(720, 0.001),
+      );
     });
 
     test('高度绝不超过视口，hero 不吃满一屏以上', () {
@@ -205,9 +215,13 @@ void main() {
 
     test('值语义（PopupMenu initialValue 依赖 ==）', () {
       expect(
-          const VideoYearFilter.year(2024), const VideoYearFilter.year(2024));
+        const VideoYearFilter.year(2024),
+        const VideoYearFilter.year(2024),
+      );
       expect(
-          const VideoYearFilter.all(), isNot(const VideoYearFilter.unknown()));
+        const VideoYearFilter.all(),
+        isNot(const VideoYearFilter.unknown()),
+      );
     });
   });
 
@@ -296,7 +310,10 @@ void main() {
 
     test('非「全部」档位是同一判据的正反两面', () {
       expect(
-        matchesVideoMediaType(filter: VideoMediaTypeFilter.audio, isAudio: true),
+        matchesVideoMediaType(
+          filter: VideoMediaTypeFilter.audio,
+          isAudio: true,
+        ),
         isTrue,
       );
       expect(
@@ -307,7 +324,10 @@ void main() {
         isFalse,
       );
       expect(
-        matchesVideoMediaType(filter: VideoMediaTypeFilter.video, isAudio: true),
+        matchesVideoMediaType(
+          filter: VideoMediaTypeFilter.video,
+          isAudio: true,
+        ),
         isFalse,
       );
       expect(
@@ -334,16 +354,18 @@ void main() {
     test('14 天窗口内算最近添加；窗口外/无时间戳/未来时刻不算', () {
       expect(
         isVideoRecentlyAdded(
-          importedAt:
-              now.subtract(const Duration(days: 13)).millisecondsSinceEpoch,
+          importedAt: now
+              .subtract(const Duration(days: 13))
+              .millisecondsSinceEpoch,
           now: now,
         ),
         isTrue,
       );
       expect(
         isVideoRecentlyAdded(
-          importedAt:
-              now.subtract(const Duration(days: 15)).millisecondsSinceEpoch,
+          importedAt: now
+              .subtract(const Duration(days: 15))
+              .millisecondsSinceEpoch,
           now: now,
         ),
         isFalse,
@@ -364,42 +386,42 @@ void main() {
     test('在看优先按最近观看倒序取前 5', () {
       final List<VideoHeroCandidate<int>> candidates =
           <VideoHeroCandidate<int>>[
-        for (int i = 1; i <= 7; i++)
-          VideoHeroCandidate<int>(
-            unit: i,
-            lastWatchedAt: DateTime(2026, 7, i),
-            latestImportedAt: 100 - i,
-            hasUnfinishedTrace: true,
-          ),
-      ];
+            for (int i = 1; i <= 7; i++)
+              VideoHeroCandidate<int>(
+                unit: i,
+                lastWatchedAt: DateTime(2026, 7, i),
+                latestImportedAt: 100 - i,
+                hasUnfinishedTrace: true,
+              ),
+          ];
       expect(selectVideoHeroUnits(candidates), <int>[7, 6, 5, 4, 3]);
     });
 
     test('无在看回落最近添加（成员最近入库倒序）', () {
       final List<VideoHeroCandidate<int>> candidates =
           <VideoHeroCandidate<int>>[
-        const VideoHeroCandidate<int>(unit: 1, latestImportedAt: 10),
-        const VideoHeroCandidate<int>(unit: 2, latestImportedAt: 30),
-        const VideoHeroCandidate<int>(unit: 3, latestImportedAt: 20),
-      ];
+            const VideoHeroCandidate<int>(unit: 1, latestImportedAt: 10),
+            const VideoHeroCandidate<int>(unit: 2, latestImportedAt: 30),
+            const VideoHeroCandidate<int>(unit: 3, latestImportedAt: 20),
+          ];
       expect(selectVideoHeroUnits(candidates), <int>[2, 3, 1]);
     });
 
     test('已整套看完的合集不算在看（hasUnfinishedTrace=false 走回落池）', () {
       final List<VideoHeroCandidate<int>> candidates =
           <VideoHeroCandidate<int>>[
-        VideoHeroCandidate<int>(
-          unit: 1,
-          lastWatchedAt: DateTime(2026, 7, 30),
-          latestImportedAt: 1,
-        ),
-        VideoHeroCandidate<int>(
-          unit: 2,
-          lastWatchedAt: DateTime(2026, 7, 1),
-          latestImportedAt: 2,
-          hasUnfinishedTrace: true,
-        ),
-      ];
+            VideoHeroCandidate<int>(
+              unit: 1,
+              lastWatchedAt: DateTime(2026, 7, 30),
+              latestImportedAt: 1,
+            ),
+            VideoHeroCandidate<int>(
+              unit: 2,
+              lastWatchedAt: DateTime(2026, 7, 1),
+              latestImportedAt: 2,
+              hasUnfinishedTrace: true,
+            ),
+          ];
       // 只有 2 在看 → 在看池非空 → 只出在看的（1 不混入）。
       expect(selectVideoHeroUnits(candidates), <int>[2]);
     });
@@ -410,21 +432,21 @@ void main() {
       // 实报「置顶不是上一个观看的」。
       final List<VideoHeroCandidate<String>> candidates =
           <VideoHeroCandidate<String>>[
-        VideoHeroCandidate<String>(
-          unit: 'c:maid-dragon',
-          lastWatchedAt: DateTime(2026, 8, 1, 20),
-          hasUnfinishedTrace: true,
-        ),
-        VideoHeroCandidate<String>(
-          unit: 'b:happy-end',
-          lastWatchedAt: DateTime(2026, 8, 1, 23),
-          hasUnfinishedTrace: true,
-        ),
-      ];
-      expect(
-        selectVideoHeroUnits(candidates),
-        <String>['b:happy-end', 'c:maid-dragon'],
-      );
+            VideoHeroCandidate<String>(
+              unit: 'c:maid-dragon',
+              lastWatchedAt: DateTime(2026, 8, 1, 20),
+              hasUnfinishedTrace: true,
+            ),
+            VideoHeroCandidate<String>(
+              unit: 'b:happy-end',
+              lastWatchedAt: DateTime(2026, 8, 1, 23),
+              hasUnfinishedTrace: true,
+            ),
+          ];
+      expect(selectVideoHeroUnits(candidates), <String>[
+        'b:happy-end',
+        'c:maid-dragon',
+      ]);
     });
   });
 
@@ -531,12 +553,12 @@ void main() {
     test('继续观看：整部无痕迹 → 不进本行；位置拖回 0 且未完成 → 停在它', () {
       const List<VideoSeriesPlaybackState> untouched =
           <VideoSeriesPlaybackState>[
-        VideoSeriesPlaybackState(
-          lastWatchedAtMs: 0,
-          positionMs: 0,
-          completed: false,
-        ),
-      ];
+            VideoSeriesPlaybackState(
+              lastWatchedAtMs: 0,
+              positionMs: 0,
+              completed: false,
+            ),
+          ];
       expect(continueWatchingSeriesIndex(untouched), isNull);
       const List<VideoSeriesPlaybackState> rewound = <VideoSeriesPlaybackState>[
         VideoSeriesPlaybackState(
@@ -589,12 +611,12 @@ void main() {
       test('相邻集：看完第 7 集、第 8 集只打开过 → 都落在第 8 集', () {
         final List<VideoSeriesPlaybackState> members =
             <VideoSeriesPlaybackState>[
-          for (int i = 0; i < 6; i++) done(100 + i),
-          done(200),
-          openedOnly(300),
-          none,
-          none,
-        ];
+              for (int i = 0; i < 6; i++) done(100 + i),
+              done(200),
+              openedOnly(300),
+              none,
+              none,
+            ];
         expect(latestPlayedSeriesIndex(members), 7);
         expectAllAt(members, 7);
       });
@@ -602,12 +624,12 @@ void main() {
       test('跳集：看完第 7 集、跳到第 12 集几秒退出 → 都落在第 12 集', () {
         final List<VideoSeriesPlaybackState> members =
             <VideoSeriesPlaybackState>[
-          for (int i = 0; i < 6; i++) done(100 + i),
-          done(200),
-          for (int i = 7; i < 11; i++) none,
-          openedOnly(300),
-          none,
-        ];
+              for (int i = 0; i < 6; i++) done(100 + i),
+              done(200),
+              for (int i = 7; i < 11; i++) none,
+              openedOnly(300),
+              none,
+            ];
         expect(latestPlayedSeriesIndex(members), 11);
         expectAllAt(members, 11);
       });
@@ -631,14 +653,14 @@ void main() {
       test('有进度的锚点：继续观看与大卡停在它，下一集推进到后一集', () {
         final List<VideoSeriesPlaybackState> members =
             <VideoSeriesPlaybackState>[
-          done(100),
-          const VideoSeriesPlaybackState(
-            lastWatchedAtMs: 300,
-            positionMs: 60000,
-            completed: false,
-          ),
-          none,
-        ];
+              done(100),
+              const VideoSeriesPlaybackState(
+                lastWatchedAtMs: 300,
+                positionMs: 60000,
+                completed: false,
+              ),
+              none,
+            ];
         expect(continueWatchingSeriesIndex(members), 1);
         expect(hero(members), 1);
         expect(nextEpisodeAfterLatestPlayed(members), 2);
@@ -682,10 +704,7 @@ void main() {
     });
 
     test('两者皆无 → 0（没看过）', () {
-      expect(
-        effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: null),
-        0,
-      );
+      expect(effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: null), 0);
     });
 
     test('端到端形状：13 集本机看过、14/15 只有远端回灌时刻 → 锚点 15、下一集 16', () {
@@ -698,12 +717,18 @@ void main() {
         for (int i = 0; i < 16; i++)
           VideoSeriesPlaybackState(
             lastWatchedAtMs: switch (i) {
-              12 =>
-                effectiveWatchedAtMs(statsWatchedAtMs: t13, lastPlayedAt: t13),
-              13 =>
-                effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: t14),
-              14 =>
-                effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: t15),
+              12 => effectiveWatchedAtMs(
+                statsWatchedAtMs: t13,
+                lastPlayedAt: t13,
+              ),
+              13 => effectiveWatchedAtMs(
+                statsWatchedAtMs: 0,
+                lastPlayedAt: t14,
+              ),
+              14 => effectiveWatchedAtMs(
+                statsWatchedAtMs: 0,
+                lastPlayedAt: t15,
+              ),
               _ => 0,
             },
             positionMs: i == 12 || i == 13 || i == 14 ? 1200000 : 0,
@@ -716,38 +741,189 @@ void main() {
   });
 }
 
+VideoMetadataImageRow _img(
+  String kind,
+  int position, {
+  int id = 1,
+  int episodeId = 1,
+}) => VideoMetadataImageRow(
+  id: id,
+  episodeId: episodeId,
+  provider: 'tmdb',
+  kind: kind,
+  position: position,
+  remoteUrl: 'https://img/$episodeId/$kind/$position/$id',
+  updatedAt: 0,
+);
 
-VideoMetadataImageRow _img(String kind, int position, {int id = 1}) =>
-    VideoMetadataImageRow(
-      id: id,
-      provider: 'tmdb',
-      kind: kind,
-      position: position,
-      remoteUrl: 'https://img/$kind/$position',
-      updatedAt: 0,
-    );
+VideoFileEpisodeStills _ep(
+  int episodeId, {
+  required int episodeNumber,
+  int? seasonNumber = 1,
+  int? runtimeMinutes,
+  bool withStill = true,
+}) => VideoFileEpisodeStills(
+  episodeId: episodeId,
+  seasonNumber: seasonNumber,
+  episodeNumber: episodeNumber,
+  runtimeMinutes: runtimeMinutes,
+  stills: withStill
+      ? <VideoMetadataImageRow>[
+          _img('thumb', 0, id: episodeId * 10, episodeId: episodeId),
+        ]
+      : const <VideoMetadataImageRow>[],
+);
+
+List<int?> _stillEpisodes(List<VideoMetadataImageRow> stills) =>
+    stills.map((VideoMetadataImageRow r) => r.episodeId).toList();
 
 void orderedEpisodeStillsTests() {
   group('orderedEpisodeStills', () {
     test('keeps only thumb images, ordered by position', () {
-      final List<VideoMetadataImageRow> out = orderedEpisodeStills(
-        <VideoMetadataImageRow>[
-          _img('thumb', 2),
-          _img('poster', 0),
-          _img('backdrop', 0),
-          _img('thumb', 0),
-        ],
-      );
+      final List<VideoMetadataImageRow> out =
+          orderedEpisodeStills(<VideoMetadataImageRow>[
+            _img('thumb', 2, id: 1),
+            _img('poster', 0, id: 2),
+            _img('backdrop', 0, id: 3),
+            _img('thumb', 0, id: 4),
+          ]);
       expect(out.map((VideoMetadataImageRow r) => r.position), <int>[0, 2]);
       expect(out.every((VideoMetadataImageRow r) => r.kind == 'thumb'), isTrue);
     });
 
-    test('no thumb means empty, so the hero falls back to the poster chain', () {
+    test('equal positions are ordered by id, whatever the input order', () {
+      final List<VideoMetadataImageRow> a = <VideoMetadataImageRow>[
+        _img('thumb', 0, id: 7, episodeId: 2),
+        _img('thumb', 0, id: 3, episodeId: 1),
+        _img('thumb', 0, id: 5, episodeId: 3),
+      ];
+      final List<int> expected = <int>[3, 5, 7];
       expect(
-        orderedEpisodeStills(<VideoMetadataImageRow>[_img('poster', 0)]),
-        isEmpty,
+        orderedEpisodeStills(a).map((VideoMetadataImageRow r) => r.id),
+        expected,
       );
-      expect(orderedEpisodeStills(const <VideoMetadataImageRow>[]), isEmpty);
+      expect(
+        orderedEpisodeStills(a.reversed).map((VideoMetadataImageRow r) => r.id),
+        expected,
+      );
     });
+
+    test(
+      'no thumb means empty, so the hero falls back to the poster chain',
+      () {
+        expect(
+          orderedEpisodeStills(<VideoMetadataImageRow>[_img('poster', 0)]),
+          isEmpty,
+        );
+        expect(orderedEpisodeStills(const <VideoMetadataImageRow>[]), isEmpty);
+      },
+    );
+  });
+
+  group('resumedFileEpisodeStills（一文件多集主卡挑集）', () {
+    test('single-episode file returns that episode stills', () {
+      expect(
+        _stillEpisodes(
+          resumedFileEpisodeStills(<VideoFileEpisodeStills>[
+            _ep(4, episodeNumber: 1),
+          ], positionMs: 0),
+        ),
+        <int?>[4],
+      );
+    });
+
+    test('picks the episode whose runtime span holds the resume point', () {
+      // 01-02 合集文件：E1 24 分钟、E2 24 分钟。行序故意打乱。
+      final List<VideoFileEpisodeStills> eps = <VideoFileEpisodeStills>[
+        _ep(20, episodeNumber: 2, runtimeMinutes: 24),
+        _ep(10, episodeNumber: 1, runtimeMinutes: 24),
+      ];
+      expect(
+        _stillEpisodes(resumedFileEpisodeStills(eps, positionMs: 0)),
+        <int?>[10],
+      );
+      expect(
+        _stillEpisodes(
+          resumedFileEpisodeStills(eps, positionMs: 23 * 60000 + 59999),
+        ),
+        <int?>[10],
+      );
+      expect(
+        _stillEpisodes(resumedFileEpisodeStills(eps, positionMs: 24 * 60000)),
+        <int?>[20],
+      );
+      // 超出片长总和（刮削片长偏短）归最后一集。
+      expect(
+        _stillEpisodes(resumedFileEpisodeStills(eps, positionMs: 90 * 60000)),
+        <int?>[20],
+      );
+    });
+
+    test('a missing runtime falls back to the first episode by order', () {
+      final List<VideoFileEpisodeStills> eps = <VideoFileEpisodeStills>[
+        _ep(30, episodeNumber: 2, runtimeMinutes: 24),
+        _ep(31, episodeNumber: 1),
+      ];
+      expect(
+        _stillEpisodes(resumedFileEpisodeStills(eps, positionMs: 40 * 60000)),
+        <int?>[31],
+      );
+    });
+
+    test('episode order is season, then episode number, then row id', () {
+      final List<VideoFileEpisodeStills> eps = <VideoFileEpisodeStills>[
+        _ep(1, episodeNumber: 1, seasonNumber: null),
+        _ep(2, episodeNumber: 5, seasonNumber: 2),
+        _ep(3, episodeNumber: 12, seasonNumber: 1),
+      ];
+      expect(
+        orderFileEpisodes(
+          eps,
+        ).map((VideoFileEpisodeStills e) => e.episodeId).toList(),
+        <int>[3, 2, 1],
+      );
+      expect(
+        orderFileEpisodes(
+          eps.reversed,
+        ).map((VideoFileEpisodeStills e) => e.episodeId).toList(),
+        <int>[3, 2, 1],
+      );
+    });
+
+    test(
+      'result does not depend on row order (deterministic across refreshes)',
+      () {
+        final List<VideoFileEpisodeStills> eps = <VideoFileEpisodeStills>[
+          _ep(8, episodeNumber: 1),
+          _ep(9, episodeNumber: 2),
+        ];
+        expect(
+          _stillEpisodes(resumedFileEpisodeStills(eps, positionMs: 0)),
+          <int?>[8],
+        );
+        expect(
+          _stillEpisodes(resumedFileEpisodeStills(eps.reversed, positionMs: 0)),
+          <int?>[8],
+        );
+      },
+    );
+
+    test(
+      'resumed episode without a still yields empty, not another episode',
+      () {
+        final List<VideoFileEpisodeStills> eps = <VideoFileEpisodeStills>[
+          _ep(40, episodeNumber: 1, runtimeMinutes: 24),
+          _ep(41, episodeNumber: 2, runtimeMinutes: 24, withStill: false),
+        ];
+        expect(resumedFileEpisodeStills(eps, positionMs: 30 * 60000), isEmpty);
+        expect(
+          resumedFileEpisodeStills(
+            const <VideoFileEpisodeStills>[],
+            positionMs: 0,
+          ),
+          isEmpty,
+        );
+      },
+    );
   });
 }
