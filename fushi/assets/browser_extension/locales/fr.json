@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "La mise à jour automatique n’a pas pris effet : allez sur chrome://extensions et appuyez sur « Recharger » pour cette extension (actuelle {local} → dernière {remote})",
   "ap_update_unknown_build": "inconnue",
   "ap_profile_label": "Profil Fushi",
-  "ap_profile_hint": "Les recherches et la création de cartes dans le navigateur utilisent ce profil ; Fushi bascule dessus quand vous cherchez ici",
+  "ap_profile_hint": "Les recherches et la création de cartes dans le navigateur utilisent ce profil ; le profil actif de Fushi ne change pas",
   "ap_profile_follow_app": "Suivre Fushi ({name})",
   "ap_profile_follow_app_plain": "Suivre Fushi",
   "ap_profile_unavailable": "Liste des profils indisponible : Fushi n’est pas connecté",

@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "La actualización automática no surtió efecto: ve a chrome://extensions y pulsa «Volver a cargar» en esta extensión (actual {local} → última {remote})",
   "ap_update_unknown_build": "desconocida",
   "ap_profile_label": "Perfil de Fushi",
-  "ap_profile_hint": "Las búsquedas y la creación de tarjetas en el navegador usan este perfil; Fushi cambia a él cuando buscas aquí",
+  "ap_profile_hint": "Las búsquedas y la creación de tarjetas en el navegador usan este perfil; el perfil activo de Fushi no cambia",
   "ap_profile_follow_app": "Seguir a Fushi ({name})",
   "ap_profile_follow_app_plain": "Seguir a Fushi",
   "ap_profile_unavailable": "Lista de perfiles no disponible: Fushi no está conectado",

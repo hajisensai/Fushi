@@ -6,8 +6,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const AC = require('./auto-config.js');
+const { permissive, runtimeMock, bootBackground, sendToBackground } = require('./scripts/background-harness.js');
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 async function settle() { for (let i = 0; i < 20; i++) await flush(); }
@@ -65,16 +65,6 @@ test('sameConnection 只比 host / port / token', () => {
 
 // ── background.js 端到端（真 importScripts 装载 auto-config.js / connection-diagnostics.js）──
 
-function permissive() {
-  return new Proxy(function () {}, {
-    get(_t, key) {
-      if (key === 'then' || key === Symbol.toPrimitive) return undefined;
-      if (key === 'addListener' || key === 'removeListener') return function () {};
-      return permissive();
-    },
-    apply() { return Promise.resolve({}); },
-  });
-}
 
 /**
  * @param {object} o
@@ -110,17 +100,7 @@ function loadBackground({ boot, saved, serverKey, serverPort }) {
           onChanged: { addListener() {} },
         };
       }
-      if (key === 'runtime') {
-        return new Proxy({}, {
-          get(_t2, k2) {
-            if (k2 === 'onMessage') return { addListener(fn) { listeners.push(fn); } };
-            if (k2 === 'getURL') return (p) => 'chrome-extension://ext/' + p;
-            if (k2 === 'getManifest') return () => ({ version: '0.1.0' });
-            if (k2 === 'lastError') return undefined;
-            return permissive();
-          },
-        });
-      }
+      if (key === 'runtime') return runtimeMock(listeners);
       return permissive();
     },
   });
@@ -150,38 +130,12 @@ function loadBackground({ boot, saved, serverKey, serverPort }) {
       ? { app: 'fushi', ready: true } : { duplicate: true };
     return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
   };
-  const sandbox = {
-    chrome: chromeMock, console, fetch: fetchMock,
-    setTimeout, clearTimeout, setInterval: () => 1, clearInterval,
-    URL, TextEncoder, TextDecoder, Promise, Date, Number, String, JSON, Array, Object, Math,
-    performance, AbortController, AbortSignal, Error, TypeError, RegExp, Map, Set, Boolean,
-    isNaN, parseInt, parseFloat,
-    crypto: require('node:crypto').webcrypto,
-    btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
-    atob: (s) => Buffer.from(s, 'base64').toString('binary'),
-  };
-  sandbox.self = sandbox;
-  vm.createContext(sandbox);
-  const bootDefaults = state.disk;
-  sandbox.importScripts = (...names) => {
-    for (const name of names) {
-      const src = name === 'fushi-defaults.js'
-        ? bootDefaults : fs.readFileSync(path.join(__dirname, name), 'utf8');
-      vm.runInContext(src, sandbox, { filename: name });
-    }
-  };
-  vm.runInContext(fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8'), sandbox,
-      { filename: 'background.js' });
+  bootBackground({ chrome: chromeMock, fetch: fetchMock, defaultsSource: state.disk });
   return {
     state, calls, store,
     api(p) { return calls.filter((c) => c.kind === 'api' && c.path === p); },
     defaultsReads() { return calls.filter((c) => c.kind === 'defaults'); },
-    async send(msg) {
-      let resp;
-      for (const fn of listeners) fn(msg, {}, (r) => { resp = r; });
-      await settle();
-      return resp;
-    },
+    send: (msg) => sendToBackground(listeners, msg, settle),
     // 「app 里改了密钥 / 端口」：server 换值，同时就地重写已解压副本里的 fushi-defaults.js（build 不变）。
     appChanges({ key, port }) {
       if (key != null) state.serverKey = key;

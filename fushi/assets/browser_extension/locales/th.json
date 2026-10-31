@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "การอัปเดตอัตโนมัติไม่มีผล: ไปที่ chrome://extensions แล้วกด “โหลดซ้ำ” ที่ส่วนขยายนี้ (ปัจจุบัน {local} → ล่าสุด {remote})",
   "ap_update_unknown_build": "ไม่ทราบ",
   "ap_profile_label": "โปรไฟล์ Fushi",
-  "ap_profile_hint": "การค้นหาคำและการสร้างการ์ดในเบราว์เซอร์จะใช้โปรไฟล์นี้ และ Fushi จะสลับไปใช้โปรไฟล์นี้เมื่อคุณค้นหาที่นี่",
+  "ap_profile_hint": "การค้นหาคำและการสร้างการ์ดในเบราว์เซอร์จะใช้โปรไฟล์นี้ โดยโปรไฟล์ที่ใช้งานอยู่ใน Fushi จะไม่เปลี่ยน",
   "ap_profile_follow_app": "ตาม Fushi ({name})",
   "ap_profile_follow_app_plain": "ตาม Fushi",
   "ap_profile_unavailable": "ไม่สามารถดึงรายการโปรไฟล์: ไม่ได้เชื่อมต่อกับ Fushi",

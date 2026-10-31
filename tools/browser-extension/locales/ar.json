@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "لم يسرِ التحديث التلقائي: انتقل إلى chrome://extensions واضغط «إعادة التحميل» على هذه الإضافة (الحالي {local} → الأحدث {remote})",
   "ap_update_unknown_build": "غير معروف",
   "ap_profile_label": "ملف تعريف Fushi",
-  "ap_profile_hint": "يستخدم البحث وإنشاء البطاقات في المتصفح ملف التعريف هذا؛ ويتحوّل Fushi إليه عند البحث هنا",
+  "ap_profile_hint": "يستخدم البحث وإنشاء البطاقات في المتصفح ملف التعريف هذا؛ ولا يتغيّر ملف التعريف النشط في Fushi",
   "ap_profile_follow_app": "اتباع Fushi ({name})",
   "ap_profile_follow_app_plain": "اتباع Fushi",
   "ap_profile_unavailable": "قائمة ملفات التعريف غير متاحة: Fushi غير متصل",

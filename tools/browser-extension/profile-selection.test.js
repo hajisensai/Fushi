@@ -4,10 +4,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 
 globalThis.fushiT = require('./scripts/i18n-fixture.js').makeFushiT();
 const P = require('./profile-selection.js');
+const { permissive, runtimeMock, bootBackground, sendToBackground } = require('./scripts/background-harness.js');
 
 // ── 纯逻辑 ──
 
@@ -112,16 +112,6 @@ const flush = () => new Promise((r) => setImmediate(r));
 const plain = (v) => JSON.parse(JSON.stringify(v));
 async function settle() { for (let i = 0; i < 30; i++) await flush(); }
 
-function permissive() {
-  return new Proxy(function () {}, {
-    get(_t, key) {
-      if (key === 'then' || key === Symbol.toPrimitive) return undefined;
-      if (key === 'addListener' || key === 'removeListener') return function () {};
-      return permissive();
-    },
-    apply() { return Promise.resolve({}); },
-  });
-}
 
 /**
  * @param {object} o
@@ -160,17 +150,7 @@ function loadBackground({ saved, profiles, activeProfileId } = {}) {
           onChanged: { addListener(fn) { changeListeners.push(fn); } },
         };
       }
-      if (key === 'runtime') {
-        return new Proxy({}, {
-          get(_t2, k2) {
-            if (k2 === 'onMessage') return { addListener(fn) { listeners.push(fn); } };
-            if (k2 === 'getURL') return (p) => 'chrome-extension://ext/' + p;
-            if (k2 === 'getManifest') return () => ({ version: '0.1.0' });
-            if (k2 === 'lastError') return undefined;
-            return permissive();
-          },
-        });
-      }
+      if (key === 'runtime') return runtimeMock(listeners);
       return permissive();
     },
   });
@@ -183,9 +163,10 @@ function loadBackground({ saved, profiles, activeProfileId } = {}) {
     calls.push({ path: u.pathname, profile: requested });
     const respHeaders = new Map();
     if (requested != null) {
-      if (app.profiles.some((p) => p.id === requested)) app.activeProfileId = requested;
-      else respHeaders.set('x-fushi-profile-missing', String(requested));
-      respHeaders.set('x-fushi-profile-active', String(app.activeProfileId));
+      // app 契约：所选配置只决定这次请求读哪份设置，App 的激活配置不动；响应头回报实际生效的那份。
+      const found = app.profiles.some((p) => p.id === requested);
+      if (!found) respHeaders.set('x-fushi-profile-missing', String(requested));
+      respHeaders.set('x-fushi-profile-active', String(found ? requested : app.activeProfileId));
     }
     let body = { duplicate: false };
     if (u.pathname === '/api/extension/profiles') body = { profiles: app.profiles, activeProfileId: app.activeProfileId };
@@ -196,37 +177,15 @@ function loadBackground({ saved, profiles, activeProfileId } = {}) {
       json: async () => body, text: async () => JSON.stringify(body),
     };
   };
-  const sandbox = {
-    chrome: chromeMock, console, fetch: fetchMock,
-    setTimeout, clearTimeout, setInterval: () => 1, clearInterval,
-    URL, TextEncoder, TextDecoder, Promise, Date, Number, String, JSON, Array, Object, Math,
-    performance, AbortController, AbortSignal, Error, TypeError, RegExp, Map, Set, Boolean,
-    isNaN, parseInt, parseFloat,
-    crypto: require('node:crypto').webcrypto,
-    btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
-    atob: (s) => Buffer.from(s, 'base64').toString('binary'),
-  };
-  sandbox.self = sandbox;
-  vm.createContext(sandbox);
-  sandbox.importScripts = (...names) => {
-    for (const name of names) {
-      const src = name === 'fushi-defaults.js'
-        ? "self.FUSHI_DEFAULTS = { host: '127.0.0.1', port: 19633, token: 'k', build: 'b1' };"
-        : fs.readFileSync(path.join(__dirname, name), 'utf8');
-      vm.runInContext(src, sandbox, { filename: name });
-    }
-  };
-  vm.runInContext(fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8'), sandbox,
-    { filename: 'background.js' });
+  bootBackground({
+    chrome: chromeMock,
+    fetch: fetchMock,
+    defaultsSource: "self.FUSHI_DEFAULTS = { host: '127.0.0.1', port: 19633, token: 'k', build: 'b1' };",
+  });
   return {
     app, calls, store,
     api(p) { return calls.filter((c) => c.path === p); },
-    async send(msg) {
-      let resp;
-      for (const fn of listeners) fn(msg, {}, (r) => { resp = r; });
-      await settle();
-      return resp;
-    },
+    send: (msg) => sendToBackground(listeners, msg, settle),
   };
 }
 
@@ -263,6 +222,10 @@ test('选择即时生效：fushiSelectProfile 后下一条请求就带新配置�
   assert.equal(r.ok, true);
   assert.deepEqual(plain(bg.store.fushiProfileSelection), { id: 2, name: '英语' });
   await bg.send({ type: 'duplicate', expression: '猫', reading: 'ねこ' });
+  // 只影响扩展：带所选配置的请求之后，app 报的激活配置仍是原来那份，选择也不被「校正」掉。
+  const listed = await bg.send({ type: 'fushiProfiles' });
+  assert.equal(listed.activeProfileId, 1);
+  assert.deepEqual(plain(listed.selection), { id: 2, name: '英语' });
   await bg.send({ type: 'fushiSelectProfile', profile: null });
   assert.equal('fushiProfileSelection' in bg.store, false);
   await bg.send({ type: 'duplicate', expression: '犬', reading: 'いぬ' });
