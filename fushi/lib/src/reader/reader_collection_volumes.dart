@@ -14,6 +14,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_image_index_cache.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
@@ -53,7 +56,8 @@ class ReaderVolumeContext {
   final int collectionId;
   final String collectionName;
 
-  /// 合集内顺序（`sortIndex` 升序，与合集详情页 / 书架卡片同序）。
+  /// 卷号序（见 [readerVolumeOrder]）：同系列分卷按书名卷号升序，其余成员按合集
+  /// 内顺序（`sortIndex` 升序）殿后。
   final List<ReaderVolume> volumes;
 
   /// 当前书在 [volumes] 里的下标。
@@ -73,12 +77,14 @@ Future<ReaderVolumeContext?> loadReaderVolumeContext(
   final Map<String, int> primary = await db.getPrimaryCollectionIdByEntry();
   final int? collectionId = primary['${MediaKind.epub.dbValue}|$bookUid'];
   if (collectionId == null) return null;
-  final MediaCollectionRow? collection =
-      await db.getMediaCollectionById(collectionId);
+  final MediaCollectionRow? collection = await db.getMediaCollectionById(
+    collectionId,
+  );
   if (collection == null) return null;
   final List<ReaderVolume> volumes = <ReaderVolume>[];
-  for (final MediaCollectionItemRow item
-      in await db.getCollectionItems(collectionId)) {
+  for (final MediaCollectionItemRow item in await db.getCollectionItems(
+    collectionId,
+  )) {
     if (item.mediaType != MediaKind.epub.dbValue) continue;
     final EpubBookRow? row = await db.getEpubBookByUid(item.entryKey);
     if (row == null) continue; // 孤儿成员（书已删）→ 读取期过滤。
@@ -93,15 +99,75 @@ Future<ReaderVolumeContext?> loadReaderVolumeContext(
     );
   }
   if (volumes.length < 2) return null;
-  final int currentIndex =
-      volumes.indexWhere((ReaderVolume v) => v.uid == bookUid);
+  final List<ReaderVolume> ordered = <ReaderVolume>[
+    for (final int i in readerVolumeOrder(<String>[
+      for (final ReaderVolume v in volumes) v.title,
+    ]))
+      volumes[i],
+  ];
+  final int currentIndex = ordered.indexWhere(
+    (ReaderVolume v) => v.uid == bookUid,
+  );
   if (currentIndex < 0) return null;
   return ReaderVolumeContext(
     collectionId: collectionId,
     collectionName: collection.name,
-    volumes: volumes,
+    volumes: ordered,
     currentIndex: currentIndex,
   );
+}
+
+/// 卷切换（目录卷 chip 行 / 插图画廊卷 chip 行）的展示顺序：返回 [titles] 下标的
+/// 一个排列。
+///
+/// 用户实报（《安達としまむら》合集）：chip 行第一个是 5、接着 8……当前的 3 卷
+/// 排在最后面。根因是这里原样沿用合集成员的 `sortIndex`：手动「建系列 / 并入合集」
+/// 按选择顺序尾插，而归组时的卷序自愈（`BookSeriesGrouper._healSeriesOrder`）要求
+/// 合集**完整**可定序——混进一本「安達としまむらSS」这类番外（系列键不同）就整张
+/// 合集不排，存下来的乱序就原样进了阅读器。
+///
+/// 规则（纯函数，与 `BookSeriesGrouper` 同一卷号判据 [parseBookSeriesKey]）：
+/// - 取成员最多的那个系列键（并列取先出现的）；它至少要有 2 卷，否则原序返回
+///   （主题合集不按书名尾数乱排：「Fahrenheit 451」不是第 451 卷）。
+/// - 该系列的卷按卷号升序；书名里没有卷号的（通常就是第 1 卷「安達としまむら」）
+///   当第 0 卷排最前——与归组排序 `_compareMembers` 同一约定；同卷号按 natural 书名，
+///   再按原位（稳定）。
+/// - 其余成员（番外 / 别的系列 / 解析不出系列名的）按原相对顺序排在后面。
+List<int> readerVolumeOrder(List<String> titles) {
+  final List<BookSeriesKey?> keys = <BookSeriesKey?>[
+    for (final String title in titles) parseBookSeriesKey(title),
+  ];
+  final Map<String, int> counts = <String, int>{};
+  for (final BookSeriesKey? k in keys) {
+    if (k != null) counts[k.key] = (counts[k.key] ?? 0) + 1;
+  }
+  String? series;
+  int best = 1;
+  for (final BookSeriesKey? k in keys) {
+    if (k == null) continue;
+    final int n = counts[k.key]!;
+    if (n > best) {
+      best = n;
+      series = k.key;
+    }
+  }
+  final List<int> identity = List<int>.generate(titles.length, (int i) => i);
+  if (series == null) return identity;
+  final List<int> members = <int>[
+    for (final int i in identity)
+      if (keys[i]?.key == series) i,
+  ];
+  final List<int> others = <int>[
+    for (final int i in identity)
+      if (keys[i]?.key != series) i,
+  ];
+  members.sort((int a, int b) {
+    final int c = (keys[a]!.volume ?? 0).compareTo(keys[b]!.volume ?? 0);
+    if (c != 0) return c;
+    final int t = naturalCompare(titles[a], titles[b]);
+    return t != 0 ? t : a.compareTo(b);
+  });
+  return <int>[...members, ...others];
 }
 
 /// 由解析好的 [EpubBook] 建章节列表（与阅读器自己的 `_buildTtuToc` 同一规则：
@@ -134,8 +200,10 @@ VolumePeekParse parseVolumeBookForPeek(
     book.images;
     return (book: book, cacheFailures: const <EpubImageIndexCacheFailure>[]);
   }
-  final EpubImageIndexLoad load =
-      loadEpubImagesWithCache(book, File(cacheFile));
+  final EpubImageIndexLoad load = loadEpubImagesWithCache(
+    book,
+    File(cacheFile),
+  );
   return (book: book, cacheFailures: load.failures);
 }
 
@@ -149,10 +217,10 @@ typedef VolumePeekParse = ({
 /// 根 isolate 解析，所以在这里算好再传进去；带回的缓存失败也在这里记日志。
 Future<EpubBook> parseVolumeBookForPeekOffUi(String extractDir) async {
   final File? cacheFile = await epubImageIndexCacheFileFor(extractDir);
-  final VolumePeekParse parsed = await compute(
-    parseVolumeBookForPeek,
-    (extractDir: extractDir, cacheFile: cacheFile?.path),
-  );
+  final VolumePeekParse parsed = await compute(parseVolumeBookForPeek, (
+    extractDir: extractDir,
+    cacheFile: cacheFile?.path,
+  ));
   reportEpubImageIndexCacheFailures(
     'parseVolumeBookForPeek',
     parsed.cacheFailures,
@@ -166,12 +234,16 @@ class ReaderVolumeBookCache {
 
   Future<EpubBook> bookFor(ReaderVolume volume) {
     return _pending.putIfAbsent(volume.uid, () {
-      final Future<EpubBook> parsed =
-          parseVolumeBookForPeekOffUi(volume.extractDir);
+      final Future<EpubBook> parsed = parseVolumeBookForPeekOffUi(
+        volume.extractDir,
+      );
       unawaited(
-        parsed.then<void>((_) {}, onError: (Object _) {
-          _pending.remove(volume.uid);
-        }),
+        parsed.then<void>(
+          (_) {},
+          onError: (Object _) {
+            _pending.remove(volume.uid);
+          },
+        ),
       );
       return parsed;
     });
