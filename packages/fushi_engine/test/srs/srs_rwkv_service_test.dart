@@ -42,6 +42,9 @@ class _FakeBackend implements SrsRwkvBackend {
   int appends = 0;
   int unappends = 0;
   int rewinds = 0;
+  final List<String> snapshotPaths = <String>[];
+  final List<String> restorePaths = <String>[];
+  bool failSnapshotWrite = false;
 
   /// 分数表重算过的行数（[updateScores] 的行 + [requeryScores] 的项）。
   int scoredRows = 0;
@@ -196,6 +199,22 @@ class _FakeBackend implements SrsRwkvBackend {
       ..addAll(
         (jsonDecode(utf8.decode(snapshot)) as List<Object?>).cast<int>(),
       );
+  }
+
+  @override
+  Future<void> snapshotToFile(String path) async {
+    snapshotPaths.add(path);
+    if (failSnapshotWrite) {
+      await File(path).writeAsString('partial');
+      throw const FileSystemException('injected snapshot write failure');
+    }
+    await File(path).writeAsBytes(await snapshot(), flush: true);
+  }
+
+  @override
+  Future<void> restoreFromFile(String path) async {
+    restorePaths.add(path);
+    await restore(await File(path).readAsBytes());
   }
 
   @override
@@ -477,6 +496,84 @@ void main() {
   });
 
   group('服务', () {
+    test('流式保存失败保留旧快照和元数据，关闭后仍能恢复并追加新日志', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(2);
+      await f.graduate(cards);
+      final _FakeBackend backend = _FakeBackend();
+      final SrsRwkvService service = f.service(backend);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+
+      final String temporaryPath = backend.snapshotPaths.last;
+      final File snapshot = File(
+        temporaryPath.substring(0, temporaryPath.length - '.tmp'.length),
+      );
+      final File metadata = File('${snapshot.path}.json');
+      final Uint8List oldSnapshot = await snapshot.readAsBytes();
+      final String oldMetadata = await metadata.readAsString();
+
+      f.advance(kDay);
+      await f.store.answer(cards.first, 3);
+      await service.refresh();
+      backend.failSnapshotWrite = true;
+      final Future<void> statusClosed = service.statusChanges.drain<void>();
+      await expectLater(service.close(), throwsA(isA<FileSystemException>()));
+      await statusClosed;
+      expect(backend.closed, isTrue);
+      expect(await snapshot.readAsBytes(), oldSnapshot);
+      expect(await metadata.readAsString(), oldMetadata);
+      expect(await File(temporaryPath).readAsString(), 'partial');
+
+      final _FakeBackend restored = _FakeBackend();
+      final SrsRwkvService again = f.service(restored);
+      f.store.rwkv = again;
+      try {
+        await again.start();
+        await _settled(again);
+        expect(restored.restorePaths, <String>[snapshot.path]);
+        expect(restored.resets, 0);
+        expect(restored.replayedCards, hasLength(2));
+        // 快照之后那条没存进去的作答：对齐时按日志尾巴追加，不全量重建。
+        expect(await again.refresh(), isTrue);
+        expect(restored.resets, 0);
+        expect(restored.appends, 1);
+        expect(restored.replayedCards, hasLength(3));
+      } finally {
+        await again.close();
+      }
+    });
+
+    test('损坏的快照文件被拒绝后从日志重建，并写回可恢复的快照', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(2);
+      await f.graduate(cards);
+      final _FakeBackend first = _FakeBackend();
+      final SrsRwkvService service = f.service(first);
+      await service.start();
+      await _settled(service);
+      await service.close();
+      final String temporaryPath = first.snapshotPaths.last;
+      final File snapshot = File(
+        temporaryPath.substring(0, temporaryPath.length - '.tmp'.length),
+      );
+      await snapshot.writeAsString('corrupt');
+
+      final _FakeBackend second = _FakeBackend();
+      final SrsRwkvService again = f.service(second);
+      try {
+        await again.start();
+        await _settled(again);
+        expect(second.restorePaths, <String>[snapshot.path]);
+        expect(second.resets, 1);
+        expect(second.replayedCards, hasLength(2));
+        expect(jsonDecode(await snapshot.readAsString()), hasLength(2));
+      } finally {
+        await again.close();
+      }
+    });
+
     test('设置里重建：期间「准备中」，RWKV 牌组的复习卡等它（不退回 FSRS-7），建好回到就绪', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(3);
@@ -720,6 +817,13 @@ void main() {
       await again.start();
       await _settled(again);
       expect(second.restores, 1);
+      expect(backend.snapshotPaths, isNotEmpty);
+      expect(
+        backend.snapshotPaths.every((String p) => p.endsWith('.tmp')),
+        isTrue,
+      );
+      expect(second.restorePaths, hasLength(1));
+      expect(File(second.restorePaths.single).existsSync(), isTrue);
       expect(second.resets, 0);
       expect(second.replayedCards, hasLength(3));
       await again.close();
