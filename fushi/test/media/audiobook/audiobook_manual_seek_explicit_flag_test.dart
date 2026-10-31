@@ -113,6 +113,41 @@ void main() {
     });
   });
 
+  // 歌词模式「弹出停留」的连续播放判据只认控制器登记的跳转序号
+  // （playbackJumpSerial），不再拿墙钟与音频进度的差值去猜。
+  group('playbackJumpSerial registers every non-continuous position move', () {
+    test(
+      'seekMs / seekRelative / seekGlobalMs / skipToCue 各加一，自然 tick 不加',
+      () async {
+        final AudiobookPlayerController controller = await _loadController(
+          <AudioCue>[_cue(0), _cue(1000), _cue(2000)],
+        );
+        int serial = controller.playbackJumpSerial;
+
+        controller.debugUpdateCueForPosition(1000);
+        controller.debugUpdateCueForPosition(1500);
+        expect(controller.playbackJumpSerial, serial, reason: '顺着播的 tick 不是跳转');
+
+        await controller.skipToCue(
+          controller.chapterCuesSnapshot[2],
+          revealReader: true,
+        );
+        expect(controller.playbackJumpSerial, ++serial, reason: '显式跳句');
+
+        await controller.seekMs(2500);
+        expect(controller.playbackJumpSerial, ++serial, reason: '拖进度条');
+
+        await controller.seekRelative(-1);
+        expect(controller.playbackJumpSerial, ++serial, reason: '±10 秒步进');
+
+        await controller.seekGlobalMs(500);
+        expect(controller.playbackJumpSerial, ++serial, reason: '整书进度条');
+
+        controller.dispose();
+      },
+    );
+  });
+
   // 源码守卫：手动改位置路径必须复位抑制窗；删掉复位就会让 BUG-903 复发。
   test('源码守卫：seekMs / noteManualReaderNavigation 均复位显式 seek 抑制窗', () {
     final String src = File(

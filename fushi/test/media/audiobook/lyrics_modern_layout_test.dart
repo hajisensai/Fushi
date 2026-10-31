@@ -492,26 +492,22 @@ void main() {
   });
 
   group('continuous playback predicate', () {
-    test('normal playback counts, seeks / skips / pause do not', () {
-      bool f({
-        bool playing = true,
-        bool explicit = false,
-        int audio = 3000,
-        int wall = 3000,
-        double speed = 1,
-      }) => isContinuousLyricsPlayback(
-        playing: playing,
-        explicitNavigation: explicit,
-        audioDeltaMs: audio,
-        wallDeltaMs: wall,
-        speed: speed,
-      );
+    test('normal playback counts, registered jumps / pause do not', () {
+      bool f({bool playing = true, int jumpsBetween = 0, int audio = 3000}) =>
+          isContinuousLyricsPlayback(
+            playing: playing,
+            previousJumpSerial: 7,
+            currentJumpSerial: 7 + jumpsBetween,
+            audioDeltaMs: audio,
+          );
       expect(f(), isTrue);
-      expect(f(audio: 5800, wall: 3000, speed: 2), isTrue);
+      // 不按墙钟猜：两次观测隔得再近、音频走得再多（后台节流后一次补上来的
+      // cue 通知、高倍速），只要控制器没登记过跳转就是顺着播。
+      expect(f(audio: 60000), isTrue);
       expect(f(playing: false), isFalse);
-      expect(f(explicit: true), isFalse);
-      expect(f(audio: 13000, wall: 3000), isFalse, reason: '+10 秒');
-      expect(f(audio: -2000), isFalse, reason: '往回拖');
+      expect(f(jumpsBetween: 1), isFalse, reason: '±10 秒 / 拖进度 / 跳句');
+      expect(f(jumpsBetween: 1, audio: 500), isFalse, reason: '小幅 seek 也算跳');
+      expect(f(audio: -2000), isFalse, reason: '往回走');
     });
   });
 }

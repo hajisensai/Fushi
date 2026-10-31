@@ -312,21 +312,19 @@ const Duration kLyricsIllustrationNaturalAdvance = Duration(seconds: 90);
 
 /// 「弹出停留」的连续播放判据（纯函数）：两次观测之间是否是顺着播过去的。
 ///
-/// 只有 [playing]、不是显式跳句（[explicitNavigation]：上一句 / 下一句 / 快捷键 /
-/// 媒体键落定的那一句），且音频前进量不超过这段墙钟时间按 [speed] 该播的量（加
-/// 1.5 秒余量，吸收 cue 通知的调度抖动）才算——拖进度条、±10 秒、点行跳转都会
-/// 让音频一下子走得比墙钟快，判成跳跃、不停留。
+/// 只认控制器登记的显式跳转标记（`AudiobookPlayerController.playbackJumpSerial`）：
+/// 两次观测之间序号变了（[previousJumpSerial] != [currentJumpSerial]）就是跳过去的
+/// ——拖进度条、±10 秒、上一句 / 下一句 / 点行跳转都在控制器里登记——不停留。
+/// 另外须 [playing]，且音频没有往回走（[audioDeltaMs] < 0）。不拿墙钟与音频进度的
+/// 差值去猜（调度抖动、倍速、后台节流都会让那种判据误判）。
 bool isContinuousLyricsPlayback({
   required bool playing,
-  required bool explicitNavigation,
+  required int previousJumpSerial,
+  required int currentJumpSerial,
   required int audioDeltaMs,
-  required int wallDeltaMs,
-  required double speed,
 }) {
-  if (!playing || explicitNavigation) return false;
-  if (audioDeltaMs < 0) return false;
-  final double expected = math.max(0, wallDeltaMs) * math.max(speed, 0.1);
-  return audioDeltaMs <= expected + 1500;
+  if (!playing || previousJumpSerial != currentJumpSerial) return false;
+  return audioDeltaMs >= 0;
 }
 
 /// 歌词模式插图状态。
