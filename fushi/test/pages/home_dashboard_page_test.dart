@@ -454,16 +454,17 @@ void main() {
       final Rect study = tester.getRect(find.byKey(studyCardKey));
       final Rect continueCard = tester.getRect(find.byKey(continueCardKey));
       if (twoColumn) {
-        // 双栏：左主列「继续」，右侧栏「今日」在上、「最近添加」在下。
+        // 宽屏（2026-10-31 方案 A）：「继续」满宽在上；下面面板自适应分列——
+        // 「今日」与「最近添加」两块并排各占一列，铺满整行。
         expect(
           sectionTitle(recentCardKey, t.home_recently_added),
           findsOneWidget,
         );
-        expect(continueCard.right, lessThan(study.left));
-        expect(
-          tester.getTopLeft(find.byKey(recentCardKey)).dy,
-          greaterThan(study.bottom),
-        );
+        expect(continueCard.bottom, lessThanOrEqualTo(study.top));
+        final Rect recent = tester.getRect(find.byKey(recentCardKey));
+        expect(recent.top, closeTo(study.top, 0.5));
+        expect(recent.left, greaterThan(study.right));
+        expect(study.width, closeTo(recent.width, 0.5));
       } else {
         // 单栏：「今日」在「继续」之上。
         expect(study.bottom, lessThanOrEqualTo(continueCard.top));
@@ -515,9 +516,9 @@ void main() {
       final Rect study = tester.getRect(find.byKey(studyCardKey));
       final Rect continueCard = tester.getRect(find.byKey(continueCardKey));
       if (twoColumn) {
-        // 横屏高度紧：主角卡与今日统计并排出现在首屏。
-        expect(continueCard.right, lessThan(study.left));
-        expect(study.top, lessThan(continueCard.bottom));
+        // 横屏高度紧：主卡封面按视口高封顶，「今日」仍在首屏露头。
+        expect(continueCard.bottom, lessThanOrEqualTo(study.top));
+        expect(study.top, lessThan(size.height));
       } else {
         expect(study.bottom, lessThanOrEqualTo(continueCard.top));
         // 单栏主角卡封面高 150。
@@ -526,8 +527,8 @@ void main() {
     });
   }
 
-  testWidgets('双栏「最近添加」：侧栏带标题的紧凑列表（「类型 · 相对时间」副标题、'
-      '按导入时间倒序、与「继续」去重）；主角卡封面按主列宽放大', (WidgetTester tester) async {
+  testWidgets('宽屏「最近添加」：面板区带标题的紧凑列表（「类型 · 相对时间」副标题、'
+      '按导入时间倒序、与「继续」去重）；主角卡封面按「继续」区宽放大', (WidgetTester tester) async {
     useSize(tester, const Size(1440, 900));
     final int now = DateTime.now().millisecondsSinceEpoch;
     for (final (String, int) b in <(String, int)>[
@@ -570,7 +571,7 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 「继续」只有在读的那本：主角卡，封面高度按主列（左 3/5）宽放大。
+    // 「继续」只有在读的那本：主角卡，封面高度按「继续」区（满宽）放大。
     final HomeContinueHero h = onlyHero(tester);
     expect(h.title, '在读书');
     final double mainWidth = tester.getSize(find.byKey(continueCardKey)).width;
@@ -597,10 +598,12 @@ void main() {
         reason: '紧凑行把标题画在屏上：${r.title}',
       );
     }
-    // 在侧栏：整张卡在「继续」主列右侧。
+    // 方案 A：「继续」满宽在上，「最近添加」进下方自适应面板区。
     expect(
-      tester.getTopLeft(find.byKey(recentCardKey)).dx,
-      greaterThan(tester.getTopRight(find.byKey(continueCardKey)).dx),
+      tester.getTopLeft(find.byKey(recentCardKey)).dy,
+      greaterThanOrEqualTo(
+        tester.getBottomLeft(find.byKey(continueCardKey)).dy,
+      ),
     );
   });
 
@@ -1169,6 +1172,53 @@ void main() {
     // 长：再推满一段，等它落回原位再比。
     await tester.pump(FushiMotion.long);
     expect(tester.getRect(card), originalRect);
+  });
+
+  testWidgets('宽屏方案 A：其余条目的封面行排在主卡旁边、与主卡等高；窄屏仍排在主卡下面', (
+    WidgetTester tester,
+  ) async {
+    final MediaItem a = readingBook('书A', '书A', position: 30);
+    final MediaItem b = readingBook('书B', '书B', position: 50);
+    final MediaItem c = readingBook('书C', '书C', position: 70);
+    Future<void> pumpAt(Size size) async {
+      useSize(tester, size);
+      await tester.pumpWidget(
+        buildAppWithBooks(
+          <MediaItem>[a, b, c],
+          const <String, int>{'书A': 3, '书B': 2, '书C': 1},
+        ),
+      );
+      await pumpDashboard(tester);
+      expect(tester.takeException(), isNull);
+    }
+
+    await pumpAt(const Size(1280, 900));
+    Rect heroRect = tester.getRect(heroCard());
+    Rect rowRect = tester.getRect(
+      find.byKey(const ValueKey<String>('home-continue-row')),
+    );
+    expect(rowRect.left, greaterThan(heroRect.right));
+    // 行高含悬停放大余量，按主卡高反推封面高：两者等高（允许 1px 取整）。
+    expect(rowRect.height, closeTo(heroRect.height, 1));
+    expect(rowRect.top, closeTo(heroRect.top, 1));
+
+    await pumpAt(const Size(420, 900));
+    heroRect = tester.getRect(heroCard());
+    rowRect = tester.getRect(
+      find.byKey(const ValueKey<String>('home-continue-row')),
+    );
+    expect(rowRect.top, greaterThanOrEqualTo(heroRect.bottom));
+  });
+
+  test('面板自适应分列：按最小列宽放得下几列，且不超过面板数与 3 列', () {
+    int cols(double width, int count) =>
+        HomePanelFlow.columnsFor(width: width, count: count, gap: 16);
+    expect(cols(1300, 1), 1);
+    // 面板少：列数 = 面板数，每列更宽、铺满整行。
+    expect(cols(1300, 2), 2);
+    expect(cols(1300, 5), 3);
+    expect(cols(660, 5), 2);
+    expect(cols(500, 5), 1);
   });
 
   testWidgets('卡片比例跟着实际用到的图走：只有横版截帧的视频在横滑行是 16:9 横卡（反馈 5CTpiVJ7-v）', (

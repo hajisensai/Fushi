@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:math' as math;
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -1710,16 +1712,16 @@ class _HomeDashboardPageState
         // 版式（[dashboardUsesTwoColumns]）：
         // - 竖屏单栏：今日 → 继续 → 同步卡。手机竖屏一屏就是「今天读了多少 +
         //   接着读什么」，不再塞别的。
-        // - 横屏 / 宽屏双栏：左主列（3/5）是「继续」，右侧栏（2/5）依次是今日、
-        //   最近添加、同步卡——横屏高度紧，左右并排把主角卡和今日统计同时放进
-        //   首屏；封面按主列宽放大（[dashboardHeroCoverHeight] /
-        //   [dashboardRowCoverHeight]）。
+        // - 横屏 / 宽屏（2026-10-31 用户选定方案 A「书影主卡」，取代 3/5 + 2/5
+        //   双栏）：「继续」满宽在上——主卡在起始侧、其余在读 / 在看 / 在玩的
+        //   混排封面行在它旁边（[_buildContinueSection]）；下面是今日、可选面板、
+        //   最近添加、同步卡，按剩余宽度自适应分列（[HomePanelFlow]：面板少就
+        //   每列更宽，不在右侧留空）。封面按内容宽放大（[dashboardHeroCoverHeight]
+        //   / [dashboardRowCoverHeight]）。
         final bool twoColumn = dashboardUsesTwoColumns(constraints.biggest);
         final double contentWidth =
             constraints.maxWidth - tokens.spacing.card * 2;
-        final double mainWidth = twoColumn
-            ? (contentWidth - tokens.spacing.card) * 3 / 5
-            : contentWidth;
+        final double mainWidth = contentWidth;
         final List<_ContinueEntry> continueEntries = _collectContinueEntries(
           appModel,
           books,
@@ -1731,14 +1733,22 @@ class _HomeDashboardPageState
           tokens,
           appModel,
           continueEntries,
+          // 横屏手机高度紧：主卡封面再按视口高封顶（40%），「今日」等面板仍能
+          // 露在首屏。
           heroCoverHeight: twoColumn
-              ? dashboardHeroCoverHeight(mainWidth)
+              ? math.min(
+                  dashboardHeroCoverHeight(mainWidth),
+                  math.max(150.0, constraints.maxHeight * 0.4),
+                )
               : 150,
           rowCoverHeight: twoColumn
               ? dashboardRowCoverHeight(mainWidth)
               : _kContinueCoverHeight,
         );
-        final Widget studyCard = _buildStudySection(tokens);
+        final Widget studyCard = _buildStudySection(
+          tokens,
+          showWeek: twoColumn,
+        );
         final Widget? recentCard = twoColumn && _initialLoadDone
             ? _buildRecentlyAddedCard(tokens, appModel, books)
             : null;
@@ -1762,31 +1772,23 @@ class _HomeDashboardPageState
             : null;
         final Widget body;
         if (twoColumn) {
-          final Widget main = entering(continueCard);
-          final List<Widget> side = <Widget>[
+          final List<Widget> panels = <Widget>[
             entering(studyCard),
             for (final Widget panel in optionalPanels) entering(panel),
             if (recentCard != null) entering(recentCard),
             if (trackingCard != null) entering(trackingCard),
           ];
-          body = Row(
+          body = Column(
             key: const ValueKey<String>('home-two-column'),
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Expanded(flex: 3, child: main),
-              SizedBox(width: tokens.spacing.card),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    for (int i = 0; i < side.length; i++) ...<Widget>[
-                      if (i > 0) SizedBox(height: tokens.spacing.card),
-                      side[i],
-                    ],
-                  ],
-                ),
+              entering(continueCard),
+              SizedBox(height: tokens.spacing.card),
+              HomePanelFlow(
+                key: const ValueKey<String>('home-panel-flow'),
+                gap: tokens.spacing.card,
+                children: panels,
               ),
             ],
           );
@@ -2415,15 +2417,46 @@ class _HomeDashboardPageState
   }
 
   /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。
-  Widget _buildStudySection(FushiDesignTokens tokens) {
+  ///
+  /// [showWeek]（宽屏面板，2026-10-31 方案 A 补齐「今日」）：头部行下再挂近 7 天
+  /// 柱条（[HomeWeekBars]，与目标同口径的学习字数）。手机竖屏不挂，保持一屏
+  /// 只有「今天读了多少 + 接着读什么」。
+  Widget _buildStudySection(FushiDesignTokens tokens, {bool showWeek = false}) {
     return _sectionCard(
       tokens,
       title: t.stat_today,
       icon: FushiIcons.barChart,
       key: const ValueKey<String>('home-study-card'),
-      child: _initialLoadDone
+      child: !_initialLoadDone
+          ? const HomeGoalSkeleton()
+          : !showWeek
           ? _buildStudyHeader(tokens)
-          : const HomeGoalSkeleton(),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _buildStudyHeader(tokens),
+                SizedBox(height: tokens.spacing.gap),
+                _buildWeekBars(),
+              ],
+            ),
+    );
+  }
+
+  /// 近 7 天学习字数柱条（今天在最后）。
+  Widget _buildWeekBars() {
+    final List<String> keys = _statWindow.lastDayKeys(7);
+    final List<int> values = <int>[
+      for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
+    ];
+    final List<String> labels = <String>[
+      for (int i = 0; i < keys.length; i++)
+        '${keys[i]} · ${formatStatChars(values[i])}',
+    ];
+    return HomeWeekBars(
+      values: values,
+      labels: labels,
+      semanticLabel: '${t.stat_week_past} · ${labels.join(', ')}',
     );
   }
 
@@ -2441,7 +2474,53 @@ class _HomeDashboardPageState
   }) {
     final ModuleVisibility visibility = appModel.moduleVisibility;
     final Widget continueContent;
-    if (visible.isNotEmpty) {
+    if (visible.length > 1) {
+      continueContent = LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints c) {
+          if (c.maxWidth < _kContinueSideBySideMinWidth) {
+            return _continueStacked(
+              tokens,
+              appModel,
+              visible,
+              heroCoverHeight: heroCoverHeight,
+              rowCoverHeight: rowCoverHeight,
+            );
+          }
+          // 方案 A：主卡在起始侧，其余条目的封面行在旁边与主卡等高（行高含悬停
+          // 放大余量，见 [_continueCardsRow]），宽屏不再是主卡贴左、右边一片空。
+          final double gap = tokens.spacing.card;
+          final double mainWidth = (c.maxWidth * 0.42).clamp(440.0, 640.0);
+          final double heroHeight = FushiContinueHero.heightFor(
+            coverHeight: heroCoverHeight,
+            gap: tokens.spacing.gap,
+          );
+          return Row(
+            children: <Widget>[
+              SizedBox(
+                width: mainWidth,
+                child: _buildContinueHero(
+                  tokens,
+                  appModel,
+                  visible.first,
+                  coverHeight: heroCoverHeight,
+                  widthCap: mainWidth,
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: _continueCardsRow(
+                  tokens,
+                  appModel,
+                  visible.sublist(1),
+                  coverHeight: _continueRowCoverForHeight(heroHeight),
+                  rowKey: 'home-continue-row',
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } else if (visible.isNotEmpty) {
       continueContent = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -2512,6 +2591,47 @@ class _HomeDashboardPageState
     );
   }
 
+  /// 「继续」区宽度 ≥ 它时主卡与其余封面并排（方案 A）；更窄时主卡在上、封面行
+  /// 在下。
+  static const double _kContinueSideBySideMinWidth = 900;
+
+  /// 「继续」窄版：主卡在上，其余条目的封面横滑行在下。
+  Widget _continueStacked(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> visible, {
+    required double heroCoverHeight,
+    required double rowCoverHeight,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      _buildContinueHero(
+        tokens,
+        appModel,
+        visible.first,
+        coverHeight: heroCoverHeight,
+      ),
+      SizedBox(height: tokens.spacing.gap),
+      _continueCardsRow(
+        tokens,
+        appModel,
+        visible.sublist(1),
+        coverHeight: rowCoverHeight,
+        rowKey: 'home-continue-row',
+      ),
+    ],
+  );
+
+  /// 并排版里让封面行总高（卡高 + 上下悬停余量 [shelfHoverLiftHeadroom]）等于
+  /// 主卡高 [rowHeight] 的封面高；太矮时夹到 120（行略高于主卡，行内居中）。
+  double _continueRowCoverForHeight(double rowHeight) {
+    final double cardHeight =
+        (rowHeight - 2 * kShelfMaterialHoverRise * kFushiHoverLiftScale) /
+        kFushiHoverLiftScale;
+    return math.max(120, cardHeight - homeCoverTitleBlockHeight(context));
+  }
+
   /// 「继续」主角卡：标题与横滑卡同一显示名规则（合集成员显示合集名），副标题
   /// 是「类型 ·（合集里的这一集）·（远端设备）」，进度条右侧是与封面角标同一份
   /// 进度文案；封面走同一条 [_continueCover] 取图链（2:3 竖槽）。
@@ -2520,6 +2640,7 @@ class _HomeDashboardPageState
     AppModel appModel,
     _ContinueEntry entry, {
     required double coverHeight,
+    double? widthCap,
   }) {
     final ServerContinueCandidate? server = entry.server;
     final String? collectionName = entry.collectionName;
@@ -2546,6 +2667,7 @@ class _HomeDashboardPageState
           landscape: landscape,
         ),
         coverHeight: coverHeight,
+        widthCap: widthCap,
         landscapeCover: landscape,
         material: _continueMaterial(entry),
         eyebrow: recent > 0
