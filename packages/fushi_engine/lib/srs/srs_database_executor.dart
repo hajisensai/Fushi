@@ -1,8 +1,11 @@
-/// Drift 执行器：语句在 Rust 独占的 srs.db 写连接上执行（docs/specs/2026-10-23-srs-rust-store.md §5）。
+/// Drift 执行器：语句在 Rust 独占的 srs.db 上执行（docs/specs/2026-10-23-srs-rust-store.md §5）。
 ///
 /// 连接、文件、事务都归 Rust；Drift 只负责把查询构造器拼成 SQL、把结果映射成行类。执行器跑在
-/// 后台 isolate（与主库的 `createInBackground` 相同的形态），UI isolate 不做同步 FFI。同一条写
-/// 连接上的 Rust 命令（缓存刷新等）看得见 Drift 事务里未提交的行。
+/// 后台 isolate（与主库的 `createInBackground` 相同的形态），UI isolate 不做同步 FFI。
+///
+/// 读写分离：写语句、`runCustom`（含 Drift 用来开关事务的 BEGIN / COMMIT / SAVEPOINT）在写连接上；
+/// 查询（`runSelect`）在 Drift 事务开着时也在写连接上（同事务读得到刚写的未提交行，同一条写连接上的
+/// Rust 命令同样看得见），事务外走内核的读连接快照，不排在 Rust 的长写命令后面。
 library;
 
 import 'dart:async';
@@ -59,7 +62,7 @@ final class SrsRustDelegate extends DatabaseDelegate {
   @override
   Future<QueryResult> runSelect(String statement, List<Object?> args) async {
     final (int _, List<List<Object?>> rows) = srsDecodeRows(
-      _c.exec(statement, args, select: true),
+      _c.execQuery(statement, args),
     );
     return QueryResult(rows.first.cast<String>(), rows.sublist(1));
   }
@@ -81,7 +84,8 @@ final class SrsRustDelegate extends DatabaseDelegate {
 
   @override
   Future<void> runCustom(String statement, List<Object?> args) async {
-    // 走查询路径：PRAGMA 之类有结果行的语句也能执行（结果丢弃）。
+    // 写连接上、按查询执行：PRAGMA 之类有结果行的语句也能执行（结果丢弃）。事务控制语句必须走这里
+    // （内核据此记下 Drift 事务开没开，[runSelect] 的选路靠它），不能走 runSelect 的读连接。
     _c.exec(statement, args, select: true);
   }
 

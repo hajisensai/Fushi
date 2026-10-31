@@ -359,22 +359,3 @@ class SrsNoteView {
 
   String field(String fieldId) => fields[fieldId] ?? '';
 }
-
-/// 卡片的可编辑字段（不含排程：排程只来自日志）。
-class SrsCardFlags {
-  const SrsCardFlags({
-    required this.deckId,
-    required this.suspended,
-    required this.buriedUntilDay,
-    required this.flag,
-    this.newPosition,
-  });
-
-  final String deckId;
-  final bool suspended;
-  final int? buriedUntilDay;
-  final int flag;
-
-  /// 新卡出卡位置（[SrsFieldKeys.cardNewPosition]）；null = 没排过。
-  final int? newPosition;
-}

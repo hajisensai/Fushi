@@ -10,6 +10,7 @@ pub mod fsrs_det;
 pub mod hlc;
 pub mod id;
 pub mod keys;
+pub mod media_seal;
 pub mod op;
 pub mod replay;
 pub mod sched;

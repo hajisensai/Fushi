@@ -80,8 +80,8 @@ void main() {
     }
     core.execBatch(<String>[
       'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
-          "review_type, origin, duration_ms, json) VALUES (?, ?, ?, ?, NULL, ?, 'r', 'fushi', 0, ?)",
-      'INSERT INTO srs_event_local (event_id, profile_uid, server_time) VALUES (?, ?, ?)',
+          "review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, NULL, ?, 'r', 'fushi', 0, ?)",
+      'INSERT INTO srs_event_local (event_id, profile_uid, server_time) VALUES (srs_id(?), srs_id(?), ?)',
     ], apps);
   });
 

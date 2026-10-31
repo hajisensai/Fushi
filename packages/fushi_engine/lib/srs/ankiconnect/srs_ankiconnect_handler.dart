@@ -6,6 +6,10 @@
 /// 子请求也按这条走，Yomitan 依赖它）。字段 / 牌组 / 笔记类型一律按名字映射，牌组名「父::子」；
 /// 笔记 / 卡片 / 牌组的整数 id = [SrsIds.ankiNumericId]，笔记类型的整数 id = 它的 ankiNum。
 ///
+/// 不在 Dart 里常驻任何集合镜像（L-5）：findNotes / findCards 的搜索、canAddNotes 的库内查重、getTags 走
+/// 原生浏览会话（native/fushi_fsrs/src/store/browse.rs 的 `anki_find` / `anki_dupes` / `anki_tags`，与浏览页同一份
+/// 常驻语料、随写入增量更新）；notesInfo / cardsInfo 按 id 读缓存行与笔记寄存器。
+///
 /// HTTP 层（Origin 白名单、回环限制、CORS 预检）在 `srs_ankiconnect_endpoint.dart`。
 library;
 
@@ -25,7 +29,6 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_media.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_note_type_store.dart';
 
 /// 兼容的 AnkiConnect API 版本。
 const int kSrsAnkiConnectVersion = 6;
@@ -74,180 +77,20 @@ class _AcError implements Exception {
   String toString() => message;
 }
 
-/// 跨请求常驻的集合视图：未删除的笔记、可见的卡、查重倒排索引与搜索语料。
-///
-/// 以前每个请求都整库读卡片缓存行、整库物化笔记（变一条就全部重来），加卡、查重、搜索在大库上
-/// 每次都是秒级（HBK-AUDIT-017）。现在按 store 的变化指纹（[SrsDbStore.changeFingerprint]：笔记类型、
-/// 牌组、设置）与缓存变更日志（[SrsDbStore.cacheChangesSince]：笔记 / 卡的缓存行）增量刷新，只重读
-/// 变了的那几条；日志答不了（缓存整体重建、事务回滚、换了 store）才整份重读。
-class _Resident {
-  _Resident(this.store);
+/// 一次请求用到的结构：笔记类型（未删除）与牌组树（store 按内容指纹缓存，没有写入时不重读）。
+class _Ctx {
+  _Ctx(this.store, this.types, this.tree)
+    : typeById = <String, SrsNoteTypeView>{
+        for (final SrsNoteTypeView t in types) t.id: t,
+      };
 
   final SrsDbStore store;
-
-  /// 上次刷新时的变化指纹与缓存代号（代号 -1 = 还没读过）。
-  String fingerprint = '';
-  int generation = -1;
-
-  List<SrsNoteTypeView> types = const <SrsNoteTypeView>[];
-  Map<String, SrsNoteTypeView> typeById = <String, SrsNoteTypeView>{};
-  Map<String, int> tplOrd = <String, int>{};
-
-  /// 笔记类型里影响搜索 / 查重 / 卡片排序的部分（名字、字段、模板）；变了就重建语料、重算查重。
-  String typeSignature = '';
-  SrsDeckTree tree = SrsDeckTree(const <SrsDeckView>[]);
-
-  /// 牌组全名（搜索求值对象里带着牌组名）；变了就重建语料。
-  String deckSignature = '';
-  SrsDayContext? day;
-
-  /// 未删除的笔记，按 (createdAt, id) 排。
-  final List<SrsNoteView> notes = <SrsNoteView>[];
-  final Map<String, SrsNoteView> noteById = <String, SrsNoteView>{};
-
-  /// noteId → 可见卡片（按模板顺序 / clozeOrd 排；笔记已删除的也在，调用方按 [noteById] 过滤）。
-  final Map<String, List<SrsCardCacheRow>> cardsByNote =
-      <String, List<SrsCardCacheRow>>{};
-  final Map<String, SrsCardCacheRow> cardById = <String, SrsCardCacheRow>{};
-
-  /// noteId → (首字段原文, 查重规范形)；只含未删除、笔记类型有字段的笔记。
-  final Map<String, (String, String)> dupe = <String, (String, String)>{};
-
-  /// 查重规范形 → noteId（[dupe] 的倒排：查一条候选不再扫全集合）。
-  final Map<String, Set<String>> byNorm = <String, Set<String>>{};
-
-  /// 要重算 [dupe] 的笔记（查重时批量算：内核不可用只让查重报错，不连累别的动作）。
-  final Set<String> dupeDirty = <String>{};
-
-  _Search? search;
-
-  void dropSearch() {
-    search?.dispose();
-    search = null;
-  }
-
-  void dispose() => dropSearch();
-}
-
-/// 一组搜索求值对象连同它们的原生语料（常驻：字段值传过一次，之后的查询复用）。
-class _SearchPart {
-  _SearchPart(this.subjects)
-    : corpus = SrsSearchCorpus(
-        subjects,
-        fieldAliases: srsCardSearchFieldAliases,
-      );
-
-  final List<_CardSubject> subjects;
-  final SrsSearchCorpus corpus;
-
-  Future<List<_CardSubject>> match(SrsSearchNode node, String query) async {
-    // 只传查询要的字段列；量大（未限定字段的文本）时多 isolate 并行编码。
-    await corpus.prepare(node, query: query);
-    return <_CardSubject>[
-      for (final int i in corpus.match(node, query: query)) subjects[i],
-    ];
-  }
-
-  void dispose() => corpus.dispose();
-}
-
-/// 常驻搜索状态：建好时的全集合语料（[base]），加上之后变过的笔记的小语料（[delta]）。
-/// [base] 里 [stale] 笔记的卡不再算数，以 [delta] 为准；[stale] 攒多了就整份重建 [base]。
-///
-/// 求值对象带着建立时的「现在」：学习中卡片的「到期」在到期前 20 分钟翻转，埋卡 / 相对天数按
-/// 「今天」。[validUntil] = 下一个会翻转的时刻（最早翻转的学习卡、次日日界），过了它整份作废。
-class _Search {
-  _Search({required this.day, required this.today, required this.builtAt})
-    : validUntil = day.dayStartMs(today + 1);
-
-  final SrsDayContext day;
-  final int today;
-  final int builtAt;
-  int validUntil;
-  _SearchPart? base;
-  _SearchPart? delta;
-  final Set<String> stale = <String>{};
-
-  /// 查询串 → 命中（按 (笔记 createdAt, 笔记 id, 卡片顺序)）。任何变化都清空。
-  final Map<String, List<_CardSubject>> memo = <String, List<_CardSubject>>{};
-
-  bool validFor(SrsDayContext d, int nowMs, int todayIndex) =>
-      d.utcOffsetMin == day.utcOffsetMin &&
-      d.rolloverHour == day.rolloverHour &&
-      todayIndex == today &&
-      nowMs >= builtAt &&
-      nowMs < validUntil;
-
-  /// 这些笔记变了（内容、卡、删除）：[base] 里它们的卡作废，[delta] 下次查时重建。
-  void markStale(Iterable<String> noteIds) {
-    stale.addAll(noteIds);
-    delta?.dispose();
-    delta = null;
-    memo.clear();
-  }
-
-  /// 收紧 [validUntil]：[subjects] 里的学习中卡片在 `dueAt - 20 分钟` 翻转成到期。
-  void bound(Iterable<_CardSubject> subjects, int nowMs) {
-    for (final _CardSubject c in subjects) {
-      final SrsQueue q = c.queue;
-      if (q != SrsQueue.learning && q != SrsQueue.relearning) continue;
-      final int flip = (c.card.dueAt ?? 0) - 20 * 60000;
-      if (flip > nowMs && flip < validUntil) validUntil = flip;
-    }
-  }
-
-  void dispose() {
-    base?.dispose();
-    delta?.dispose();
-    base = null;
-    delta = null;
-    memo.clear();
-  }
-}
-
-/// 一次请求看到的集合（常驻视图 + 本请求的「现在」）。
-class _Snapshot {
-  _Snapshot(this.r, this.nowMs) : today = r.day!.dayIndexOf(nowMs);
-
-  final _Resident r;
-  final int nowMs;
-  final int today;
-
-  SrsDbStore get store => r.store;
-  List<SrsNoteTypeView> get types => r.types;
-  Map<String, SrsNoteTypeView> get typeById => r.typeById;
-  SrsDeckTree get tree => r.tree;
-  SrsDayContext get day => r.day!;
-
-  /// 未删除的笔记，按 (createdAt, id) 排。
-  List<SrsNoteView> get notes => r.notes;
-  Map<String, SrsNoteView> get noteById => r.noteById;
-
-  /// noteId → 可见卡片（按模板顺序 / clozeOrd 排）。
-  Map<String, List<SrsCardCacheRow>> get cardsByNote => r.cardsByNote;
+  final List<SrsNoteTypeView> types;
+  final Map<String, SrsNoteTypeView> typeById;
+  final SrsDeckTree tree;
 
   String deckName(String deckId) =>
       tree[deckId] == null ? '' : tree.fullName(deckId);
-}
-
-/// 一张卡作为搜索求值对象：语义与浏览页同一份（[SrsCardSearchSubject]），整数 id 走记忆化映射。
-class _CardSubject extends SrsCardSearchSubject {
-  _CardSubject(
-    _Snapshot s,
-    SrsNoteView note,
-    SrsNoteTypeView type,
-    SrsCardCacheRow card,
-    int Function(String) ids,
-  ) : super(
-        note: note,
-        noteType: type,
-        card: card,
-        deckName: s.deckName(card.deckId),
-        day: s.day,
-        nowMs: s.nowMs,
-        todayDayIndex: s.today,
-        numericId: ids,
-      );
 }
 
 /// 准备好要写的笔记（字段已按名字映射到 fieldId）。
@@ -318,6 +161,29 @@ class SrsAnkiConnectHandler {
        _fetchUrl = fetchUrl;
 
   final Future<SrsDbStore> Function() _store;
+
+  /// 兼容层在原生浏览会话（与浏览页共用）上的持有者名。
+  static const String browseOwner = 'ankiconnect';
+
+  /// 端点停用：注销兼容层对原生浏览会话的持有（浏览页还开着就留给它，否则释放）。库不可用或已经关了就不用做：
+  /// 会话住在内核里，随内核一起释放。
+  Future<void> close() async {
+    final SrsDbStore store;
+    try {
+      store = await _store();
+    } on StateError {
+      return;
+    }
+    if (store.core.isClosed) return;
+    try {
+      await store.browseCommand(<String, Object?>{
+        'op': 'browse_close',
+        'owner': browseOwner,
+      });
+    } on SrsCoreException catch (e) {
+      if (!e.message.contains('store is closed')) rethrow;
+    }
+  }
 
   /// `fushiIdentify` 回的随机实例 id。
   final String instanceId;
@@ -516,19 +382,25 @@ class SrsAnkiConnectHandler {
         }
         return <String>[for (final SrsFieldDef f in t.fields) f.name];
       case 'addNote':
-        return _addNote(await _snapshot(), _requireMap(p, 'note'), caller);
+        return _addNote(await _ctx(), _requireMap(p, 'note'), caller);
       case 'addNotes':
-        return _addNotes(await _snapshot(), _requireList(p, 'notes'), caller);
+        return _addNotes(await _ctx(), _requireList(p, 'notes'), caller);
       case 'canAddNotes':
-        final _Snapshot s = await _snapshot();
+        final _Ctx s = await _ctx();
         return <bool>[
-          for (final String? err in _tryPrepareAll(s, _requireList(p, 'notes')))
+          for (final String? err in await _tryPrepareAll(
+            s,
+            _requireList(p, 'notes'),
+          ))
             err == null,
         ];
       case 'canAddNotesWithErrorDetail':
-        final _Snapshot s = await _snapshot();
+        final _Ctx s = await _ctx();
         return <Map<String, Object?>>[
-          for (final String? err in _tryPrepareAll(s, _requireList(p, 'notes')))
+          for (final String? err in await _tryPrepareAll(
+            s,
+            _requireList(p, 'notes'),
+          ))
             switch (err) {
               null => <String, Object?>{'canAdd': true},
               final String err => <String, Object?>{
@@ -540,17 +412,11 @@ class SrsAnkiConnectHandler {
       case 'findNotes':
         final Object? q = p['query'];
         if (q == null) return <int>[];
-        return _findNotes(await _snapshot(), _asString(q, 'query'));
+        return (await _find(_asString(q, 'query'), notes: true)).ids;
       case 'findCards':
         final Object? q = p['query'];
         if (q == null) return <int>[];
-        return <int>[
-          for (final _CardSubject c in await _matchCards(
-            await _snapshot(),
-            _asString(q, 'query'),
-          ))
-            c.cardId,
-        ];
+        return (await _find(_asString(q, 'query'), notes: false)).ids;
       case 'notesInfo':
         return _notesInfo(p);
       case 'cardsInfo':
@@ -580,10 +446,15 @@ class SrsAnkiConnectHandler {
         await _editTags(p, add: false);
         return null;
       case 'getTags':
-        final _Snapshot s = await _snapshot();
-        return (<String>{
-          for (final SrsNoteView n in s.notes) ...n.tags,
-        }.toList()..sort());
+        return <String>[
+          for (final Object? t
+              in (await (await _store()).browseCommand(<String, Object?>{
+                    'op': 'anki_tags',
+                    'owner': browseOwner,
+                  })).map['tags']!
+                  as List<Object?>)
+            t! as String,
+        ];
       case 'suspend':
         return _setSuspended(_requireIntList(p, 'cards'), true);
       case 'unsuspend':
@@ -607,13 +478,11 @@ class SrsAnkiConnectHandler {
             _onGuiBrowse;
         if (browse == null) throw const _AcError('guiBrowse is not available');
         final Object? q = p['query'];
-        final List<_CardSubject> cards = q == null
-            ? const <_CardSubject>[]
-            : await _matchCards(await _snapshot(), _asString(q, 'query'));
-        await browse(q as String?, <String>[
-          for (final _CardSubject c in cards) c.card.id,
-        ]);
-        return <int>[for (final _CardSubject c in cards) c.cardId];
+        final ({List<int> ids, List<String> cards}) found = q == null
+            ? (ids: const <int>[], cards: const <String>[])
+            : await _find(_asString(q, 'query'), notes: false, uuids: true);
+        await browse(q as String?, found.cards);
+        return found.ids;
       case 'guiEditNote':
         final Future<void> Function(String)? edit = _onGuiEditNote;
         if (edit == null) throw const _AcError('guiEditNote is not available');
@@ -696,223 +565,32 @@ class SrsAnkiConnectHandler {
     return _numMemo[uuid] ??= SrsIds.ankiNumericId(uuid);
   }
 
-  _Resident? _resident;
-
-  /// 本请求的集合视图：常驻视图按 store 的变化增量刷新后，配上此刻的「现在」。
-  Future<_Snapshot> _snapshot() async {
+  /// 本请求的结构上下文（笔记类型、牌组树）。
+  Future<_Ctx> _ctx() async {
     final SrsDbStore store = await _store();
-    _Resident? r = _resident;
-    if (r == null || !identical(r.store, store)) {
-      r?.dispose();
-      r = _resident = _Resident(store);
-    }
-    await _refresh(r);
-    final (int nowMs, _) = store.now();
-    return _Snapshot(r, nowMs);
+    return _Ctx(store, await store.noteTypes(), await store.deckTree());
   }
 
-  /// 把常驻视图刷到 store 的当前状态。代号与指纹在读之前取：读的期间又有写入的话，记下的是旧
-  /// 代号，下次请求会把这段再补一遍（多读不少读）。
-  Future<void> _refresh(_Resident r) async {
-    final SrsDbStore store = r.store;
-    final String fingerprint = await store.changeFingerprint();
-    final int generation = store.cacheGeneration;
-    // 日界：profile 设置（随指纹变）或系统时区（不随指纹变）都可能改它，每次读（一条查询）。
-    final SrsDayContext day = await store.dayContext();
-    final SrsDayContext? oldDay = r.day;
-    if (oldDay == null ||
-        oldDay.utcOffsetMin != day.utcOffsetMin ||
-        oldDay.rolloverHour != day.rolloverHour) {
-      r.day = day;
-      r.dropSearch();
-    }
-    bool typesChanged = false;
-    if (fingerprint != r.fingerprint || r.generation < 0) {
-      final List<SrsNoteTypeView> types = await store.noteTypes();
-      final SrsDeckTree tree = await store.deckTree();
-      final String typeSig = _typeSignature(types);
-      final String deckSig = jsonEncode(<String>[
-        for (final SrsDeckView d in tree.decks)
-          '${d.id}\u0000${tree.fullName(d.id)}',
-      ]);
-      typesChanged = typeSig != r.typeSignature;
-      if (typesChanged || deckSig != r.deckSignature) r.dropSearch();
-      r
-        ..types = types
-        ..typeById = <String, SrsNoteTypeView>{
-          for (final SrsNoteTypeView t in types) t.id: t,
-        }
-        ..tplOrd = <String, int>{
-          for (final SrsNoteTypeView t in types)
-            for (final SrsTemplateDef d in t.templates) d.id: d.ord,
-        }
-        ..typeSignature = typeSig
-        ..tree = tree
-        ..deckSignature = deckSig;
-    }
-    if (generation != r.generation) {
-      final ({Set<String> notes, Set<String> cards})? changes = r.generation < 0
-          ? null
-          : store.cacheChangesSince(r.generation);
-      if (changes == null) {
-        await _loadAll(r);
-      } else {
-        await _applyChanges(r, changes.notes, changes.cards);
-      }
-    }
-    if (typesChanged) {
-      // 模板顺序 / 首字段可能变了：卡片重排、查重规范形全部重核（原文没变的不重算）。
-      for (final List<SrsCardCacheRow> l in r.cardsByNote.values) {
-        _sortCards(r, l);
-      }
-      r.dupeDirty.addAll(r.noteById.keys);
-    }
-    r
-      ..fingerprint = fingerprint
-      ..generation = generation;
-  }
-
-  /// 笔记类型里搜索 / 查重 / 卡片排序会用到的部分。
-  static String _typeSignature(List<SrsNoteTypeView> types) =>
-      jsonEncode(<Object?>[
-        for (final SrsNoteTypeView t in types)
-          <Object?>[
-            t.id,
-            t.name,
-            t.isCloze,
-            <String>[
-              for (final SrsFieldDef f in t.fields) '${f.id}\u0000${f.name}',
-            ],
-            <String>[
-              for (final SrsTemplateDef d in t.templates)
-                '${d.id}\u0000${d.name}\u0000${d.ord}',
-            ],
-          ],
-      ]);
-
-  void _sortCards(_Resident r, List<SrsCardCacheRow> l) {
-    l.sort((SrsCardCacheRow a, SrsCardCacheRow b) {
-      final int c = (r.tplOrd[a.templateId] ?? 0).compareTo(
-        r.tplOrd[b.templateId] ?? 0,
-      );
-      return c != 0 ? c : a.clozeOrd.compareTo(b.clozeOrd);
-    });
-  }
-
-  /// 笔记的全序：(createdAt, id)。常驻视图里的 [SrsNoteView] 与搜索求值对象带的
-  /// [SrsSubjectNote]（[SrsCardSearchSubject.note]）是同一条笔记的两种形态，必须按同一个
-  /// 键比较，命中归并（[_matchCards]）才与 [_Resident.notes] 的顺序一致。
-  static int _compareNoteKeys(
-    int aCreatedAt,
-    String aId,
-    int bCreatedAt,
-    String bId,
-  ) {
-    final int c = aCreatedAt.compareTo(bCreatedAt);
-    return c != 0 ? c : aId.compareTo(bId);
-  }
-
-  static int _compareNotes(SrsNoteView a, SrsNoteView b) =>
-      _compareNoteKeys(a.createdAt, a.id, b.createdAt, b.id);
-
-  static int _compareSubjectNotes(SrsSubjectNote a, SrsSubjectNote b) =>
-      _compareNoteKeys(a.createdAt, a.id, b.createdAt, b.id);
-
-  /// [r.notes] 里第一个不小于 [n] 的位置。
-  static int _notePos(List<SrsNoteView> notes, SrsNoteView n) {
-    int lo = 0, hi = notes.length;
-    while (lo < hi) {
-      final int mid = (lo + hi) >> 1;
-      if (_compareNotes(notes[mid], n) < 0) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    return lo;
-  }
-
-  /// 整份重读（第一次、换了 store、日志答不了时）。
-  Future<void> _loadAll(_Resident r) async {
-    final List<SrsNoteView> notes =
-        (await r.store.allNoteViews())
-            .where((SrsNoteView n) => n.deletedAt == null)
-            .toList()
-          ..sort(_compareNotes);
-    final List<SrsCardCacheRow> cards = await r.store.allCardRows();
-    r.notes
-      ..clear()
-      ..addAll(notes);
-    r.noteById
-      ..clear()
-      ..addAll(<String, SrsNoteView>{
-        for (final SrsNoteView n in notes) n.id: n,
-      });
-    r.cardsByNote.clear();
-    r.cardById.clear();
-    for (final SrsCardCacheRow c in cards) {
-      if (c.hidden) continue;
-      (r.cardsByNote[c.noteId] ??= <SrsCardCacheRow>[]).add(c);
-      r.cardById[c.id] = c;
-    }
-    for (final List<SrsCardCacheRow> l in r.cardsByNote.values) {
-      _sortCards(r, l);
-    }
-    r.dropSearch();
-    // 查重规范形：原文没变的沿用（[r.dupe] 跨整份重读保留），没了的笔记在重核时移除。
-    r.dupeDirty
-      ..addAll(r.dupe.keys)
-      ..addAll(r.noteById.keys);
-  }
-
-  /// 只重读 [noteIds] / [cardIds] 这些写过缓存行的笔记与卡（连同卡所属笔记的整组卡）。
-  Future<void> _applyChanges(
-    _Resident r,
-    Set<String> noteIds,
-    Set<String> cardIds,
-  ) async {
-    if (noteIds.isEmpty && cardIds.isEmpty) return;
-    final SrsDbStore store = r.store;
-    final Set<String> affected = <String>{
-      ...noteIds,
-      for (final SrsCardCacheRow c in await store.cardRows(cardIds)) c.noteId,
+  /// 一条笔记的可见卡（[SrsAnkiNoteInfo.cards]）排成 AnkiConnect 的顺序：模板顺序，再 clozeOrd（笔记类型里没有的
+  /// 模板当 0），交回数字 id。
+  static List<int> _cardNumsInOrder(SrsNoteTypeView t, SrsAnkiNoteInfo note) {
+    final Map<String, int> ord = <String, int>{
+      for (final SrsTemplateDef d in t.templates) d.id: d.ord,
     };
-    final Map<String, SrsNoteView?> views = noteIds.isEmpty
-        ? const <String, SrsNoteView?>{}
-        : await store.notes(noteIds);
-    final Map<String, List<SrsCardCacheRow>> cards = await store.cardsOfNotes(
-      affected,
-    );
-    for (final String id in noteIds) {
-      final SrsNoteView? old = r.noteById.remove(id);
-      if (old != null) {
-        final int at = _notePos(r.notes, old);
-        if (at < r.notes.length && r.notes[at].id == id) r.notes.removeAt(at);
-      }
-      final SrsNoteView? v = views[id];
-      if (v != null && v.deletedAt == null) {
-        r.notes.insert(_notePos(r.notes, v), v);
-        r.noteById[id] = v;
-      }
-    }
-    for (final String id in affected) {
-      for (final SrsCardCacheRow c
-          in r.cardsByNote.remove(id) ?? const <SrsCardCacheRow>[]) {
-        r.cardById.remove(c.id);
-      }
-      final List<SrsCardCacheRow> visible = <SrsCardCacheRow>[
-        for (final SrsCardCacheRow c in cards[id] ?? const <SrsCardCacheRow>[])
-          if (!c.hidden) c,
-      ];
-      if (visible.isEmpty) continue;
-      _sortCards(r, visible);
-      r.cardsByNote[id] = visible;
-      for (final SrsCardCacheRow c in visible) {
-        r.cardById[c.id] = c;
-      }
-    }
-    r.dupeDirty.addAll(noteIds);
-    r.search?.markStale(affected);
+    return <int>[
+      for (final ({int num, String templateId, int clozeOrd}) c
+          in <({int num, String templateId, int clozeOrd})>[...note.cards]
+            ..sort((
+              ({int num, String templateId, int clozeOrd}) a,
+              ({int num, String templateId, int clozeOrd}) b,
+            ) {
+              final int c = (ord[a.templateId] ?? 0).compareTo(
+                ord[b.templateId] ?? 0,
+              );
+              return c != 0 ? c : a.clozeOrd.compareTo(b.clozeOrd);
+            }))
+        c.num,
+    ];
   }
 
   /// 一组整数卡片 id 的缓存行（含隐藏的），按 `'$整数 id'` 取；不存在的不在表里。一次映射、
@@ -1026,97 +704,44 @@ class SrsAnkiConnectHandler {
         SrsSearchErrorKind.unavailable => 'search unavailable: ${e.reason}',
       });
 
-  /// [notes] 每条笔记的可见卡作为求值对象（按笔记顺序、卡片顺序）。
-  List<_CardSubject> _subjectsOf(_Snapshot s, Iterable<SrsNoteView> notes) =>
-      <_CardSubject>[
-        for (final SrsNoteView n in notes)
-          if (s.typeById[n.noteTypeId] case final SrsNoteTypeView t)
-            for (final SrsCardCacheRow c
-                in s.cardsByNote[n.id] ?? const <SrsCardCacheRow>[])
-              _CardSubject(s, n, t, c, _num),
-      ];
-
-  /// 本请求可用的常驻搜索状态：日界 / 「今天」/ 翻转时刻都没变就沿用，否则整份重建；
-  /// 作废的笔记攒多了（超过集合的 1/10）也整份重建，少的进 [_Search.delta]。
-  _Search _searchFor(_Snapshot s) {
-    final _Resident r = s.r;
-    _Search? search = r.search;
-    if (search != null && !search.validFor(s.day, s.nowMs, s.today)) {
-      r.dropSearch();
-      search = null;
-    }
-    search ??= r.search = _Search(day: s.day, today: s.today, builtAt: s.nowMs);
-    if (search.base != null &&
-        search.stale.length > max(512, r.notes.length ~/ 10)) {
-      search.dispose();
-      search = r.search = _Search(day: s.day, today: s.today, builtAt: s.nowMs);
-    }
-    if (search.base == null) {
-      final List<_CardSubject> all = _subjectsOf(s, r.notes);
-      search
-        ..base = _SearchPart(all)
-        ..stale.clear()
-        ..bound(all, s.nowMs);
-    }
-    if (search.delta == null && search.stale.isNotEmpty) {
-      final List<SrsNoteView> changed = <SrsNoteView>[
-        for (final String id in search.stale)
-          if (r.noteById[id] case final SrsNoteView n) n,
-      ]..sort(_compareNotes);
-      final List<_CardSubject> subjects = _subjectsOf(s, changed);
-      search
-        ..delta = _SearchPart(subjects)
-        ..bound(subjects, s.nowMs);
-    }
-    return search;
-  }
-
-  Future<List<_CardSubject>> _matchCards(_Snapshot s, String query) async {
+  /// findNotes / findCards：在原生浏览会话的常驻语料上求值（[SrsDbStore.browseCommand] `anki_find`），命中按
+  /// (笔记创建时刻, 笔记 id, 卡片顺序)。[notes] 为真时每条命中的笔记一个数字 id，否则每张命中的卡一个；[uuids]
+  /// 为真时另交回命中卡的 id（guiBrowse）。
+  Future<({List<int> ids, List<String> cards})> _find(
+    String query, {
+    required bool notes,
+    bool uuids = false,
+  }) async {
+    final SrsDbStore store = await _store();
     try {
       final SrsSearchNode node = parseAnkiSearch(query);
-      final _Search search = _searchFor(s);
-      final List<_CardSubject>? memo = search.memo[query];
-      if (memo != null) return memo;
-      final List<_CardSubject> base = <_CardSubject>[
-        for (final _CardSubject c in await search.base!.match(node, query))
-          if (!search.stale.contains(c.note.id)) c,
-      ];
-      final _SearchPart? deltaPart = search.delta;
-      final List<_CardSubject> delta = deltaPart == null
-          ? const <_CardSubject>[]
-          : await deltaPart.match(node, query);
-      // 两边各按 (笔记 createdAt, 笔记 id) 有序、笔记互不重叠：按笔记归并。
-      final List<_CardSubject> out;
-      if (delta.isEmpty) {
-        out = base;
-      } else {
-        out = <_CardSubject>[];
-        int i = 0, j = 0;
-        while (i < base.length || j < delta.length) {
-          if (j == delta.length ||
-              (i < base.length &&
-                  _compareSubjectNotes(base[i].note, delta[j].note) < 0)) {
-            out.add(base[i++]);
-          } else {
-            out.add(delta[j++]);
-          }
-        }
-      }
-      return search.memo[query] = List<_CardSubject>.unmodifiable(out);
+      final SrsSync2Result r = await store.browseCommand(<String, Object?>{
+        'op': 'anki_find',
+        'owner': browseOwner,
+        ...await srsBrowseContext(store, rwkvInstant: false),
+        if (node is! SrsSearchAll) 'node': srsSearchNodeJson(node),
+        'mode': notes ? 'notes' : 'cards',
+        if (uuids) 'uuids': true,
+      });
+      srsBrowseCheckResult(r.map, query);
+      final Uint8List bytes = r.files
+          .firstWhere(((String, Uint8List) f) => f.$1 == 'ids.i64')
+          .$2;
+      final ByteData d = ByteData.sublistView(bytes);
+      return (
+        ids: <int>[
+          for (int i = 0; i < bytes.length ~/ 8; i++)
+            d.getInt64(i * 8, Endian.little),
+        ],
+        cards: <String>[
+          if (uuids)
+            for (final Object? id in r.map['cards']! as List<Object?>)
+              id! as String,
+        ],
+      );
     } on SrsSearchUnsupported catch (e) {
       throw _searchError(e);
     }
-  }
-
-  Future<List<int>> _findNotes(_Snapshot s, String query) async {
-    final List<int> out = <int>[];
-    String? last;
-    for (final _CardSubject c in await _matchCards(s, query)) {
-      if (c.note.id == last) continue;
-      last = c.note.id;
-      out.add(c.noteId);
-    }
-    return out;
   }
 
   // ---------------------------------------------------------------- 加卡与查重
@@ -1132,67 +757,32 @@ class SrsAnkiConnectHandler {
     }
   }
 
-  /// 把 [_Resident.dupeDirty] 里的笔记重核进查重倒排索引：没了的移除，首字段原文没变的沿用，
-  /// 其余一次批量算规范形（一次 FFI）。内核不可用时抛 [_AcError]、脏标记留着下次再算。
-  void _ensureDupe(_Resident r) {
-    if (r.dupeDirty.isEmpty) return;
-    void unlink(String id) {
-      final (String, String)? old = r.dupe.remove(id);
-      if (old == null) return;
-      final Set<String>? same = r.byNorm[old.$2];
-      if (same == null) return;
-      same.remove(id);
-      if (same.isEmpty) r.byNorm.remove(old.$2);
-    }
-
-    final List<String> pendingIds = <String>[];
-    final List<String> pendingRaw = <String>[];
-    for (final String id in r.dupeDirty) {
-      final SrsNoteView? n = r.noteById[id];
-      final SrsNoteTypeView? t = n == null ? null : r.typeById[n.noteTypeId];
-      if (n == null || t == null || t.fields.isEmpty) {
-        unlink(id);
-        continue;
-      }
-      final String raw = n.field(t.fields.first.id);
-      if (r.dupe[id]?.$1 == raw) continue;
-      pendingIds.add(id);
-      pendingRaw.add(raw);
-    }
-    final List<String> norms = _normAll(pendingRaw);
-    for (int i = 0; i < pendingIds.length; i++) {
-      final String id = pendingIds[i];
-      unlink(id);
-      r.dupe[id] = (pendingRaw[i], norms[i]);
-      (r.byNorm[norms[i]] ??= <String>{}).add(id);
-    }
-    r.dupeDirty.clear();
-  }
-
   /// 一批候选笔记各自能不能加：能加为 null，不能加为 AnkiConnect 的错误串，按输入顺序。
-  List<String?> _tryPrepareAll(_Snapshot s, List<Object?> raws) => <String?>[
-    for (final Object r in _prepareAll(s, raws))
-      r is _AcError ? r.message : null,
-  ];
+  Future<List<String?>> _tryPrepareAll(_Ctx s, List<Object?> raws) async =>
+      <String?>[
+        for (final Object r in await _prepareAll(s, raws))
+          r is _AcError ? r.message : null,
+      ];
 
   /// AnkiConnect `createNote` + `isNoteDuplicateOrEmptyInScope`（不写库、不存媒体）。
-  _PreparedNote _prepare(_Snapshot s, Map<String, Object?> note) =>
-      switch (_prepareAll(s, <Object?>[note]).single) {
+  Future<_PreparedNote> _prepare(_Ctx s, Map<String, Object?> note) async =>
+      switch ((await _prepareAll(s, <Object?>[note])).single) {
         final _AcError e => throw e,
         final Object r => r as _PreparedNote,
       };
 
   /// 一批候选笔记逐个 [_prepare]，结果按输入顺序：[_PreparedNote] 或 [_AcError]。语义与逐条做
-  /// 相同，只是候选首字段的查重规范形先收齐、整批一次算完（一次 FFI），不在候选循环里逐条跨边界。
+  /// 相同，只是候选首字段的查重规范形先收齐、整批一次算完（一次 FFI），库内查重整批一条原生命令
+  /// （`anki_dupes`），不在候选循环里逐条跨边界。
   ///
   /// [candidates] / [norms]（与 [raws] 等长）给了就按位置记下解析好的候选与它首字段的规范形
   /// （addNotes 判批内重复用）。
-  List<Object> _prepareAll(
-    _Snapshot s,
+  Future<List<Object>> _prepareAll(
+    _Ctx s,
     List<Object?> raws, {
     List<_NoteCandidate?>? candidates,
     List<String?>? norms,
-  }) {
+  }) async {
     final List<Object> out = <Object>[];
     final List<int> pendingAt = <int>[];
     final List<String> pendingRaw = <String>[];
@@ -1221,46 +811,68 @@ class SrsAnkiConnectHandler {
         out[i] = e;
       }
     }
+    // 空首字段先判；要查库的候选（范围牌组存在）收齐成一条原生命令。
+    final Map<int, bool> dupAt = <int, bool>{};
+    final List<int> lookupAt = <int>[];
+    final List<Map<String, Object?>> lookups = <Map<String, Object?>>[];
     for (int i = 0; i < out.length; i++) {
       final Object c = out[i];
       if (c is! _NoteCandidate) continue;
       candidates?[i] = c;
       norms?[i] = normAt[i];
-      try {
-        out[i] = _checkCandidate(s, c, normAt[i]);
-      } on _AcError catch (e) {
-        out[i] = e;
+      final String? norm = normAt[i];
+      if (c.note.type.fields.isEmpty || norm == null || norm.isEmpty) {
+        out[i] = const _AcError(kSrsAnkiEmptyError);
+        continue;
       }
+      final Set<String>? dids = _scopeDecks(
+        s,
+        deckId: c.note.deckId,
+        deckScope: c.deckScope,
+        scopeDeckName: c.scopeDeckName,
+        checkChildren: c.checkChildren,
+      );
+      // 范围牌组不存在 → 不可能重复（同 AnkiConnect）。
+      if (dids != null && dids.isEmpty) {
+        dupAt[i] = false;
+        continue;
+      }
+      lookupAt.add(i);
+      lookups.add(<String, Object?>{
+        'norm': norm,
+        'type': c.note.type.id,
+        'all': c.checkAllModels,
+        'decks': dids?.toList(),
+      });
+    }
+    if (lookups.isNotEmpty) {
+      final List<Object?> dup =
+          (await s.store.browseCommand(<String, Object?>{
+                'op': 'anki_dupes',
+                'owner': browseOwner,
+                'first': <String, Object?>{
+                  for (final SrsNoteTypeView t in s.types)
+                    if (t.fields.isNotEmpty) t.id: t.fields.first.id,
+                },
+                'cands': lookups,
+              })).map['dup']!
+              as List<Object?>;
+      for (int k = 0; k < lookupAt.length; k++) {
+        dupAt[lookupAt[k]] = dup[k]! as bool;
+      }
+    }
+    for (int i = 0; i < out.length; i++) {
+      final Object c = out[i];
+      if (c is! _NoteCandidate) continue;
+      out[i] = (dupAt[i]! && !c.allowDuplicate)
+          ? const _AcError(kSrsAnkiDuplicateError)
+          : c.note;
     }
     return out;
   }
 
-  /// 空 / 重复判定（[firstNorm] = 首字段的查重规范形，笔记类型没有字段时为 null）。
-  _PreparedNote _checkCandidate(
-    _Snapshot s,
-    _NoteCandidate c,
-    String? firstNorm,
-  ) {
-    switch (_dupeOrEmpty(
-      s,
-      type: c.note.type,
-      deckId: c.note.deckId,
-      firstNorm: firstNorm,
-      deckScope: c.deckScope,
-      scopeDeckName: c.scopeDeckName,
-      checkChildren: c.checkChildren,
-      checkAllModels: c.checkAllModels,
-    )) {
-      case 1:
-        throw const _AcError(kSrsAnkiEmptyError);
-      case 2:
-        if (!c.allowDuplicate) throw const _AcError(kSrsAnkiDuplicateError);
-    }
-    return c.note;
-  }
-
   /// 按名字解析一条候选笔记（模型 / 牌组 / 字段 / 标签 / 查重选项），不查重。
-  _NoteCandidate _parseNote(_Snapshot s, Map<String, Object?> note) {
+  _NoteCandidate _parseNote(_Ctx s, Map<String, Object?> note) {
     final Object? modelName = note['modelName'];
     final SrsNoteTypeView? type = modelName is String
         ? _modelByName(s.types, modelName)
@@ -1354,46 +966,9 @@ class SrsAnkiConnectHandler {
     );
   }
 
-  /// 1 = 第一个字段为空；2 = 重复；0 = 都不是。查重 = 笔记类型字段顺序第一个字段去 HTML 后相等
-  /// （[firstNorm] 是调用方整批算好的规范形；笔记类型没有字段时为 null）。
-  int _dupeOrEmpty(
-    _Snapshot s, {
-    required SrsNoteTypeView type,
-    required String deckId,
-    required String? firstNorm,
-    required bool deckScope,
-    required String? scopeDeckName,
-    required bool checkChildren,
-    required bool checkAllModels,
-  }) {
-    final String? first = firstNorm;
-    if (type.fields.isEmpty || first == null || first.isEmpty) return 1;
-    final Set<String>? dids = _scopeDecks(
-      s,
-      deckId: deckId,
-      deckScope: deckScope,
-      scopeDeckName: scopeDeckName,
-      checkChildren: checkChildren,
-    );
-    // 范围牌组不存在 → 不可能重复（同 AnkiConnect）。
-    if (dids != null && dids.isEmpty) return 0;
-    _ensureDupe(s.r);
-    for (final String id in s.r.byNorm[first] ?? const <String>{}) {
-      final SrsNoteView? n = s.noteById[id];
-      if (n == null) continue;
-      if (!checkAllModels && n.noteTypeId != type.id) continue;
-      if (dids == null) return 2;
-      for (final SrsCardCacheRow c
-          in s.cardsByNote[n.id] ?? const <SrsCardCacheRow>[]) {
-        if (dids.contains(c.deckId)) return 2;
-      }
-    }
-    return 0;
-  }
-
   /// 查重范围内的牌组：null = 整个集合；空集 = 指定的范围牌组不存在（不可能重复）。
   static Set<String>? _scopeDecks(
-    _Snapshot s, {
+    _Ctx s, {
     required String deckId,
     required bool deckScope,
     required String? scopeDeckName,
@@ -1439,11 +1014,11 @@ class SrsAnkiConnectHandler {
   }
 
   Future<int> _addNote(
-    _Snapshot s,
+    _Ctx s,
     Map<String, Object?> note,
     SrsAnkiConnectCaller caller,
   ) async {
-    final _PreparedNote prep = _prepare(s, note);
+    final _PreparedNote prep = await _prepare(s, note);
     final Map<String, String> fields = Map<String, String>.of(prep.fieldsById);
     await _attachNoteMedia(prep.type, fields, note);
     if (!_producesCard(prep.type, fields)) {
@@ -1466,10 +1041,10 @@ class SrsAnkiConnectHandler {
   }
 
   /// AnkiConnect `addNotes`：结果与逐条 `addNote`（每条之前的已加进集合）相同——不能加的为 null，
-  /// 后面的笔记与本批前面已加的重复同样算重复。但整批只取一次快照、首字段规范形一次算完、
+  /// 后面的笔记与本批前面已加的重复同样算重复。但整批只取一次上下文、首字段规范形一次算完、
   /// 写入合成一个批次（一个事务、一次缓存刷新），不再每条笔记各重读整库一遍。
   Future<List<int?>> _addNotes(
-    _Snapshot s,
+    _Ctx s,
     List<Object?> raws,
     SrsAnkiConnectCaller caller,
   ) async {
@@ -1478,7 +1053,7 @@ class SrsAnkiConnectHandler {
       null,
     );
     final List<String?> norms = List<String?>.filled(raws.length, null);
-    final List<Object> prepared = _prepareAll(
+    final List<Object> prepared = await _prepareAll(
       s,
       raws,
       candidates: candidates,
@@ -1536,10 +1111,10 @@ class SrsAnkiConnectHandler {
     return out;
   }
 
-  /// [c] 是否与本批前面已接受的笔记重复（范围、模型选项与 [_dupeOrEmpty] 同一套；新笔记的卡
+  /// [c] 是否与本批前面已接受的笔记重复（范围、模型选项与库内查重同一套；新笔记的卡
   /// 都落在它自己的牌组里）。
   bool _duplicateInBatch(
-    _Snapshot s,
+    _Ctx s,
     _NoteCandidate c,
     String norm,
     List<(_NoteCandidate, String)> accepted,
@@ -1894,48 +1469,61 @@ class SrsAnkiConnectHandler {
   // ---------------------------------------------------------------- 信息
 
   /// 字段值对外按 Anki 的样子给：释义样式去重的引用行展开回内联 `<style>`
-  /// （外部工具读到的与它当初写进来的逐字节相同）。
+  /// （外部工具读到的与它当初写进来的逐字节相同）。整条笔记的字段一批展开（[SrsDbStore.expandStylesAll]）。
   Future<Map<String, Object?>> _fieldsInfo(
     SrsDbStore store,
     SrsNoteTypeView t,
-    SrsNoteView n,
-  ) async => <String, Object?>{
+    String Function(String fieldId) field,
+  ) async => _fieldsInfoOf(
+    t,
+    await store.expandStylesAll(<String>[
+      for (final SrsFieldDef f in t.fields) field(f.id),
+    ]),
+  );
+
+  /// [t] 的字段按序配上已展开的值（[values] 与 `t.fields` 等长同序）。
+  static Map<String, Object?> _fieldsInfoOf(
+    SrsNoteTypeView t,
+    List<String> values,
+  ) => <String, Object?>{
     for (int i = 0; i < t.fields.length; i++)
-      t.fields[i].name: <String, Object?>{
-        'value': await store.expandStyles(n.field(t.fields[i].id)),
-        'order': i,
-      },
+      t.fields[i].name: <String, Object?>{'value': values[i], 'order': i},
   };
 
+  /// notesInfo：内核一次读完数字 id 反查、笔记物化与可见卡（[SrsDbStore.ankiNotesInfo]），全部字段的样式引用
+  /// 一批展开；查询形式先 findNotes。
   Future<List<Object?>> _notesInfo(Map<String, Object?> p) async {
-    final _Snapshot s = await _snapshot();
+    final _Ctx s = await _ctx();
     final List<int> ids = p.containsKey('query') && !p.containsKey('notes')
-        ? await _findNotes(s, _requireString(p, 'query'))
+        ? (await _find(_requireString(p, 'query'), notes: true)).ids
         : _requireIntList(p, 'notes');
-    final List<String?> noteIds = await s.store.noteIdsForAnkiNumericIds(ids);
+    final List<SrsAnkiNoteInfo?> notes = await s.store.ankiNotesInfo(ids);
+    final List<SrsNoteTypeView?> types = <SrsNoteTypeView?>[
+      for (final SrsAnkiNoteInfo? n in notes)
+        n == null ? null : s.typeById[n.noteTypeId],
+    ];
+    final List<String> raw = <String>[
+      for (int k = 0; k < notes.length; k++)
+        if (types[k] != null)
+          for (final SrsFieldDef f in types[k]!.fields) notes[k]!.field(f.id),
+    ];
+    final List<String> values = await s.store.expandStylesAll(raw);
     final List<Object?> out = <Object?>[];
+    int at = 0;
     for (int k = 0; k < ids.length; k++) {
-      final int n = ids[k];
-      final String? id = noteIds[k];
-      final SrsNoteView? note = id == null ? null : s.noteById[id];
-      final SrsNoteTypeView? t = note == null
-          ? null
-          : s.typeById[note.noteTypeId];
+      final SrsAnkiNoteInfo? note = notes[k];
+      final SrsNoteTypeView? t = types[k];
       if (note == null || t == null) {
         out.add(<String, Object?>{});
         continue;
       }
       out.add(<String, Object?>{
-        'noteId': n,
+        'noteId': ids[k],
         'profile': _profile,
         'tags': note.tags,
-        'fields': await _fieldsInfo(s.store, t, note),
+        'fields': _fieldsInfoOf(t, values.sublist(at, at += t.fields.length)),
         'modelName': t.name,
-        'cards': <int>[
-          for (final SrsCardCacheRow c
-              in s.cardsByNote[note.id] ?? const <SrsCardCacheRow>[])
-            _num(c.id),
-        ],
+        'cards': _cardNumsInOrder(t, note),
       });
     }
     return out;
@@ -1960,17 +1548,25 @@ class SrsAnkiConnectHandler {
     return (type, queue);
   }
 
+  /// cardsInfo：按 id 读卡片缓存行与所属笔记（寄存器物化），一批一次读。
   Future<List<Object?>> _cardsInfo(List<int> ids) async {
-    final _Snapshot s = await _snapshot();
-    final List<String?> cardIds = await s.store.cardIdsForAnkiNumericIds(ids);
+    final _Ctx s = await _ctx();
+    final SrsDayContext day = await s.store.dayContext();
+    final int today = day.dayIndexOf(s.store.now().$1);
+    final Map<String, SrsCardCacheRow> rows = await _cardRowsByNums(
+      s.store,
+      ids,
+    );
+    final Map<String, SrsNoteView?> notes = await s.store.notes(<String>{
+      for (final SrsCardCacheRow c in rows.values) c.noteId,
+    });
     final List<Object?> out = <Object?>[];
     for (int k = 0; k < ids.length; k++) {
       final int n = ids[k];
-      final String? cid = cardIds[k];
-      // 常驻视图里只有可见卡：隐藏 / 不存在的都回 {}（与逐张查时一样）。
-      final SrsCardCacheRow? c = cid == null ? null : s.r.cardById[cid];
-      final SrsNoteView? note = c == null ? null : s.noteById[c.noteId];
-      final SrsNoteTypeView? t = note == null
+      // 隐藏 / 不存在的卡、已删的笔记都回 {}。
+      final SrsCardCacheRow? c = rows['$n'];
+      final SrsNoteView? note = c == null || c.hidden ? null : notes[c.noteId];
+      final SrsNoteTypeView? t = note == null || note.deletedAt != null
           ? null
           : s.typeById[note.noteTypeId];
       if (c == null || c.hidden || note == null || t == null) {
@@ -1981,7 +1577,7 @@ class SrsAnkiConnectHandler {
           .where((SrsTemplateDef d) => d.id == c.templateId)
           .firstOrNull;
       final int ord = t.isCloze ? max(0, c.clozeOrd - 1) : (tpl?.ord ?? 0);
-      // 卡、笔记、笔记类型、牌组都已在常驻视图里：直接交给渲染，不再逐张回库读一遍。
+      // 卡、笔记、笔记类型、牌组都已读好：直接交给渲染，不再逐张回库读一遍。
       final SrsRenderedCard? r = await s.store.renderCard(
         c.id,
         detail: SrsCardDetail(
@@ -1995,11 +1591,11 @@ class SrsAnkiConnectHandler {
           ),
         ),
       );
-      final (int type, int queue) = _ankiTypeQueue(c, s.today);
+      final (int type, int queue) = _ankiTypeQueue(c, today);
       final SrsQueue q = SrsQueue.parse(c.queue);
       out.add(<String, Object?>{
         'cardId': n,
-        'fields': await _fieldsInfo(s.store, t, note),
+        'fields': await _fieldsInfo(s.store, t, note.field),
         'fieldOrder': ord,
         'question': r?.question ?? '',
         'answer': r?.answer ?? '',

@@ -113,7 +113,10 @@ void main() {
 
   Future<int> sqlCount(String sql, String uid) async {
     final QueryRow r = await storage.db
-        .customSelect(sql, variables: <Variable<Object>>[Variable<String>(uid)])
+        .customSelect(
+          sql,
+          variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
+        )
         .getSingle();
     return r.read<int>('c');
   }

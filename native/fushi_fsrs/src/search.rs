@@ -77,6 +77,14 @@ pub struct Corpus {
     card_note: Vec<u32>,
     card_deck: Vec<u32>,
     card_tpl: Vec<u32>,
+    /// 字段排布（笔记类型 → 字段名 / 别名），[`Corpus::push_note`] 按它给新笔记排字段。
+    schema_off: Vec<u32>,
+    schema_names: Vec<u32>,
+    schema_alias: Vec<u32>,
+    /// 已移出的笔记 / 卡（[`Corpus::kill_note`] / [`Corpus::kill_card`]）：下标不复用，求值跳过。
+    note_dead: Vec<bool>,
+    card_dead: Vec<bool>,
+    dead_cards: usize,
     /// 出现过的字段名（去重）。建语料后不再变，与 FFI 句柄共享：需求分析不进语料锁。
     field_names: Arc<FieldNames>,
     /// 字段值：分批上传的文本块与每个字段在块里的位置（`chunk == MISSING` = 还没传）。
@@ -286,6 +294,12 @@ impl Corpus {
             card_note,
             card_deck,
             card_tpl,
+            schema_off,
+            schema_names,
+            schema_alias,
+            note_dead: vec![false; n_notes],
+            card_dead: vec![false; n_cards],
+            dead_cards: 0,
             field_names,
             chunks: Vec::new(),
             chunk_refs: Vec::new(),
@@ -311,6 +325,110 @@ impl Corpus {
 
     pub fn field_count(&self) -> usize {
         self.field_name.len()
+    }
+
+    /// 已移出的卡数（下标仍占着）。
+    pub fn dead_cards(&self) -> usize {
+        self.dead_cards
+    }
+
+    /// 笔记 [note] 的字段下标（字段按排布顺序）。
+    pub fn note_fields(&self, note: u32) -> std::ops::Range<usize> {
+        self.fields(note as usize)
+    }
+
+    /// 追加一个名字类字符串，交回它的 id（调用方负责去重）。
+    pub fn push_str(&mut self, s: &str) -> Result<u32, String> {
+        let id = u32::try_from(self.str_off.len() - 1).map_err(|_| "too many strings")?;
+        self.text.push_str(s);
+        let end = u32::try_from(self.text.len()).map_err(|_| "corpus text too large")?;
+        self.str_off.push(end);
+        Ok(id)
+    }
+
+    /// 追加一条笔记（笔记类型名 [type_name]、字段排布 [schema]、标签 [tags]，都是字符串 id / 排布下标），交回
+    /// 笔记下标。字段值随后用 [`Corpus::attach`] 补上。
+    pub fn push_note(&mut self, type_name: u32, schema: u32, tags: &[u32]) -> Result<u32, String> {
+        let n_str = (self.str_off.len() - 1) as u32;
+        if schema as usize + 1 >= self.schema_off.len() || type_name >= n_str || tags.iter().any(|&t| t >= n_str) {
+            return Err("bad note".into());
+        }
+        let note = u32::try_from(self.note_type.len()).map_err(|_| "too many notes")?;
+        let range = self.schema_off[schema as usize] as usize..self.schema_off[schema as usize + 1] as usize;
+        for k in range {
+            self.field_name.push(self.schema_names[k]);
+            self.field_alias.push(self.schema_alias[k]);
+            self.value_loc.push(ValueLoc {
+                chunk: MISSING,
+                start: 0,
+                end: 0,
+            });
+            self.stripped.push(OnceCell::new());
+        }
+        self.note_field_off.push(u32::try_from(self.field_name.len()).map_err(|_| "too many fields")?);
+        self.note_type.push(type_name);
+        self.tag.extend_from_slice(tags);
+        self.note_tag_off.push(u32::try_from(self.tag.len()).map_err(|_| "too many tags")?);
+        self.note_dead.push(false);
+        self.joined.push(OnceCell::new());
+        self.tags_joined.push(OnceCell::new());
+        Ok(note)
+    }
+
+    /// 追加一张卡（属于笔记 [note]，牌组名 / 模板名是字符串 id），交回卡下标。数值列下次查询前要按新的卡数重设。
+    pub fn push_card(&mut self, note: u32, deck: u32, tpl: u32) -> Result<u32, String> {
+        let n_str = (self.str_off.len() - 1) as u32;
+        if note as usize >= self.note_type.len() || deck >= n_str || tpl >= n_str {
+            return Err("bad card".into());
+        }
+        let card = u32::try_from(self.card_note.len()).map_err(|_| "too many cards")?;
+        self.card_note.push(note);
+        self.card_deck.push(deck);
+        self.card_tpl.push(tpl);
+        self.card_dead.push(false);
+        for col in &mut self.ints {
+            *col = None;
+        }
+        for col in &mut self.floats {
+            *col = None;
+        }
+        Ok(card)
+    }
+
+    /// 移出一条笔记：释放它的字段值与缓存（它的卡由调用方逐张 [`Corpus::kill_card`]）。
+    pub fn kill_note(&mut self, note: u32) {
+        let n = note as usize;
+        if self.note_dead[n] {
+            return;
+        }
+        self.note_dead[n] = true;
+        for f in self.fields(n) {
+            let loc = self.value_loc[f];
+            if loc.chunk != MISSING {
+                let refs = &mut self.chunk_refs[loc.chunk as usize];
+                *refs -= 1;
+                if *refs == 0 {
+                    self.chunks[loc.chunk as usize] = String::new();
+                }
+            }
+            self.value_loc[f] = ValueLoc {
+                chunk: MISSING,
+                start: 0,
+                end: 0,
+            };
+            self.stripped[f] = OnceCell::new();
+        }
+        self.joined[n] = OnceCell::new();
+        self.tags_joined[n] = OnceCell::new();
+    }
+
+    /// 移出一张卡：求值不再看它（`search` 的输出里恒为 0）。
+    pub fn kill_card(&mut self, card: u32) {
+        let i = card as usize;
+        if !self.card_dead[i] {
+            self.card_dead[i] = true;
+            self.dead_cards += 1;
+        }
     }
 
     pub fn set_ints(&mut self, col: usize, data: &[i64]) -> Result<(), String> {
@@ -358,6 +476,7 @@ impl Corpus {
         let chunk = u32::try_from(self.chunks.len()).map_err(|_| "too many chunks")?;
         self.chunks.push(text);
         self.chunk_refs.push(0);
+        let mut overwrote = false;
         for (k, &f) in fields.iter().enumerate() {
             let f = f as usize;
             let old = self.value_loc[f];
@@ -376,11 +495,17 @@ impl Corpus {
             };
             if old.chunk != MISSING {
                 self.stripped[f] = OnceCell::new();
+                overwrote = true;
             }
         }
-        // 覆盖了字段值：拼接缓存全部作废（极少发生：Dart 侧只在补传全部字段时覆盖）。
-        for cell in &mut self.joined {
-            cell.take();
+        // 覆盖了字段值：拼接缓存全部作废（极少发生：只在补传全部字段时覆盖）。
+        if overwrote {
+            for cell in &mut self.joined {
+                cell.take();
+            }
+        }
+        if self.chunk_refs[chunk as usize] == 0 {
+            self.chunks[chunk as usize] = String::new();
         }
         Ok(())
     }
@@ -486,6 +611,15 @@ impl Corpus {
         self.field_names.needs(query)
     }
 
+    /// 一条查询求值要读的数值列：(整数列位图, 小数列位图)，第 k 位 = 列号 k（[`IntColumn`] / [`FloatColumn`]）。
+    /// 调用方只需在求值前设好这几列。
+    pub fn columns_used(query: &str) -> Result<(u32, u32), SearchError> {
+        let compiled = Self::parse(query)?;
+        let mut mask = (0u32, 0u32);
+        collect_columns(&compiled, &mut mask);
+        Ok(mask)
+    }
+
     /// 本语料的字段名表（只读，可以拿出去在语料锁外做需求分析）。
     pub fn field_names(&self) -> Arc<FieldNames> {
         Arc::clone(&self.field_names)
@@ -499,7 +633,9 @@ impl Corpus {
 
     /// 字段名属于 [names] 的字段（全部字段时 [names] 为 None）。
     fn needed_fields(&self, names: Option<&[u32]>) -> Vec<usize> {
-        (0..self.field_count())
+        (0..self.note_type.len())
+            .filter(|&n| !self.note_dead[n])
+            .flat_map(|n| self.fields(n))
             .filter(|&f| names.map_or(true, |ns| ns.binary_search(&self.field_name[f]).is_ok()))
             .collect()
     }
@@ -521,7 +657,7 @@ impl Corpus {
             return Err(SearchError::internal("field values not uploaded"));
         }
         self.prestrip(&compiled);
-        let all: Vec<u32> = (0..self.card_count() as u32).collect();
+        let all: Vec<u32> = (0..self.card_count() as u32).filter(|&i| !self.card_dead[i as usize]).collect();
         let hits = self.eval(&compiled, all)?;
         out.fill(0);
         for &i in &hits {
@@ -725,6 +861,18 @@ impl Corpus {
                 *memo.entry(n).or_insert_with(|| pred(n as usize))
             })
             .collect()
+    }
+}
+
+fn collect_columns(node: &Compiled, mask: &mut (u32, u32)) {
+    match node {
+        Compiled::And(c) | Compiled::Or(c) => c.iter().for_each(|child| collect_columns(child, mask)),
+        Compiled::Not(c) => collect_columns(c, mask),
+        Compiled::State(_) => mask.0 |= 1 << IntColumn::State as u32,
+        Compiled::IntEq(col, _) | Compiled::IntProp(col, ..) | Compiled::IdIn(col, _) => mask.0 |= 1 << *col as u32,
+        Compiled::WithinDays(col, _) => mask.0 |= (1 << *col as u32) | (1 << IntColumn::Today as u32),
+        Compiled::FloatProp(col, ..) => mask.1 |= 1 << *col as u32,
+        _ => {}
     }
 }
 
@@ -1225,7 +1373,7 @@ pub fn strip_html(html: &str) -> String {
 // ------------------------------------------------------------------ 查重规范形
 
 /// Dart `String.trim` 的空白：Unicode White_Space 加 BOM（U+FEFF）。
-fn is_dart_trim_space(c: char) -> bool {
+pub(crate) fn is_dart_trim_space(c: char) -> bool {
     c.is_whitespace() || c == '\u{FEFF}'
 }
 
@@ -1241,6 +1389,81 @@ pub fn dupe_norm(field: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 搜索内核的回归向量：tests/fixtures/search_kernel_vectors.json.zst 是删掉 Dart `SrsSearchCorpus` 之前，
+    /// packages/fushi_srs/test/search 下 anki_search_test / search_engine_differences_test / search_parity_test
+    /// 经那层 Dart 包装喂给内核的**原样输入**（语料布局与名字表、分批上传的字段值、数值列）与内核当时的输出
+    /// （每条查询的命中位图，或语法 / 内部错误），由临时埋在 FFI 入口的记录钩子录下（2026-10-30 L-5）。Dart
+    /// 那几份测试的断言都落在这些输出上；包装删了，这里直接对拍内核。重录：把录下的 JSON 路径放进
+    /// `FFSRS_SEARCH_VECTORS_FROM` 跑本测试，会先把它压成 fixture。
+    #[test]
+    fn kernel_vectors_from_the_dart_search_tests() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/search_kernel_vectors.json.zst");
+        if let Ok(src) = std::env::var("FFSRS_SEARCH_VECTORS_FROM") {
+            let raw = std::fs::read(src).unwrap();
+            let frame = ruzstd::encoding::compress_to_vec(raw.as_slice(), ruzstd::encoding::CompressionLevel::Fastest);
+            std::fs::write(path, frame).unwrap();
+        }
+        let frame = std::fs::read(path).unwrap();
+        let mut decoder = ruzstd::decoding::StreamingDecoder::new(frame.as_slice()).unwrap();
+        let mut raw = Vec::new();
+        std::io::Read::read_to_end(&mut decoder, &mut raw).unwrap();
+        let sessions: Vec<serde_json::Value> = serde_json::from_slice(&raw).unwrap();
+        let u32s = |v: &serde_json::Value| -> Vec<u32> { v.as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect() };
+        let (mut matches, mut errors) = (0usize, 0usize);
+        for (k, s) in sessions.iter().enumerate() {
+            let mut c = Corpus::new(s["text"].as_str().unwrap().as_bytes(), &u32s(&s["layout"])).unwrap();
+            for st in s["steps"].as_array().unwrap() {
+                match st["op"].as_str().unwrap() {
+                    "attach" => {
+                        let _ = c.attach(st["text"].as_str().unwrap().to_owned(), &u32s(&st["fields"]), &u32s(&st["spans"]));
+                    }
+                    "ints" => {
+                        let data: Vec<i64> = st["data"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+                        let _ = c.set_ints(st["col"].as_u64().unwrap() as usize, &data);
+                    }
+                    "floats" => {
+                        let data: Vec<f64> = st["data"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap_or(f64::NAN)).collect();
+                        let _ = c.set_floats(st["col"].as_u64().unwrap() as usize, &data);
+                    }
+                    "match" => {
+                        let q = st["q"].as_str().unwrap();
+                        let mut out = vec![0u8; c.card_count()];
+                        let got = c.search(q, &mut out);
+                        if let Some(kind) = st.get("err").and_then(|e| e.as_str()) {
+                            let e = got.err().unwrap_or_else(|| panic!("session {k}: expected {kind} error for {q}"));
+                            assert_eq!(e.kind, kind, "session {k}: {q}");
+                            errors += 1;
+                        } else {
+                            got.unwrap_or_else(|e| panic!("session {k}: {q}: {}", e.reason));
+                            let mut bits = vec![0u8; out.len().div_ceil(8)];
+                            for (i, &b) in out.iter().enumerate() {
+                                if b != 0 {
+                                    bits[i >> 3] |= 1 << (i & 7);
+                                }
+                            }
+                            let hex: String = bits.iter().map(|b| format!("{b:02x}")).collect();
+                            assert_eq!(hex, st["bits"].as_str().unwrap(), "session {k}: {q}");
+                            matches += 1;
+                        }
+                    }
+                    op => panic!("unknown step {op}"),
+                }
+            }
+        }
+        assert_eq!(sessions.len(), 159);
+        assert_eq!(matches + errors, 5575);
+        // 那几份 Dart 测试里的求值错误都在求值前的需求分析（`needs`）就报了，没走到 match：录下的全是命中位图。
+        // search_engine_differences_test 的「Rust regex 不支持的 → 语法错误」与 anki_search_test 的不合法 `re:`
+        // 在这里直接测编译。
+        assert_eq!(errors, 0);
+        for v in ["a(?=b)", "a(?!b)", "(?<=a)b", r"(a)\1", r"(?<n>a)\k<n>", "[^]", "(abc"] {
+            let q = serde_json::json!({"t": "re", "v": v, "at": format!("re:{v}")}).to_string();
+            let e = Corpus::columns_used(&q).err().unwrap_or_else(|| panic!("{v} must not compile"));
+            assert_eq!(e.kind, "syntax", "{v}");
+        }
+    }
+
 
     /// 测试语料：每条笔记一个字段排布；[joined_layout] 为 true 时按 Dart 补传全部字段的形状上传
     /// （同一笔记的字段紧挨着、隔 0x1f），否则每个字段值单独一块（走拼接缓存）。

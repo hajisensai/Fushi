@@ -167,6 +167,8 @@ void main() {
       )).uploaded,
       3,
     );
+    // 名字 → 内容的绑定是操作：A 再同步一次，B 才知道这些样式文件是哪份内容。
+    await sync(a);
     await sync(b);
     // 媒体还没到：渲染时去掉引用行（不请求相对地址），回读保留引用行。
     final (String q0, String a0) = await render(b, id);
