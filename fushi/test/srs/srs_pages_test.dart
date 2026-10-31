@@ -2073,7 +2073,7 @@ void main() {
     }
   });
 
-  testWidgets('RWKV 排队时评分按钮不显示进复习队列的天数；学习步与 RWKV 没就绪时照常显示', (
+  testWidgets('RWKV 牌组评分按钮不显示进复习队列的天数（RWKV 没就绪也不显示）；学习步照常显示', (
     WidgetTester tester,
   ) async {
     for (final bool ready in <bool>[true, false]) {
@@ -2110,11 +2110,9 @@ void main() {
           .length;
       // 新卡：「重来」进学习步（分钟），「简单」直接毕业进复习队列（天数）。
       expect(texts(1), 2, reason: '学习步按步长计时，ready=$ready');
-      expect(
-        texts(4),
-        ready ? 1 : 2,
-        reason: ready ? 'RWKV 排队：天数不是它真正回来的时间' : 'RWKV 没就绪：按存下的到期日排队',
-      );
+      // RWKV 没就绪也一样（PR #2711）：RWKV 牌组的复习卡等 RWKV 就绪后按 R 出，不退回按存下的到期日排，
+      // 所以 FSRS-7 的天数同样不是它回来的时间。
+      expect(texts(4), 1, reason: 'RWKV 排队：天数不是它真正回来的时间，ready=$ready');
       await _unmount(tester);
     }
   });

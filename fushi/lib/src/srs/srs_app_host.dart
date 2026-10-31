@@ -7,12 +7,15 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_term_status_bridge.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show SrsExtensionApi;
 import 'package:fushi/utils.dart';
@@ -83,10 +86,15 @@ void debugResetSrsNoteEditorLock() => _srsOpenNoteEditors.clear();
 /// 在 [navigator] 上压一页笔记编辑（弹窗 / 外部工具打开卡片）。同一条笔记的编辑页
 /// 已经开着时不再叠页（见 [_srsOpenNoteEditors]）。
 ///
+/// [overrides]：编辑页按别的配置的复习副本工作时（浏览器扩展所选的非激活配置，见
+/// [srsProfileScopeOverrides]），页面套一层带这些覆盖的 [ProviderScope]；编辑页再打开的
+/// 页面 / 抽屉经 [srsInheritProviderScope] 沿用同一层。空 = App 激活配置的复习（原样）。
+///
 /// [pageBuilder] 只给测试换页面用；缺省 = [SrsNoteEditorPage]。
 Future<bool> srsPushNoteEditor(
   NavigatorState? navigator,
   String noteId, {
+  List<Override> overrides = const <Override>[],
   @visibleForTesting Widget Function(String noteId)? pageBuilder,
 }) async {
   if (navigator == null || !navigator.mounted) return false;
@@ -98,7 +106,9 @@ Future<bool> srsPushNoteEditor(
         .push<void>(
           adaptivePageRoute<void>(
             context: navigator.context,
-            builder: (BuildContext context) => build(noteId),
+            builder: (BuildContext context) => overrides.isEmpty
+                ? build(noteId)
+                : ProviderScope(overrides: overrides, child: build(noteId)),
           ),
         )
         .whenComplete(() {
@@ -107,6 +117,33 @@ Future<bool> srsPushNoteEditor(
   );
   return true;
 }
+
+/// 让编辑页按 [miner] 那份配置的复习副本与媒体目录工作的覆盖（[srsPushNoteEditor] 的
+/// overrides）：编辑页读复习副本 / 媒体目录只经这两个 provider。
+List<Override> srsProfileScopeOverrides(SrsMiner miner) => <Override>[
+  srsStoreProvider.overrideWith((Ref ref) async => miner.store),
+  srsMediaStoreProvider.overrideWith((Ref ref) async => miner.media),
+];
+
+/// 从 [from] 所在的 provider 作用域再压页面 / 抽屉时，把同一个作用域带过去：路由建在导航器的
+/// overlay 里，不在 [from] 的子树下，不带的话会落回根作用域（App 激活配置的复习）。
+/// [from] 就在根作用域里时这层包装是透明的。
+Widget srsInheritProviderScope(BuildContext from, Widget child) =>
+    UncontrolledProviderScope(
+      container: ProviderScope.containerOf(from, listen: false),
+      child: child,
+    );
+
+/// 在复习里打开 [miner] 那份配置的笔记 [noteId]（浏览器扩展所选的非激活配置）。
+Future<bool> srsPushProfileNoteEditor(
+  NavigatorState? navigator,
+  SrsMiner miner,
+  String noteId,
+) => srsPushNoteEditor(
+  navigator,
+  noteId,
+  overrides: srsProfileScopeOverrides(miner),
+);
 
 /// 在 [navigator] 上压一页浏览，可带上初始查询（AnkiConnect guiBrowse）。
 Future<bool> srsPushBrowse(NavigatorState? navigator, {String? query}) async {

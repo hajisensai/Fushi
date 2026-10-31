@@ -20798,12 +20798,37 @@ class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _cloudFolderNameMeta = const VerificationMeta(
+    'cloudFolderName',
+  );
+  @override
+  late final GeneratedColumn<String> cloudFolderName = GeneratedColumn<String>(
+    'cloud_folder_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _cloudFolderStateMeta = const VerificationMeta(
+    'cloudFolderState',
+  );
+  @override
+  late final GeneratedColumn<int> cloudFolderState = GeneratedColumn<int>(
+    'cloud_folder_state',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     mediaType,
     itemKey,
     deletedAt,
     remotePublishedAt,
+    cloudFolderName,
+    cloudFolderState,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -20850,6 +20875,24 @@ class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
         ),
       );
     }
+    if (data.containsKey('cloud_folder_name')) {
+      context.handle(
+        _cloudFolderNameMeta,
+        cloudFolderName.isAcceptableOrUnknown(
+          data['cloud_folder_name']!,
+          _cloudFolderNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cloud_folder_state')) {
+      context.handle(
+        _cloudFolderStateMeta,
+        cloudFolderState.isAcceptableOrUnknown(
+          data['cloud_folder_state']!,
+          _cloudFolderStateMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -20878,6 +20921,14 @@ class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
         DriftSqlType.int,
         data['${effectivePrefix}remote_published_at'],
       )!,
+      cloudFolderName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cloud_folder_name'],
+      ),
+      cloudFolderState: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cloud_folder_state'],
+      )!,
     );
   }
 
@@ -20901,11 +20952,25 @@ class SyncDeletionTombstoneRow extends DataClass
 
   /// 已发布到远端的毫秒戳（0 = 尚未发布；发布后置为发布时刻，避免每轮重发）。
   final int remotePublishedAt;
+
+  /// v142：这本书在云盘同步根下的书文件夹名（仅 book 墓碑；删除时按**当时的书名**记下
+  /// `sanitizeTtuFilename(title)`，与 `SyncBackend.ensureBookFolder` 建文件夹同一派生）。
+  /// 墓碑键是 bookKey / 对端键，不一定等于文件夹名，所以删云盘文件夹只认这一列。
+  /// null = 不知道（v142 之前写的墓碑、非书资产、删除时拿不到书名）——这种墓碑云通道
+  /// 不删任何文件夹。
+  final String? cloudFolderName;
+
+  /// v142：云盘书文件夹的处置结论（[TombstoneCloudFolderState.dbValue]）：0 = 未处置
+  /// （含 v142 之前的全部墓碑），1 = 已删掉，2 = 发布时核实云盘上本就没有。云盘书库的
+  /// 远端占位卡只对 1 / 2 停止隐藏——那之后同名文件夹只可能是删除之后重新上传的新书。
+  final int cloudFolderState;
   const SyncDeletionTombstoneRow({
     required this.mediaType,
     required this.itemKey,
     required this.deletedAt,
     required this.remotePublishedAt,
+    this.cloudFolderName,
+    required this.cloudFolderState,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -20914,6 +20979,10 @@ class SyncDeletionTombstoneRow extends DataClass
     map['item_key'] = Variable<String>(itemKey);
     map['deleted_at'] = Variable<int>(deletedAt);
     map['remote_published_at'] = Variable<int>(remotePublishedAt);
+    if (!nullToAbsent || cloudFolderName != null) {
+      map['cloud_folder_name'] = Variable<String>(cloudFolderName);
+    }
+    map['cloud_folder_state'] = Variable<int>(cloudFolderState);
     return map;
   }
 
@@ -20923,6 +20992,10 @@ class SyncDeletionTombstoneRow extends DataClass
       itemKey: Value(itemKey),
       deletedAt: Value(deletedAt),
       remotePublishedAt: Value(remotePublishedAt),
+      cloudFolderName: cloudFolderName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cloudFolderName),
+      cloudFolderState: Value(cloudFolderState),
     );
   }
 
@@ -20936,6 +21009,8 @@ class SyncDeletionTombstoneRow extends DataClass
       itemKey: serializer.fromJson<String>(json['itemKey']),
       deletedAt: serializer.fromJson<int>(json['deletedAt']),
       remotePublishedAt: serializer.fromJson<int>(json['remotePublishedAt']),
+      cloudFolderName: serializer.fromJson<String?>(json['cloudFolderName']),
+      cloudFolderState: serializer.fromJson<int>(json['cloudFolderState']),
     );
   }
   @override
@@ -20946,6 +21021,8 @@ class SyncDeletionTombstoneRow extends DataClass
       'itemKey': serializer.toJson<String>(itemKey),
       'deletedAt': serializer.toJson<int>(deletedAt),
       'remotePublishedAt': serializer.toJson<int>(remotePublishedAt),
+      'cloudFolderName': serializer.toJson<String?>(cloudFolderName),
+      'cloudFolderState': serializer.toJson<int>(cloudFolderState),
     };
   }
 
@@ -20954,11 +21031,17 @@ class SyncDeletionTombstoneRow extends DataClass
     String? itemKey,
     int? deletedAt,
     int? remotePublishedAt,
+    Value<String?> cloudFolderName = const Value.absent(),
+    int? cloudFolderState,
   }) => SyncDeletionTombstoneRow(
     mediaType: mediaType ?? this.mediaType,
     itemKey: itemKey ?? this.itemKey,
     deletedAt: deletedAt ?? this.deletedAt,
     remotePublishedAt: remotePublishedAt ?? this.remotePublishedAt,
+    cloudFolderName: cloudFolderName.present
+        ? cloudFolderName.value
+        : this.cloudFolderName,
+    cloudFolderState: cloudFolderState ?? this.cloudFolderState,
   );
   SyncDeletionTombstoneRow copyWithCompanion(
     SyncDeletionTombstonesCompanion data,
@@ -20970,6 +21053,12 @@ class SyncDeletionTombstoneRow extends DataClass
       remotePublishedAt: data.remotePublishedAt.present
           ? data.remotePublishedAt.value
           : this.remotePublishedAt,
+      cloudFolderName: data.cloudFolderName.present
+          ? data.cloudFolderName.value
+          : this.cloudFolderName,
+      cloudFolderState: data.cloudFolderState.present
+          ? data.cloudFolderState.value
+          : this.cloudFolderState,
     );
   }
 
@@ -20979,14 +21068,22 @@ class SyncDeletionTombstoneRow extends DataClass
           ..write('mediaType: $mediaType, ')
           ..write('itemKey: $itemKey, ')
           ..write('deletedAt: $deletedAt, ')
-          ..write('remotePublishedAt: $remotePublishedAt')
+          ..write('remotePublishedAt: $remotePublishedAt, ')
+          ..write('cloudFolderName: $cloudFolderName, ')
+          ..write('cloudFolderState: $cloudFolderState')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(mediaType, itemKey, deletedAt, remotePublishedAt);
+  int get hashCode => Object.hash(
+    mediaType,
+    itemKey,
+    deletedAt,
+    remotePublishedAt,
+    cloudFolderName,
+    cloudFolderState,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -20994,7 +21091,9 @@ class SyncDeletionTombstoneRow extends DataClass
           other.mediaType == this.mediaType &&
           other.itemKey == this.itemKey &&
           other.deletedAt == this.deletedAt &&
-          other.remotePublishedAt == this.remotePublishedAt);
+          other.remotePublishedAt == this.remotePublishedAt &&
+          other.cloudFolderName == this.cloudFolderName &&
+          other.cloudFolderState == this.cloudFolderState);
 }
 
 class SyncDeletionTombstonesCompanion
@@ -21003,12 +21102,16 @@ class SyncDeletionTombstonesCompanion
   final Value<String> itemKey;
   final Value<int> deletedAt;
   final Value<int> remotePublishedAt;
+  final Value<String?> cloudFolderName;
+  final Value<int> cloudFolderState;
   final Value<int> rowid;
   const SyncDeletionTombstonesCompanion({
     this.mediaType = const Value.absent(),
     this.itemKey = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.remotePublishedAt = const Value.absent(),
+    this.cloudFolderName = const Value.absent(),
+    this.cloudFolderState = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SyncDeletionTombstonesCompanion.insert({
@@ -21016,6 +21119,8 @@ class SyncDeletionTombstonesCompanion
     required String itemKey,
     required int deletedAt,
     this.remotePublishedAt = const Value.absent(),
+    this.cloudFolderName = const Value.absent(),
+    this.cloudFolderState = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : mediaType = Value(mediaType),
        itemKey = Value(itemKey),
@@ -21025,6 +21130,8 @@ class SyncDeletionTombstonesCompanion
     Expression<String>? itemKey,
     Expression<int>? deletedAt,
     Expression<int>? remotePublishedAt,
+    Expression<String>? cloudFolderName,
+    Expression<int>? cloudFolderState,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -21032,6 +21139,8 @@ class SyncDeletionTombstonesCompanion
       if (itemKey != null) 'item_key': itemKey,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (remotePublishedAt != null) 'remote_published_at': remotePublishedAt,
+      if (cloudFolderName != null) 'cloud_folder_name': cloudFolderName,
+      if (cloudFolderState != null) 'cloud_folder_state': cloudFolderState,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -21041,6 +21150,8 @@ class SyncDeletionTombstonesCompanion
     Value<String>? itemKey,
     Value<int>? deletedAt,
     Value<int>? remotePublishedAt,
+    Value<String?>? cloudFolderName,
+    Value<int>? cloudFolderState,
     Value<int>? rowid,
   }) {
     return SyncDeletionTombstonesCompanion(
@@ -21048,6 +21159,8 @@ class SyncDeletionTombstonesCompanion
       itemKey: itemKey ?? this.itemKey,
       deletedAt: deletedAt ?? this.deletedAt,
       remotePublishedAt: remotePublishedAt ?? this.remotePublishedAt,
+      cloudFolderName: cloudFolderName ?? this.cloudFolderName,
+      cloudFolderState: cloudFolderState ?? this.cloudFolderState,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -21067,6 +21180,12 @@ class SyncDeletionTombstonesCompanion
     if (remotePublishedAt.present) {
       map['remote_published_at'] = Variable<int>(remotePublishedAt.value);
     }
+    if (cloudFolderName.present) {
+      map['cloud_folder_name'] = Variable<String>(cloudFolderName.value);
+    }
+    if (cloudFolderState.present) {
+      map['cloud_folder_state'] = Variable<int>(cloudFolderState.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -21080,6 +21199,8 @@ class SyncDeletionTombstonesCompanion
           ..write('itemKey: $itemKey, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('remotePublishedAt: $remotePublishedAt, ')
+          ..write('cloudFolderName: $cloudFolderName, ')
+          ..write('cloudFolderState: $cloudFolderState, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -73624,6 +73745,18 @@ class $AiAgentSessionsTable extends AiAgentSessions
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -73633,6 +73766,7 @@ class $AiAgentSessionsTable extends AiAgentSessions
     totalTokens,
     createdAt,
     updatedAt,
+    profileUid,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -73703,6 +73837,12 @@ class $AiAgentSessionsTable extends AiAgentSessions
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    }
     return context;
   }
 
@@ -73740,6 +73880,10 @@ class $AiAgentSessionsTable extends AiAgentSessions
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
       )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
     );
   }
 
@@ -73754,7 +73898,8 @@ class AiAgentSessionRow extends DataClass
   /// 会话 id（调用方生成）。
   final String id;
 
-  /// 首句用户话截断，调用方给。
+  /// 会话标题。首次落库时取首条用户消息摘要（`aiAgentSessionAutoTitle`），之后整场
+  /// 重存**不再改写**；只有用户重命名（`renameAiAgentSession`）会改它。
   final String title;
 
   /// `general` | `reader` | `manga` | `video` | `system`。
@@ -73765,6 +73910,12 @@ class AiAgentSessionRow extends DataClass
   final int totalTokens;
   final int createdAt;
   final int updatedAt;
+
+  /// v141：会话所属 Profile 的全局身份（`profiles.uid`），首次落库时按当前激活
+  /// Profile 盖戳，之后不改。用 uid 而不是本机自增 `profiles.id`：本表设备本地、覆盖
+  /// 恢复后原样回灌，而 `profiles` 随备份恢复，自增 id 会对不上。空串 = 归属不明
+  /// （v141 前的存档且迁移时解析不出激活 Profile 的 uid），对所有 Profile 可见。
+  final String profileUid;
   const AiAgentSessionRow({
     required this.id,
     required this.title,
@@ -73773,6 +73924,7 @@ class AiAgentSessionRow extends DataClass
     required this.totalTokens,
     required this.createdAt,
     required this.updatedAt,
+    required this.profileUid,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -73784,6 +73936,7 @@ class AiAgentSessionRow extends DataClass
     map['total_tokens'] = Variable<int>(totalTokens);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
+    map['profile_uid'] = Variable<String>(profileUid);
     return map;
   }
 
@@ -73796,6 +73949,7 @@ class AiAgentSessionRow extends DataClass
       totalTokens: Value(totalTokens),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      profileUid: Value(profileUid),
     );
   }
 
@@ -73812,6 +73966,7 @@ class AiAgentSessionRow extends DataClass
       totalTokens: serializer.fromJson<int>(json['totalTokens']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
     );
   }
   @override
@@ -73825,6 +73980,7 @@ class AiAgentSessionRow extends DataClass
       'totalTokens': serializer.toJson<int>(totalTokens),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
+      'profileUid': serializer.toJson<String>(profileUid),
     };
   }
 
@@ -73836,6 +73992,7 @@ class AiAgentSessionRow extends DataClass
     int? totalTokens,
     int? createdAt,
     int? updatedAt,
+    String? profileUid,
   }) => AiAgentSessionRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -73844,6 +74001,7 @@ class AiAgentSessionRow extends DataClass
     totalTokens: totalTokens ?? this.totalTokens,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    profileUid: profileUid ?? this.profileUid,
   );
   AiAgentSessionRow copyWithCompanion(AiAgentSessionsCompanion data) {
     return AiAgentSessionRow(
@@ -73858,6 +74016,9 @@ class AiAgentSessionRow extends DataClass
           : this.totalTokens,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
     );
   }
 
@@ -73870,7 +74031,8 @@ class AiAgentSessionRow extends DataClass
           ..write('payloadJson: $payloadJson, ')
           ..write('totalTokens: $totalTokens, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('profileUid: $profileUid')
           ..write(')'))
         .toString();
   }
@@ -73884,6 +74046,7 @@ class AiAgentSessionRow extends DataClass
     totalTokens,
     createdAt,
     updatedAt,
+    profileUid,
   );
   @override
   bool operator ==(Object other) =>
@@ -73895,7 +74058,8 @@ class AiAgentSessionRow extends DataClass
           other.payloadJson == this.payloadJson &&
           other.totalTokens == this.totalTokens &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.profileUid == this.profileUid);
 }
 
 class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
@@ -73906,6 +74070,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
   final Value<int> totalTokens;
   final Value<int> createdAt;
   final Value<int> updatedAt;
+  final Value<String> profileUid;
   final Value<int> rowid;
   const AiAgentSessionsCompanion({
     this.id = const Value.absent(),
@@ -73915,6 +74080,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     this.totalTokens = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.profileUid = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   AiAgentSessionsCompanion.insert({
@@ -73925,6 +74091,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     this.totalTokens = const Value.absent(),
     required int createdAt,
     required int updatedAt,
+    this.profileUid = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -73940,6 +74107,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     Expression<int>? totalTokens,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
+    Expression<String>? profileUid,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -73950,6 +74118,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
       if (totalTokens != null) 'total_tokens': totalTokens,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (profileUid != null) 'profile_uid': profileUid,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -73962,6 +74131,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     Value<int>? totalTokens,
     Value<int>? createdAt,
     Value<int>? updatedAt,
+    Value<String>? profileUid,
     Value<int>? rowid,
   }) {
     return AiAgentSessionsCompanion(
@@ -73972,6 +74142,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
       totalTokens: totalTokens ?? this.totalTokens,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      profileUid: profileUid ?? this.profileUid,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -74000,6 +74171,9 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -74016,6 +74190,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
           ..write('totalTokens: $totalTokens, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('profileUid: $profileUid, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -90661,6 +90836,8 @@ typedef $$SyncDeletionTombstonesTableCreateCompanionBuilder =
       required String itemKey,
       required int deletedAt,
       Value<int> remotePublishedAt,
+      Value<String?> cloudFolderName,
+      Value<int> cloudFolderState,
       Value<int> rowid,
     });
 typedef $$SyncDeletionTombstonesTableUpdateCompanionBuilder =
@@ -90669,6 +90846,8 @@ typedef $$SyncDeletionTombstonesTableUpdateCompanionBuilder =
       Value<String> itemKey,
       Value<int> deletedAt,
       Value<int> remotePublishedAt,
+      Value<String?> cloudFolderName,
+      Value<int> cloudFolderState,
       Value<int> rowid,
     });
 
@@ -90698,6 +90877,16 @@ class $$SyncDeletionTombstonesTableFilterComposer
 
   ColumnFilters<int> get remotePublishedAt => $composableBuilder(
     column: $table.remotePublishedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cloudFolderName => $composableBuilder(
+    column: $table.cloudFolderName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cloudFolderState => $composableBuilder(
+    column: $table.cloudFolderState,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -90730,6 +90919,16 @@ class $$SyncDeletionTombstonesTableOrderingComposer
     column: $table.remotePublishedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get cloudFolderName => $composableBuilder(
+    column: $table.cloudFolderName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cloudFolderState => $composableBuilder(
+    column: $table.cloudFolderState,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SyncDeletionTombstonesTableAnnotationComposer
@@ -90752,6 +90951,16 @@ class $$SyncDeletionTombstonesTableAnnotationComposer
 
   GeneratedColumn<int> get remotePublishedAt => $composableBuilder(
     column: $table.remotePublishedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cloudFolderName => $composableBuilder(
+    column: $table.cloudFolderName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get cloudFolderState => $composableBuilder(
+    column: $table.cloudFolderState,
     builder: (column) => column,
   );
 }
@@ -90806,12 +91015,16 @@ class $$SyncDeletionTombstonesTableTableManager
                 Value<String> itemKey = const Value.absent(),
                 Value<int> deletedAt = const Value.absent(),
                 Value<int> remotePublishedAt = const Value.absent(),
+                Value<String?> cloudFolderName = const Value.absent(),
+                Value<int> cloudFolderState = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncDeletionTombstonesCompanion(
                 mediaType: mediaType,
                 itemKey: itemKey,
                 deletedAt: deletedAt,
                 remotePublishedAt: remotePublishedAt,
+                cloudFolderName: cloudFolderName,
+                cloudFolderState: cloudFolderState,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -90820,12 +91033,16 @@ class $$SyncDeletionTombstonesTableTableManager
                 required String itemKey,
                 required int deletedAt,
                 Value<int> remotePublishedAt = const Value.absent(),
+                Value<String?> cloudFolderName = const Value.absent(),
+                Value<int> cloudFolderState = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncDeletionTombstonesCompanion.insert(
                 mediaType: mediaType,
                 itemKey: itemKey,
                 deletedAt: deletedAt,
                 remotePublishedAt: remotePublishedAt,
+                cloudFolderName: cloudFolderName,
+                cloudFolderState: cloudFolderState,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -125806,6 +126023,7 @@ typedef $$AiAgentSessionsTableCreateCompanionBuilder =
       Value<int> totalTokens,
       required int createdAt,
       required int updatedAt,
+      Value<String> profileUid,
       Value<int> rowid,
     });
 typedef $$AiAgentSessionsTableUpdateCompanionBuilder =
@@ -125817,6 +126035,7 @@ typedef $$AiAgentSessionsTableUpdateCompanionBuilder =
       Value<int> totalTokens,
       Value<int> createdAt,
       Value<int> updatedAt,
+      Value<String> profileUid,
       Value<int> rowid,
     });
 
@@ -125861,6 +126080,11 @@ class $$AiAgentSessionsTableFilterComposer
 
   ColumnFilters<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -125908,6 +126132,11 @@ class $$AiAgentSessionsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$AiAgentSessionsTableAnnotationComposer
@@ -125943,6 +126172,11 @@ class $$AiAgentSessionsTableAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
 }
 
 class $$AiAgentSessionsTableTableManager
@@ -125989,6 +126223,7 @@ class $$AiAgentSessionsTableTableManager
                 Value<int> totalTokens = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AiAgentSessionsCompanion(
                 id: id,
@@ -125998,6 +126233,7 @@ class $$AiAgentSessionsTableTableManager
                 totalTokens: totalTokens,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                profileUid: profileUid,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -126009,6 +126245,7 @@ class $$AiAgentSessionsTableTableManager
                 Value<int> totalTokens = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
+                Value<String> profileUid = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AiAgentSessionsCompanion.insert(
                 id: id,
@@ -126018,6 +126255,7 @@ class $$AiAgentSessionsTableTableManager
                 totalTokens: totalTokens,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                profileUid: profileUid,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

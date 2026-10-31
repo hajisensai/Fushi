@@ -197,14 +197,31 @@ void main() {
         .toList();
     expect(cardCreation.body, isNotNull);
     expect(cardCreation.bodyBeforeSections, isTrue);
-    // 「Anki」分组（展开 / 折叠两个变体，可见性互斥）用 custom rows 承载 Anki 行。
+    // 「Anki」分组与各通用分组都用 custom rows 承载 AnkiSettingsBody 的行。
     expect(
       cardItems.whereType<SettingsCustomItem>().map((item) => item.id).toSet(),
-      <String>{'card_creation.anki.rows'},
+      <String>{
+        'card_creation.anki.route_rows',
+        'card_creation.anki.rows',
+        'card_creation.anki.configured_rows',
+        'card_creation.anki.delivery_rows',
+        'card_creation.content.rows',
+        'card_creation.notices.rows',
+        'card_creation.tags.rows',
+      },
     );
-    // 媒体参数两边都生效，排在最前；其余子页入口只在「Anki」分组里。
+    // 层级（2026-10-31）：当前目标的 Anki 配置紧跟正文（目标切换条），再是发送与
+    // 待发、两种目标都生效的通用分组，媒体参数子页入口在最后。
+    expect(cardCreation.sections.map((SettingsSection s) => s.id), <String>[
+      'card_creation.anki',
+      'card_creation.anki.delivery',
+      'card_creation.content',
+      'card_creation.notices',
+      'card_creation.tags',
+      'card_creation.configuration',
+    ]);
     expect(
-      cardCreation.sections.first.items.single.id,
+      cardCreation.sections.last.items.single.id,
       'card_creation.media.open',
     );
     expect(

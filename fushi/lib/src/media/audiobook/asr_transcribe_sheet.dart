@@ -106,7 +106,11 @@ Future<String?> showAsrTranscribeSheet({
       remoteClient ??
       (appModel == null
           ? null
-          : InterconnectJobClient(repo: SyncRepository(appModel.database)));
+          : InterconnectJobClient(
+              repo: SyncRepository(appModel.database),
+              // host 本地已有内容相同的音频就不上传（按 SHA-256 判，结果缓存）。
+              hashCache: appModel.contentHashCache,
+            ));
   // 云端转录 / AI 校对：提供商按 AI 设置里的功能指派现取（见 asr_ai_hosts.dart）。
   // 没有 app 模型或偏好仓库还没就绪（测试宿主 / 启动早期）就两样都不提供。
   final AppModel? model = appModel != null && appModel.isPreferencesReady
@@ -146,9 +150,13 @@ Future<String?> showAsrTranscribeSheet({
       ),
     );
   }
+  // 与桌面 barrierDismissible: false 对齐：转录 / 模型下载一跑就是十来分钟，
+  // 关闭弹层会在下一个检查点暂停并释放会话，误触遮罩或下拉不能把它打断
+  // （反馈 NrRPRDTprI）。关闭只走弹层里的按钮与系统返回。
   return adaptiveModalSheet<String>(
     context: context,
     showDragHandle: true,
+    isDismissible: false,
     builder: build,
   );
 }
@@ -383,6 +391,24 @@ Future<bool> exportTranscribedSrt({
 String suggestedTranscriptFileName(List<String> audioPaths) {
   if (audioPaths.isEmpty) return 'transcript.srt';
   return '${p.basenameWithoutExtension(audioPaths.first)}.srt';
+}
+
+/// 纯函数：运行中那行「编码器为什么落在 CPU」的文案；没回退返回 null。
+///
+/// [probeError] 非 null（计划阶段 EP 探测抛过错）时，引擎加载时问的是同一个运行时，
+/// 它的 `fallbackReason` 就是那次探测的异常原文（探测失败时引擎只向 ORT 请求 CPU，
+/// 会话层不会再有别的回退），
+/// 给可读的说明而不是原文（反馈 eEnV5gBn1K）。其余回退（GPU 会话被 ORT 拒绝）
+/// 的 `code: message` 照旧展示——那是用户能拿去对照显卡 / 驱动的线索。
+String? asrEncoderFallbackLine(
+  OnnxProviderResolution resolution, {
+  required String? probeError,
+}) {
+  if (!resolution.didFallBack) return null;
+  if (probeError != null) return t.audiobook_transcribe_probe_failed_hint;
+  return t.audiobook_transcribe_fallback(
+    reason: resolution.fallbackReason ?? '',
+  );
 }
 
 /// 默认的目录读取口（`asrModelCatalog` 是 getter，取不到函数引用）。
@@ -686,6 +712,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         if (runnable != planned) {
           plan = await _service.plan(language: language, preference: runnable);
         }
+      }
+      final String? probeError = plan.probeError;
+      if (probeError != null) {
+        // 界面只显示可读的说明（[_appendProbeHint]），原文留给日志排查。
+        debugPrint(
+          '[Fushi] ASR GPU probe failed, planning for CPU: $probeError',
+        );
       }
       final String? finished = await _service.finishedSrtPath(
         widget.audioPaths,
@@ -1563,11 +1596,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                     provider: _providerLabel(r.effective),
                   ),
           );
-          if (r.didFallBack) {
-            sb.writeln(
-              t.audiobook_transcribe_fallback(reason: r.fallbackReason ?? ''),
-            );
-          }
+          final String? fallback = asrEncoderFallbackLine(
+            r,
+            probeError: _plan?.probeError,
+          );
+          if (fallback != null) sb.writeln(fallback);
         }
         if (p != null) {
           sb.writeln(
@@ -1654,12 +1687,15 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
 
   /// 计划阶段 EP 探测抛错过：推荐的「int8 · CPU」不是本机没有 GPU，而是探测失败——
   /// 追加一行说明，用户才知道整本按 CPU 速度跑是降级而非常态。
+  ///
+  /// 只给用户能读懂的那句话，不拼异常原文（反馈 eEnV5gBn1K：面板上直接出现了
+  /// `Invalid argument(s): Provider WEBGPU is not a valid OrtProvider.`）。原文是
+  /// 排查线索，由 [_refreshPlan] 写进日志，CLI / 控制通道的 `probeError` 字段也照旧带着。
   static void _appendProbeHint(StringBuffer sb, AsrTranscribePlan? plan) {
-    final String? reason = plan?.probeError;
-    if (reason == null) return;
+    if (plan?.probeError == null) return;
     sb
       ..writeln()
-      ..write(t.audiobook_transcribe_probe_failed(reason: reason));
+      ..write(t.audiobook_transcribe_probe_failed_hint);
   }
 
   /// 阶段轨五格（纯由弹层状态推出）。匹配正文 / 入库发生在「使用字幕」之后的

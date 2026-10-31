@@ -72,6 +72,7 @@ import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -171,6 +172,7 @@ import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/separated_audio_load_guard.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show
         WebVideoPlaybackState,
@@ -1083,9 +1085,14 @@ class _VideoOsdMessage {
     this.progress,
     this.prominent = false,
     this.severity = ToastSeverity.neutral,
+    this.mineStatus,
   });
 
   final String message;
+
+  /// 非空 = 制卡结果 OSD，画成与底部制卡 toast 同一张 M3E 结果卡
+  /// （[FushiMineNoticeCard]），而不是通用小角标。
+  final MineToastStatus? mineStatus;
   final IconData? icon;
   final double? progress;
 
@@ -3323,6 +3330,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 避免 muxed-only 视频每次点开画质菜单都重复 getManifest。每集起播复位。
   bool _youtubeVariantsResolved = false;
 
+  /// 本集分离音轨打不开时的回退流（自带音轨的 muxed 流，见
+  /// [separatedAudioFallbackStreamUrl]）；null = 无可回退，只能提示无声。每集起播重算。
+  String? _separatedAudioFallbackUrl;
+
+  /// 会挂分离音轨的载入（远端起播 / YouTube 切档 / 音轨回退）的在途记账、被拒回退与
+  /// 「本集分离音轨已被拒」。在途期间音轨失败只由控制器记账
+  /// （[VideoPlayerController.externalAudioTrackFailed]），等这程载入收尾后再处理——避免在
+  /// `_applyLoad` 半途再起一程 `_applyLoad`（首开时 `_controller` 尚未落定，会新建出第二个
+  /// 控制器）。在途按令牌归属最新那程、回退按 [_episodeLoadSeq] 作废，见
+  /// [SeparatedAudioLoadGuard]。
+  late final SeparatedAudioLoadGuard _separatedAudio = SeparatedAudioLoadGuard(
+    currentEpisodeSeq: () => _episodeLoadSeq,
+    isAlive: () => mounted,
+  );
+
   bool _clipExportMarking = false;
   bool _clipExporting = false;
   int? _clipExportStartMs;
@@ -4767,20 +4789,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }
       if (seq != _episodeLoadSeq || !mounted) return;
       _currentEpisode = index;
-      await _applyLoad(
-        videoPath: null,
-        mediaUri: urls.streamUrl,
-        cues: cues,
-        title: info.title,
-        initialPositionMs: initialPositionMs,
-        startIntent: startIntent,
-        externalSubtitlePath: externalSub,
-        // TODO-1280：分离流的 audio-only 流作为播放音轨，随 load 在恢复 seek + play() 之前
-        // 外挂，libmpv 才会让它与视频时间轴同步出声（修「初始无声、跳转后才有声」）；不再等
-        // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
-        externalAudioTrackUrl: urls.audioStreamUrl,
-        // 蓝光标题：host 下发段表，按本地蓝光同一套 EDL 播放（光盘菜单远端不可用）。
-        remoteDiscTitle: urls.discTitle,
+      _separatedAudioFallbackUrl = separatedAudioFallbackStreamUrl(urls);
+      await _separatedAudio.runLoad<void>(
+        () => _applyLoad(
+          videoPath: null,
+          mediaUri: urls.streamUrl,
+          cues: cues,
+          title: info.title,
+          initialPositionMs: initialPositionMs,
+          startIntent: startIntent,
+          externalSubtitlePath: externalSub,
+          // TODO-1280：分离流的 audio-only 流作为播放音轨，随 load 在恢复 seek + play() 之前
+          // 外挂，libmpv 才会让它与视频时间轴同步出声（修「初始无声、跳转后才有声」）；不再等
+          // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
+          externalAudioTrackUrl: urls.audioStreamUrl,
+          // 蓝光标题：host 下发段表，按本地蓝光同一套 EDL 播放（光盘菜单远端不可用）。
+          remoteDiscTitle: urls.discTitle,
+        ),
       );
       if (seq == _episodeLoadSeq && mounted && !_failed) {
         _startRemotePlaybackSession(client, info, initialPositionMs);
@@ -4836,6 +4861,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （youtubeCaptionsUrl 非空）触发；见 [_resolveDeferredYoutubeCaptionTracks]。
       if (client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null) {
         unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq));
+      }
+      // 起播途中分离音轨已被拒（控制器记了账、当时有载入在途没处理）：现在收尾处理。
+      if (seq == _episodeLoadSeq && mounted && !_failed) {
+        unawaited(_recoverFromExternalAudioFailure());
       }
     } catch (e, stack) {
       debugPrint(
@@ -5825,6 +5854,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // BUG-2441：libmpv 层错误的唯一 UI 通道。此前无人订阅 `player.stream.error`，
     // 媒体打不开时页面只会黑屏 + 00:00，用户与日志两头都拿不到任何线索。
     controller.onPlaybackError = _handlePlaybackError;
+    // 反馈 s3sOy3sD1J：分离音轨被拒（YouTube 403）→ 回退到自带音轨的流或明确提示无声。
+    controller.onExternalAudioTrackFailed = _handleExternalAudioTrackFailed;
     // 「我库里的例句」：每次换上一份字幕就把这一集喂进本机语料库（内容没变时是空操作；
     // 只认本地库里的视频，网页 / 远端条目在服务里跳过）。
     controller.onCuesReplaced = (List<AudioCue> cues) =>

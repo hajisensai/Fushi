@@ -63,18 +63,20 @@ class AudiobookRepository {
   Future<void> saveCues({
     required String bookKey,
     required List<AudioCue> cues,
-  }) =>
-      _db.transaction(() async {
-        final List<AudioCueRow> before = await _db.getCuesForBook(bookKey);
-        await _db.replaceCuesForBook(
-            bookKey, cues.map(AudioCue.toCompanion).toList());
-        await rebaseStoredPositionForCueChange(
-          positionKey: bookKey,
-          oldDurationsMs:
-              audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
-          newDurationsMs: audiobookFileDurationsFromCues(cues),
-        );
-      });
+  }) => _db.transaction(() async {
+    final List<AudioCueRow> before = await _db.getCuesForBook(bookKey);
+    await _db.replaceCuesForBook(
+      bookKey,
+      cues.map(AudioCue.toCompanion).toList(),
+    );
+    await rebaseStoredPositionForCueChange(
+      positionKey: bookKey,
+      oldDurationsMs: audiobookFileDurationsFromCues(
+        before.map(AudioCue.fromRow),
+      ),
+      newDurationsMs: audiobookFileDurationsFromCues(cues),
+    );
+  });
 
   // ── 窄写入：一次只改一件事 ───────────────────────────────────────
   //
@@ -91,13 +93,17 @@ class AudiobookRepository {
     // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、
     // 墓碑还在」误判（范式仿书/视频的插入清墓碑）。
     await _db.clearSyncDeletionTombstone(
-        SyncTombstoneKind.audiobook.dbValue, bookKey);
+      SyncTombstoneKind.audiobook.dbValue,
+      bookKey,
+    );
     // 书从对端下载、落地键不同时删除墓碑写的是对端键（见 [deleteAudiobook]），
     // 同一条也要撤销，否则重新配上有声书后那条旧墓碑仍会推给 host。
     final String peerKey = await _db.syncDeletionBookKeyOf(bookKey);
     if (peerKey != bookKey) {
       await _db.clearSyncDeletionTombstone(
-          SyncTombstoneKind.audiobook.dbValue, peerKey);
+        SyncTombstoneKind.audiobook.dbValue,
+        peerKey,
+      );
     }
   }
 
@@ -122,12 +128,10 @@ class AudiobookRepository {
   }) async {
     await ensureAudiobook(bookKey);
     final AudiobookRow? before = await _db.getAudiobookByBookKey(bookKey);
-    final bool audioChanged = before == null ||
+    final bool audioChanged =
+        before == null ||
         before.audioRoot != null ||
-        !AudiobookStorage.sameAudioPathList(
-          _audioPathsOf(before),
-          audioPaths,
-        );
+        !AudiobookStorage.sameAudioPathList(_audioPathsOf(before), audioPaths);
 
     await _db.patchAudiobook(
       bookKey,
@@ -139,8 +143,10 @@ class AudiobookRepository {
     if (audioChanged) {
       await updatePositionMs(bookKey: bookKey, positionMs: 0);
     }
-    fushiDebugPrint('[fushi-audiobook] replaceAudio bookKey=$bookKey '
-        'files=${audioPaths.length} audioChanged=$audioChanged');
+    fushiDebugPrint(
+      '[fushi-audiobook] replaceAudio bookKey=$bookKey '
+      'files=${audioPaths.length} audioChanged=$audioChanged',
+    );
   }
 
   /// 换对齐字幕（唯一写 alignment 两列的入口）。
@@ -203,8 +209,9 @@ class AudiobookRepository {
     bool propagateDeletion = false,
     bool deleteLocalFiles = false,
   }) async {
-    final Audiobook? before =
-        deleteLocalFiles ? await findByBookKey(bookKey) : null;
+    final Audiobook? before = deleteLocalFiles
+        ? await findByBookKey(bookKey)
+        : null;
     // 有声书与书共享 bookKey：书从对端下载、落地键不同时墓碑写对端键（别名表），
     // 否则推给 host（只按 bookKey 精确匹配）与对端消费都对不上（BUG-3443 同类）。
     final String syncTombstoneKey = propagateDeletion
@@ -215,9 +222,10 @@ class AudiobookRepository {
     if (propagateDeletion) {
       try {
         await _db.writeSyncDeletionTombstone(
-            SyncTombstoneKind.audiobook.dbValue,
-            syncTombstoneKey,
-            DateTime.now().millisecondsSinceEpoch);
+          SyncTombstoneKind.audiobook.dbValue,
+          syncTombstoneKey,
+          DateTime.now().millisecondsSinceEpoch,
+        );
       } catch (_) {
         // best-effort：记账失败不影响有声书已删。
       }
@@ -263,8 +271,10 @@ class AudiobookRepository {
     final int current = await _db.getPrefTyped<int>(posKey, 0);
     if (current == positionMs) return;
     await _db.setPrefTyped(posKey, positionMs);
-    await _db.setPrefTyped('$_kPositionAtMsKeyPrefix$bookKey',
-        DateTime.now().millisecondsSinceEpoch);
+    await _db.setPrefTyped(
+      '$_kPositionAtMsKeyPrefix$bookKey',
+      DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   /// BUG-3197：cue 整组换过之后，把 `audiobook_pos_<positionKey>` 存着的全书毫秒
@@ -289,8 +299,10 @@ class AudiobookRepository {
     );
     if (rebased == current) return;
     await _db.setPrefTyped(posKey, rebased);
-    fushiDebugPrint('[fushi-audiobook] rebase position key=$positionKey '
-        '$current -> $rebased (cue durations changed)');
+    fushiDebugPrint(
+      '[fushi-audiobook] rebase position key=$positionKey '
+      '$current -> $rebased (cue durations changed)',
+    );
   }
 
   // ── follow audio (preferences) ─────────────────────────────────
@@ -315,8 +327,7 @@ class AudiobookRepository {
   Future<void> updateFollowAudio({
     required String bookKey,
     required bool value,
-  }) =>
-      _db.setPrefTyped('$_kFollowAudioKeyPrefix$bookKey', value);
+  }) => _db.setPrefTyped('$_kFollowAudioKeyPrefix$bookKey', value);
 
   Future<int> readDelayMs(String bookKey) async {
     return _db.getPrefTyped('$_kDelayMsKeyPrefix$bookKey', 0);
@@ -325,13 +336,12 @@ class AudiobookRepository {
   /// 写调轴（毫秒）并同时盖更新时间戳（互联 LWW 用，与 [updatePositionMs] 同
   /// 纪律：值与时间戳是同一调轴的两个 pref，必须一起写，否则 LWW 无依据——本机
   /// 调整无戳恒 0，会永远输给对端旧戳、再也传不出去）。
-  Future<void> updateDelayMs({
-    required String bookKey,
-    required int ms,
-  }) async {
+  Future<void> updateDelayMs({required String bookKey, required int ms}) async {
     await _db.setPrefTyped('$_kDelayMsKeyPrefix$bookKey', ms);
     await _db.setPrefTyped(
-        '$_kDelayAtMsKeyPrefix$bookKey', DateTime.now().millisecondsSinceEpoch);
+      '$_kDelayAtMsKeyPrefix$bookKey',
+      DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   Future<double> readSpeed(String bookKey) async {
@@ -340,10 +350,7 @@ class AudiobookRepository {
     return double.tryParse(raw) ?? 1.0;
   }
 
-  Future<void> updateSpeed({
-    required String bookKey,
-    required double speed,
-  }) =>
+  Future<void> updateSpeed({required String bookKey, required double speed}) =>
       _db.setPref('$_kSpeedKeyPrefix$bookKey', speed.toString());
 
   Future<double> readVolume(String bookKey) async {
@@ -355,29 +362,29 @@ class AudiobookRepository {
   Future<void> updateVolume({
     required String bookKey,
     required double volume,
-  }) =>
-      _db.setPref('$_kVolumeKeyPrefix$bookKey', volume.toString());
+  }) => _db.setPref('$_kVolumeKeyPrefix$bookKey', volume.toString());
 
   // ── image pause ─────────────────────────────────────────────────
 
-  /// 插图停留秒数的默认值（所有者 2026-10-31 拍板：2 秒，原为 0 = 关）。
+  /// 插图停留秒数的默认值：0 = 关（所有者 2026-10-31 拍板「默认关」，撤回同日的
+  /// 2 秒默认）。打开时从几秒起见 `AudiobookPlayerController.imagePauseOnSec`。
   ///
-  /// 只作用于**从未设置过**的书：偏好表里没有这本书的行时才回落到它。用户显式
-  /// 设成 0（关闭）会落一行 `i:0`（唯一写入方是设置项经
-  /// `AudiobookPlayerController.setImagePauseSec` → [updateImagePauseSec]，载入
-  /// 不回写），读到的就是 0，保持关闭。
-  static const int defaultImagePauseSec = 2;
+  /// 只作用于**从未设置过**的书：偏好表里没有这本书的行时才回落到它（唯一写入方
+  /// 是设置项经 `AudiobookPlayerController.setImagePauseSec` →
+  /// [updateImagePauseSec]，载入不回写）。
+  static const int defaultImagePauseSec = 0;
 
   Future<int> readImagePauseSec(String bookKey) async {
     return _db.getPrefTyped(
-        '$_kImagePauseSecKeyPrefix$bookKey', defaultImagePauseSec);
+      '$_kImagePauseSecKeyPrefix$bookKey',
+      defaultImagePauseSec,
+    );
   }
 
   Future<void> updateImagePauseSec({
     required String bookKey,
     required int sec,
-  }) =>
-      _db.setPrefTyped('$_kImagePauseSecKeyPrefix$bookKey', sec);
+  }) => _db.setPrefTyped('$_kImagePauseSecKeyPrefix$bookKey', sec);
 
   // ── health overlay ──────────────────────────────────────────────
 
@@ -389,8 +396,9 @@ class AudiobookRepository {
   /// 全部健康度覆盖一次取完（bookKey → 覆盖）。书架列表页为每本有声书各查一次
   /// [readHealthOverlay] 是 N+1（每次都是一条真 SELECT），这里一条前缀查询取完。
   Future<Map<String, AudiobookHealth>> readAllHealthOverlays() async {
-    final Map<String, String> raw =
-        await _db.getPrefsByPrefix(_kHealthOverlayKeyPrefix);
+    final Map<String, String> raw = await _db.getPrefsByPrefix(
+      _kHealthOverlayKeyPrefix,
+    );
     final Map<String, AudiobookHealth> result = <String, AudiobookHealth>{};
     for (final MapEntry<String, String> e in raw.entries) {
       final AudiobookHealth? health = _parseHealthOverlay(e.value);

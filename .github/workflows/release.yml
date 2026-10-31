@@ -1066,6 +1066,44 @@ jobs:
           cp "$f" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${ABI}.apk"
         done
 
+    # build.gradle 的 release signingConfig 显式开了 v1 + v2 + v3：minSdk 24 时 AGP 默认只签
+    # v2，HarmonyOS 4.x 安装器会因没有 JAR（v1）签名报「无证书」拒装（反馈 j3ChbSpKgJ）。
+    # 这三个开关被删 / 被 AGP 升级改了默认都不会让构建失败，这里对每个 release 签名的 APK
+    # （release-signed 调试通道包与 split release 包；Gradle 出的 `*-release.apk`，debug 签名
+    # 的 `*-debug.apk` 不在其列）跑 apksigner，三种方案缺一个就挡在发布前。
+    - name: Verify release APK signing schemes (v1 + v2 + v3)
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+        if [ -z "$APKSIGNER" ]; then
+          echo "::error title=apksigner missing::No apksigner under $ANDROID_HOME/build-tools"
+          exit 1
+        fi
+        echo "Using $APKSIGNER"
+        shopt -s nullglob
+        apks=(build/app/outputs/flutter-apk/*-release.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=Release APK missing::No *-release.apk in build/app/outputs/flutter-apk"
+          exit 1
+        fi
+        failed=0
+        for apk in "${apks[@]}"; do
+          out="$("$APKSIGNER" verify --verbose "$apk")"
+          echo "::group::apksigner verify $apk"
+          echo "$out"
+          echo "::endgroup::"
+          for scheme in v1 v2 v3; do
+            if ! grep -Eq "^Verified using ${scheme} scheme \(.*\): true$" <<<"$out"; then
+              echo "::error title=APK not signed with ${scheme}::$apk is not verified with the ${scheme} signature scheme"
+              failed=1
+            fi
+          done
+        done
+        exit "$failed"
+
     # jniLibs 是 copy-if-present：.so 没落到 prebuilt/ 时 Gradle 静默跳过，APK 照出、
     # P2P 能力在用户那里整块消失。这里按「APK 里 app 能跑的每个 ABI（有 libflutter.so
     # 的 lib/<abi>/），都必须有那个 ABI 的 libfushi_p2p.so」逐包核对，把「编了但没进包」

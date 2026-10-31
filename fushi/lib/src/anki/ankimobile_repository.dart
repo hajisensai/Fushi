@@ -264,6 +264,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     AnkiMobileBackgroundTaskHandler? endMediaImportBackgroundTask,
     AnkiMobileInfoReturnCoordinator? infoReturnCoordinator,
     AnkiMobileMinedLedger? minedLedger,
+    super.settingsStore,
   }) : _openUrl = openUrl ?? _openExternalUrl,
        _minedLedger = minedLedger ?? AnkiMobileMinedLedger.instance,
        _infoReturnCoordinator =

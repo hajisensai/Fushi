@@ -13,8 +13,11 @@ import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
 ///   included: the manga bookKey is the same Profile entryKey as for books).
 /// - game   → every galgame hook session entry point (library/home launch,
 ///   texthooker launch + attach) applies the binding before starting.
-/// - browser→ the yomitan-api server fires onLookupActivity on real lookup /
-///   mine endpoints; AppModel forwards to a delegate injected by main.dart.
+/// - browser→ (feedback biLEesNqWb) the yomitan-api server resolves every
+///   profile-scoped extension request through `ExtensionProfileApi.resolveScope`
+///   (extension pick > browser binding > follow app); the browser binding only
+///   picks which read-only settings view serves the request and never switches
+///   the app's active profile.
 ///
 /// Also closes the gap that the enum could grow a value with no binding row:
 /// the UI list is checked against `ProfileMediaKind.values` exhaustively.
@@ -83,49 +86,50 @@ void main() {
     );
   });
 
-  test('browser binding chain: server → AppModel → main.dart wiring', () {
+  test('browser binding chain: server → adapter → main.dart wiring', () {
     final String server = read('lib/src/sync/fushi_api_server.dart');
     expect(
-      server.contains('_kLookupActivityPaths') &&
-          server.contains('_onLookupActivity?.call()'),
+      server.contains('_kProfileScopedPaths') &&
+          server.contains('profileApi.resolveScope('),
       isTrue,
-      reason: 'yomitan-api server must fire onLookupActivity on lookup/mine '
-          'endpoints (TODO-2936)',
+      reason: 'yomitan-api server must resolve the profile scope on lookup / '
+          'mine endpoints (biLEesNqWb / TODO-2936)',
     );
-    // The SW-startup ping must NOT trigger a profile switch: a browser merely
-    // being opened is not "the user is looking words up in the browser".
+    // The SW-startup ping is not "the user is looking words up in the browser".
     expect(
-      RegExp(r'_kLookupActivityPaths = <String>\{[^}]*extension/status')
+      RegExp(r'_kProfileScopedPaths = <String>\{[^}]*extension/status')
           .hasMatch(server),
       isFalse,
-      reason: '/api/extension/status is a liveness ping and must not be a '
-          'lookup-activity trigger (TODO-2936)',
+      reason: '/api/extension/status is a liveness ping and must not be '
+          'profile-scoped (TODO-2936)',
     );
 
-    final String manager = read('lib/src/sync/fushi_api_server_manager.dart');
+    final String adapter = read('lib/src/profile/extension_profile_adapter.dart');
     expect(
-      manager.contains('onLookupActivity: _onLookupActivity'),
+      adapter.contains('mediaType: ProfileMediaKind.browser'),
       isTrue,
-      reason: 'manager must pass onLookupActivity through to the server',
+      reason: 'the extension profile adapter must honour the browser binding',
     );
-
-    final String appModel = read('lib/src/models/app_model.dart');
     expect(
-      appModel.contains('onLookupActivity: _onBrowserLookupActivity') &&
-          appModel.contains('browserLookupProfileApplier'),
-      isTrue,
-      reason: 'AppModel must forward lookup activity to the injected '
-          'browser-profile applier delegate (TODO-2936)',
+      RegExp(r'\b(applyProfile|switchProfile|setActiveProfile|autoApplyBinding)\(')
+          .hasMatch(adapter),
+      isFalse,
+      reason: 'resolving an extension request must never switch the app '
+          'profile (biLEesNqWb)',
     );
 
     final String main = read('lib/main.dart');
     expect(
-      main.contains('browserLookupProfileApplier') &&
-          main.contains('mediaType: ProfileMediaKind.browser'),
+      main.contains('appModel.browserExtensionProfileApi = AppExtensionProfileApi('),
       isTrue,
-      reason: 'main.dart must inject the browser-profile applier '
-          '(autoApplyBinding(mediaType: ProfileMediaKind.browser)) before '
-          'initialise() (TODO-2936)',
+      reason: 'main.dart must inject the extension profile adapter before '
+          'initialise()',
+    );
+    expect(
+      main.contains('mediaType: ProfileMediaKind.browser'),
+      isFalse,
+      reason: 'main.dart must not auto-apply the browser binding to the app '
+          '(biLEesNqWb: it only scopes extension requests)',
     );
   });
 }

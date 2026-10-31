@@ -18,9 +18,13 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 真实音画同步只能在真机（可能 ANDROID_VR 流）复测；此守卫锁住「外挂音轨早于 seek/play」
 /// 的静态时序不变量，防止有人把它挪回 load 之后（回归无声）。
-/// 外挂音轨的调用形状（BUG-2455 起 URL 先过 nativePlaybackUri 收口）。
-const String _kAttachCall =
-    'AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))';
+/// 外挂音轨 URL 的收口绑定（BUG-2455：先过 nativePlaybackUri）。反馈 s3sOy3sD1J 起
+/// 收口结果还要记进 `_externalAudioNativeUri`（判「本次外挂音轨打不开」），故落成局部变量。
+const String _kAudioBinding =
+    'final String audioNativeUri = nativePlaybackUri(externalAudioTrackUrl);';
+
+/// 外挂音轨的调用形状：只认上面那个收口后的局部变量。
+const String _kAttachCall = 'AudioTrack.uri(audioNativeUri)';
 
 void main() {
   String read(String relPath) {
@@ -32,65 +36,123 @@ void main() {
   }
 
   group('YouTube 外挂音轨早于 seek/play 不变量 (TODO-1280)', () {
-    final String ctrl =
-        read('lib/src/media/video/video_player_controller.dart');
+    final String ctrl = read(
+      'lib/src/media/video/video_player_controller.dart',
+    );
 
     test('load() 有 externalAudioTrackUrl 参数（音轨 URL 下沉进 load）', () {
-      expect(ctrl.contains('String? externalAudioTrackUrl'), isTrue,
-          reason:
-              'load() 必须接收 externalAudioTrackUrl，才能在 load 内 seek/play 之前外挂');
+      expect(
+        ctrl.contains('String? externalAudioTrackUrl'),
+        isTrue,
+        reason: 'load() 必须接收 externalAudioTrackUrl，才能在 load 内 seek/play 之前外挂',
+      );
     });
 
     test('load() 内经 AudioTrack.uri 外挂 externalAudioTrackUrl', () {
       // BUG-2455：URL 先过 nativePlaybackUri 收口，再 audio-add。
-      expect(ctrl.contains(_kAttachCall), isTrue,
-          reason: '必须用 $_kAttachCall（libmpv audio-add）外挂音轨');
+      final int bindAt = ctrl.indexOf(_kAudioBinding);
+      final int attachAt = ctrl.indexOf(_kAttachCall);
+      expect(
+        bindAt,
+        greaterThanOrEqualTo(0),
+        reason: '外挂音轨 URL 必须先绑定成 $_kAudioBinding',
+      );
+      expect(
+        attachAt,
+        greaterThanOrEqualTo(0),
+        reason: '必须用 $_kAttachCall（libmpv audio-add）外挂音轨',
+      );
+      expect(bindAt, lessThan(attachAt), reason: '收口绑定必须在 audio-add 之前');
+      // 收口绑定与 audio-add 之间不得把 audioNativeUri 改成别的值。
+      expect(
+        ctrl.substring(bindAt + _kAudioBinding.length, attachAt),
+        isNot(contains('audioNativeUri =')),
+        reason: 'audio-add 用的必须就是 nativePlaybackUri 的产出',
+      );
+      // 整个控制器只有这一处外挂音轨入口，没有绕开收口的第二条 AudioTrack.uri。
+      expect(
+        RegExp(r'AudioTrack\.uri\(').allMatches(ctrl).length,
+        1,
+        reason: '外挂音轨只能经 $_kAttachCall 一处挂入',
+      );
     });
 
     test('外挂音轨 (audio-add) 出现在恢复 seek 与 play() 之前', () {
+      final int bindAt = ctrl.indexOf(_kAudioBinding);
       final int attachAt = ctrl.indexOf(_kAttachCall);
-      final int seekAt =
-          ctrl.indexOf('player.seek(Duration(milliseconds: resolvedStartMs))');
+      expect(bindAt, greaterThanOrEqualTo(0), reason: '找不到外挂音轨收口绑定');
+      expect(bindAt, lessThan(attachAt), reason: '收口绑定必须在 audio-add 之前');
+      final int seekAt = ctrl.indexOf(
+        'player.seek(Duration(milliseconds: resolvedStartMs))',
+      );
       final int playAt = ctrl.indexOf('await player.play();');
       expect(attachAt, greaterThanOrEqualTo(0), reason: '找不到外挂音轨调用');
       expect(seekAt, greaterThanOrEqualTo(0), reason: '找不到恢复 seek 调用');
-      expect(playAt, greaterThanOrEqualTo(0),
-          reason: '找不到 autoPlay 的 play() 调用');
-      expect(attachAt, lessThan(seekAt),
-          reason: '外挂音轨必须在恢复 seek 之前，seek 才能把音频同步到断点位置');
-      expect(attachAt, lessThan(playAt),
-          reason: '外挂音轨必须在 play() 之前，否则播放已开始、新加音频不会自动 seek → 无声');
+      expect(
+        playAt,
+        greaterThanOrEqualTo(0),
+        reason: '找不到 autoPlay 的 play() 调用',
+      );
+      expect(
+        attachAt,
+        lessThan(seekAt),
+        reason: '外挂音轨必须在恢复 seek 之前，seek 才能把音频同步到断点位置',
+      );
+      expect(
+        attachAt,
+        lessThan(playAt),
+        reason: '外挂音轨必须在 play() 之前，否则播放已开始、新加音频不会自动 seek → 无声',
+      );
     });
 
     test('外挂音轨在 http-header-fields 注入之后（audio-only 流同需 UA 防 403）', () {
       final int headerAt = ctrl.indexOf('applyHttpHeaderFieldsToPlayer');
+      final int bindAt = ctrl.indexOf(_kAudioBinding);
       final int attachAt = ctrl.indexOf(_kAttachCall);
       expect(headerAt, greaterThanOrEqualTo(0));
-      expect(attachAt, greaterThan(headerAt),
-          reason:
-              'audio-only 流经 googlevideo，须在 http-header-fields 全局属性设好后再 audio-add');
+      expect(
+        bindAt,
+        greaterThan(headerAt),
+        reason: '外挂音轨收口绑定属于 header 注入之后的那段外挂逻辑',
+      );
+      expect(
+        attachAt,
+        greaterThan(headerAt),
+        reason:
+            'audio-only 流经 googlevideo，须在 http-header-fields 全局属性设好后再 audio-add',
+      );
     });
 
     test('旧的 play 之后外挂路径已移除（不得再暴露 setExternalAudioTrack）', () {
-      expect(ctrl.contains('Future<void> setExternalAudioTrack('), isFalse,
-          reason: 'setExternalAudioTrack 是 load 返回后（play 已开始）才外挂的错误路径，'
-              '已下沉进 load，必须删除以杜绝再次误用');
+      expect(
+        ctrl.contains('Future<void> setExternalAudioTrack('),
+        isFalse,
+        reason:
+            'setExternalAudioTrack 是 load 返回后（play 已开始）才外挂的错误路径，'
+            '已下沉进 load，必须删除以杜绝再次误用',
+      );
     });
   });
 
   group('页面按新契约透传音轨 URL、不再 load 后外挂 (TODO-1280)', () {
-    final String page =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String page = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
     test('远端 YouTube load 把 audioStreamUrl 透传给 externalAudioTrackUrl', () {
       expect(
-          page.contains('externalAudioTrackUrl: urls.audioStreamUrl'), isTrue,
-          reason: '页面必须把 audio-only 流 URL 透传进 _applyLoad→load 在 seek/play 前外挂');
+        page.contains('externalAudioTrackUrl: urls.audioStreamUrl'),
+        isTrue,
+        reason: '页面必须把 audio-only 流 URL 透传进 _applyLoad→load 在 seek/play 前外挂',
+      );
     });
 
     test('页面不再在 load 返回后调 setExternalAudioTrack（回归无声）', () {
-      expect(page.contains('setExternalAudioTrack('), isFalse,
-          reason: 'load 返回时 play 已开始，此时外挂音轨不会自动 seek 到当前位置 → 无声');
+      expect(
+        page.contains('setExternalAudioTrack('),
+        isFalse,
+        reason: 'load 返回时 play 已开始，此时外挂音轨不会自动 seek 到当前位置 → 无声',
+      );
     });
   });
 }

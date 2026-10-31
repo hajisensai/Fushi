@@ -346,14 +346,15 @@ class _CompactMusicBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            FushiListTileControl(
-              leading: const FushiIcon(FushiIcons.highQuality),
-              title: Text(t.music_signal_path_title),
-              onTap: () {
-                Navigator.of(sheet).pop();
-                unawaited(showMusicSignalPathPanel(context, appModel));
-              },
-            ),
+            if (session.engine.capabilities.signalPath)
+              FushiListTileControl(
+                leading: const FushiIcon(FushiIcons.highQuality),
+                title: Text(t.music_signal_path_title),
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  unawaited(showMusicSignalPathPanel(context, appModel));
+                },
+              ),
             FushiListTileControl(
               leading: const FushiIcon(FushiIcons.stop),
               title: Text(t.music_stop),
