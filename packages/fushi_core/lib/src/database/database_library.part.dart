@@ -144,6 +144,15 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           // 隐私来源：移除来源保留条目，FK 随后把 source_id 清空，条目就不再「属于
           // 隐私来源」。先把每个条目逐一标成作品级私密，用户的「别上排行榜」意图
           // 跟着条目走，不会因为移除来源而突然公开。
+          //
+          // **有意跨设备**：`is_private` 是设备本地配置（来源只存在于本机），但
+          // 来源一移除，它就不再是这份意图的载体——剩下能表达「这些作品别上
+          // 排行榜」的只有作品级标记 `media_privacy_flags`，而那份标记按设计搭
+          // 标签清单同步到已配对设备（tag_sync.dart：排行榜只有一台上传设备，别处
+          // 标的私密必须到得了它）。所以这里写的是会同步的作品级标记，而不是一个
+          // 只留在本机的本地标记：后者在上传设备是另一台时等于没藏。用户在 UI 上
+          // 被告知的也正是「移除此来源后，这些条目仍保持私密」
+          // （media_source_privacy_hint）。要再公开，逐个作品取消私密。
           for (final String bookKey in await (selectOnly(epubBooks)
                 ..addColumns(<Expression<Object>>[epubBooks.bookKey])
                 ..where(epubBooks.sourceId.equals(id)))
