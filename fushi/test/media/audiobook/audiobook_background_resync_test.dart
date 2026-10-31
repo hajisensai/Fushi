@@ -246,6 +246,31 @@ void main() {
       );
     });
 
+    test('BUG-3887：插图停留秒数可自定义（不再只有 0/5/10/15），超上限夹住并持久', () async {
+      final AudiobookPlayerController c = await _playingController();
+      final List<int> persisted = <int>[];
+      c.onImagePausePersist = (int sec) async => persisted.add(sec);
+
+      c.setImagePauseSec(37);
+      expect(c.imagePauseSec.value, 37, reason: '旧实现夹到 15，自定义秒数被吃掉');
+      c.setImagePauseSec(999);
+      expect(c.imagePauseSec.value, AudiobookPlayerController.maxImagePauseSec);
+      c.setImagePauseSec(-3);
+      expect(c.imagePauseSec.value, 0);
+      expect(persisted, <int>[
+        37,
+        AudiobookPlayerController.maxImagePauseSec,
+        0,
+      ]);
+
+      c.setImagePauseSec(37);
+      c.triggerImagePause();
+      await pumpEventQueue();
+      expect(c.isImagePaused, isTrue, reason: '自定义秒数照常驱动插图停留');
+      expect(c.isPlaying, isFalse);
+      c.dispose();
+    });
+
     test('看不见时同 DOM 插图不停留：照常播放', () async {
       final AudiobookPlayerController c = await _playingController();
       c.setImagePauseSec(5);
