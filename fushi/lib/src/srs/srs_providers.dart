@@ -243,62 +243,58 @@ final Provider<SrsProfileStores> srsProfileStoresProvider =
 ///
 /// 经 [srsProfileStoresProvider] 打开：浏览器扩展之前为这个配置开过的副本先作废，同一个 uid 不会
 /// 同时有两份活副本（见 [SrsProfileStores.activate]）。
-final FutureProvider<SrsDbStore?> srsStoreProvider =
-    FutureProvider<SrsDbStore?>((Ref ref) async {
-      final SrsProfileStores stores = ref.read(srsProfileStoresProvider);
-      final SrsStorage? storage = await ref.watch(srsStorageProvider.future);
-      if (storage == null) {
-        await stores.releaseAll();
-        return null;
-      }
-      final int activeProfileId = ref.watch(
-        profileViewModelProvider.select(
-          (ProfileUiState s) => s.activeProfileId,
-        ),
-      );
-      final FsrsEngine? engine = ref.watch(srsEngineProvider);
-      final AppModel app = ref.read(appProvider);
-      final int profileId = activeProfileId > 0
-          ? activeProfileId
-          : await app.database.resolveActiveProfileId();
-      final String profileUid = await app.database.profileUidOf(profileId);
-      final String deviceId = await SyncRepository(
-        app.database,
-      ).getOrCreateDeviceId();
-      final Directory support = await ref.watch(srsSupportRootProvider)();
-      final SrsDbStore store = await stores.activate(
-        profileUid,
-        () => SrsDbStore.open(
-          db: storage.db,
-          core: storage.core,
-          profileUid: profileUid,
-          deviceId: deviceId,
-          engine: engine,
-          // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
-          // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
-          fallbackRolloverHour: () => app.statDayResetHour,
-          // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
-          styles: SrsStyleStore(
-            SrsStyleStore.directoryFor(support, profileUid),
-          ),
-        ),
-      );
-      // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
-      bool disposed = false;
-      ref.onDispose(() => disposed = true);
-      srsRunLogged('srsCompactStoredStyles', () async {
-        await store.compactStoredStyles(shouldStop: () => disposed);
-      });
-      // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
-      srsRunLogged('srsPurgeExpiredTombstones', () async {
-        if (disposed) return;
-        await srsPurgeExpiredTombstones(
-          store,
-          mediaRoot: SrsMediaStore.directoryFor(support, profileUid),
-        );
-      });
-      return store;
-    });
+final FutureProvider<SrsDbStore?>
+srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
+  final SrsProfileStores stores = ref.read(srsProfileStoresProvider);
+  final SrsStorage? storage = await ref.watch(srsStorageProvider.future);
+  if (storage == null) {
+    await stores.releaseAll();
+    return null;
+  }
+  final int activeProfileId = ref.watch(
+    profileViewModelProvider.select((ProfileUiState s) => s.activeProfileId),
+  );
+  final FsrsEngine? engine = ref.watch(srsEngineProvider);
+  final AppModel app = ref.read(appProvider);
+  final int profileId = activeProfileId > 0
+      ? activeProfileId
+      : await app.database.resolveActiveProfileId();
+  final String profileUid = await app.database.profileUidOf(profileId);
+  final String deviceId = await SyncRepository(
+    app.database,
+  ).getOrCreateDeviceId();
+  final Directory support = await ref.watch(srsSupportRootProvider)();
+  final SrsDbStore store = await stores.activate(
+    profileUid,
+    () => SrsDbStore.open(
+      db: storage.db,
+      core: storage.core,
+      profileUid: profileUid,
+      deviceId: deviceId,
+      engine: engine,
+      // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
+      // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
+      fallbackRolloverHour: () => app.statDayResetHour,
+      // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
+      styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
+    ),
+  );
+  // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+  srsRunLogged('srsCompactStoredStyles', () async {
+    await store.compactStoredStyles(shouldStop: () => disposed);
+  });
+  // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
+  srsRunLogged('srsPurgeExpiredTombstones', () async {
+    if (disposed) return;
+    await srsPurgeExpiredTombstones(
+      store,
+      mediaRoot: SrsMediaStore.directoryFor(support, profileUid),
+    );
+  });
+  return store;
+});
 
 /// RWKV 权重目录（`<support>/srs_rwkv/models`）：按需下载，走全应用代理。
 final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
