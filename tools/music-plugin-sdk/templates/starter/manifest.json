@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "id": "__PLUGIN_ID__",
+  "name": "__PLUGIN_NAME__",
+  "version": "0.1.0",
+  "api": 1,
+  "entry": "main.js",
+  "description": "TODO: one line about the source",
+  "capabilities": ["search", "album", "stream", "lyrics"],
+  "searchTypes": ["song", "album"],
+  "permissions": ["network"],
+  "network": { "domains": ["api.example.com", "*.cdn.example.com"], "methods": ["GET"] }
+}
