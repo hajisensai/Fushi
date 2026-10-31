@@ -101,7 +101,7 @@ extension _VideoQuality on _VideoFushiPageState {
   List<RemoteVideoStreamVariant> get _streamVariants {
     final List<RemoteVideoStreamVariant> variants =
         _streamVariantsClient?.streamVariants ??
-            const <RemoteVideoStreamVariant>[];
+        const <RemoteVideoStreamVariant>[];
     return variants.length > 1 ? variants : const <RemoteVideoStreamVariant>[];
   }
 
@@ -163,10 +163,7 @@ extension _VideoQuality on _VideoFushiPageState {
         !_youtubeVariantsLoading) {
       unawaited(_ensureYoutubeVariantsLoaded());
     }
-    _showVideoSidePanel(
-      _VideoSidePanelKind.quality,
-      sourceSlot: sourceSlot,
-    );
+    _showVideoSidePanel(_VideoSidePanelKind.quality, sourceSlot: sourceSlot);
   }
 
   /// 懒解析当前 YouTube 视频的各档 video-only 流（用户点开画质菜单时调）。填
@@ -183,8 +180,10 @@ extension _VideoQuality on _VideoFushiPageState {
     final int seq = _episodeLoadSeq;
     _rebuild(() => _youtubeVariantsLoading = true);
     try {
-      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(watch,
-          playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull);
+      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(
+        watch,
+        playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
+      );
       // 换集：丢弃迟到结果（新集已复位状态、bump seq），绝不覆盖新集画质态。
       if (!mounted || seq != _episodeLoadSeq) return;
       _rebuild(() {
@@ -223,7 +222,9 @@ extension _VideoQuality on _VideoFushiPageState {
     // （与 [UrlStreamVideoClient.remoteVideoStreamUrls] 同一口径）。
     final Map<String, String> headers = _streamHttpHeaderFields;
     final String videoUrl = await relayYoutubeStreamUrl(
-        _youtubeVariants[effectiveIndex].videoUrl, headers);
+      _youtubeVariants[effectiveIndex].videoUrl,
+      headers,
+    );
     final String? audioRaw = _youtubeVariantsAudioUrl;
     final String? audioUrl = audioRaw == null
         ? null
@@ -239,21 +240,85 @@ extension _VideoQuality on _VideoFushiPageState {
     _rebuild(() => _selectedYoutubeVariantIndex = index);
     // detectHls=false：googlevideo URL 非 m3u8，且不碰 YouTube 档列表。音轨保持同一
     // audio-only 流（切档只换画面清晰度）。字幕经现有 cue + 当前 source 保留。
-    await _applyLoad(
-      videoPath: null,
-      mediaUri: videoUrl,
-      cues: cues,
-      title: _title ?? '',
-      initialPositionMs: posMs,
-      startIntent: EpisodeStartIntent.explicitCue,
-      externalSubtitlePath: _currentSubtitleSource,
-      externalAudioTrackUrl: audioUrl,
-      detectHls: false,
-    );
+    _separatedAudioLoadInFlight = true;
+    try {
+      await _applyLoad(
+        videoPath: null,
+        mediaUri: videoUrl,
+        cues: cues,
+        title: _title ?? '',
+        initialPositionMs: posMs,
+        startIntent: EpisodeStartIntent.explicitCue,
+        externalSubtitlePath: _currentSubtitleSource,
+        externalAudioTrackUrl: audioUrl,
+        detectHls: false,
+      );
+    } finally {
+      _separatedAudioLoadInFlight = false;
+    }
     if (!mounted) return;
-    final String label =
-        index < 0 ? t.video_quality_auto : _youtubeVariants[index].label;
+    final String label = index < 0
+        ? t.video_quality_auto
+        : _youtubeVariants[index].label;
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+    // 切档后分离音轨同样可能被拒（同一条 audio-only 流）：收尾处理。
+    unawaited(_recoverFromExternalAudioFailure());
+  }
+
+  /// 控制器报「本次 load 的外挂分离音轨打不开」（反馈 s3sOy3sD1J）。有载入在途时只等它
+  /// 收尾（在途的那程会在结束后调 [_recoverFromExternalAudioFailure]），否则立即处理。
+  void _handleExternalAudioTrackFailed() {
+    if (_separatedAudioLoadInFlight) return;
+    unawaited(_recoverFromExternalAudioFailure());
+  }
+
+  /// 分离音轨被拒后的处理：403 本身在 YouTube 侧、不可控，这里不重试同一条流，而是
+  ///
+  /// - 本集有自带音轨的 muxed 流（[_separatedAudioFallbackUrl]）：原位换到它重载（保持
+  ///   播放位置与字幕 cue），OSD 说明已换成低画质兼容流；
+  /// - 没有：OSD 明确告诉用户音频流打不开、当前没有声音，而不是静默放无声画面。
+  ///
+  /// 只在控制器确实记了本次 load 的音轨失败时动作；换成 muxed 后那程 load 不挂外挂音轨，
+  /// 失败标记随之复位，不会循环回退。
+  Future<void> _recoverFromExternalAudioFailure() async {
+    if (!mounted || _separatedAudioLoadInFlight) return;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null || !controller.externalAudioTrackFailed) return;
+    final String? fallback = _separatedAudioFallbackUrl;
+    if (fallback == null) {
+      _showOsd(
+        t.video_audio_track_load_failed,
+        icon: FushiIcons.volumeOff,
+        prominent: true,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final int posMs = controller.resumePositionMs ?? 0;
+    final List<AudioCue> cues = List<AudioCue>.of(controller.cues);
+    _rebuild(() => _selectedYoutubeVariantIndex = -1);
+    _separatedAudioLoadInFlight = true;
+    try {
+      await _applyLoad(
+        videoPath: null,
+        mediaUri: fallback,
+        cues: cues,
+        title: _title ?? '',
+        initialPositionMs: posMs,
+        startIntent: EpisodeStartIntent.explicitCue,
+        externalSubtitlePath: _currentSubtitleSource,
+        detectHls: false,
+      );
+    } finally {
+      _separatedAudioLoadInFlight = false;
+    }
+    if (!mounted) return;
+    _showOsd(
+      t.video_audio_track_fallback_muxed,
+      icon: FushiIcons.volumeUp,
+      prominent: true,
+      severity: ToastSeverity.warning,
+    );
   }
 
   /// 切到媒体服务器第 [index] 档（-1 = 自动）：偏好落库、写进 client，先关掉当前
@@ -356,8 +421,8 @@ extension _VideoQuality on _VideoFushiPageState {
       // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
       // 变成未捕获的 zone error。
       final List<MediaServerQualityPreset> presets = client.qualityPresets;
-      final String label = decision.targetIndex < 0 ||
-              decision.targetIndex >= presets.length
+      final String label =
+          decision.targetIndex < 0 || decision.targetIndex >= presets.length
           ? t.video_quality_auto
           : presets[decision.targetIndex].label;
       _showOsd(
@@ -376,14 +441,15 @@ extension _VideoQuality on _VideoFushiPageState {
   /// 互联与媒体服务器（Jellyfin/Emby）的档位阶梯**不同**（互联整体更低，它要解决的
   /// 是人在外面用手机网络），共用一个下标会让同一个数字在两边指向不同画质——用户在
   /// Emby 上选的 `2` 跑到互联上就成了另一档。
-  int _readQualityPresetIndex(Object client) => client is InterconnectSyncBackend
+  int _readQualityPresetIndex(Object client) =>
+      client is InterconnectSyncBackend
       ? appModel.prefsRepo.interconnectQualityPresetIndex
       : appModel.prefsRepo.mediaServerQualityPresetIndex;
 
   Future<void> _writeQualityPresetIndex(Object client, int index) =>
       client is InterconnectSyncBackend
-          ? appModel.prefsRepo.setInterconnectQualityPresetIndex(index)
-          : appModel.prefsRepo.setMediaServerQualityPresetIndex(index);
+      ? appModel.prefsRepo.setInterconnectQualityPresetIndex(index)
+      : appModel.prefsRepo.setMediaServerQualityPresetIndex(index);
 
   Future<void> _switchMediaServerQuality(int index) async {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
@@ -494,8 +560,9 @@ extension _VideoQuality on _VideoFushiPageState {
       detectHls: false,
     );
     if (!mounted) return;
-    final String label =
-        index < 0 ? t.video_quality_auto : _hlsVariants[index].qualityLabel;
+    final String label = index < 0
+        ? t.video_quality_auto
+        : _hlsVariants[index].qualityLabel;
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
@@ -515,8 +582,9 @@ extension _VideoQuality on _VideoFushiPageState {
           title: Text(variants[i].label),
           selected: current == i,
           selectedColor: selectedFg,
-          trailing:
-              current == i ? FushiIcon(Icons.check, color: selectedFg) : null,
+          trailing: current == i
+              ? FushiIcon(Icons.check, color: selectedFg)
+              : null,
           onTap: () => unawaited(_switchStreamVariant(i)),
         ),
     ];
@@ -557,10 +625,9 @@ extension _VideoQuality on _VideoFushiPageState {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
               child: Text(
                 t.media_server_versions,
-                style: Theme.of(panelContext)
-                    .textTheme
-                    .labelMedium
-                    ?.copyWith(color: cs.onSurfaceVariant),
+                style: Theme.of(
+                  panelContext,
+                ).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant),
               ),
             ),
             ..._buildStreamVariantTiles(selectedFg, versions),

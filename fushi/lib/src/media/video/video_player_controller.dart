@@ -2836,6 +2836,36 @@ class VideoPlayerController extends ChangeNotifier
   /// 这是 mpv 错误到 UI 的**唯一**通道；不挂它就回到「静默黑屏」的老路。
   void Function(String message)? onPlaybackError;
 
+  /// 本次 load 外挂的分离音轨（[load] 的 `externalAudioTrackUrl`）交给 libmpv 的实际 URI；
+  /// 无外挂音轨、或已判定该音轨打开失败后为 null。每次 load 开头清空。
+  String? _externalAudioNativeUri;
+
+  /// 本次 load 的外挂分离音轨被 libmpv 拒绝打开（反馈 s3sOy3sD1J：googlevideo 对音频流
+  /// 403 → mpv `Can not open external file` → 音轨被丢、画面照放、完全无声）。每次 load
+  /// 开头复位；置真的同时调一次 [onExternalAudioTrackFailed]。
+  bool get externalAudioTrackFailed => _externalAudioTrackFailed;
+  bool _externalAudioTrackFailed = false;
+
+  /// 外挂分离音轨打开失败时调一次（每次 load 至多一次）。页面据此回退到自带音轨的流
+  /// 或明确提示无声——此前这条错误只进日志，用户只看到「有画面没声音」。
+  void Function()? onExternalAudioTrackFailed;
+
+  /// 纯函数：libmpv 错误 [message] 是否表示外挂音轨 [externalAudioNativeUri] 打不开。
+  ///
+  /// mpv 在 `audio-add` 的外挂文件打开失败时报 `Can not open external file <uri>.`
+  /// （cplayer）。按 URI 精确匹配：外挂字幕 / 别的外挂文件、以及上一片的迟到错误（URI 不同）
+  /// 都不算。
+  static bool isExternalAudioOpenFailure(
+    String message,
+    String? externalAudioNativeUri,
+  ) {
+    if (externalAudioNativeUri == null || externalAudioNativeUri.isEmpty) {
+      return false;
+    }
+    return message.contains('Can not open external file') &&
+        message.contains(externalAudioNativeUri);
+  }
+
   /// BUG-2032：随包 libmpv 是否编入 Lua（建 Player 后读 `mpv-configuration`，
   /// 见 [_probeLuaCapability]）。页面在 [load] 完成后落 pref，让全局设置页也能说明。
   MpvLuaCapability luaCapability = MpvLuaCapability.unknown;
@@ -3196,6 +3226,9 @@ class VideoPlayerController extends ChangeNotifier
     final int loadToken = ++_loadToken;
     // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
     _audioOutputRecovery.reset();
+    // 上一片的外挂音轨判定作废（见 [externalAudioTrackFailed]）。
+    _externalAudioNativeUri = null;
+    _externalAudioTrackFailed = false;
     // iOS：来源文件夹里的视频是原地引用，libmpv 打开前必须处在安全作用域访问窗口内
     // （BUG-3697）。其它平台 / 不在任何来源下的文件 no-op。
     if (videoFile != null) {
@@ -3506,6 +3539,13 @@ class VideoPlayerController extends ChangeNotifier
         // BUG-3767：音频设备打不开 → 进入恢复。恢复尝试自己按双判据校验，且只在 mpv
         // 音轨确实处于 `aid=no` 时才写回，旧片迟到的这条错误不会切掉新片的音轨。
         _audioOutputRecovery.onPlayerError(message);
+        // 外挂分离音轨打不开：判决只认本次 load 记下的那条 URI（上一片的迟到错误 URI 不同，
+        // 匹配不上），每次 load 至多上报一次。
+        if (isExternalAudioOpenFailure(message, _externalAudioNativeUri)) {
+          _externalAudioNativeUri = null;
+          _externalAudioTrackFailed = true;
+          onExternalAudioTrackFailed?.call();
+        }
         onPlaybackError?.call(
           redactAacsRelayUrls(redactAppNativeProxySecrets(message)),
         );
@@ -3672,9 +3712,10 @@ class VideoPlayerController extends ChangeNotifier
     // googlevideo，UA 不匹配首个请求会 403（http-header-fields 已设为全局属性，audio-add 继承）。
     if (externalAudioTrackUrl != null && externalAudioTrackUrl.isNotEmpty) {
       // 与主流同一收口（BUG-2455）：外挂音轨也是 native 自己去取的 URL。
-      await player.setAudioTrack(
-        AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl)),
-      );
+      final String audioNativeUri = nativePlaybackUri(externalAudioTrackUrl);
+      // 先记再挂：mpv 的打开失败错误可能在 setAudioTrack 返回前就到。
+      _externalAudioNativeUri = audioNativeUri;
+      await player.setAudioTrack(AudioTrack.uri(audioNativeUri));
       if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
     }
     // mpv 沿用上一个文件选过的 `aid`，media_kit 却在 open 时把选轨重置成 auto：对齐
@@ -6280,7 +6321,7 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// - `false`（**默认**，按钮 / 手柄 / 双击 / 控制项语义，BUG-942）：**恒跳到相邻上一句**，
   ///   哪怕上一句距当前很远也不退化——「上一句字幕」按钮就该跳句，不该悄悄变成 3 秒 seek。
-  /// - `true`（键盘 Ctrl+← 语义，TODO-085）：上一句起点距当前 > `seekSeconds` 秒时退化成
+  /// - `true`（键盘 Ctrl+← 语义，TODO-085）：上一句说完到当前句之间静默 > `seekSeconds` 秒时退化成
   ///   回退 `seekSeconds` 秒（方向键的 seek 心智；纯时间 seek 另有 ←/→）。
   ///
   /// 决策集中在纯函数 [prevSeekDecisionFor]。无 cue / 已在首句时 no-op 安全。
@@ -6461,7 +6502,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 纯函数：「上一句」seek 决策。目标上一句由 [prevCueIndexFor] 决定；
   /// [degradeFarCueToTimeSeek] 控制「上一句太远」时的行为：
   ///
-  /// - `true`（**默认**，键盘 Ctrl+← 语义，TODO-085）：目标上一句起点距当前位置 gap
+  /// - `true`（**默认**，键盘 Ctrl+← 语义，TODO-085）：目标上一句结束到当前语境的静默
   ///   大于 [seekSeconds] 秒时**退化成回退 [seekSeconds] 秒的时间 seek**，而不是一脚跳到
   ///   很远的上一句——对照用户诉求「如果上一句话距离很远了，左右键就回退到回退 3 秒的模式」。
   /// - `false`（按钮 / 手柄 / 双击 / 控制项语义，BUG-942）：**永远跳句**，不因太远退化——
@@ -6470,8 +6511,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 具体：
   /// - 无上一句（已在首句 / 空列表）：返回 [PrevSeekDecision.none]（保持原 no-op 不强行 seek）。
   /// - `degradeFarCueToTimeSeek == false`，或 [seekSeconds] <= 0（阈值失效，防御性）：跳到该 cue。
-  /// - 目标上一句起点距当前 `<= seekSeconds*1000` ms：跳到该 cue（句子 seek）。
-  /// - 目标上一句起点距当前 `> seekSeconds*1000` ms：返回 [PrevSeekDecision.timeSeek]（回退 `seekSeconds` 秒）。
+  /// - 目标上一句**结束**到当前语境起点（当前句起点，gap 里则为当前位置）的静默
+  ///   `<= seekSeconds*1000` ms：跳到该 cue（句子 seek）。
+  /// - 静默 `> seekSeconds*1000` ms：返回 [PrevSeekDecision.timeSeek]（回退 `seekSeconds` 秒）。
   static PrevSeekDecision prevSeekDecisionFor({
     required List<AudioCue> cues,
     required int? positionMs,
@@ -6489,7 +6531,16 @@ class VideoPlayerController extends ChangeNotifier
       return PrevSeekDecision.cue(prev);
     }
     final int pos = positionMs ?? 0;
-    final int gapMs = pos - cues[prev].startMs;
+    // 「上一句很远」量的是上一句**说完**到当前语境之间的静默段，不是上一句**起点**到
+    // 当前位置（BUG：旧判据 `pos - prev.startMs` = 上一句时长 + 句间间隙 + 当前句已播
+    // 时长，普通对话里几乎恒 > 3s，键盘 Ctrl+← 于是几乎总退化成回退 3 秒）。当前语境
+    // 起点：落在 prev 的下一句里时取该句起点（当前句已播多久与「上一句远不远」无关），
+    // 落在 gap 里（或 prev 已是末句）时取当前位置。
+    final int contextStartMs =
+        prev + 1 < cues.length && cues[prev + 1].startMs < pos
+        ? cues[prev + 1].startMs
+        : pos;
+    final int gapMs = contextStartMs - cues[prev].endMs;
     final int thresholdMs = seekSeconds * 1000;
     if (gapMs > thresholdMs) {
       return PrevSeekDecision.timeSeek(-thresholdMs);
@@ -6575,6 +6626,7 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_errorSub?.cancel());
     _errorSub = null;
     onPlaybackError = null;
+    onExternalAudioTrackFailed = null;
     // TODO-1212：注销文件句柄释放登记（迁移路径不再触达已销毁的本控制器）。
     final MediaHandleReleaseCallback? registration = _mediaHandleRegistration;
     if (registration != null) {
