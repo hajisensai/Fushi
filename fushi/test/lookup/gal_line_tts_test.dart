@@ -397,6 +397,34 @@ void main() {
       player.dispose();
     });
 
+    test('等配对时手动点朗读：复用预合成但按手动处理，配上原声也不停', () async {
+      settings = _auto.copyWith(autoPlay: GalLineTtsAutoPlay.unvoicedOnly);
+      final GalLineTtsPlayer player = build();
+      // 自动朗读在等配对证据：只预合成，不播。
+      player.onLatestLine(_line('1', '雨。'));
+      await pumpEventQueue();
+      expect(synthesized, <String>['雨。']);
+      expect(played, isEmpty);
+      expect(player.speaking.value, isFalse);
+
+      // 用户点「朗读」：复用预合成（不重合成）并开播。
+      player.toggleManual(_line('1', '雨。'));
+      await pumpEventQueue();
+      expect(synthesized, hasLength(1));
+      expect(played, <String>['/tts/雨。']);
+      expect(player.speaking.value, isTrue);
+
+      // 游戏原声随后配上：手动朗读不让给原声。
+      player.onLatestLine(
+        _line('1', '雨。', status: TexthookerLineAudioStatus.matched),
+      );
+      await pumpEventQueue();
+      expect(stops, 0);
+      expect(player.speaking.value, isTrue);
+      expect(player.currentLineId, '1');
+      player.dispose();
+    });
+
     test('没有可用声音时报错且不播', () async {
       final GalLineTtsPlayer player = GalLineTtsPlayer(
         settings: () => _auto.copyWith(autoPlay: GalLineTtsAutoPlay.all),
