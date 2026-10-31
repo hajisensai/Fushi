@@ -42,6 +42,9 @@ const PAGE_HTML = `<!doctype html>
   #debug { display: none; gap: 8px; flex-wrap: wrap; align-items: center; }
   #debug input { width: 14em; }
   #log { white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; max-height: 60vh; overflow: auto; }
+  /* MusicKit 出错时会自己弹页面内对话框（实测：自动播放被拦时弹「play() failed …」并盖住整页）；
+     隐藏 WebView 里没人能点，错误一律走桥接事件。?debug=1 时由 bridge.js 加 class 放出来。 */
+  html:not(.fushi-debug) #musickit-dialog, html:not(.fushi-debug) #musickit-dialog-scrim { display: none !important; }
 </style>
 </head>
 <body>
@@ -130,7 +133,6 @@ const BRIDGE_JS = `'use strict';
       positionMs: Math.round((music.currentPlaybackTime || 0) * 1000),
       durationMs: Math.round((music.currentPlaybackDuration || 0) * 1000),
       songId: item ? String(item.id) : null,
-      isPreview: item ? !!item.isPreview : null,
     };
   }
 
@@ -144,6 +146,9 @@ const BRIDGE_JS = `'use strict';
     on(E.mediaPlaybackError || 'mediaPlaybackError', (e) => emit('error', errInfo(e)));
   }
 
+  // storefront 不指定（2026-11-01 实测）：未登录时给 MusicKit JS 指定 jp（configure 传 storefrontId 或事后赋值）
+  // 都会让 setQueue 报 CONTENT_EQUIVALENT，不指定（默认 us）则正常；catalog id 全球通用，试听照放。
+  // 登录后 MusicKit 用 Apple ID 账户的地区。曲目元数据由 Dart 侧按设置的 storefront 取，不经这里。
   async function init() {
     if (music) return snapshot();
     if (!configuring) {
@@ -209,6 +214,7 @@ const BRIDGE_JS = `'use strict';
     if (el) el.textContent = JSON.stringify(msg) + '\\n' + el.textContent;
   }
   if (debug) {
+    document.documentElement.classList.add('fushi-debug');
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('debug').style.display = 'flex';
       const k = window.fushiMusicKit;

@@ -11,7 +11,7 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
   const calls = [];
   const instance = {
     isAuthorized: false,
-    storefrontId: 'jp',
+    storefrontId: 'us',
     playbackState: 0,
     currentPlaybackTime: 0,
     currentPlaybackDuration: 0,
@@ -23,7 +23,7 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
     async setQueue(q) {
       calls.push(['setQueue', q]);
       if (q.song === 'bad') throw Object.assign(new Error('CONTENT_UNAVAILABLE'), { name: 'MKError' });
-      this.nowPlayingItem = { id: q.song, isPreview: false };
+      this.nowPlayingItem = { id: q.song };
     },
     async seekToTime(s) { calls.push(['seek', s]); this.currentPlaybackTime = s; },
     async play() { calls.push(['play']); this.playbackState = 2; (listeners.playbackStateDidChange || []).forEach((f) => f()); },
@@ -33,7 +33,11 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
   const window = {
     MusicKit: {
       Events: { playbackStateDidChange: 'playbackStateDidChange', mediaPlaybackError: 'mediaPlaybackError' },
-      async configure(opts) { calls.push(['configure', opts]); return instance; },
+      async configure(opts) {
+        calls.push(['configure', opts]);
+        if (opts.storefrontId) instance.storefrontId = opts.storefrontId;
+        return instance;
+      },
     },
     flutter_inappwebview: { callHandler: (name, msg) => posted.push([name, msg]) },
     dispatchEvent() {},
@@ -42,7 +46,7 @@ function runBridge(source, { tokenStatus = 200 } = {}) {
     window,
     navigator: { mediaSession },
     location: { search: '' },
-    document: { addEventListener() {}, getElementById() { return null; } },
+    document: { addEventListener() {}, getElementById() { return null; }, documentElement: { classList: { add() {} } } },
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     URLSearchParams,
     setTimeout,
@@ -77,6 +81,8 @@ describe('MusicKit 托管页', () => {
     expect(csp).toMatch(/script-src 'self' https:\/\/js-cdn\.music\.apple\.com(;|$)/);
     const html = String(r.data);
     expect(html).toContain(`src="${MUSICKIT_JS_URL}"`);
+    // MusicKit 自带对话框在非调试模式下隐藏（隐藏 WebView 里没人能点）。
+    expect(html).toContain('html:not(.fushi-debug) #musickit-dialog-scrim');
     // 所有 <script> 都带 src（CSP 不放行内联脚本）。
     for (const tag of html.match(/<script\b[^>]*>/g)) expect(tag).toMatch(/\bsrc="/);
 
@@ -104,7 +110,11 @@ describe('MusicKit 托管页', () => {
     const fetchCall = b.calls.find((c) => c[0] === 'fetch');
     expect(fetchCall[1]).toBe('/v1/musickit/token');
     expect(fetchCall[2].credentials).toBe('omit');
-    expect(b.calls.find((c) => c[0] === 'configure')[1].developerToken).toBe('dev-token');
+    const config = b.calls.find((c) => c[0] === 'configure')[1];
+    expect(config.developerToken).toBe('dev-token');
+    // 不指定 storefront：未登录时指定 jp 会让 setQueue 报 CONTENT_EQUIVALENT（真 MusicKit JS 实测）。
+    expect(config).not.toHaveProperty('storefrontId');
+    expect(played).not.toHaveProperty('isPreview');
     expect(b.calls.find((c) => c[0] === 'setQueue')[1]).toEqual({ song: '1513425337', startPlaying: false });
     expect(b.posted.some(([, m]) => m.type === 'state' && m.state === 2)).toBe(true);
     expect(b.mediaSession.metadata).toBe(null);

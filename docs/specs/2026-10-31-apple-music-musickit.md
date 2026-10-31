@@ -29,6 +29,16 @@ mpv 拿不到明文，插件路线最多到 30 秒试听。合规播放只能让
 | Android | 隐藏 Android WebView 跑 MusicKit JS | ⚠ | 同 Windows | 官方 MusicKit for Android SDK 多年未更新、AAR 专有不可再分发，**不采用** |
 | Linux | 只浏览 + 30 s 试听（catalog REST + 预览 m4a 走 mpv） | ❌ | Worker 代签 | WPE WebKit 无 Widevine，也无官方 Apple Music app |
 
+**MusicKit JS 托管页实测（2026-11-01，本机 Chromium 156 / ego lite，未登录）**：`rank.fushi.moe/musickit/`
+同款页面 + 线上 token → `configure` 成功；`setQueue` + `play` 放出 30 s 试听（`AudioPreview` m4a），`seek` / `pause`
+与 `state` / `item` 事件正常，`navigator.mediaSession` 被清空后保持 null。三条坑：① **自动播放策略**——无用户手势时
+`play()` 被拦且 MusicKit 实例随后卡在 loading，宿主 WebView 必须关掉「媒体播放需用户手势」
+（InAppWebView `mediaPlaybackRequiresUserGesture: false`）；② MusicKit 出错会**自己弹页面内对话框**并盖住整页，
+托管页在非调试模式下用 CSS 隐藏，错误一律走桥接事件；③ **未登录时不能给 MusicKit JS 指定 storefront**——
+指定 `jp`（`configure` 传或事后赋值）后 `setQueue` 报 `CONTENT_EQUIVALENT`，不指定（默认 `us`）则正常，所以桥接
+不设地区（登录后用账户地区；元数据由 Dart 按设置的 storefront 取）。整曲 / `authorize()` / WebView2 内 Widevine 仍待
+P0②（需订阅账号登录）。
+
 MusicKit JS 经网页播放上限 256 kbps AAC（原生 MusicKit 由系统决定，可能更高，含无损与否待测）。
 
 ## 3. 架构
