@@ -12,6 +12,11 @@
 | `LunaHook64.dll` / `LunaHook32.dll` | 引擎级文本 hook | 注入进 **游戏进程**（injector 用 `CreateRemoteThread(LoadLibraryW)`） |
 | `LICENSE` | GNU GPLv3 | — |
 
+**四个 DLL 不入 git**（2026-11-01）：字节放在 GitHub release `vendored-binaries`，由仓库根
+`tool/vendored_binaries.json` 钉 sha256（与本目录 `VERSION.json` 对账，守卫
+`fushi/test/build/vendored_binaries_manifest_guard_test.dart`），`tool/bootstrap.*` / CI 用
+`python3 tool/vendored_binaries.py fetch` 取回到本目录。升级流程见 `docs/agent/build.md`「vendored 二进制」。
+
 DLL 位数必须匹配目标进程：32 位游戏用 `*32.dll`，64 位用 `*64.dll`。构建后 CMake 把与编译位数
 匹配的两个 DLL 拷到 injector 输出目录。
 
@@ -49,4 +54,4 @@ DLL 位数必须匹配目标进程：32 位游戏用 `*32.dll`，64 位用 `*64.
 ## 许可
 
 LunaHook / LunaTranslator 为 GPLv3。本组件（`galgame_voice_hook`）亦按 GPLv3 分发；vendored 二进制
-以未修改原样入库，见 `LICENSE`。
+以未修改原样分发（经 `vendored-binaries` release），见 `LICENSE`。
