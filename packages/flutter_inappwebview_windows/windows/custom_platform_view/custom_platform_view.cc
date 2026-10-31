@@ -102,6 +102,29 @@ namespace flutter_inappwebview_plugin
     return std::make_tuple(*x, *y, *z);
   }
 
+  // setSize: [width, height, scale_factor] 或带容量的
+  // [width, height, scale_factor, capacity_width, capacity_height]（BUG-3895）。
+  // 容量缺省 = 0x0（旧协议，纹理贴身分配）。
+  static std::optional<std::tuple<double, double, double, double, double>>
+    GetSetSizeArgs(const flutter::EncodableValue* args)
+  {
+    const flutter::EncodableList* list =
+      std::get_if<flutter::EncodableList>(args);
+    if (!list || (list->size() != 3 && list->size() != 5)) {
+      return std::nullopt;
+    }
+    double values[5] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+    for (size_t i = 0; i < list->size(); ++i) {
+      const auto value = std::get_if<double>(&(*list)[i]);
+      if (!value) {
+        return std::nullopt;
+      }
+      values[i] = *value;
+    }
+    return std::make_tuple(values[0], values[1], values[2], values[3],
+      values[4]);
+  }
+
   static const std::string& GetCursorName(const HCURSOR cursor)
   {
     // The cursor names correspond to the Flutter Engine names:
@@ -404,13 +427,18 @@ namespace flutter_inappwebview_plugin
 
     // setSize: [double width, double height, double scale_factor]
     if (method_name.compare(kMethodSetSize) == 0) {
-      auto size = GetPointAndScaleFactorFromArgs(method_call.arguments());
+      auto size = GetSetSizeArgs(method_call.arguments());
       if (size && view) {
-        const auto [width, height, scale_factor] = size.value();
+        const auto [width, height, scale_factor, capacity_width,
+          capacity_height] = size.value();
 
         if (!std::isfinite(width) || !std::isfinite(height) ||
           !std::isfinite(scale_factor) || width < 0.0 || height < 0.0 ||
-          scale_factor <= 0.0) {
+          scale_factor <= 0.0 || !std::isfinite(capacity_width) ||
+          !std::isfinite(capacity_height) || capacity_width < 0.0 ||
+          capacity_height < 0.0 ||
+          capacity_width > (std::numeric_limits<uint32_t>::max)() ||
+          capacity_height > (std::numeric_limits<uint32_t>::max)()) {
           return result->Error(kErrorInvalidArgs);
         }
 
@@ -436,7 +464,9 @@ namespace flutter_inappwebview_plugin
             texture_bridge_.get()));
         if (texture_bridge_) {
           texture_bridge_->SetOutputSize(logical_width, logical_height,
-            static_cast<float>(scale_factor));
+            static_cast<float>(scale_factor),
+            { static_cast<size_t>(capacity_width),
+              static_cast<size_t>(capacity_height) });
           texture_bridge_->Start();
         }
         else {
