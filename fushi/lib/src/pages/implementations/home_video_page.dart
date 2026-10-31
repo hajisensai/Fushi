@@ -636,6 +636,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       const <String, VideoMetadataWorkRow>{};
   Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
       const <int, List<VideoMetadataImageRow>>{};
+  /// 每个本地视频文件对应分集的刮削剧照（`episodeId` 归属的 thumb 图）。
+  Map<String, List<VideoMetadataImageRow>> _metadataEpisodeImagesByBook =
+      const <String, List<VideoMetadataImageRow>>{};
   Map<String, int> _runtimeMinutesByBookUid = const <String, int>{};
   Set<String> _localExtraBookUids = const <String>{};
 
@@ -1384,15 +1387,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         };
     final Map<int, List<VideoMetadataImageRow>> metadataImagesByWork =
         <int, List<VideoMetadataImageRow>>{};
+    final Map<int, List<VideoMetadataImageRow>> metadataImagesByEpisode =
+        <int, List<VideoMetadataImageRow>>{};
     for (final VideoMetadataImageRow image in await metadataImagesF) {
       if (image.workId case final int workId) {
         (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
       }
+      if (image.episodeId case final int episodeId) {
+        (metadataImagesByEpisode[episodeId] ??= <VideoMetadataImageRow>[]).add(
+          image,
+        );
+      }
     }
+    final Map<String, List<VideoMetadataImageRow>> metadataEpisodeImagesByBook =
+        <String, List<VideoMetadataImageRow>>{};
     // 一文件多集（v110）时同一文件有多条分集行：时长按集累加。
     final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
     for (final VideoMetadataEpisodeRow episode in await metadataEpisodesF) {
       if (episode.bookUid case final String uid) {
+        final List<VideoMetadataImageRow>? stills =
+            metadataImagesByEpisode[episode.id];
+        if (stills != null) {
+          (metadataEpisodeImagesByBook[uid] ??= <VideoMetadataImageRow>[])
+              .addAll(stills);
+        }
         if (episode.runtimeMinutes case final int minutes) {
           runtimeMinutesByBookUid[uid] =
               (runtimeMinutesByBookUid[uid] ?? 0) + minutes;
@@ -1444,6 +1462,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _metadataWorkByCollection = metadataWorkByCollection;
       _metadataWorkByBook = metadataWorkByBook;
       _metadataImagesByWork = metadataImagesByWork;
+      _metadataEpisodeImagesByBook = metadataEpisodeImagesByBook;
       _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
       _localExtraBookUids = localExtraBookUids;
       _subscribedCollectionIds = subscribedCollectionIds;
@@ -1532,6 +1551,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ? const <String>['backdrop', 'landscape', 'thumb']
         : const <String>['landscape', 'thumb', 'backdrop'],
   );
+
+  /// 主卡横图的第一选择：这一集自己的刮削剧照（thumb，本地文件优先，其次远程 URL）。
+  /// 没有剧照（未刮削 / 刮削源不给）返回 null，由调用方回落到原有选图链。
+  ImageProvider? _episodeStillProvider(String bookUid) {
+    final List<VideoMetadataImageRow>? rows =
+        _metadataEpisodeImagesByBook[bookUid];
+    if (rows == null) return null;
+    for (final VideoMetadataImageRow row in orderedEpisodeStills(rows)) {
+      final ImageProvider? local = _localFileCover(row.localPath);
+      if (local != null) return local;
+      if (row.remoteUrl.isNotEmpty) return AppCachedHttpImage(row.remoteUrl);
+    }
+    return null;
+  }
 
   ImageProvider? _canonicalWorkImageProvider(
     VideoMetadataWorkRow? work,
@@ -6173,6 +6206,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       subtitle: _continueSecondaryText(book, episodeNumber: episodeNumber),
       poster: _bookPosterProvider(book),
       image: ({required bool overlay}) =>
+          _episodeStillProvider(book.bookUid) ??
           _mediaImageProvider(
             _mediaImagesByBookUid[book.bookUid],
             _heroImageKinds(overlay: overlay),
@@ -6236,6 +6270,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : null,
       poster: _collectionPosterProvider(collection, members, target),
       image: ({required bool overlay}) =>
+          (target.local == null
+              ? null
+              : _episodeStillProvider(target.local!.bookUid)) ??
           _mediaImageProvider(
             _mediaImagesByCollection[collection.id],
             _heroImageKinds(overlay: overlay),

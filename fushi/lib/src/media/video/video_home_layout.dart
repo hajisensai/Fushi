@@ -1,5 +1,6 @@
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoMetadataImageRow;
 import 'package:fushi_engine/media/video/disc/disc_format.dart' show DiscFormat;
 
 /// 视频首页（hayase 式改版，TODO-2486）的布局与筛选纯函数。
@@ -483,3 +484,14 @@ List<T> selectVideoHeroUnits<T>(
         ));
   return <T>[for (final VideoHeroCandidate<T> c in pool.take(limit)) c.unit];
 }
+
+/// 主卡「这一集自己的剧照」候选：只留 thumb 类图，按 position 升序。
+/// 本地文件 / 远程 URL 的取舍由调用方做；没有 thumb（未刮削 / 刮削源不给）返回空，
+/// 调用方回落到原有选图链（backdrop / 刮削横图 / 封面）。
+List<VideoMetadataImageRow> orderedEpisodeStills(
+  Iterable<VideoMetadataImageRow> rows,
+) =>
+    rows.where((VideoMetadataImageRow r) => r.kind == 'thumb').toList()..sort(
+      (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+          a.position.compareTo(b.position),
+    );
