@@ -28,9 +28,9 @@ void main() {
     );
     final int seqBefore =
         (await s.sync2Command(<String, Object?>{
-                  'op': 'identity',
-                  'now': s.now().$1,
-                })).map['nextSeq']!
+              'op': 'identity',
+              'now': s.now().$1,
+            })).map['nextSeq']!
             as int;
 
     final List<String> order = <String>[];
@@ -67,11 +67,7 @@ void main() {
     final SrsSync2Result out = await outbox;
     final SrsSync2Result id = await identity;
     expect(order.first, 'rolled back');
-    expect(
-      id.map['nextSeq'],
-      seqBefore,
-      reason: '回滚掉的操作的 seq 没有被当成已用',
-    );
+    expect(id.map['nextSeq'], seqBefore, reason: '回滚掉的操作的 seq 没有被当成已用');
     expect(
       (out.map['upto'] as int?) ?? 0,
       lessThan(seqBefore),

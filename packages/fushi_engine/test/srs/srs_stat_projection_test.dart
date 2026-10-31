@@ -510,6 +510,13 @@ void main() {
     test('对端并发复习旧卡（还没收到换类型）：分类与成熟净值按合并历史', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');
+      // 新卡 → 学习 → 成熟要经过学习步：RWKV 牌组缺省不用步长，这里写上步长。
+      await a.editFields(SrsEntityKind.deck, a.defaultDeckId, <String, Object?>{
+        SrsFieldKeys.deckSteps: <String, Object?>{
+          'learn': <double>[1, 10],
+          'relearn': <double>[10],
+        },
+      });
       final String to = await a.createStockNoteType(
         SrsStockNoteType.basic,
         'Basic',

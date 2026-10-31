@@ -171,7 +171,13 @@ void main() {
 
     test('学习中的卡不受上限截断，逐层求和', () async {
       await limits(s, a, 0);
-      // 学习中：Again 留在学习队列。
+      // 学习中：Again 留在学习队列（RWKV 牌组缺省不用步长，这里写上步长）。
+      await s.editFields(SrsEntityKind.deck, a1, <String, Object?>{
+        SrsFieldKeys.deckSteps: <String, Object?>{
+          'learn': <double>[1, 10],
+          'relearn': <double>[10],
+        },
+      });
       final String id = (await s.nextCard(a1))!;
       await s.answer(id, 1);
       final Map<String, SrsDeckSummary> m = await summaries(s);

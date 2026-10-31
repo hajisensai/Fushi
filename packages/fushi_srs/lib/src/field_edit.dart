@@ -141,6 +141,11 @@ abstract final class SrsFieldKeys {
   /// 新卡出卡顺序（[SrsNewCardOrder.wire]；缺省 = 按词频）。随参数继承走 own 祖先。
   static const String deckNewOrder = 'newOrder';
 
+  /// 新卡计划（Map，见 [SrsNewCardPlan]）：`auto` 按复习量自动调整、
+  /// `budget` 复习预算百分比、`boost` 复习少时多出新卡的百分比。一起写、一起合并；
+  /// 与 [deckLimits] 一样是牌组自己的值，不随参数继承。
+  static const String deckNewPlan = 'newPlan';
+
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
   static const String utcOffsetMin = 'utcOffsetMin';

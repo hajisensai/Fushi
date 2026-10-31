@@ -27,6 +27,13 @@ void main() {
       deviceId: 'a',
       now: () => t,
     );
+    // 复习过的卡要留在学习队列：RWKV 牌组缺省不用步长，这里写上步长。
+    await s.editFields(SrsEntityKind.deck, s.defaultDeckId, <String, Object?>{
+      SrsFieldKeys.deckSteps: <String, Object?>{
+        'learn': <double>[1, 10],
+        'relearn': <double>[10],
+      },
+    });
     final String reviewed = await s.createNote(
       noteTypeId: s.lapisNoteTypeId,
       fieldsById: <String, String>{
