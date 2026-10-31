@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 181033 (10649 per locale)
+/// Strings: 181424 (10672 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6940,6 +6940,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lyrics_mode_hint_body =>
       'Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.';
   String get lyrics_mode_hint_title => 'Lyrics mode';
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   String get lyrics_sentence_replay => 'Replay current sentence';
   String get lyrics_skipped_text_show => 'Show unread book text';
   String get lyrics_skipped_text_show_hint =>
@@ -8743,6 +8748,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Anki data folder not found. Install Anki, open it once, then try again.';
   String get onboarding_anki_auto_reposition_hint =>
       'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   String get onboarding_anki_backend_label => 'Connection';
   String get onboarding_anki_fsrs_body =>
       'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
@@ -10601,6 +10608,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       '${n} cards were already reviewed on another device and could not be undone';
   String get srs_browse_undone => 'Undone';
   String get srs_browse_unsuspended => 'Cards unsuspended';
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  String get srs_card_appearance_blur_translation_desc =>
+      'Fushi cards only. Edited templates must keep the .fc-translation element';
   String get srs_card_appearance_color_app => 'Follow app theme';
   String get srs_card_appearance_color_custom => 'Custom accent';
   String get srs_card_appearance_compact_phone =>
@@ -11341,6 +11352,27 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_review_done => 'All done for today';
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  String get srs_review_gestures_action_none => 'Nothing';
+  String get srs_review_gestures_action_toggle_toolbar => 'Show / hide top bar';
+  String get srs_review_gestures_back => 'Answer side';
+  String get srs_review_gestures_double_tap => 'Double tap';
+  String get srs_review_gestures_front => 'Question side';
+  String get srs_review_gestures_hint =>
+      'Tap zones, double tap, long press and swipes on the card';
+  String get srs_review_gestures_long_press => 'Long press';
+  String get srs_review_gestures_note =>
+      'Taps and long presses only count on blank space: words, links, buttons and selected text keep their own behaviour. While the card can still scroll that way, a swipe is a scroll.';
+  String get srs_review_gestures_rating_hidden =>
+      'Inactive while only Again / Good are shown';
+  String get srs_review_gestures_reset => 'Restore defaults';
+  String get srs_review_gestures_swipe_down => 'Swipe down';
+  String get srs_review_gestures_swipe_left => 'Swipe left';
+  String get srs_review_gestures_swipe_right => 'Swipe right';
+  String get srs_review_gestures_swipe_up => 'Swipe up';
+  String get srs_review_gestures_tap_center => 'Tap center';
+  String get srs_review_gestures_tap_left => 'Tap left';
+  String get srs_review_gestures_tap_right => 'Tap right';
+  String get srs_review_gestures_title => 'Gestures';
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   String get srs_review_hide_hard_easy_hint =>
       'Keys 2 and 4 still rate Hard and Easy';
@@ -26553,7 +26585,7 @@ class _StringsAr extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'خطوط نوافذ القاموس، مع معاينة يابانية مباشرة';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => 'توحيد أنماط القواميس';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -26727,6 +26759,13 @@ class _StringsAr extends _StringsEn {
       'وضع كلمات الأغاني له إعداد حجم خط خاص به. يمكنك ضبطه في ⚙ الإعدادات ← الطباعة.';
   @override
   String get lyrics_mode_hint_title => 'وضع كلمات الأغاني';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -29575,7 +29614,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get nav_video => 'فيديو';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'المتصفح';
   @override
   String get network_proxy_address_hint =>
       'خادم وكيل HTTP تستخدمه كل طلبات الإنترنت العامة';
@@ -29821,7 +29860,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get onboarding_action_next => 'التالي';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'مرّر للأسفل';
   @override
   String get onboarding_action_skip => 'تخطّي الآن';
   @override
@@ -29854,7 +29893,10 @@ class _StringsAr extends _StringsEn {
       'لم يُعثر على مجلد بيانات Anki. ثبّت Anki وافتحه مرة واحدة، ثم حاول مجدداً.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'بعد نحو 30 ثانية من إنشاء البطاقة، يُعاد ترتيب البطاقات الجديدة في تلك المجموعة حسب تكرار الكلمات لتأتي الكلمات الشائعة أولًا. لا تُمَسّ بطاقات المراجعة أبدًا. يتطلب Anki لسطح المكتب مع AnkiConnect (يمكن للهاتف استخدامه بالاتصال بـ AnkiConnect على حاسوب)؛ لا يستطيع AnkiDroid وAnkiMobile إعادة ترتيب البطاقات.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'الاتصال';
   @override
@@ -29862,7 +29904,7 @@ class _StringsAr extends _StringsEn {
       'يحتوي Anki على FSRS مدمجًا · وهي من أفضل خوارزميات التكرار المتباعد · لكنه يواصل الجدولة بخوارزمية SM-2 من الثمانينيات حتى تفعّل FSRS. تقرأ FSRS سجل مراجعاتك الفعلي وتتنبأ بموعد نسيانك، فتحتفظ بنفس مستوى الاسترجاع بمراجعات أقل. تفعّل هذا المفتاح مرة واحدة داخل Anki؛ ولا يتغير شيء في Fushi.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'تستخدم المراجعة المدمجة في Fushi خوارزمية FSRS-7 افتراضيًا. لا تحتاج إلى الخطوات أدناه إلا إذا كنت تراجع في Anki أيضًا.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'اضغط «تحسين» أسفل المفتاح لضبط المعاملات وفق سجل مراجعاتك، ثم احفظ. دون نحو 1000 مراجعة تتفوق القيم الافتراضية أصلًا على SM-2، فأعد التحسين بعد أن تدرس لفترة.';
@@ -29934,7 +29976,7 @@ class _StringsAr extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'انقر على كلمة';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'تحتفظ القواميس بألوانها الخاصة افتراضيًا. لتلوين وسومها والكلمات المميَّزة وحدودها بلون التمييز في سمتك، فعّل «توحيد أنماط القواميس» في إعدادات البحث.';
   @override
   String get onboarding_feature_backup => 'نسخ احتياطي ومزامنة';
   @override
@@ -29979,26 +30021,26 @@ class _StringsAr extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'قواميس يابانية وصوت نطق ياباني/إنجليزي في تنزيل واحد';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'البطاقات والمراجعة';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'حوّل ما تبحث عنه إلى بطاقات واختر مكان مراجعتها';
   @override
   String get onboarding_feature_video => 'الفيديو';
   @override
   String get onboarding_feature_video_hint => 'بحث في الترجمات وإنشاء بطاقات';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'تصفّح المواقع داخل Fushi وابحث عن الكلمات في أي صفحة.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'تصفّح المواقع داخل Fushi: شاهد مواقع الفيديو في مشغّل Fushi، واقرأ القصص المصوّرة على الويب في قارئ Fushi، وابحث عن الكلمات في أي صفحة. ويمكن على سطح المكتب أيضًا تثبيت إضافة المتصفح.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'تصفّح المواقع داخل Fushi: اقرأ القصص المصوّرة والروايات على الويب في قارئ Fushi، وابحث عن الكلمات في أي صفحة. ويمكن على سطح المكتب أيضًا تثبيت إضافة المتصفح.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'تصفّح المواقع داخل Fushi: اقرأ القصص المصوّرة والروايات على الويب في قارئ Fushi، وابحث عن الكلمات في أي صفحة.';
   @override
   String get onboarding_features_modules_hint =>
       'الصفحات غير المحدّدة تُخفى من شريط التنقل. يمكنك تغيير ذلك في أي وقت من الإعدادات → المظهر.';
@@ -30016,16 +30058,16 @@ class _StringsAr extends _StringsEn {
       'يمكنك فتح هذا الدليل مجدداً في أي وقت من الإعدادات → النظام.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'في صفحة «المراجعة»، اضغط «استيراد» في الشريط العلوي واختر ملف ‎.apkg أو ‎.colpkg مُصدَّرًا من Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'استورد مجموعات Anki الخاصة بك';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'الخطوات التالية';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'تصل البطاقات التي تنشئها إلى تبويب «المراجعة»، وتنتظرك هناك البطاقات المستحقة.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'راجع في تبويب «المراجعة»';
   @override
   String get onboarding_finish_summary_modules => 'صفحات المكتبة المعروضة';
   @override
@@ -30285,38 +30327,39 @@ class _StringsAr extends _StringsEn {
   String get onboarding_permission_storage_label => 'الوصول إلى جميع الملفات';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'يحدّد هذا الاختيار الخطوة التالية مسبقًا فقط، ويمكنك بعدها اختيار الميزات واحدة تلو الأخرى.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'ابحث عن الكلمات أثناء القراءة والمشاهدة، ثم أنشئ بطاقات وراجعها.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'تعلّم لغة';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'يُخفى القاموس وإنشاء البطاقات والمراجعة. يمكنك إعادة تشغيلها من الإعدادات في أي وقت.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title =>
+      'للقراءة والمشاهدة والاستماع فقط';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'لأي غرض ستستخدم Fushi؟';
   @override
   String get onboarding_reopen => 'دليل البدء';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'أرسل البطاقات إلى Anki ‏(AnkiDroid أو AnkiMobile أو Anki لسطح المكتب مع AnkiConnect) وراجعها هناك. في الخطوة التالية تربط Anki وتختار مجموعة ونوع ملاحظة.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'استخدام Anki بدلًا من ذلك…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'تكرار متباعد مدمج، تُجدوَل مواعيده افتراضيًا بنموذج RWKV (نموذج صغير يُنزَّل عند أول استخدام). لا حاجة إلى تثبيت Anki ولا إلى أي إعداد — تدخل البطاقات التي تنشئها إلى المراجعة مباشرة.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'مراجعة Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'تُراجَع هنا البطاقات التي تنشئها أثناء البحث عن الكلمات. يمكنك تغيير ذلك في أي وقت من الإعدادات ← إنشاء البطاقات.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'طريقة المراجعة';
   @override
   String get onboarding_sample_sentence_hint =>
       'انقر لفتحها في صفحة البحث، ثم انقر على أي كلمة.';
@@ -30330,35 +30373,35 @@ class _StringsAr extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'تخطي دليل البدء؟';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'فتح المجموعات';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'أضف بطاقتك الأولى من قائمة المجموعات';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'راجع البطاقات التي تنشئها داخل Fushi مباشرة — دون حاجة إلى Anki ودون أي إعداد.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'تم إعداد مجموعة افتراضية ونوع الملاحظة «Fushi Card» مسبقًا.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'جاهز للاستخدام';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'تعتمد الجدولة على FSRS-7، أحد أفضل خوارزميات التكرار المتباعد، وتتكيّف مع سجل مراجعاتك.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'FSRS-7 افتراضيًا';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'يمكن أن تدخل البطاقات التي تنشئها أثناء القراءة أو المشاهدة إلى المراجعة مباشرة.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'من إنشاء البطاقة إلى المراجعة';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'تنتقل مجموعاتك وتقدّم مراجعتك معك إلى أجهزتك الأخرى.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'مزامنة بين الأجهزة';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'المراجعة المدمجة في Fushi';
   @override
   String get onboarding_step_anki_action => 'إعدادات إنشاء البطاقات';
   @override
@@ -33089,6 +33132,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'بطاقات Fushi فقط. يجب أن تحتفظ القوالب المعدّلة بالعنصر .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -33631,7 +33680,7 @@ class _StringsAr extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'استيراد';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -34340,6 +34389,46 @@ class _StringsAr extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'لا شيء';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'إظهار / إخفاء الشريط العلوي';
+  @override
+  String get srs_review_gestures_back => 'الوجه الخلفي';
+  @override
+  String get srs_review_gestures_double_tap => 'نقر مزدوج';
+  @override
+  String get srs_review_gestures_front => 'الوجه الأمامي';
+  @override
+  String get srs_review_gestures_hint =>
+      'مناطق النقر والنقر المزدوج والضغط المطوّل والسحب على البطاقة';
+  @override
+  String get srs_review_gestures_long_press => 'ضغط مطوّل';
+  @override
+  String get srs_review_gestures_note =>
+      'يُحتسب النقر والضغط المطوّل على المساحة الفارغة فقط: الكلمات والروابط والأزرار والنص المحدد تحتفظ بسلوكها. ما دامت البطاقة قابلة للتمرير في ذلك الاتجاه، فالسحب تمرير.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'غير فعّال عند عرض Again / Good فقط';
+  @override
+  String get srs_review_gestures_reset => 'استعادة الافتراضي';
+  @override
+  String get srs_review_gestures_swipe_down => 'السحب للأسفل';
+  @override
+  String get srs_review_gestures_swipe_left => 'السحب لليسار';
+  @override
+  String get srs_review_gestures_swipe_right => 'السحب لليمين';
+  @override
+  String get srs_review_gestures_swipe_up => 'السحب للأعلى';
+  @override
+  String get srs_review_gestures_tap_center => 'النقر في الوسط';
+  @override
+  String get srs_review_gestures_tap_left => 'النقر يسارًا';
+  @override
+  String get srs_review_gestures_tap_right => 'النقر يمينًا';
+  @override
+  String get srs_review_gestures_title => 'الإيماءات';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -52569,7 +52658,8 @@ class _StringsDe extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Schriften für Wörterbuch-Popups, mit Live-Vorschau auf Japanisch';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style =>
+      'Wörterbuchstile vereinheitlichen';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -52744,6 +52834,13 @@ class _StringsDe extends _StringsEn {
       'Der Liedtextmodus hat eine eigene Schriftgrößeneinstellung. Du kannst sie unter ⚙ Einstellungen → Typografie anpassen.';
   @override
   String get lyrics_mode_hint_title => 'Liedtextmodus';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -55885,7 +55982,7 @@ class _StringsDe extends _StringsEn {
   @override
   String get onboarding_action_next => 'Weiter';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Nach unten scrollen';
   @override
   String get onboarding_action_skip => 'Vorerst überspringen';
   @override
@@ -55918,7 +56015,10 @@ class _StringsDe extends _StringsEn {
       'Anki-Datenordner nicht gefunden. Installieren Sie Anki, öffnen Sie es einmal und versuchen Sie es erneut.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Etwa 30 Sekunden nach dem Erstellen einer Karte werden die neuen Karten in diesem Stapel nach Worthäufigkeit sortiert, sodass häufige Wörter zuerst kommen. Wiederholungskarten bleiben unangetastet. Erfordert Desktop-Anki mit AnkiConnect (ein Smartphone kann sich mit AnkiConnect auf einem Computer verbinden); AnkiDroid und AnkiMobile können Karten nicht umsortieren.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Verbindung';
   @override
@@ -55926,7 +56026,7 @@ class _StringsDe extends _StringsEn {
       'Anki hat FSRS integriert – einen der besten Algorithmen für verteilte Wiederholung –, plant aber weiter mit SM-2 aus den 1980ern, bis du FSRS einschaltest. FSRS liest deinen echten Wiederholungsverlauf und sagt voraus, wann du kurz vor dem Vergessen bist, sodass du dieselbe Behaltensrate mit weniger Wiederholungen erreichst. Du legst diesen Schalter einmal in Anki um; auf Fushi-Seite ändert sich nichts.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Die integrierte Wiederholung von Fushi nutzt standardmäßig bereits FSRS-7. Die folgenden Schritte brauchst du nur, wenn du auch in Anki wiederholst.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Tippe unter dem Schalter auf „Optimieren“, um die Parameter an deinen eigenen Wiederholungsverlauf anzupassen, und speichere dann. Bis etwa 1000 Wiederholungen sind die Standardwerte bereits besser als SM-2; optimiere einfach erneut, wenn du eine Weile gelernt hast.';
@@ -56000,7 +56100,7 @@ class _StringsDe extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Auf ein Wort tippen';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Wörterbücher behalten standardmäßig ihre eigenen Farben. Um ihre Tags, hervorgehobenen Wörter und Rahmen in der Akzentfarbe deines Designs einzufärben, aktiviere „Wörterbuchstile vereinheitlichen“ in den Nachschlage-Einstellungen.';
   @override
   String get onboarding_feature_backup => 'Sicherung & Synchronisierung';
   @override
@@ -56046,10 +56146,10 @@ class _StringsDe extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Japanische Wörterbücher plus JA/EN-Aussprache-Audio in einem Download';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Karten & Wiederholung';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Nachgeschlagene Wörter zu Karten machen und wählen, wo du sie wiederholst';
   @override
   String get onboarding_feature_video => 'Video';
   @override
@@ -56057,16 +56157,16 @@ class _StringsDe extends _StringsEn {
       'Untertitel nachschlagen und Karten erstellen';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Websites direkt in Fushi aufrufen und auf jeder Seite Wörter nachschlagen.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Websites direkt in Fushi: Videoseiten im Fushi-Player ansehen, Web-Comics im Fushi-Reader lesen und auf jeder Seite Wörter nachschlagen. Auf dem Desktop lässt sich zusätzlich die Browsererweiterung installieren.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Websites direkt in Fushi: Web-Comics und Web-Romane im Fushi-Reader lesen und auf jeder Seite Wörter nachschlagen. Auf dem Desktop lässt sich zusätzlich die Browsererweiterung installieren.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Websites direkt in Fushi: Web-Comics und Web-Romane im Fushi-Reader lesen und auf jeder Seite Wörter nachschlagen.';
   @override
   String get onboarding_features_modules_hint =>
       'Nicht angehakte Seiten werden in der Navigationsleiste ausgeblendet. Jederzeit änderbar unter Einstellungen → Erscheinungsbild.';
@@ -56084,16 +56184,17 @@ class _StringsDe extends _StringsEn {
       'Sie können diese Anleitung jederzeit unter Einstellungen → System wieder öffnen.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Tippe auf der Seite „Wiederholen“ oben auf „Importieren“ und wähle eine aus Anki exportierte .apkg- oder .colpkg-Datei.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Deine Anki-Stapel mitnehmen';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Nächste Schritte';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Deine erstellten Karten landen im Tab „Wiederholen“; fällige Karten warten dort auf dich.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title =>
+      'Im Tab „Wiederholen“ wiederholen';
   @override
   String get onboarding_finish_summary_modules =>
       'Angezeigte Bibliotheksseiten';
@@ -56363,38 +56464,38 @@ class _StringsDe extends _StringsEn {
   String get onboarding_permission_storage_label => 'Zugriff auf alle Dateien';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Legt nur die Vorauswahl für den nächsten Schritt fest. Du kannst die Funktionen danach weiterhin einzeln wählen.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Beim Lesen und Schauen Wörter nachschlagen, dann Karten erstellen und wiederholen.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Eine Sprache lernen';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Wörterbuch, Kartenerstellung und Wiederholung werden ausgeblendet. Du kannst sie jederzeit in den Einstellungen wieder einschalten.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => 'Nur lesen, schauen und hören';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Wofür möchtest du Fushi nutzen?';
   @override
   String get onboarding_reopen => 'Erste-Schritte-Anleitung';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Karten an Anki senden (AnkiDroid, AnkiMobile oder Desktop-Anki mit AnkiConnect) und dort wiederholen. Im nächsten Schritt verbindest du Anki und wählst Stapel und Notiztyp.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Stattdessen Anki verwenden…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Integrierte verteilte Wiederholung, standardmäßig mit RWKV geplant (ein kleines Modell, das beim ersten Gebrauch heruntergeladen wird). Kein Anki zu installieren, nichts einzurichten – deine Karten landen direkt in der Wiederholung.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Fushi-Wiederholung';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Hier wiederholst du die Karten, die du beim Nachschlagen erstellst. Du kannst das jederzeit unter Einstellungen → Kartenerstellung ändern.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Wie du wiederholst';
   @override
   String get onboarding_sample_sentence_hint =>
       'Tippen, um ihn auf der Nachschlageseite zu öffnen, dann auf ein beliebiges Wort tippen.';
@@ -56408,35 +56509,35 @@ class _StringsDe extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Einführung überspringen?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Stapel öffnen';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Füge deine erste Karte über die Stapelliste hinzu';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Wiederhole deine Karten direkt in Fushi – ohne Anki und ohne Einrichtung.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Ein Standardstapel und der Notiztyp „Fushi Card“ sind bereits eingerichtet.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Sofort einsatzbereit';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'Die Planung nutzt FSRS-7, einen der besten Algorithmen für verteilte Wiederholung, und passt sich an deinen eigenen Wiederholungsverlauf an.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'Standardmäßig FSRS-7';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Karten, die du beim Lesen oder Schauen erstellst, können direkt in die Wiederholung gehen.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'Vom Erstellen zur Wiederholung';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Deine Stapel und dein Lernfortschritt begleiten dich auf deine anderen Geräte.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Geräteübergreifend synchron';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Integrierte Wiederholung in Fushi';
   @override
   String get onboarding_step_anki_action => 'Kartenerstell-Einstellungen';
   @override
@@ -56492,7 +56593,7 @@ class _StringsDe extends _StringsEn {
   String get onboarding_step_interconnect_body =>
       'Geräte im LAN koppeln, um eine Bibliothek zu teilen und den Fortschritt synchron zu halten.';
   @override
-  String get onboarding_step_interconnect_title => 'Interconnect';
+  String get onboarding_step_interconnect_title => 'Geräteverbund';
   @override
   String get onboarding_step_manual_resources_body =>
       'Importieren Sie mindestens ein Wörterbuch vor der Nachschlage-Anleitung. Hörbücher und Aussprache-Audio sind optional.';
@@ -59210,6 +59311,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Nur Fushi-Karten. Bearbeitete Vorlagen müssen das Element .fc-translation behalten';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -59752,7 +59859,7 @@ class _StringsDe extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Importieren';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -60461,6 +60568,46 @@ class _StringsDe extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Nichts';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Obere Leiste ein- / ausblenden';
+  @override
+  String get srs_review_gestures_back => 'Rückseite';
+  @override
+  String get srs_review_gestures_double_tap => 'Doppeltippen';
+  @override
+  String get srs_review_gestures_front => 'Vorderseite';
+  @override
+  String get srs_review_gestures_hint =>
+      'Tippbereiche, Doppeltippen, langes Drücken und Wischen auf der Karte';
+  @override
+  String get srs_review_gestures_long_press => 'Lange drücken';
+  @override
+  String get srs_review_gestures_note =>
+      'Tippen und langes Drücken zählen nur auf leeren Flächen: Wörter, Links, Schaltflächen und markierter Text verhalten sich wie gewohnt. Solange die Karte in diese Richtung noch scrollen kann, ist Wischen ein Scrollen.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inaktiv, solange nur Again / Good angezeigt werden';
+  @override
+  String get srs_review_gestures_reset => 'Standard wiederherstellen';
+  @override
+  String get srs_review_gestures_swipe_down => 'Nach unten wischen';
+  @override
+  String get srs_review_gestures_swipe_left => 'Nach links wischen';
+  @override
+  String get srs_review_gestures_swipe_right => 'Nach rechts wischen';
+  @override
+  String get srs_review_gestures_swipe_up => 'Nach oben wischen';
+  @override
+  String get srs_review_gestures_tap_center => 'Mitte tippen';
+  @override
+  String get srs_review_gestures_tap_left => 'Links tippen';
+  @override
+  String get srs_review_gestures_tap_right => 'Rechts tippen';
+  @override
+  String get srs_review_gestures_title => 'Gesten';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -78805,7 +78952,8 @@ class _StringsEs extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Fuentes para las ventanas del diccionario, con vista previa en japonés en tiempo real';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style =>
+      'Unificar estilos de diccionario';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -78979,6 +79127,13 @@ class _StringsEs extends _StringsEn {
       'El modo de letras tiene su propia configuración de tamaño de fuente. Puedes ajustarlo en ⚙ Ajustes → Tipografía.';
   @override
   String get lyrics_mode_hint_title => 'Modo de letras';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -81874,7 +82029,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get nav_video => 'Vídeo';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'Navegador';
   @override
   String get network_proxy_address_hint =>
       'Servidor proxy HTTP usado por todas las solicitudes a Internet público';
@@ -82122,7 +82277,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get onboarding_action_next => 'Siguiente';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Desplázate hacia abajo';
   @override
   String get onboarding_action_skip => 'Omitir por ahora';
   @override
@@ -82155,7 +82310,10 @@ class _StringsEs extends _StringsEn {
       'No se encontró la carpeta de datos de Anki. Instale Anki, ábralo una vez e inténtelo de nuevo.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Unos 30 segundos después de crear una tarjeta, las tarjetas nuevas de ese mazo se reordenan por frecuencia de palabra para que las palabras comunes vayan primero. Las tarjetas en repaso nunca se tocan. Requiere Anki de escritorio con AnkiConnect (un móvil puede usarlo conectándose a AnkiConnect en un ordenador); AnkiDroid y AnkiMobile no pueden reordenar tarjetas.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Conexión';
   @override
@@ -82163,7 +82321,7 @@ class _StringsEs extends _StringsEn {
       'Anki incluye FSRS, uno de los mejores algoritmos de repetición espaciada, pero sigue programando con SM-2, de los años 80, hasta que activas FSRS. FSRS lee tu historial real de repasos y predice cuándo estás a punto de olvidar, de modo que mantienes la misma retención con menos repasos. Solo tienes que activar este interruptor una vez, dentro de Anki; en Fushi no cambia nada.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'El repaso integrado de Fushi ya usa FSRS-7 de forma predeterminada. Solo necesitas los pasos siguientes si también repasas en Anki.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Pulsa Optimizar bajo el interruptor para ajustar los parámetros a tu propio historial de repasos y guarda. Por debajo de unos 1000 repasos, los valores por defecto ya superan a SM-2; vuelve a optimizar cuando lleves un tiempo estudiando.';
@@ -82237,7 +82395,7 @@ class _StringsEs extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Toque una palabra';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Los diccionarios conservan sus propios colores de forma predeterminada. Para teñir sus etiquetas, palabras resaltadas y bordes con el color de acento de tu tema, activa «Unificar estilos de diccionario» en los ajustes de búsqueda.';
   @override
   String get onboarding_feature_backup => 'Respaldo y sincronización';
   @override
@@ -82282,10 +82440,10 @@ class _StringsEs extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Diccionarios japoneses más audio de pronunciación JA/EN en una descarga';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Tarjetas y repaso';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Convierte tus búsquedas en tarjetas y elige dónde repasarlas';
   @override
   String get onboarding_feature_video => 'Vídeo';
   @override
@@ -82293,16 +82451,16 @@ class _StringsEs extends _StringsEn {
       'Consulta en subtítulos y creación de tarjetas';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Navega por sitios dentro de Fushi y busca palabras en cualquier página.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Navega por sitios dentro de Fushi: mira sitios de vídeo en el reproductor de Fushi, lee cómics web en el lector de Fushi y busca palabras en cualquier página. En escritorio también puedes instalar la extensión del navegador.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Navega por sitios dentro de Fushi: lee cómics y novelas web en el lector de Fushi y busca palabras en cualquier página. En escritorio también puedes instalar la extensión del navegador.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Navega por sitios dentro de Fushi: lee cómics y novelas web en el lector de Fushi y busca palabras en cualquier página.';
   @override
   String get onboarding_features_modules_hint =>
       'Las páginas sin marcar se ocultan de la barra de navegación. Puede cambiarlo cuando quiera en Ajustes → Apariencia.';
@@ -82320,16 +82478,16 @@ class _StringsEs extends _StringsEn {
       'Puede volver a abrir esta guía en cualquier momento desde Ajustes → Sistema.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'En la página Repaso, toca Importar en la barra superior y elige un archivo .apkg o .colpkg exportado desde Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Trae tus mazos de Anki';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Próximos pasos';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Las tarjetas que creas llegan a la pestaña Repaso; allí te esperan las que toca repasar.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'Repasa en la pestaña Repaso';
   @override
   String get onboarding_finish_summary_modules =>
       'Páginas de biblioteca visibles';
@@ -82600,38 +82758,38 @@ class _StringsEs extends _StringsEn {
       'Acceso a todos los archivos';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Solo preselecciona el siguiente paso. Aún puedes elegir las funciones una a una.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Busca palabras mientras lees y ves contenido, y luego crea tarjetas y repásalas.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Aprender un idioma';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Se ocultan el diccionario, la creación de tarjetas y el repaso. Puedes reactivarlos en Ajustes cuando quieras.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => 'Solo leer, ver y escuchar';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => '¿Para qué vas a usar Fushi?';
   @override
   String get onboarding_reopen => 'Guía de primeros pasos';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Envía las tarjetas a Anki (AnkiDroid, AnkiMobile o Anki de escritorio con AnkiConnect) y repásalas allí. En el siguiente paso conectas Anki y eliges un mazo y un tipo de nota.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Usar Anki en su lugar…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Repetición espaciada integrada, programada con RWKV de forma predeterminada (un modelo pequeño que se descarga la primera vez). Sin instalar Anki ni configurar nada: las tarjetas que creas pasan directamente al repaso.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Repaso de Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Aquí se repasan las tarjetas que creas a partir de tus búsquedas. Puedes cambiarlo cuando quieras en Ajustes → Creación de tarjetas.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Cómo repasas';
   @override
   String get onboarding_sample_sentence_hint =>
       'Toque para abrirla en la página de consulta y luego toque cualquier palabra.';
@@ -82645,35 +82803,35 @@ class _StringsEs extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => '¿Omitir la guía de inicio?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Abrir mazos';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Añade tu primera tarjeta desde la lista de mazos';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Repasa las tarjetas que creas directamente en Fushi: sin Anki y sin configurar nada.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Ya están preparados un mazo predeterminado y el tipo de nota «Fushi Card».';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Listo para usar';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'La programación usa FSRS-7, uno de los mejores algoritmos de repetición espaciada, y se adapta a tu propio historial de repaso.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'FSRS-7 por defecto';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Las tarjetas que creas mientras lees o ves contenido pueden pasar directamente al repaso.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'De la creación al repaso';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Tus mazos y tu progreso de repaso te acompañan a tus otros dispositivos.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Se sincroniza entre dispositivos';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Repaso integrado de Fushi';
   @override
   String get onboarding_step_anki_action => 'Ajustes de creación de tarjetas';
   @override
@@ -82728,7 +82886,7 @@ class _StringsEs extends _StringsEn {
   String get onboarding_step_interconnect_body =>
       'Empareje dispositivos de su LAN para compartir una misma biblioteca y mantener el progreso sincronizado.';
   @override
-  String get onboarding_step_interconnect_title => 'Interconnect';
+  String get onboarding_step_interconnect_title => 'Interconexión';
   @override
   String get onboarding_step_manual_resources_body =>
       'Importe al menos un diccionario antes del tutorial de consulta. Los audiolibros y el audio de pronunciación son opcionales.';
@@ -85453,6 +85611,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Solo tarjetas Fushi. Las plantillas editadas deben conservar el elemento .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -85995,7 +86159,7 @@ class _StringsEs extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Importar';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -86704,6 +86868,46 @@ class _StringsEs extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Nada';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Mostrar / ocultar barra superior';
+  @override
+  String get srs_review_gestures_back => 'Reverso';
+  @override
+  String get srs_review_gestures_double_tap => 'Doble toque';
+  @override
+  String get srs_review_gestures_front => 'Anverso';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zonas de toque, doble toque, pulsación larga y deslizamientos en la tarjeta';
+  @override
+  String get srs_review_gestures_long_press => 'Pulsación larga';
+  @override
+  String get srs_review_gestures_note =>
+      'Los toques y pulsaciones largas solo cuentan en espacio vacío: palabras, enlaces, botones y texto seleccionado conservan su comportamiento. Mientras la tarjeta aún pueda desplazarse en esa dirección, deslizar es desplazar.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inactivo mientras solo se muestran Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Restaurar valores predeterminados';
+  @override
+  String get srs_review_gestures_swipe_down => 'Deslizar hacia abajo';
+  @override
+  String get srs_review_gestures_swipe_left => 'Deslizar a la izquierda';
+  @override
+  String get srs_review_gestures_swipe_right => 'Deslizar a la derecha';
+  @override
+  String get srs_review_gestures_swipe_up => 'Deslizar hacia arriba';
+  @override
+  String get srs_review_gestures_tap_center => 'Tocar en el centro';
+  @override
+  String get srs_review_gestures_tap_left => 'Tocar a la izquierda';
+  @override
+  String get srs_review_gestures_tap_right => 'Tocar a la derecha';
+  @override
+  String get srs_review_gestures_title => 'Gestos';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -105112,7 +105316,8 @@ class _StringsFr extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Polices pour les fenêtres du dictionnaire, avec aperçu japonais en direct';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style =>
+      'Unifier les styles des dictionnaires';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -105286,6 +105491,13 @@ class _StringsFr extends _StringsEn {
       'Le mode paroles a son propre réglage de taille de police. Vous pouvez l\'ajuster dans ⚙ Paramètres → Typographie.';
   @override
   String get lyrics_mode_hint_title => 'Mode paroles';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -108190,7 +108402,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get nav_video => 'Vidéo';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'Navigateur';
   @override
   String get network_proxy_address_hint =>
       'Serveur proxy HTTP utilisé par toutes les requêtes vers Internet public';
@@ -108440,7 +108652,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get onboarding_action_next => 'Suivant';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Faites défiler vers le bas';
   @override
   String get onboarding_action_skip => 'Passer pour le moment';
   @override
@@ -108473,7 +108685,10 @@ class _StringsFr extends _StringsEn {
       'Dossier de données Anki introuvable. Installez Anki, ouvrez-le une fois, puis réessayez.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Environ 30 secondes après la création d\'une carte, les nouvelles cartes de ce paquet sont réordonnées par fréquence des mots pour que les mots courants passent en premier. Les cartes en révision ne sont jamais modifiées. Nécessite Anki sur ordinateur avec AnkiConnect (un téléphone peut s\'en servir en se connectant à AnkiConnect sur un ordinateur) ; AnkiDroid et AnkiMobile ne peuvent pas réordonner les cartes.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Connexion';
   @override
@@ -108481,7 +108696,7 @@ class _StringsFr extends _StringsEn {
       'Anki intègre FSRS — l\'un des meilleurs algorithmes de répétition espacée — mais il continue de planifier avec le SM-2 des années 1980 tant que vous n\'activez pas FSRS. FSRS lit votre historique de révisions réel et prédit le moment où vous allez oublier, ce qui permet de garder la même rétention avec moins de révisions. Cet interrupteur s\'active une seule fois, dans Anki ; rien ne change du côté de Fushi.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'La révision intégrée de Fushi utilise déjà FSRS-7 par défaut. Les étapes ci-dessous ne sont utiles que si vous révisez aussi dans Anki.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Appuyez sur Optimiser sous l\'interrupteur pour ajuster les paramètres à votre propre historique de révisions, puis enregistrez. En dessous d\'environ 1000 révisions, les valeurs par défaut font déjà mieux que SM-2 ; réoptimisez simplement après avoir étudié un moment.';
@@ -108556,7 +108771,7 @@ class _StringsFr extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Touchez un mot';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Par défaut, les dictionnaires conservent leurs propres couleurs. Pour recolorer leurs étiquettes, mots mis en évidence et bordures avec la couleur d\'accent de votre thème, activez « Unifier les styles des dictionnaires » dans les paramètres de recherche.';
   @override
   String get onboarding_feature_backup => 'Sauvegarde et synchronisation';
   @override
@@ -108602,10 +108817,10 @@ class _StringsFr extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Dictionnaires japonais et audio de prononciation JA/EN en un seul téléchargement';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Cartes et révision';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Transformez vos recherches en cartes et choisissez où les réviser';
   @override
   String get onboarding_feature_video => 'Vidéo';
   @override
@@ -108613,16 +108828,16 @@ class _StringsFr extends _StringsEn {
       'Recherche dans les sous-titres et création de cartes';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Naviguez sur des sites dans Fushi et recherchez des mots sur n\'importe quelle page.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Naviguez sur des sites dans Fushi : regardez les sites vidéo dans le lecteur Fushi, lisez les webcomics dans la liseuse Fushi et recherchez des mots sur n\'importe quelle page. Sur ordinateur, vous pouvez aussi installer l\'extension de navigateur.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Naviguez sur des sites dans Fushi : lisez webcomics et web novels dans la liseuse Fushi et recherchez des mots sur n\'importe quelle page. Sur ordinateur, vous pouvez aussi installer l\'extension de navigateur.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Naviguez sur des sites dans Fushi : lisez webcomics et web novels dans la liseuse Fushi et recherchez des mots sur n\'importe quelle page.';
   @override
   String get onboarding_features_modules_hint =>
       'Les pages non cochées sont masquées de la barre de navigation. Modifiable à tout moment dans Paramètres → Apparence.';
@@ -108640,16 +108855,17 @@ class _StringsFr extends _StringsEn {
       'Vous pouvez rouvrir ce guide à tout moment depuis Paramètres → Système.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Sur la page Révision, touchez Importer dans la barre du haut et choisissez un fichier .apkg ou .colpkg exporté depuis Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Importez vos paquets Anki';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Étapes suivantes';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Les cartes que vous créez arrivent dans l\'onglet Révision ; les cartes à réviser vous y attendent.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title =>
+      'Révisez dans l\'onglet Révision';
   @override
   String get onboarding_finish_summary_modules =>
       'Pages de bibliothèque affichées';
@@ -108923,38 +109139,39 @@ class _StringsFr extends _StringsEn {
   String get onboarding_permission_storage_label => 'Accès à tous les fichiers';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Ne fait que présélectionner l\'étape suivante. Vous pourrez toujours choisir les fonctions une par une.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Recherchez des mots en lisant et en regardant, puis créez des cartes et révisez-les.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Apprendre une langue';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Le dictionnaire, la création de cartes et la révision sont masqués. Réactivez-les à tout moment dans les Paramètres.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title =>
+      'Juste lire, regarder et écouter';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Pour quoi utiliserez-vous Fushi ?';
   @override
   String get onboarding_reopen => 'Guide de démarrage';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Envoyez les cartes vers Anki (AnkiDroid, AnkiMobile ou Anki sur ordinateur avec AnkiConnect) et révisez-les là-bas. L\'étape suivante connecte Anki et choisit un paquet et un type de note.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Utiliser Anki à la place…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Répétition espacée intégrée, planifiée par défaut avec RWKV (un petit modèle téléchargé à la première utilisation). Pas d\'Anki à installer, rien à configurer : les cartes que vous créez passent directement en révision.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Révision Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Les cartes créées à partir de vos recherches sont révisées ici. Vous pouvez changer cela à tout moment dans Paramètres → Création de cartes.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Mode de révision';
   @override
   String get onboarding_sample_sentence_hint =>
       'Touchez pour l\'ouvrir dans la page de recherche, puis touchez n\'importe quel mot.';
@@ -108968,35 +109185,35 @@ class _StringsFr extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Passer le guide de démarrage ?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Ouvrir les paquets';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Ajoutez votre première carte depuis la liste des paquets';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Révisez les cartes que vous créez directement dans Fushi — sans Anki, sans rien configurer.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Un paquet par défaut et le type de note « Fushi Card » sont déjà en place.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Prêt à l\'emploi';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'La planification utilise FSRS-7, l\'un des meilleurs algorithmes de répétition espacée, et s\'adapte à votre propre historique de révision.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'FSRS-7 par défaut';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Les cartes créées pendant la lecture ou le visionnage peuvent passer directement en révision.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'De la création à la révision';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Vos paquets et votre progression vous suivent sur vos autres appareils.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Synchronisé entre appareils';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Révision intégrée de Fushi';
   @override
   String get onboarding_step_anki_action => 'Paramètres de création de cartes';
   @override
@@ -111784,6 +112001,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Cartes Fushi uniquement. Les modèles modifiés doivent conserver l’élément .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -112326,7 +112549,7 @@ class _StringsFr extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Importer';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -113035,6 +113258,46 @@ class _StringsFr extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Rien';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Afficher / masquer la barre supérieure';
+  @override
+  String get srs_review_gestures_back => 'Verso';
+  @override
+  String get srs_review_gestures_double_tap => 'Double toucher';
+  @override
+  String get srs_review_gestures_front => 'Recto';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zones de toucher, double toucher, appui long et balayages sur la carte';
+  @override
+  String get srs_review_gestures_long_press => 'Appui long';
+  @override
+  String get srs_review_gestures_note =>
+      'Les touchers et appuis longs ne comptent que sur les zones vides : mots, liens, boutons et texte sélectionné gardent leur comportement. Tant que la carte peut encore défiler dans ce sens, un balayage est un défilement.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inactif tant que seuls Again / Good sont affichés';
+  @override
+  String get srs_review_gestures_reset => 'Rétablir les valeurs par défaut';
+  @override
+  String get srs_review_gestures_swipe_down => 'Balayer vers le bas';
+  @override
+  String get srs_review_gestures_swipe_left => 'Balayer vers la gauche';
+  @override
+  String get srs_review_gestures_swipe_right => 'Balayer vers la droite';
+  @override
+  String get srs_review_gestures_swipe_up => 'Balayer vers le haut';
+  @override
+  String get srs_review_gestures_tap_center => 'Toucher au centre';
+  @override
+  String get srs_review_gestures_tap_left => 'Toucher à gauche';
+  @override
+  String get srs_review_gestures_tap_right => 'Toucher à droite';
+  @override
+  String get srs_review_gestures_title => 'Gestes';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -131299,7 +131562,7 @@ class _StringsId extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Font untuk popup kamus, dengan pratinjau Jepang langsung';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => 'Seragamkan gaya kamus';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -131474,6 +131737,13 @@ class _StringsId extends _StringsEn {
       'Mode lirik memiliki pengaturan ukuran font sendiri. Anda dapat menyesuaikannya di ⚙ Pengaturan → Tipografi.';
   @override
   String get lyrics_mode_hint_title => 'Mode Lirik';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -134342,7 +134612,7 @@ class _StringsId extends _StringsEn {
   @override
   String get nav_video => 'Video';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'Peramban';
   @override
   String get network_proxy_address_hint =>
       'Server proxy HTTP yang dipakai semua permintaan internet publik';
@@ -134590,7 +134860,7 @@ class _StringsId extends _StringsEn {
   @override
   String get onboarding_action_next => 'Berikutnya';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Gulir ke bawah';
   @override
   String get onboarding_action_skip => 'Lewati untuk sekarang';
   @override
@@ -134623,7 +134893,10 @@ class _StringsId extends _StringsEn {
       'Folder data Anki tidak ditemukan. Pasang Anki, buka sekali, lalu coba lagi.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Sekitar 30 detik setelah kamu membuat kartu, kartu baru di dek itu diurutkan ulang berdasarkan frekuensi kata agar kata umum muncul lebih dulu. Kartu ulasan tidak pernah diubah. Memerlukan Anki desktop dengan AnkiConnect (ponsel bisa memakainya dengan terhubung ke AnkiConnect di komputer); AnkiDroid dan AnkiMobile tidak bisa mengurutkan ulang kartu.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Koneksi';
   @override
@@ -134631,7 +134904,7 @@ class _StringsId extends _StringsEn {
       'Anki memiliki FSRS bawaan · salah satu algoritma pengulangan berjarak terbaik · tetapi tetap menjadwalkan dengan SM-2 dari tahun 1980-an sampai Anda mengaktifkan FSRS. FSRS membaca riwayat ulasan asli Anda dan memprediksi kapan Anda akan lupa, sehingga retensi tetap sama dengan ulasan lebih sedikit. Anda mengaktifkan sakelar ini sekali, di dalam Anki; tidak ada yang berubah di sisi Fushi.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Ulasan bawaan Fushi sudah memakai FSRS-7 secara default. Kamu hanya perlu langkah di bawah jika juga mengulas di Anki.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Tekan Optimalkan di bawah sakelar untuk menyesuaikan parameter dengan riwayat ulasan Anda sendiri, lalu simpan. Di bawah sekitar 1000 ulasan, nilai default sudah mengungguli SM-2, jadi optimalkan lagi setelah Anda belajar beberapa waktu.';
@@ -134705,7 +134978,7 @@ class _StringsId extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Ketuk sebuah kata';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Secara default kamus mempertahankan warnanya sendiri. Untuk mewarnai ulang tag, kata yang ditekankan, dan bingkainya dengan warna aksen tema, aktifkan "Seragamkan gaya kamus" di pengaturan pencarian kata.';
   @override
   String get onboarding_feature_backup => 'Cadangan & sinkronisasi';
   @override
@@ -134749,10 +135022,10 @@ class _StringsId extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Kamus Jepang plus audio pengucapan JA/EN dalam satu unduhan';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Kartu & ulasan';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Ubah kata yang kamu cari jadi kartu dan pilih tempat mengulasnya';
   @override
   String get onboarding_feature_video => 'Video';
   @override
@@ -134760,16 +135033,16 @@ class _StringsId extends _StringsEn {
       'Pencarian pada takarir dan pembuatan kartu';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Jelajahi situs di dalam Fushi dan cari kata di halaman mana pun.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Jelajahi situs di dalam Fushi: tonton situs video di pemutar Fushi, baca komik web di pembaca Fushi, dan cari kata di halaman mana pun. Di desktop kamu juga bisa memasang ekstensi browser.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Jelajahi situs di dalam Fushi: baca komik web dan novel web di pembaca Fushi, dan cari kata di halaman mana pun. Di desktop kamu juga bisa memasang ekstensi browser.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Jelajahi situs di dalam Fushi: baca komik web dan novel web di pembaca Fushi, dan cari kata di halaman mana pun.';
   @override
   String get onboarding_features_modules_hint =>
       'Halaman yang tidak dicentang disembunyikan dari bilah navigasi. Bisa diubah kapan saja di Pengaturan → Tampilan.';
@@ -134787,16 +135060,16 @@ class _StringsId extends _StringsEn {
       'Anda bisa membuka lagi panduan ini kapan saja dari Pengaturan → Sistem.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Di halaman Ulasan, ketuk Impor di bilah atas lalu pilih file .apkg atau .colpkg yang diekspor dari Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Bawa dek Anki-mu';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Langkah berikutnya';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Kartu yang kamu buat masuk ke tab Ulasan; kartu yang jatuh tempo menunggumu di sana.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'Mengulas di tab Ulasan';
   @override
   String get onboarding_finish_summary_modules =>
       'Halaman perpustakaan yang ditampilkan';
@@ -135058,38 +135331,39 @@ class _StringsId extends _StringsEn {
   String get onboarding_permission_storage_label => 'Akses semua file';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Hanya memilih awal untuk langkah berikutnya. Kamu tetap bisa memilih fitur satu per satu.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Cari kata saat membaca dan menonton, lalu buat kartu dan ulas.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Belajar bahasa';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Kamus, pembuatan kartu, dan ulasan disembunyikan. Aktifkan lagi kapan saja di Pengaturan.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title =>
+      'Hanya membaca, menonton, dan mendengar';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Untuk apa kamu akan memakai Fushi?';
   @override
   String get onboarding_reopen => 'Panduan memulai';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Kirim kartu ke Anki (AnkiDroid, AnkiMobile, atau Anki desktop dengan AnkiConnect) dan ulas di sana. Langkah berikutnya menghubungkan Anki serta memilih dek dan tipe catatan.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Pakai Anki saja…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Pengulangan berjarak bawaan, dijadwalkan dengan RWKV secara default (model kecil yang diunduh saat pertama dipakai). Tidak perlu memasang Anki atau mengatur apa pun — kartu yang kamu buat langsung masuk ke ulasan.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Ulasan Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Kartu yang kamu buat dari pencarian kata diulas di sini. Kamu bisa mengubahnya kapan saja di Pengaturan → Pembuatan Kartu.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Cara mengulas';
   @override
   String get onboarding_sample_sentence_hint =>
       'Ketuk untuk membukanya di halaman pencarian, lalu ketuk kata mana pun.';
@@ -135103,35 +135377,35 @@ class _StringsId extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Lewati panduan memulai?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Buka dek';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Tambahkan kartu pertamamu dari daftar dek';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Ulas kartu yang kamu buat langsung di Fushi — tanpa Anki, tanpa pengaturan.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Dek default dan tipe catatan "Fushi Card" sudah disiapkan.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Siap dipakai';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'Penjadwalan memakai FSRS-7, salah satu algoritma pengulangan berjarak terbaik, dan menyesuaikan dengan riwayat ulasanmu sendiri.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'FSRS-7 secara default';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Kartu yang kamu buat saat membaca atau menonton bisa langsung masuk ke ulasan.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'Dari membuat kartu ke ulasan';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Dek dan progres ulasanmu ikut ke perangkatmu yang lain.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Sinkron antarperangkat';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Ulasan bawaan Fushi';
   @override
   String get onboarding_step_anki_action => 'Pengaturan pembuatan kartu';
   @override
@@ -137879,6 +138153,12 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Hanya kartu Fushi. Templat yang diubah harus mempertahankan elemen .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -138421,7 +138701,7 @@ class _StringsId extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Impor';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -139130,6 +139410,46 @@ class _StringsId extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Tidak ada';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Tampilkan / sembunyikan bilah atas';
+  @override
+  String get srs_review_gestures_back => 'Sisi jawaban';
+  @override
+  String get srs_review_gestures_double_tap => 'Ketuk dua kali';
+  @override
+  String get srs_review_gestures_front => 'Sisi pertanyaan';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zona ketuk, ketuk dua kali, tekan lama, dan geser pada kartu';
+  @override
+  String get srs_review_gestures_long_press => 'Tekan lama';
+  @override
+  String get srs_review_gestures_note =>
+      'Ketukan dan tekan lama hanya berlaku di ruang kosong: kata, tautan, tombol, dan teks terpilih tetap berperilaku seperti biasa. Selama kartu masih bisa digulir ke arah itu, geseran adalah guliran.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Tidak aktif saat hanya Again / Good yang ditampilkan';
+  @override
+  String get srs_review_gestures_reset => 'Pulihkan bawaan';
+  @override
+  String get srs_review_gestures_swipe_down => 'Geser ke bawah';
+  @override
+  String get srs_review_gestures_swipe_left => 'Geser ke kiri';
+  @override
+  String get srs_review_gestures_swipe_right => 'Geser ke kanan';
+  @override
+  String get srs_review_gestures_swipe_up => 'Geser ke atas';
+  @override
+  String get srs_review_gestures_tap_center => 'Ketuk tengah';
+  @override
+  String get srs_review_gestures_tap_left => 'Ketuk kiri';
+  @override
+  String get srs_review_gestures_tap_right => 'Ketuk kanan';
+  @override
+  String get srs_review_gestures_title => 'Gestur';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -157376,7 +157696,8 @@ class _StringsIt extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Font per i popup del dizionario, con anteprima giapponese in tempo reale';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style =>
+      'Uniforma gli stili dei dizionari';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -157550,6 +157871,13 @@ class _StringsIt extends _StringsEn {
       'La modalità testi ha la propria impostazione della dimensione del carattere. Puoi regolarla in ⚙ Impostazioni → Tipografia.';
   @override
   String get lyrics_mode_hint_title => 'Modalità testi';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -160693,7 +161021,7 @@ class _StringsIt extends _StringsEn {
   @override
   String get onboarding_action_next => 'Avanti';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Scorri in basso';
   @override
   String get onboarding_action_skip => 'Salta per ora';
   @override
@@ -160726,7 +161054,10 @@ class _StringsIt extends _StringsEn {
       'Cartella dati Anki non trovata. Installa Anki, aprilo una volta e riprova.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Circa 30 secondi dopo la creazione di una scheda, le nuove schede di quel mazzo vengono riordinate per frequenza delle parole, così le parole comuni vengono prima. Le schede in ripasso non vengono mai toccate. Richiede Anki desktop con AnkiConnect (un telefono può usarlo collegandosi ad AnkiConnect su un computer); AnkiDroid e AnkiMobile non possono riordinare le schede.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Connessione';
   @override
@@ -160734,7 +161065,7 @@ class _StringsIt extends _StringsEn {
       'Anki include FSRS — uno dei migliori algoritmi di ripetizione dilazionata — ma continua a pianificare con l\'SM-2 degli anni \'80 finché non attivi FSRS. FSRS legge la cronologia reale dei tuoi ripassi e prevede quando stai per dimenticare, così mantieni la stessa ritenzione con meno ripassi. Attivi questo interruttore una sola volta, dentro Anki; lato Fushi non cambia nulla.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Il ripasso integrato di Fushi usa già FSRS-7 per impostazione predefinita. I passaggi seguenti servono solo se ripassi anche in Anki.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Premi Ottimizza sotto l\'interruttore per adattare i parametri alla tua cronologia di ripassi, poi salva. Sotto i 1000 ripassi circa i valori predefiniti battono già SM-2, quindi ottimizza di nuovo dopo aver studiato per un po\'.';
@@ -160808,7 +161139,7 @@ class _StringsIt extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Tocca una parola';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Per impostazione predefinita i dizionari mantengono i propri colori. Per ricolorare etichette, parole evidenziate e bordi con il colore d\'accento del tema, attiva «Uniforma gli stili dei dizionari» nelle impostazioni di ricerca.';
   @override
   String get onboarding_feature_backup => 'Backup e sincronizzazione';
   @override
@@ -160852,10 +161183,10 @@ class _StringsIt extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Dizionari giapponesi più audio di pronuncia JA/EN in un solo download';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Schede e ripasso';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Trasforma le ricerche in schede e scegli dove ripassarle';
   @override
   String get onboarding_feature_video => 'Video';
   @override
@@ -160863,16 +161194,16 @@ class _StringsIt extends _StringsEn {
       'Ricerca sui sottotitoli e creazione di carte';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Naviga i siti dentro Fushi e cerca parole in qualsiasi pagina.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Naviga i siti dentro Fushi: guarda i siti video nel player di Fushi, leggi i fumetti web nel lettore di Fushi e cerca parole in qualsiasi pagina. Su desktop puoi anche installare l\'estensione del browser.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Naviga i siti dentro Fushi: leggi fumetti e romanzi web nel lettore di Fushi e cerca parole in qualsiasi pagina. Su desktop puoi anche installare l\'estensione del browser.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Naviga i siti dentro Fushi: leggi fumetti e romanzi web nel lettore di Fushi e cerca parole in qualsiasi pagina.';
   @override
   String get onboarding_features_modules_hint =>
       'Le pagine non selezionate vengono nascoste dalla barra di navigazione. Puoi cambiarle quando vuoi in Impostazioni → Aspetto.';
@@ -160890,16 +161221,16 @@ class _StringsIt extends _StringsEn {
       'Puoi riaprire questa guida in qualsiasi momento da Impostazioni → Sistema.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Nella pagina Ripasso, tocca Importa nella barra in alto e scegli un file .apkg o .colpkg esportato da Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Porta i tuoi mazzi di Anki';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Prossimi passi';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Le schede che crei finiscono nella scheda Ripasso; quelle da ripassare ti aspettano lì.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'Ripassa nella scheda Ripasso';
   @override
   String get onboarding_finish_summary_modules =>
       'Pagine della libreria mostrate';
@@ -161165,38 +161496,39 @@ class _StringsIt extends _StringsEn {
   String get onboarding_permission_storage_label => 'Accesso a tutti i file';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Preimposta solo il passaggio successivo. Puoi comunque scegliere le funzioni una per una.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Cerca parole mentre leggi e guardi, poi crea schede e ripassale.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Imparare una lingua';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Dizionario, creazione schede e ripasso vengono nascosti. Puoi riattivarli in qualsiasi momento nelle Impostazioni.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title =>
+      'Solo leggere, guardare e ascoltare';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Per cosa userai Fushi?';
   @override
   String get onboarding_reopen => 'Guida per iniziare';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Invia le schede ad Anki (AnkiDroid, AnkiMobile o Anki desktop con AnkiConnect) e ripassale lì. Nel passaggio successivo colleghi Anki e scegli un mazzo e un tipo di nota.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Usa invece Anki…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Ripetizione dilazionata integrata, pianificata con RWKV per impostazione predefinita (un piccolo modello scaricato al primo utilizzo). Nessun Anki da installare e niente da configurare: le schede che crei vanno direttamente in ripasso.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Ripasso di Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Qui ripassi le schede create dalle ricerche. Puoi cambiarlo in qualsiasi momento in Impostazioni → Creazione schede.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Come ripassi';
   @override
   String get onboarding_sample_sentence_hint =>
       'Tocca per aprirla nella pagina di ricerca, poi tocca una parola qualsiasi.';
@@ -161210,35 +161542,35 @@ class _StringsIt extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Saltare la guida introduttiva?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Apri mazzi';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Aggiungi la tua prima scheda dall\'elenco dei mazzi';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Ripassa le schede che crei direttamente in Fushi: niente Anki, niente da configurare.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Un mazzo predefinito e il tipo di nota «Fushi Card» sono già pronti.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Pronto all\'uso';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'La pianificazione usa FSRS-7, uno dei migliori algoritmi di ripetizione dilazionata, e si adatta alla tua cronologia di ripasso.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'FSRS-7 predefinito';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Le schede create mentre leggi o guardi possono andare direttamente in ripasso.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'Dalla creazione al ripasso';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'I tuoi mazzi e i progressi di ripasso ti seguono sugli altri dispositivi.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Sincronizzato tra dispositivi';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Ripasso integrato di Fushi';
   @override
   String get onboarding_step_anki_action => 'Impostazioni creazione carte';
   @override
@@ -161293,7 +161625,7 @@ class _StringsIt extends _StringsEn {
   String get onboarding_step_interconnect_body =>
       'Accoppia i dispositivi sulla tua LAN per condividere un\'unica libreria e mantenere sincronizzati i progressi.';
   @override
-  String get onboarding_step_interconnect_title => 'Interconnect';
+  String get onboarding_step_interconnect_title => 'Interconnessione';
   @override
   String get onboarding_step_manual_resources_body =>
       'Importa almeno un dizionario prima del tutorial di ricerca. Audiolibri e audio di pronuncia sono facoltativi.';
@@ -164015,6 +164347,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Solo schede Fushi. I modelli modificati devono mantenere l’elemento .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -164557,7 +164895,7 @@ class _StringsIt extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Importa';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -165266,6 +165604,46 @@ class _StringsIt extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Nessuna';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Mostra / nascondi barra superiore';
+  @override
+  String get srs_review_gestures_back => 'Retro';
+  @override
+  String get srs_review_gestures_double_tap => 'Doppio tocco';
+  @override
+  String get srs_review_gestures_front => 'Fronte';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zone di tocco, doppio tocco, pressione prolungata e scorrimenti sulla carta';
+  @override
+  String get srs_review_gestures_long_press => 'Pressione prolungata';
+  @override
+  String get srs_review_gestures_note =>
+      'Tocchi e pressioni prolungate contano solo sugli spazi vuoti: parole, link, pulsanti e testo selezionato mantengono il loro comportamento. Finché la carta può ancora scorrere in quella direzione, lo scorrimento è uno scroll.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inattivo quando sono mostrati solo Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Ripristina predefiniti';
+  @override
+  String get srs_review_gestures_swipe_down => 'Scorri in basso';
+  @override
+  String get srs_review_gestures_swipe_left => 'Scorri a sinistra';
+  @override
+  String get srs_review_gestures_swipe_right => 'Scorri a destra';
+  @override
+  String get srs_review_gestures_swipe_up => 'Scorri in alto';
+  @override
+  String get srs_review_gestures_tap_center => 'Tocca al centro';
+  @override
+  String get srs_review_gestures_tap_left => 'Tocca a sinistra';
+  @override
+  String get srs_review_gestures_tap_right => 'Tocca a destra';
+  @override
+  String get srs_review_gestures_title => 'Gesti';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -183067,7 +183445,7 @@ class _StringsJa extends _StringsEn {
   @override
   String get lookup_dictionary_font_hint => '辞書ポップアップ用のフォント。日本語のライブプレビュー付き';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => '辞書スタイルを統一';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -183237,6 +183615,13 @@ class _StringsJa extends _StringsEn {
       '歌詞モードには独自のフォントサイズ設定があります。⚙ 設定 → タイポグラフィで調整できます。';
   @override
   String get lyrics_mode_hint_title => '歌詞モード';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -186030,7 +186415,7 @@ class _StringsJa extends _StringsEn {
   @override
   String get nav_video => '動画';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'ブラウザ';
   @override
   String get network_proxy_address_hint => 'すべての公開インターネット通信で使う HTTP プロキシサーバー';
   @override
@@ -186301,7 +186686,10 @@ class _StringsJa extends _StringsEn {
       'Anki のデータフォルダが見つかりません。Anki をインストールし、一度開いてから再試行してください。';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'カード作成から約 30 秒後、そのデッキの新規カードを語の頻度順に並べ替え、よく使う語から学べるようにします。復習カードには触れません。デスクトップ版 Anki と AnkiConnect が必要です（スマートフォンはパソコン上の AnkiConnect に接続すれば使えます）。AnkiDroid / AnkiMobile では並べ替えできません。';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect（${address}）';
   @override
   String get onboarding_anki_backend_label => '接続';
   @override
@@ -186309,7 +186697,7 @@ class _StringsJa extends _StringsEn {
       'Anki には FSRS が内蔵されています。最高クラスの間隔反復アルゴリズムの一つですが、オンにするまでは 1980 年代の SM-2 でスケジューリングされます。FSRS は実際の復習履歴から忘れそうなタイミングを予測するため、同じ記憶定着率をより少ない復習で保てます。この切り替えは Anki 内で一度行うだけで、Fushi 側では何も変わりません。';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Fushi の内蔵復習は既定で FSRS-7 を使っています。Anki でも復習する場合だけ、以下の手順が必要です。';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'スイッチの下の「最適化」を押して、自分の復習履歴にパラメーターを合わせてから保存します。復習が約 1000 回未満でもデフォルトで SM-2 より優れているので、しばらく学習してからもう一度最適化すれば十分です。';
@@ -186381,7 +186769,7 @@ class _StringsJa extends _StringsEn {
   String get onboarding_click_lookup_tap_title => '単語をタップ';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      '辞書は既定でそれぞれの配色を保ちます。タグ・強調語・枠線をテーマのアクセントカラーにそろえたい場合は、検索設定で「辞書スタイルを統一」をオンにしてください。';
   @override
   String get onboarding_feature_backup => 'バックアップと同期';
   @override
@@ -186418,26 +186806,25 @@ class _StringsJa extends _StringsEn {
   @override
   String get onboarding_feature_pack_hint => '日本語辞書と日英発音音声を1回のダウンロードで';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'カード作成と復習';
   @override
-  String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+  String get onboarding_feature_review_hint => '調べた語をカードにして、どこで復習するかを選びます';
   @override
   String get onboarding_feature_video => '動画';
   @override
   String get onboarding_feature_video_hint => '字幕から調べてカードを作る';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Fushi 内でサイトを閲覧し、どのページでも単語を調べられます。';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Fushi 内でサイトを閲覧：動画サイトは Fushi プレーヤーで観て、Web 漫画は Fushi リーダーで読め、どのページでも単語を調べられます。デスクトップではブラウザ拡張機能も入れられます。';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Fushi 内でサイトを閲覧：Web 漫画や Web 小説は Fushi リーダーで読め、どのページでも単語を調べられます。デスクトップではブラウザ拡張機能も入れられます。';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Fushi 内でサイトを閲覧：Web 漫画や Web 小説は Fushi リーダーで読め、どのページでも単語を調べられます。';
   @override
   String get onboarding_features_modules_hint =>
       'チェックを外したページはナビゲーションバーに表示されません。設定 → 外観でいつでも変更できます。';
@@ -186453,16 +186840,16 @@ class _StringsJa extends _StringsEn {
   String get onboarding_finish_body => 'このガイドは設定 → システムからいつでも開き直せます。';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      '「復習」ページの上部バーで「インポート」をタップし、Anki から書き出した .apkg または .colpkg ファイルを選んでください。';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Anki のデッキを取り込む';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => '次のステップ';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      '作ったカードは「復習」タブに入り、期日が来たカードはそこで待っています。';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => '「復習」タブで復習';
   @override
   String get onboarding_finish_summary_modules => '表示するライブラリのページ';
   @override
@@ -186708,38 +187095,38 @@ class _StringsJa extends _StringsEn {
   String get onboarding_permission_storage_label => 'すべてのファイルへのアクセス';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      '次のステップの初期選択を決めるだけです。機能はそのあと 1 つずつ選べます。';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      '読んだり観たりしながら単語を調べ、カードにして復習します。';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => '語学を学ぶ';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      '辞書・カード作成・復習を非表示にします。設定からいつでも戻せます。';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => '読む・観る・聴くだけ';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Fushi を何に使いますか？';
   @override
   String get onboarding_reopen => 'はじめにガイド';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'カードを Anki（AnkiDroid、AnkiMobile、または AnkiConnect を入れたデスクトップ版 Anki）に送り、Anki で復習します。次のステップで Anki に接続し、デッキとノートタイプを選びます。';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => '代わりに Anki を使う…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      '内蔵の間隔反復です。スケジュールは既定で RWKV を使います（初回利用時に小さなモデルをダウンロード）。Anki のインストールも設定も不要で、作ったカードはそのまま復習に入ります。';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Fushi で復習';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      '調べた語から作ったカードはここで復習します。設定 → カード作成 でいつでも変更できます。';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => '復習方法';
   @override
   String get onboarding_sample_sentence_hint =>
       'タップすると辞書ページで開きます。その後、好きな単語をタップしてください。';
@@ -186753,35 +187140,32 @@ class _StringsJa extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'はじめにガイドをスキップしますか？';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'デッキを開く';
   @override
-  String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+  String get onboarding_srs_action_desc => 'デッキ一覧から最初のカードを追加';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      '作ったカードを Fushi の中でそのまま復習できます。Anki も設定も不要です。';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      '既定のデッキとノートタイプ「Fushi Card」が用意されています。';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'すぐに使える';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'スケジュールには間隔反復の代表的な最良アルゴリズムの一つである FSRS-7 を使い、あなた自身の復習履歴に合わせて調整します。';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => '既定で FSRS-7';
   @override
-  String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+  String get onboarding_srs_mining_desc => '読書や視聴中に作ったカードを、そのまま復習に回せます。';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => '作ったらそのまま復習';
   @override
-  String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+  String get onboarding_srs_sync_desc => 'デッキと復習の進み具合は他のデバイスにも引き継がれます。';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'デバイス間で同期';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Fushi 内蔵の復習';
   @override
   String get onboarding_step_anki_action => 'カード作成設定';
   @override
@@ -189443,6 +189827,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Fushi カードのみ。テンプレートを編集した場合は .fc-translation 要素を残してください';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -189985,7 +190375,7 @@ class _StringsJa extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'インポート';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -190694,6 +191084,43 @@ class _StringsJa extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'なし';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '上部バーの表示 / 非表示';
+  @override
+  String get srs_review_gestures_back => '解答面';
+  @override
+  String get srs_review_gestures_double_tap => 'ダブルタップ';
+  @override
+  String get srs_review_gestures_front => '問題面';
+  @override
+  String get srs_review_gestures_hint => 'カード上のタップ領域、ダブルタップ、長押し、スワイプ';
+  @override
+  String get srs_review_gestures_long_press => '長押し';
+  @override
+  String get srs_review_gestures_note =>
+      'タップと長押しは空白部分でのみ反応します。文字・リンク・ボタン・選択中のテキストはそれぞれ本来の動作のままです。カードがまだその方向にスクロールできる間は、スワイプはスクロールになります。';
+  @override
+  String get srs_review_gestures_rating_hidden => '「Again / Good」のみ表示中は無効';
+  @override
+  String get srs_review_gestures_reset => 'デフォルトに戻す';
+  @override
+  String get srs_review_gestures_swipe_down => '下にスワイプ';
+  @override
+  String get srs_review_gestures_swipe_left => '左にスワイプ';
+  @override
+  String get srs_review_gestures_swipe_right => '右にスワイプ';
+  @override
+  String get srs_review_gestures_swipe_up => '上にスワイプ';
+  @override
+  String get srs_review_gestures_tap_center => '中央をタップ';
+  @override
+  String get srs_review_gestures_tap_left => '左をタップ';
+  @override
+  String get srs_review_gestures_tap_right => '右をタップ';
+  @override
+  String get srs_review_gestures_title => 'ジェスチャー';
   @override
   String get srs_review_hide_hard_easy => '「Hard」と「Easy」ボタンを隠す';
   @override
@@ -208210,7 +208637,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get lookup_dictionary_font_hint => '일본어 실시간 미리보기와 함께 사전 팝업용 글꼴을 설정합니다';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => '사전 스타일 통일';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -208381,6 +208808,13 @@ class _StringsKo extends _StringsEn {
       '가사 모드에는 자체 글꼴 크기 설정이 있습니다. ⚙ 설정 → 타이포그래피에서 조정할 수 있습니다.';
   @override
   String get lyrics_mode_hint_title => '가사 모드';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -211185,7 +211619,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get nav_video => '비디오';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => '브라우저';
   @override
   String get network_proxy_address_hint => '모든 공용 인터넷 요청에 사용되는 HTTP 프록시 서버';
   @override
@@ -211427,7 +211861,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get onboarding_action_next => '다음';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => '아래로 스크롤';
   @override
   String get onboarding_action_skip => '나중에 하기';
   @override
@@ -211460,7 +211894,10 @@ class _StringsKo extends _StringsEn {
       'Anki 데이터 폴더를 찾을 수 없습니다. Anki를 설치하고 한 번 연 다음 다시 시도하세요.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      '카드를 만든 지 약 30초 후, 해당 덱의 새 카드를 단어 빈도순으로 다시 정렬해 자주 쓰는 단어부터 학습하게 합니다. 복습 카드는 건드리지 않습니다. 데스크톱 Anki와 AnkiConnect가 필요합니다(휴대폰은 컴퓨터의 AnkiConnect에 연결하면 사용 가능). AnkiDroid와 AnkiMobile은 카드를 재정렬할 수 없습니다.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => '연결';
   @override
@@ -211468,7 +211905,7 @@ class _StringsKo extends _StringsEn {
       'Anki에는 가장 뛰어난 간격 반복 알고리즘 중 하나인 FSRS가 내장되어 있지만, FSRS를 켜기 전까지는 1980년대의 SM-2로 일정을 관리합니다. FSRS는 실제 복습 기록을 읽고 잊어버릴 시점을 예측하므로 더 적은 복습으로 같은 기억 유지율을 얻을 수 있습니다. 이 스위치는 Anki 안에서 한 번만 켜면 되며, Fushi 쪽에서는 달라지는 것이 없습니다.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Fushi 내장 복습은 이미 기본으로 FSRS-7을 사용합니다. Anki에서도 복습할 때만 아래 단계가 필요합니다.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       '스위치 아래의 최적화를 눌러 매개변수를 본인의 복습 기록에 맞춘 다음 저장하세요. 복습이 약 1000회 미만일 때는 기본값만으로도 SM-2보다 낫습니다. 한동안 학습한 뒤 다시 최적화하세요.';
@@ -211540,7 +211977,7 @@ class _StringsKo extends _StringsEn {
   String get onboarding_click_lookup_tap_title => '단어를 탭하세요';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      '사전은 기본적으로 자체 색상을 유지합니다. 태그, 강조 단어, 테두리를 테마 강조색으로 바꾸려면 검색 설정에서 \'사전 스타일 통일\'을 켜세요.';
   @override
   String get onboarding_feature_backup => '백업 및 동기화';
   @override
@@ -211579,26 +212016,25 @@ class _StringsKo extends _StringsEn {
   @override
   String get onboarding_feature_pack_hint => '일본어 사전과 일/영 발음 오디오를 한 번에 다운로드';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => '카드와 복습';
   @override
-  String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+  String get onboarding_feature_review_hint => '검색한 단어를 카드로 만들고 복습할 곳을 고르세요';
   @override
   String get onboarding_feature_video => '동영상';
   @override
   String get onboarding_feature_video_hint => '자막에서 단어 찾고 카드 만들기';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Fushi 안에서 사이트를 둘러보고 어느 페이지에서든 단어를 찾아보세요.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Fushi 안에서 사이트를 둘러보세요: 동영상 사이트는 Fushi 플레이어로, 웹 만화는 Fushi 리더로 보고, 어느 페이지에서든 단어를 찾아볼 수 있습니다. 데스크톱에서는 브라우저 확장 프로그램도 설치할 수 있습니다.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Fushi 안에서 사이트를 둘러보세요: 웹 만화와 웹소설은 Fushi 리더로 읽고, 어느 페이지에서든 단어를 찾아볼 수 있습니다. 데스크톱에서는 브라우저 확장 프로그램도 설치할 수 있습니다.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Fushi 안에서 사이트를 둘러보세요: 웹 만화와 웹소설은 Fushi 리더로 읽고, 어느 페이지에서든 단어를 찾아볼 수 있습니다.';
   @override
   String get onboarding_features_modules_hint =>
       '선택하지 않은 페이지는 내비게이션 바에서 숨겨집니다. 설정 → 외관에서 언제든 바꿀 수 있습니다.';
@@ -211614,16 +212050,16 @@ class _StringsKo extends _StringsEn {
   String get onboarding_finish_body => '설정 → 시스템에서 이 가이드를 언제든 다시 열 수 있습니다.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      '복습 페이지 상단 바에서 \'가져오기\'를 누르고 Anki에서 내보낸 .apkg 또는 .colpkg 파일을 선택하세요.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Anki 덱 가져오기';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => '다음 단계';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      '만든 카드는 복습 탭으로 들어가고, 복습할 때가 된 카드가 그곳에서 기다립니다.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => '복습 탭에서 복습하기';
   @override
   String get onboarding_finish_summary_modules => '표시할 라이브러리 페이지';
   @override
@@ -211869,38 +212305,38 @@ class _StringsKo extends _StringsEn {
   String get onboarding_permission_storage_label => '모든 파일 액세스';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      '다음 단계의 기본 선택만 정합니다. 기능은 여전히 하나씩 고를 수 있습니다.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      '읽고 보면서 단어를 찾아보고, 카드로 만들어 복습합니다.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => '언어 배우기';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      '사전, 카드 만들기, 복습이 숨겨집니다. 설정에서 언제든 다시 켤 수 있습니다.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => '읽고 보고 듣기만';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Fushi를 어디에 쓰실 건가요?';
   @override
   String get onboarding_reopen => '시작 가이드';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      '카드를 Anki(AnkiDroid, AnkiMobile 또는 AnkiConnect를 설치한 데스크톱 Anki)로 보내 그곳에서 복습합니다. 다음 단계에서 Anki를 연결하고 덱과 노트 유형을 고릅니다.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => '대신 Anki 사용…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      '내장 간격 반복 학습으로, 기본 일정은 RWKV가 정합니다(처음 사용할 때 작은 모델을 내려받음). Anki를 설치하거나 설정할 필요 없이 만든 카드가 바로 복습에 들어갑니다.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Fushi 복습';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      '검색하면서 만든 카드는 여기서 복습합니다. 설정 → 카드 만들기에서 언제든 바꿀 수 있습니다.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => '복습 방식';
   @override
   String get onboarding_sample_sentence_hint =>
       '탭하면 단어 찾기 페이지에서 열립니다. 그다음 아무 단어나 탭하세요.';
@@ -211914,35 +212350,32 @@ class _StringsKo extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => '시작 가이드를 건너뛸까요?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => '덱 열기';
   @override
-  String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+  String get onboarding_srs_action_desc => '덱 목록에서 첫 카드를 추가하세요';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      '만든 카드를 Fushi 안에서 바로 복습하세요. Anki도, 설정도 필요 없습니다.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      '기본 덱과 \'Fushi Card\' 노트 유형이 이미 준비되어 있습니다.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => '바로 사용 가능';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      '일정은 최고의 간격 반복 알고리즘 중 하나인 FSRS-7을 사용하며, 나의 복습 기록에 맞춰 조정됩니다.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => '기본으로 FSRS-7';
   @override
-  String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+  String get onboarding_srs_mining_desc => '읽거나 보면서 만든 카드를 바로 복습에 넣을 수 있습니다.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => '카드 만들기에서 복습까지';
   @override
-  String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+  String get onboarding_srs_sync_desc => '덱과 복습 진행 상황이 다른 기기로도 이어집니다.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => '기기 간 동기화';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Fushi 내장 복습';
   @override
   String get onboarding_step_anki_action => '카드 생성 설정';
   @override
@@ -214606,6 +215039,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Fushi 카드에만 적용됩니다. 템플릿을 수정했다면 .fc-translation 요소를 유지해야 합니다';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -215148,7 +215587,7 @@ class _StringsKo extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => '가져오기';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -215857,6 +216296,43 @@ class _StringsKo extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => '없음';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '상단 바 표시 / 숨기기';
+  @override
+  String get srs_review_gestures_back => '답 면';
+  @override
+  String get srs_review_gestures_double_tap => '두 번 탭';
+  @override
+  String get srs_review_gestures_front => '질문 면';
+  @override
+  String get srs_review_gestures_hint => '카드의 탭 영역, 두 번 탭, 길게 누르기, 스와이프';
+  @override
+  String get srs_review_gestures_long_press => '길게 누르기';
+  @override
+  String get srs_review_gestures_note =>
+      '탭과 길게 누르기는 빈 공간에서만 동작합니다. 글자, 링크, 버튼, 선택한 텍스트는 원래 동작을 유지합니다. 카드가 그 방향으로 아직 스크롤될 수 있으면 스와이프는 스크롤이 됩니다.';
+  @override
+  String get srs_review_gestures_rating_hidden => '「Again / Good」만 표시할 때는 비활성';
+  @override
+  String get srs_review_gestures_reset => '기본값 복원';
+  @override
+  String get srs_review_gestures_swipe_down => '아래로 스와이프';
+  @override
+  String get srs_review_gestures_swipe_left => '왼쪽으로 스와이프';
+  @override
+  String get srs_review_gestures_swipe_right => '오른쪽으로 스와이프';
+  @override
+  String get srs_review_gestures_swipe_up => '위로 스와이프';
+  @override
+  String get srs_review_gestures_tap_center => '가운데 탭';
+  @override
+  String get srs_review_gestures_tap_left => '왼쪽 탭';
+  @override
+  String get srs_review_gestures_tap_right => '오른쪽 탭';
+  @override
+  String get srs_review_gestures_title => '제스처';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -233859,7 +234335,8 @@ class _StringsNl extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Lettertypen voor woordenboekpopups, met een live Japans voorbeeld';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style =>
+      'Woordenboekstijlen gelijktrekken';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -234033,6 +234510,13 @@ class _StringsNl extends _StringsEn {
       'De songtekstmodus heeft een eigen lettergrootte-instelling. Je kunt deze aanpassen via ⚙ Instellingen → Typografie.';
   @override
   String get lyrics_mode_hint_title => 'Songtekstmodus';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -237158,7 +237642,7 @@ class _StringsNl extends _StringsEn {
   @override
   String get onboarding_action_next => 'Volgende';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Scroll omlaag';
   @override
   String get onboarding_action_skip => 'Later';
   @override
@@ -237191,7 +237675,10 @@ class _StringsNl extends _StringsEn {
       'Anki-gegevensmap niet gevonden. Installeer Anki, open het eenmaal en probeer opnieuw.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Ongeveer 30 seconden nadat je een kaart hebt gemaakt, worden de nieuwe kaarten in die stapel op woordfrequentie geordend, zodat veelvoorkomende woorden eerst komen. Herhalingskaarten worden nooit aangeraakt. Vereist Anki op de computer met AnkiConnect (een telefoon kan het gebruiken door verbinding te maken met AnkiConnect op een computer); AnkiDroid en AnkiMobile kunnen kaarten niet herordenen.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Verbinding';
   @override
@@ -237199,7 +237686,7 @@ class _StringsNl extends _StringsEn {
       'Anki heeft FSRS ingebouwd — een van de beste algoritmen voor gespreide herhaling — maar blijft plannen met SM-2 uit de jaren 80 totdat je FSRS inschakelt. FSRS leest je echte herhalingsgeschiedenis en voorspelt wanneer je iets bijna vergeet, zodat je dezelfde retentie houdt met minder herhalingen. Je zet deze schakelaar één keer om, in Anki; aan de Fushi-kant verandert er niets.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'De ingebouwde herhaling van Fushi gebruikt standaard al FSRS-7. De stappen hieronder heb je alleen nodig als je ook in Anki herhaalt.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Druk onder de schakelaar op Optimaliseren om de parameters af te stemmen op je eigen herhalingsgeschiedenis en sla daarna op. Onder ongeveer 1000 herhalingen presteren de standaardwaarden al beter dan SM-2; optimaliseer dus gewoon opnieuw als je een tijdje hebt geleerd.';
@@ -237273,7 +237760,7 @@ class _StringsNl extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Tik op een woord';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Woordenboeken behouden standaard hun eigen kleuren. Wil je hun labels, benadrukte woorden en randen in de accentkleur van je thema, zet dan \'Woordenboekstijlen gelijktrekken\' aan in de opzoekinstellingen.';
   @override
   String get onboarding_feature_backup => 'Back-up & sync';
   @override
@@ -237318,10 +237805,10 @@ class _StringsNl extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Japanse woordenboeken plus JA/EN-uitspraakaudio in één download';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Kaarten & herhalen';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Maak kaarten van opgezochte woorden en kies waar je ze herhaalt';
   @override
   String get onboarding_feature_video => 'Video';
   @override
@@ -237329,16 +237816,16 @@ class _StringsNl extends _StringsEn {
       'Opzoeken in ondertitels en kaarten maken';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Surf in Fushi naar sites en zoek woorden op elke pagina op.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Surf in Fushi naar sites: bekijk videosites in de Fushi-speler, lees webstrips in de Fushi-lezer en zoek woorden op elke pagina op. Op de computer kun je ook de browserextensie installeren.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Surf in Fushi naar sites: lees webstrips en webromans in de Fushi-lezer en zoek woorden op elke pagina op. Op de computer kun je ook de browserextensie installeren.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Surf in Fushi naar sites: lees webstrips en webromans in de Fushi-lezer en zoek woorden op elke pagina op.';
   @override
   String get onboarding_features_modules_hint =>
       'Niet-aangevinkte pagina\'s worden verborgen in de navigatiebalk. Later aan te passen via Instellingen → Uiterlijk.';
@@ -237356,16 +237843,17 @@ class _StringsNl extends _StringsEn {
       'Je kunt deze gids altijd opnieuw openen via Instellingen → Systeem.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Tik op de pagina Herhalen bovenaan op Importeren en kies een .apkg- of .colpkg-bestand dat uit Anki is geëxporteerd.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Neem je Anki-stapels mee';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Volgende stappen';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Kaarten die je maakt komen op het tabblad Herhalen; kaarten die aan de beurt zijn wachten daar op je.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title =>
+      'Herhalen op het tabblad Herhalen';
   @override
   String get onboarding_finish_summary_modules =>
       'Getoonde bibliotheekpagina\'s';
@@ -237635,38 +238123,39 @@ class _StringsNl extends _StringsEn {
       'Toegang tot alle bestanden';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Stelt alleen de volgende stap alvast in. Je kunt de functies daarna nog één voor één kiezen.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Zoek woorden op tijdens het lezen en kijken, maak er kaarten van en herhaal ze.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Een taal leren';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Woordenboek, kaarten maken en herhalen worden verborgen. Zet ze altijd weer aan in Instellingen.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title =>
+      'Alleen lezen, kijken en luisteren';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Waarvoor ga je Fushi gebruiken?';
   @override
   String get onboarding_reopen => 'Aan-de-slaggids';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Stuur kaarten naar Anki (AnkiDroid, AnkiMobile of Anki op de computer met AnkiConnect) en herhaal ze daar. In de volgende stap verbind je Anki en kies je een stapel en notitietype.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Toch Anki gebruiken…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Ingebouwde gespreide herhaling, standaard ingepland met RWKV (een klein model dat bij het eerste gebruik wordt gedownload). Geen Anki te installeren en niets in te stellen: de kaarten die je maakt gaan meteen de herhaling in.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Fushi-herhaling';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Kaarten die je bij het opzoeken maakt, herhaal je hier. Je kunt dit altijd wijzigen via Instellingen → Kaart aanmaken.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Hoe je herhaalt';
   @override
   String get onboarding_sample_sentence_hint =>
       'Tik om hem in de opzoekpagina te openen en tik daarna op een willekeurig woord.';
@@ -237680,35 +238169,35 @@ class _StringsNl extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Introductiegids overslaan?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Stapels openen';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Voeg je eerste kaart toe vanuit de stapellijst';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Herhaal de kaarten die je maakt direct in Fushi — geen Anki nodig, niets in te stellen.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Een standaardstapel en het notitietype \'Fushi Card\' staan al klaar.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Direct klaar voor gebruik';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'De planning gebruikt FSRS-7, een van de beste algoritmen voor gespreide herhaling, en past zich aan je eigen herhaalgeschiedenis aan.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'Standaard FSRS-7';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Kaarten die je tijdens het lezen of kijken maakt, kunnen meteen de herhaling in.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'Van kaart maken naar herhalen';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Je stapels en herhaalvoortgang gaan mee naar je andere apparaten.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Synchroniseert tussen apparaten';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Ingebouwde herhaling van Fushi';
   @override
   String get onboarding_step_anki_action => 'Kaartaanmaak-instellingen';
   @override
@@ -237762,7 +238251,7 @@ class _StringsNl extends _StringsEn {
   String get onboarding_step_interconnect_body =>
       'Koppel apparaten op je LAN om één bibliotheek te delen en de voortgang gelijk te houden.';
   @override
-  String get onboarding_step_interconnect_title => 'Interconnect';
+  String get onboarding_step_interconnect_title => 'Apparaten koppelen';
   @override
   String get onboarding_step_manual_resources_body =>
       'Importeer minstens één woordenboek vóór de opzoekhandleiding. Luisterboeken en uitspraakaudio zijn optioneel.';
@@ -240474,6 +240963,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Alleen Fushi-kaarten. Bewerkte sjablonen moeten het element .fc-translation behouden';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -241016,7 +241511,7 @@ class _StringsNl extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Importeren';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -241725,6 +242220,46 @@ class _StringsNl extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Niets';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Bovenbalk tonen / verbergen';
+  @override
+  String get srs_review_gestures_back => 'Achterkant';
+  @override
+  String get srs_review_gestures_double_tap => 'Dubbeltikken';
+  @override
+  String get srs_review_gestures_front => 'Voorkant';
+  @override
+  String get srs_review_gestures_hint =>
+      'Tikzones, dubbeltikken, lang drukken en vegen op de kaart';
+  @override
+  String get srs_review_gestures_long_press => 'Lang drukken';
+  @override
+  String get srs_review_gestures_note =>
+      'Tikken en lang drukken tellen alleen op lege plekken: woorden, links, knoppen en geselecteerde tekst werken zoals altijd. Zolang de kaart die kant nog op kan scrollen, is vegen scrollen.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inactief zolang alleen Again / Good worden getoond';
+  @override
+  String get srs_review_gestures_reset => 'Standaard herstellen';
+  @override
+  String get srs_review_gestures_swipe_down => 'Omlaag vegen';
+  @override
+  String get srs_review_gestures_swipe_left => 'Naar links vegen';
+  @override
+  String get srs_review_gestures_swipe_right => 'Naar rechts vegen';
+  @override
+  String get srs_review_gestures_swipe_up => 'Omhoog vegen';
+  @override
+  String get srs_review_gestures_tap_center => 'Midden tikken';
+  @override
+  String get srs_review_gestures_tap_left => 'Links tikken';
+  @override
+  String get srs_review_gestures_tap_right => 'Rechts tikken';
+  @override
+  String get srs_review_gestures_title => 'Gebaren';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -260018,7 +260553,8 @@ class _StringsPtBr extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Fontes para os pop-ups do dicionário, com pré-visualização em japonês ao vivo';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style =>
+      'Unificar estilos dos dicionários';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -260192,6 +260728,13 @@ class _StringsPtBr extends _StringsEn {
       'O modo de letras tem sua própria configuração de tamanho de fonte. Você pode ajustá-lo em ⚙ Configurações → Tipografia.';
   @override
   String get lyrics_mode_hint_title => 'Modo de letras';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -263077,7 +263620,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get nav_video => 'Vídeo';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'Navegador';
   @override
   String get network_proxy_address_hint =>
       'Servidor proxy HTTP usado por todas as requisições à internet pública';
@@ -263325,7 +263868,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get onboarding_action_next => 'Próximo';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Role para baixo';
   @override
   String get onboarding_action_skip => 'Pular por enquanto';
   @override
@@ -263358,7 +263901,10 @@ class _StringsPtBr extends _StringsEn {
       'Pasta de dados do Anki não encontrada. Instale o Anki, abra-o uma vez e tente novamente.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Cerca de 30 segundos depois de você criar um cartão, os cartões novos desse baralho são reordenados por frequência de palavra para que as palavras comuns venham primeiro. Cartões em revisão nunca são alterados. Requer o Anki para desktop com AnkiConnect (um celular pode usá-lo conectando-se ao AnkiConnect em um computador); AnkiDroid e AnkiMobile não conseguem reordenar cartões.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Conexão';
   @override
@@ -263366,7 +263912,7 @@ class _StringsPtBr extends _StringsEn {
       'O Anki tem o FSRS integrado — um dos melhores algoritmos de repetição espaçada que existem — mas continua agendando com o SM-2 dos anos 1980 até você ativar o FSRS. O FSRS lê seu histórico real de revisões e prevê quando você está prestes a esquecer, mantendo a mesma retenção com menos revisões. Você liga essa chave uma vez, dentro do Anki; nada muda no lado do Fushi.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'A revisão integrada do Fushi já usa FSRS-7 por padrão. Você só precisa dos passos abaixo se também revisar no Anki.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Toque em Otimizar abaixo da chave para ajustar os parâmetros ao seu próprio histórico de revisões e depois salve. Com menos de cerca de 1000 revisões, os valores padrão já superam o SM-2; basta otimizar de novo depois de estudar por um tempo.';
@@ -263441,7 +263987,7 @@ class _StringsPtBr extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Toque em uma palavra';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Por padrão, os dicionários mantêm as próprias cores. Para recolorir as etiquetas, palavras destacadas e bordas com a cor de destaque do tema, ative "Unificar estilos dos dicionários" nas configurações de consulta.';
   @override
   String get onboarding_feature_backup => 'Backup e sincronização';
   @override
@@ -263486,10 +264032,10 @@ class _StringsPtBr extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Dicionários de japonês mais áudio de pronúncia JA/EN em um download';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Cartões e revisão';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Transforme consultas em cartões e escolha onde revisá-los';
   @override
   String get onboarding_feature_video => 'Vídeo';
   @override
@@ -263497,16 +264043,16 @@ class _StringsPtBr extends _StringsEn {
       'Consulta em legendas e criação de cartões';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Navegue por sites dentro do Fushi e consulte palavras em qualquer página.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Navegue por sites dentro do Fushi: assista a sites de vídeo no player do Fushi, leia quadrinhos web no leitor do Fushi e consulte palavras em qualquer página. No desktop também dá para instalar a extensão do navegador.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Navegue por sites dentro do Fushi: leia quadrinhos e novels web no leitor do Fushi e consulte palavras em qualquer página. No desktop também dá para instalar a extensão do navegador.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Navegue por sites dentro do Fushi: leia quadrinhos e novels web no leitor do Fushi e consulte palavras em qualquer página.';
   @override
   String get onboarding_features_modules_hint =>
       'Páginas não marcadas ficam ocultas na barra de navegação. Dá para mudar quando quiser em Configurações → Aparência.';
@@ -263524,16 +264070,16 @@ class _StringsPtBr extends _StringsEn {
       'Você pode reabrir este guia a qualquer momento em Configurações → Sistema.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Na página Revisão, toque em Importar na barra superior e escolha um arquivo .apkg ou .colpkg exportado do Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Traga seus baralhos do Anki';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Próximos passos';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Os cartões que você cria vão para a aba Revisão; os cartões pendentes esperam por você lá.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'Revise na aba Revisão';
   @override
   String get onboarding_finish_summary_modules =>
       'Páginas de biblioteca exibidas';
@@ -263798,38 +264344,38 @@ class _StringsPtBr extends _StringsEn {
       'Acesso a todos os arquivos';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Só pré-seleciona o próximo passo. Você ainda pode escolher os recursos um a um.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Consulte palavras enquanto lê e assiste, depois crie cartões e revise-os.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Aprender um idioma';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Dicionário, criação de cartões e revisão ficam ocultos. Reative-os quando quiser em Configurações.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => 'Só ler, assistir e ouvir';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Para que você vai usar o Fushi?';
   @override
   String get onboarding_reopen => 'Guia de primeiros passos';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Envie os cartões ao Anki (AnkiDroid, AnkiMobile ou Anki para desktop com AnkiConnect) e revise-os lá. No próximo passo você conecta o Anki e escolhe um baralho e um tipo de nota.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Usar o Anki em vez disso…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Repetição espaçada integrada, agendada com RWKV por padrão (um modelo pequeno baixado no primeiro uso). Nada de instalar o Anki ou configurar algo: os cartões que você cria vão direto para a revisão.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Revisão do Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Os cartões criados a partir das consultas são revisados aqui. Você pode mudar isso a qualquer momento em Configurações → Criação de cartões.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Como revisar';
   @override
   String get onboarding_sample_sentence_hint =>
       'Toque para abri-la na página de consulta e depois toque em qualquer palavra.';
@@ -263843,35 +264389,35 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Pular o guia de introdução?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Abrir baralhos';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Adicione seu primeiro cartão pela lista de baralhos';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Revise os cartões que você cria direto no Fushi — sem Anki e sem nada para configurar.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Um baralho padrão e o tipo de nota "Fushi Card" já estão configurados.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Pronto para usar';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'O agendamento usa o FSRS-7, um dos melhores algoritmos de repetição espaçada, e se ajusta ao seu próprio histórico de revisões.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'FSRS-7 por padrão';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Os cartões criados enquanto você lê ou assiste podem ir direto para a revisão.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'Da criação à revisão';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Seus baralhos e o progresso de revisão acompanham você nos outros dispositivos.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Sincroniza entre dispositivos';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Revisão integrada do Fushi';
   @override
   String get onboarding_step_anki_action =>
       'Configurações de criação de cartões';
@@ -266642,6 +267188,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Somente cartões Fushi. Modelos editados devem manter o elemento .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -267184,7 +267736,7 @@ class _StringsPtBr extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Importar';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -267893,6 +268445,46 @@ class _StringsPtBr extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Nada';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Mostrar / ocultar barra superior';
+  @override
+  String get srs_review_gestures_back => 'Verso';
+  @override
+  String get srs_review_gestures_double_tap => 'Toque duplo';
+  @override
+  String get srs_review_gestures_front => 'Frente';
+  @override
+  String get srs_review_gestures_hint =>
+      'Zonas de toque, toque duplo, toque longo e deslizes no cartão';
+  @override
+  String get srs_review_gestures_long_press => 'Toque longo';
+  @override
+  String get srs_review_gestures_note =>
+      'Toques e toques longos só contam em espaço vazio: palavras, links, botões e texto selecionado mantêm o próprio comportamento. Enquanto o cartão ainda puder rolar nessa direção, deslizar é rolar.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Inativo enquanto só Again / Good são exibidos';
+  @override
+  String get srs_review_gestures_reset => 'Restaurar padrões';
+  @override
+  String get srs_review_gestures_swipe_down => 'Deslizar para baixo';
+  @override
+  String get srs_review_gestures_swipe_left => 'Deslizar para a esquerda';
+  @override
+  String get srs_review_gestures_swipe_right => 'Deslizar para a direita';
+  @override
+  String get srs_review_gestures_swipe_up => 'Deslizar para cima';
+  @override
+  String get srs_review_gestures_tap_center => 'Tocar no centro';
+  @override
+  String get srs_review_gestures_tap_left => 'Tocar à esquerda';
+  @override
+  String get srs_review_gestures_tap_right => 'Tocar à direita';
+  @override
+  String get srs_review_gestures_title => 'Gestos';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -286163,7 +286755,7 @@ class _StringsRu extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Шрифты для окон словаря с живым предпросмотром японского текста';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => 'Единый стиль словарей';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -286337,6 +286929,13 @@ class _StringsRu extends _StringsEn {
       'Режим текстов песен имеет собственную настройку размера шрифта. Вы можете настроить его в ⚙ Настройки → Типографика.';
   @override
   String get lyrics_mode_hint_title => 'Режим текстов песен';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -289218,7 +289817,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get nav_video => 'Видео';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'Браузер';
   @override
   String get network_proxy_address_hint =>
       'HTTP-прокси, через который идут все запросы в публичный интернет';
@@ -289468,7 +290067,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get onboarding_action_next => 'Далее';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Прокрутите вниз';
   @override
   String get onboarding_action_skip => 'Пропустить';
   @override
@@ -289501,7 +290100,10 @@ class _StringsRu extends _StringsEn {
       'Папка данных Anki не найдена. Установите Anki, откройте его один раз и повторите попытку.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Примерно через 30 секунд после создания карточки новые карточки в этой колоде упорядочиваются по частотности слов, чтобы частые слова шли первыми. Карточки на повторении не затрагиваются. Нужен Anki для компьютера с AnkiConnect (телефон может подключиться к AnkiConnect на компьютере); AnkiDroid и AnkiMobile не умеют менять порядок карточек.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Подключение';
   @override
@@ -289509,7 +290111,7 @@ class _StringsRu extends _StringsEn {
       'В Anki встроен FSRS — один из лучших алгоритмов интервального повторения, — но пока вы его не включите, планирование идёт по SM-2 из 1980-х. FSRS анализирует вашу реальную историю повторений и предсказывает, когда вы начнёте забывать, так что вы сохраняете тот же уровень запоминания при меньшем числе повторений. Переключатель нужно включить один раз в самом Anki; на стороне Fushi ничего не меняется.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Встроенное повторение Fushi по умолчанию уже использует FSRS-7. Шаги ниже нужны, только если вы повторяете и в Anki.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Нажмите «Оптимизировать» под переключателем, чтобы подогнать параметры под вашу историю повторений, затем сохраните. При менее чем примерно 1000 повторений значения по умолчанию уже лучше SM-2, поэтому просто оптимизируйте снова, когда позанимаетесь подольше.';
@@ -289584,7 +290186,7 @@ class _StringsRu extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Нажмите на слово';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'По умолчанию словари сохраняют собственные цвета. Чтобы перекрасить их метки, выделенные слова и рамки в акцентный цвет темы, включите «Единый стиль словарей» в настройках поиска слов.';
   @override
   String get onboarding_feature_backup =>
       'Резервное копирование и синхронизация';
@@ -289630,10 +290232,10 @@ class _StringsRu extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Японские словари и аудио произношения JA/EN одной загрузкой';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Карточки и повторение';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Превращайте найденные слова в карточки и выбирайте, где их повторять';
   @override
   String get onboarding_feature_video => 'Видео';
   @override
@@ -289641,16 +290243,16 @@ class _StringsRu extends _StringsEn {
       'Поиск по субтитрам и создание карточек';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Открывайте сайты прямо в Fushi и ищите слова на любой странице.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Открывайте сайты прямо в Fushi: смотрите видеосайты в плеере Fushi, читайте веб-комиксы в читалке Fushi и ищите слова на любой странице. На компьютере также можно установить расширение для браузера.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Открывайте сайты прямо в Fushi: читайте веб-комиксы и веб-новеллы в читалке Fushi и ищите слова на любой странице. На компьютере также можно установить расширение для браузера.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Открывайте сайты прямо в Fushi: читайте веб-комиксы и веб-новеллы в читалке Fushi и ищите слова на любой странице.';
   @override
   String get onboarding_features_modules_hint =>
       'Неотмеченные страницы скрываются из панели навигации. Изменить можно в любой момент: Настройки → Внешний вид.';
@@ -289668,16 +290270,17 @@ class _StringsRu extends _StringsEn {
       'Вы можете снова открыть это руководство в любое время: Настройки → Система.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'На странице «Повторение» нажмите «Импорт» на верхней панели и выберите файл .apkg или .colpkg, экспортированный из Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Перенесите колоды Anki';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Что дальше';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Созданные карточки попадают на вкладку «Повторение»; там же вас ждут карточки, которые пора повторить.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title =>
+      'Повторяйте на вкладке «Повторение»';
   @override
   String get onboarding_finish_summary_modules =>
       'Показанные страницы библиотеки';
@@ -289943,38 +290546,40 @@ class _StringsRu extends _StringsEn {
   String get onboarding_permission_storage_label => 'Доступ ко всем файлам';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Это лишь предварительно настраивает следующий шаг. Функции по-прежнему можно выбрать по одной.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Ищите слова во время чтения и просмотра, создавайте карточки и повторяйте их.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Изучать язык';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Словарь, создание карточек и повторение будут скрыты. Их можно в любой момент снова включить в настройках.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title =>
+      'Просто читать, смотреть и слушать';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title =>
+      'Для чего вы будете использовать Fushi?';
   @override
   String get onboarding_reopen => 'Руководство по началу работы';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Отправляйте карточки в Anki (AnkiDroid, AnkiMobile или Anki для компьютера с AnkiConnect) и повторяйте их там. На следующем шаге вы подключите Anki и выберете колоду и тип заметки.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Использовать Anki…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Встроенное интервальное повторение; по умолчанию расписание строит RWKV (небольшая модель, загружается при первом использовании). Не нужно ставить Anki и что-либо настраивать — созданные карточки сразу попадают на повторение.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Повторение в Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Карточки, созданные при поиске слов, повторяются здесь. Это можно изменить в любой момент в разделе Настройки → Создание карточек.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Способ повторения';
   @override
   String get onboarding_sample_sentence_hint =>
       'Нажмите, чтобы открыть его на странице поиска, затем нажмите на любое слово.';
@@ -289988,35 +290593,35 @@ class _StringsRu extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Пропустить вводное руководство?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Открыть колоды';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Добавьте первую карточку из списка колод';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Повторяйте созданные карточки прямо в Fushi — без Anki и без настройки.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Колода по умолчанию и тип заметки «Fushi Card» уже настроены.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Готово к работе';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'Расписание строится по FSRS-7 — одному из лучших алгоритмов интервального повторения — и подстраивается под вашу историю повторений.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'FSRS-7 по умолчанию';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Карточки, созданные во время чтения или просмотра, могут сразу попадать на повторение.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'От создания к повторению';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Колоды и прогресс повторения синхронизируются с другими вашими устройствами.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Синхронизация между устройствами';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Встроенное повторение Fushi';
   @override
   String get onboarding_step_anki_action => 'Настройки создания карточек';
   @override
@@ -292787,6 +293392,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Только для карточек Fushi. В изменённых шаблонах должен остаться элемент .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -293329,7 +293940,7 @@ class _StringsRu extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Импорт';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -294038,6 +294649,46 @@ class _StringsRu extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Ничего';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Показать / скрыть верхнюю панель';
+  @override
+  String get srs_review_gestures_back => 'Оборотная сторона';
+  @override
+  String get srs_review_gestures_double_tap => 'Двойное касание';
+  @override
+  String get srs_review_gestures_front => 'Лицевая сторона';
+  @override
+  String get srs_review_gestures_hint =>
+      'Зоны касания, двойное касание, долгое нажатие и свайпы по карточке';
+  @override
+  String get srs_review_gestures_long_press => 'Долгое нажатие';
+  @override
+  String get srs_review_gestures_note =>
+      'Касания и долгие нажатия срабатывают только на пустом месте: слова, ссылки, кнопки и выделенный текст ведут себя как обычно. Пока карточку ещё можно прокрутить в эту сторону, свайп — это прокрутка.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Не действует, пока показаны только Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Сбросить по умолчанию';
+  @override
+  String get srs_review_gestures_swipe_down => 'Свайп вниз';
+  @override
+  String get srs_review_gestures_swipe_left => 'Свайп влево';
+  @override
+  String get srs_review_gestures_swipe_right => 'Свайп вправо';
+  @override
+  String get srs_review_gestures_swipe_up => 'Свайп вверх';
+  @override
+  String get srs_review_gestures_tap_center => 'Касание по центру';
+  @override
+  String get srs_review_gestures_tap_left => 'Касание слева';
+  @override
+  String get srs_review_gestures_tap_right => 'Касание справа';
+  @override
+  String get srs_review_gestures_title => 'Жесты';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -312143,7 +312794,7 @@ class _StringsTh extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'ฟอนต์สำหรับป๊อปอัปพจนานุกรม พร้อมตัวอย่างภาษาญี่ปุ่นสด';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => 'รวมสไตล์พจนานุกรมให้เหมือนกัน';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -312317,6 +312968,13 @@ class _StringsTh extends _StringsEn {
       'โหมดเนื้อเพลงมีการตั้งค่าขนาดตัวอักษรของตัวเอง คุณสามารถปรับได้ใน ⚙ การตั้งค่า → การจัดรูปแบบ';
   @override
   String get lyrics_mode_hint_title => 'โหมดเนื้อเพลง';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -315170,7 +315828,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get nav_video => 'วิดีโอ';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'เบราว์เซอร์';
   @override
   String get network_proxy_address_hint =>
       'เซิร์ฟเวอร์พร็อกซี HTTP ที่ใช้กับคำขออินเทอร์เน็ตสาธารณะทั้งหมด';
@@ -315417,7 +316075,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get onboarding_action_next => 'ถัดไป';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'เลื่อนลง';
   @override
   String get onboarding_action_skip => 'ข้ามไปก่อน';
   @override
@@ -315450,7 +316108,10 @@ class _StringsTh extends _StringsEn {
       'ไม่พบโฟลเดอร์ข้อมูล Anki ติดตั้ง Anki เปิดหนึ่งครั้ง แล้วลองอีกครั้ง';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'ประมาณ 30 วินาทีหลังสร้างการ์ด การ์ดใหม่ในสำรับนั้นจะถูกเรียงใหม่ตามความถี่ของคำ เพื่อให้คำที่พบบ่อยมาก่อน การ์ดที่อยู่ระหว่างทบทวนจะไม่ถูกแตะต้อง ต้องใช้ Anki บนเดสก์ท็อปพร้อม AnkiConnect (มือถือใช้ได้โดยเชื่อมต่อกับ AnkiConnect บนคอมพิวเตอร์) ส่วน AnkiDroid และ AnkiMobile เรียงการ์ดใหม่ไม่ได้';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'การเชื่อมต่อ';
   @override
@@ -315458,7 +316119,7 @@ class _StringsTh extends _StringsEn {
       'Anki มี FSRS ในตัว ซึ่งเป็นหนึ่งในอัลกอริทึมการทบทวนแบบเว้นระยะที่ดีที่สุด แต่จะยังใช้การจัดตารางแบบ SM-2 จากยุค 1980 จนกว่าคุณจะเปิด FSRS FSRS อ่านประวัติการทบทวนจริงของคุณและทำนายว่าคุณใกล้จะลืมเมื่อไร ทำให้จำได้เท่าเดิมด้วยการทบทวนน้อยลง คุณเปิดสวิตช์นี้ครั้งเดียวภายใน Anki ฝั่ง Fushi ไม่มีอะไรเปลี่ยน';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'ระบบทบทวนในตัวของ Fushi ใช้ FSRS-7 เป็นค่าเริ่มต้นอยู่แล้ว คุณต้องทำขั้นตอนด้านล่างก็ต่อเมื่อทบทวนใน Anki ด้วย';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'กด ปรับให้เหมาะสม ใต้สวิตช์เพื่อปรับพารามิเตอร์ให้เข้ากับประวัติการทบทวนของคุณ แล้วบันทึก หากทบทวนน้อยกว่าประมาณ 1000 ครั้ง ค่าเริ่มต้นก็ดีกว่า SM-2 อยู่แล้ว เมื่อเรียนไปสักพักค่อยปรับให้เหมาะสมอีกครั้ง';
@@ -315532,7 +316193,7 @@ class _StringsTh extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'แตะที่คำหนึ่งคำ';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'โดยค่าเริ่มต้นพจนานุกรมจะใช้สีของตัวเอง หากต้องการให้แท็ก คำที่เน้น และกรอบใช้สีเน้นของธีม ให้เปิด "รวมสไตล์พจนานุกรมให้เหมือนกัน" ในการตั้งค่าการค้นหาคำ';
   @override
   String get onboarding_feature_backup => 'สำรองข้อมูลและซิงค์';
   @override
@@ -315576,26 +316237,26 @@ class _StringsTh extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'พจนานุกรมภาษาญี่ปุ่นพร้อมเสียงออกเสียง JA/EN ในการดาวน์โหลดครั้งเดียว';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'การ์ดและการทบทวน';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'เปลี่ยนคำที่ค้นหาเป็นการ์ดและเลือกที่ทบทวน';
   @override
   String get onboarding_feature_video => 'วิดีโอ';
   @override
   String get onboarding_feature_video_hint => 'ค้นคำจากคำบรรยายและสร้างการ์ด';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'ท่องเว็บภายใน Fushi และค้นหาคำได้ในทุกหน้า';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'ท่องเว็บภายใน Fushi: ดูเว็บวิดีโอด้วยเครื่องเล่นของ Fushi อ่านเว็บคอมิกด้วยตัวอ่านของ Fushi และค้นหาคำได้ในทุกหน้า บนเดสก์ท็อปยังติดตั้งส่วนขยายเบราว์เซอร์ได้ด้วย';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'ท่องเว็บภายใน Fushi: อ่านเว็บคอมิกและนิยายออนไลน์ด้วยตัวอ่านของ Fushi และค้นหาคำได้ในทุกหน้า บนเดสก์ท็อปยังติดตั้งส่วนขยายเบราว์เซอร์ได้ด้วย';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'ท่องเว็บภายใน Fushi: อ่านเว็บคอมิกและนิยายออนไลน์ด้วยตัวอ่านของ Fushi และค้นหาคำได้ในทุกหน้า';
   @override
   String get onboarding_features_modules_hint =>
       'หน้าที่ไม่ได้เลือกจะถูกซ่อนจากแถบนำทาง เปลี่ยนได้ทุกเมื่อที่ การตั้งค่า → รูปลักษณ์';
@@ -315613,16 +316274,16 @@ class _StringsTh extends _StringsEn {
       'คุณเปิดคู่มือนี้อีกครั้งได้ทุกเมื่อจาก การตั้งค่า → ระบบ';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'ในหน้า ทบทวน ให้แตะ นำเข้า ที่แถบด้านบน แล้วเลือกไฟล์ .apkg หรือ .colpkg ที่ส่งออกจาก Anki';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'นำสำรับ Anki ของคุณเข้ามา';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'ขั้นตอนถัดไป';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'การ์ดที่คุณสร้างจะไปอยู่ในแท็บ ทบทวน และการ์ดที่ถึงกำหนดจะรอคุณอยู่ที่นั่น';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'ทบทวนในแท็บ ทบทวน';
   @override
   String get onboarding_finish_summary_modules => 'หน้าคลังที่แสดง';
   @override
@@ -315878,38 +316539,38 @@ class _StringsTh extends _StringsEn {
   String get onboarding_permission_storage_label => 'สิทธิ์เข้าถึงไฟล์ทั้งหมด';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'ใช้เพียงเพื่อเลือกไว้ล่วงหน้าในขั้นตอนถัดไป คุณยังเลือกฟีเจอร์ทีละรายการได้';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'ค้นหาคำระหว่างอ่านและดู แล้วสร้างการ์ดไว้ทบทวน';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'เรียนภาษา';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'ซ่อนพจนานุกรม การสร้างการ์ด และการทบทวน เปิดกลับได้ทุกเมื่อในการตั้งค่า';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => 'แค่อ่าน ดู และฟัง';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'คุณจะใช้ Fushi ทำอะไร';
   @override
   String get onboarding_reopen => 'คู่มือเริ่มต้นใช้งาน';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'ส่งการ์ดไปที่ Anki (AnkiDroid, AnkiMobile หรือ Anki บนเดสก์ท็อปพร้อม AnkiConnect) แล้วทบทวนที่นั่น ขั้นตอนถัดไปจะเชื่อมต่อ Anki และเลือกสำรับกับประเภทโน้ต';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'ใช้ Anki แทน…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'ระบบทบทวนแบบเว้นระยะในตัว ใช้ RWKV จัดตารางเป็นค่าเริ่มต้น (โมเดลขนาดเล็กที่ดาวน์โหลดเมื่อใช้ครั้งแรก) ไม่ต้องติดตั้ง Anki และไม่ต้องตั้งค่าใด ๆ การ์ดที่คุณสร้างจะเข้าสู่การทบทวนทันที';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'ทบทวนใน Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'การ์ดที่สร้างจากการค้นหาคำจะถูกทบทวนที่นี่ เปลี่ยนได้ทุกเมื่อใน การตั้งค่า → สร้างการ์ด';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'วิธีทบทวน';
   @override
   String get onboarding_sample_sentence_hint =>
       'แตะเพื่อเปิดในหน้าค้นคำ แล้วแตะคำใดก็ได้';
@@ -315923,35 +316584,34 @@ class _StringsTh extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'ข้ามคู่มือเริ่มต้นใช้งานหรือไม่';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'เปิดสำรับ';
   @override
-  String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+  String get onboarding_srs_action_desc => 'เพิ่มการ์ดใบแรกจากรายการสำรับ';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'ทบทวนการ์ดที่คุณสร้างได้ใน Fushi ทันที ไม่ต้องใช้ Anki และไม่ต้องตั้งค่าใด ๆ';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'เตรียมสำรับเริ่มต้นและประเภทโน้ต "Fushi Card" ไว้แล้ว';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'พร้อมใช้งาน';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'การจัดตารางใช้ FSRS-7 หนึ่งในอัลกอริทึมการทบทวนแบบเว้นระยะที่ดีที่สุด และปรับตามประวัติการทบทวนของคุณเอง';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'ใช้ FSRS-7 เป็นค่าเริ่มต้น';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'การ์ดที่สร้างระหว่างอ่านหรือดูสามารถเข้าสู่การทบทวนได้ทันที';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'จากสร้างการ์ดสู่การทบทวน';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'สำรับและความคืบหน้าการทบทวนจะตามคุณไปยังอุปกรณ์อื่น';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'ซิงก์ข้ามอุปกรณ์';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'ระบบทบทวนในตัวของ Fushi';
   @override
   String get onboarding_step_anki_action => 'การตั้งค่าการสร้างการ์ด';
   @override
@@ -318685,6 +319345,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'เฉพาะการ์ด Fushi เท่านั้น เทมเพลตที่แก้ไขต้องคงองค์ประกอบ .fc-translation ไว้';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -319227,7 +319893,7 @@ class _StringsTh extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'นำเข้า';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -319936,6 +320602,46 @@ class _StringsTh extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'ไม่มี';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'แสดง / ซ่อนแถบด้านบน';
+  @override
+  String get srs_review_gestures_back => 'ด้านคำตอบ';
+  @override
+  String get srs_review_gestures_double_tap => 'แตะสองครั้ง';
+  @override
+  String get srs_review_gestures_front => 'ด้านคำถาม';
+  @override
+  String get srs_review_gestures_hint =>
+      'โซนแตะ แตะสองครั้ง กดค้าง และปัดบนการ์ด';
+  @override
+  String get srs_review_gestures_long_press => 'กดค้าง';
+  @override
+  String get srs_review_gestures_note =>
+      'การแตะและกดค้างนับเฉพาะพื้นที่ว่าง: คำ ลิงก์ ปุ่ม และข้อความที่เลือกยังทำงานตามเดิม ขณะที่การ์ดยังเลื่อนไปทางนั้นได้ การปัดคือการเลื่อน';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'ไม่มีผลขณะแสดงเฉพาะ Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'คืนค่าเริ่มต้น';
+  @override
+  String get srs_review_gestures_swipe_down => 'ปัดลง';
+  @override
+  String get srs_review_gestures_swipe_left => 'ปัดซ้าย';
+  @override
+  String get srs_review_gestures_swipe_right => 'ปัดขวา';
+  @override
+  String get srs_review_gestures_swipe_up => 'ปัดขึ้น';
+  @override
+  String get srs_review_gestures_tap_center => 'แตะกลาง';
+  @override
+  String get srs_review_gestures_tap_left => 'แตะซ้าย';
+  @override
+  String get srs_review_gestures_tap_right => 'แตะขวา';
+  @override
+  String get srs_review_gestures_title => 'ท่าทาง';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -338066,7 +338772,7 @@ class _StringsTr extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Sözlük açılır pencereleri için yazı tipleri, canlı Japonca önizlemeyle';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => 'Sözlük stillerini birleştir';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -338240,6 +338946,13 @@ class _StringsTr extends _StringsEn {
       'Şarkı sözü modunun kendi yazı boyutu ayarı vardır. ⚙ Ayarlar → Tipografi bölümünden ayarlayabilirsiniz.';
   @override
   String get lyrics_mode_hint_title => 'Şarkı Sözü Modu';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -341109,7 +341822,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get nav_video => 'Video';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'Tarayıcı';
   @override
   String get network_proxy_address_hint =>
       'Tüm genel internet isteklerinde kullanılan HTTP proxy sunucusu';
@@ -341357,7 +342070,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get onboarding_action_next => 'İleri';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Aşağı kaydır';
   @override
   String get onboarding_action_skip => 'Şimdilik atla';
   @override
@@ -341390,7 +342103,10 @@ class _StringsTr extends _StringsEn {
       'Anki veri klasörü bulunamadı. Anki\'yi yükleyin, bir kez açın ve tekrar deneyin.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Kart oluşturduktan yaklaşık 30 saniye sonra, o destedeki yeni kartlar kelime sıklığına göre yeniden sıralanır; böylece yaygın kelimeler önce gelir. Tekrar kartlarına asla dokunulmaz. AnkiConnect ile masaüstü Anki gerekir (telefon, bir bilgisayardaki AnkiConnect\'e bağlanarak kullanabilir); AnkiDroid ve AnkiMobile kartları yeniden sıralayamaz.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Bağlantı';
   @override
@@ -341398,7 +342114,7 @@ class _StringsTr extends _StringsEn {
       'Anki\'de FSRS yerleşik olarak bulunur — en iyi aralıklı tekrar algoritmalarından biridir — ancak siz FSRS\'yi açana kadar 1980\'lerden kalma SM-2 ile zamanlamaya devam eder. FSRS gerçek tekrar geçmişinizi okur ve ne zaman unutmak üzere olduğunuzu tahmin eder; böylece aynı kalıcılığı daha az tekrarla korursunuz. Bu anahtarı Anki içinde bir kez çevirirsiniz; Fushi tarafında hiçbir şey değişmez.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Fushi\'nin yerleşik tekrarı varsayılan olarak zaten FSRS-7 kullanır. Aşağıdaki adımlara yalnızca Anki\'de de tekrar yapıyorsan ihtiyacın var.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Parametreleri kendi tekrar geçmişinize uydurmak için anahtarın altındaki Optimize et\'e basın, ardından kaydedin. Yaklaşık 1000 tekrarın altında varsayılanlar zaten SM-2\'yi geçer; bu yüzden bir süre çalıştıktan sonra yeniden optimize edin.';
@@ -341473,7 +342189,7 @@ class _StringsTr extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Bir kelimeye dokunun';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Sözlükler varsayılan olarak kendi renklerini korur. Etiketlerini, vurgulanan kelimeleri ve kenarlıklarını tema vurgu renginle boyamak için arama ayarlarında "Sözlük stillerini birleştir" seçeneğini aç.';
   @override
   String get onboarding_feature_backup => 'Yedekleme ve senkronizasyon';
   @override
@@ -341518,10 +342234,10 @@ class _StringsTr extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Japonca sözlükler ve JA/EN telaffuz sesleri tek indirmede';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Kartlar ve tekrar';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Aramaları karta dönüştür ve nerede tekrar edeceğini seç';
   @override
   String get onboarding_feature_video => 'Video';
   @override
@@ -341529,16 +342245,16 @@ class _StringsTr extends _StringsEn {
       'Altyazıda arama ve kart oluşturma';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Siteleri Fushi içinde gez ve her sayfada kelime ara.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Siteleri Fushi içinde gez: video sitelerini Fushi oynatıcısında izle, web çizgi romanlarını Fushi okuyucusunda oku ve her sayfada kelime ara. Masaüstünde tarayıcı uzantısını da kurabilirsin.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Siteleri Fushi içinde gez: web çizgi romanlarını ve web romanlarını Fushi okuyucusunda oku ve her sayfada kelime ara. Masaüstünde tarayıcı uzantısını da kurabilirsin.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Siteleri Fushi içinde gez: web çizgi romanlarını ve web romanlarını Fushi okuyucusunda oku ve her sayfada kelime ara.';
   @override
   String get onboarding_features_modules_hint =>
       'İşaretlenmeyen sayfalar gezinme çubuğunda gizlenir. İstediğiniz zaman Ayarlar → Görünüm\'den değiştirebilirsiniz.';
@@ -341556,16 +342272,16 @@ class _StringsTr extends _StringsEn {
       'Bu rehberi istediğiniz zaman Ayarlar → Sistem\'den yeniden açabilirsiniz.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Tekrar sayfasında üst çubuktaki İçe aktar\'a dokun ve Anki\'den dışa aktarılmış bir .apkg veya .colpkg dosyası seç.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Anki destelerini getir';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Sonraki adımlar';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Oluşturduğun kartlar Tekrar sekmesine düşer; zamanı gelen kartlar seni orada bekler.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'Tekrar sekmesinde tekrar et';
   @override
   String get onboarding_finish_summary_modules =>
       'Gösterilen kitaplık sayfaları';
@@ -341827,38 +342543,39 @@ class _StringsTr extends _StringsEn {
   String get onboarding_permission_storage_label => 'Tüm dosyalara erişim';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Yalnızca bir sonraki adımı önceden ayarlar. Özellikleri yine tek tek seçebilirsin.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Okurken ve izlerken kelime ara, sonra kart oluşturup tekrar et.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Dil öğrenmek';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Sözlük, kart oluşturma ve tekrar gizlenir. İstediğin zaman Ayarlar\'dan yeniden açabilirsin.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title =>
+      'Sadece okumak, izlemek ve dinlemek';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Fushi\'yi ne için kullanacaksın?';
   @override
   String get onboarding_reopen => 'Başlangıç rehberi';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Kartları Anki\'ye (AnkiDroid, AnkiMobile veya AnkiConnect ile masaüstü Anki) gönder ve orada tekrar et. Sonraki adımda Anki\'ye bağlanıp bir deste ve not türü seçersin.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Bunun yerine Anki kullan…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Yerleşik aralıklı tekrar; zamanlama varsayılan olarak RWKV ile yapılır (ilk kullanımda indirilen küçük bir model). Anki kurmana veya bir şey ayarlamana gerek yok — oluşturduğun kartlar doğrudan tekrara girer.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Fushi tekrarı';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Aramalardan oluşturduğun kartlar burada tekrar edilir. Bunu istediğin zaman Ayarlar → Kart Oluşturma bölümünden değiştirebilirsin.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Nasıl tekrar edersin';
   @override
   String get onboarding_sample_sentence_hint =>
       'Arama sayfasında açmak için dokunun, sonra herhangi bir kelimeye dokunun.';
@@ -341872,35 +342589,34 @@ class _StringsTr extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Başlangıç rehberi atlansın mı?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Desteleri aç';
   @override
-  String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+  String get onboarding_srs_action_desc => 'İlk kartını deste listesinden ekle';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Oluşturduğun kartları doğrudan Fushi içinde tekrar et — Anki gerekmez, ayarlanacak bir şey yok.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Varsayılan bir deste ve "Fushi Card" not türü zaten hazır.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Kullanıma hazır';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'Zamanlama, en iyi aralıklı tekrar algoritmalarından biri olan FSRS-7\'yi kullanır ve kendi tekrar geçmişine göre ayarlanır.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'Varsayılan olarak FSRS-7';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Okurken veya izlerken oluşturduğun kartlar doğrudan tekrara girebilir.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'Oluşturmadan tekrara';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Destelerin ve tekrar ilerlemen diğer cihazlarına da gelir.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Cihazlar arasında eşitlenir';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Fushi yerleşik tekrar';
   @override
   String get onboarding_step_anki_action => 'Kart oluşturma ayarları';
   @override
@@ -344647,6 +345363,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Yalnızca Fushi kartları. Düzenlenen şablonlar .fc-translation öğesini korumalıdır';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -345189,7 +345911,7 @@ class _StringsTr extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'İçe aktar';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -345898,6 +346620,46 @@ class _StringsTr extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Hiçbiri';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Üst çubuğu göster / gizle';
+  @override
+  String get srs_review_gestures_back => 'Cevap yüzü';
+  @override
+  String get srs_review_gestures_double_tap => 'Çift dokunma';
+  @override
+  String get srs_review_gestures_front => 'Soru yüzü';
+  @override
+  String get srs_review_gestures_hint =>
+      'Kart üzerinde dokunma bölgeleri, çift dokunma, uzun basma ve kaydırmalar';
+  @override
+  String get srs_review_gestures_long_press => 'Uzun basma';
+  @override
+  String get srs_review_gestures_note =>
+      'Dokunma ve uzun basma yalnızca boş alanda geçerlidir: kelimeler, bağlantılar, düğmeler ve seçili metin kendi davranışını korur. Kart o yöne hâlâ kaydırılabiliyorsa, kaydırma hareketi kaydırmadır.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Yalnızca Again / Good gösterilirken etkisiz';
+  @override
+  String get srs_review_gestures_reset => 'Varsayılanlara dön';
+  @override
+  String get srs_review_gestures_swipe_down => 'Aşağı kaydır';
+  @override
+  String get srs_review_gestures_swipe_left => 'Sola kaydır';
+  @override
+  String get srs_review_gestures_swipe_right => 'Sağa kaydır';
+  @override
+  String get srs_review_gestures_swipe_up => 'Yukarı kaydır';
+  @override
+  String get srs_review_gestures_tap_center => 'Ortaya dokun';
+  @override
+  String get srs_review_gestures_tap_left => 'Sola dokun';
+  @override
+  String get srs_review_gestures_tap_right => 'Sağa dokun';
+  @override
+  String get srs_review_gestures_title => 'Hareketler';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -364047,7 +364809,7 @@ class _StringsVi extends _StringsEn {
   String get lookup_dictionary_font_hint =>
       'Phông cho cửa sổ từ điển, kèm xem trước tiếng Nhật trực tiếp';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => 'Thống nhất kiểu từ điển';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -364221,6 +364983,13 @@ class _StringsVi extends _StringsEn {
       'Chế độ lời bài hát có cài đặt cỡ chữ riêng. Bạn có thể điều chỉnh trong ⚙ Cài đặt → Kiểu chữ.';
   @override
   String get lyrics_mode_hint_title => 'Chế độ lời bài hát';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -367081,7 +367850,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get nav_video => 'Video';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => 'Trình duyệt';
   @override
   String get network_proxy_address_hint =>
       'Máy chủ proxy HTTP dùng cho mọi yêu cầu ra Internet công cộng';
@@ -367329,7 +368098,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get onboarding_action_next => 'Tiếp theo';
   @override
-  String get onboarding_action_scroll_more => 'Scroll down';
+  String get onboarding_action_scroll_more => 'Cuộn xuống';
   @override
   String get onboarding_action_skip => 'Bỏ qua';
   @override
@@ -367362,7 +368131,10 @@ class _StringsVi extends _StringsEn {
       'Không tìm thấy thư mục dữ liệu Anki. Cài Anki, mở một lần rồi thử lại.';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      'Khoảng 30 giây sau khi bạn tạo thẻ, các thẻ mới trong bộ thẻ đó được sắp xếp lại theo tần suất từ để từ thông dụng xuất hiện trước. Thẻ đang ôn tập không bao giờ bị động đến. Cần Anki trên máy tính với AnkiConnect (điện thoại có thể dùng bằng cách kết nối tới AnkiConnect trên máy tính); AnkiDroid và AnkiMobile không thể sắp xếp lại thẻ.';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect (${address})';
   @override
   String get onboarding_anki_backend_label => 'Kết nối';
   @override
@@ -367370,7 +368142,7 @@ class _StringsVi extends _StringsEn {
       'Anki có sẵn FSRS - một trong những thuật toán lặp lại ngắt quãng tốt nhất hiện nay - nhưng vẫn lập lịch bằng SM-2 từ thập niên 1980 cho đến khi bạn bật FSRS. FSRS đọc lịch sử ôn tập thực tế của bạn và dự đoán khi nào bạn sắp quên, nhờ đó giữ được cùng mức ghi nhớ với ít lượt ôn hơn. Bạn chỉ cần bật công tắc này một lần trong Anki; phía Fushi không có gì thay đổi.';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Ôn tập tích hợp của Fushi mặc định đã dùng FSRS-7. Bạn chỉ cần các bước dưới đây nếu cũng ôn tập trong Anki.';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       'Nhấn Tối ưu hóa dưới công tắc để điều chỉnh tham số theo lịch sử ôn tập của riêng bạn, rồi lưu. Dưới khoảng 1000 lượt ôn, giá trị mặc định đã tốt hơn SM-2, nên hãy tối ưu lại sau khi bạn đã học một thời gian.';
@@ -367443,7 +368215,7 @@ class _StringsVi extends _StringsEn {
   String get onboarding_click_lookup_tap_title => 'Chạm vào một từ';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      'Mặc định các từ điển giữ màu riêng. Để tô lại nhãn, từ được nhấn mạnh và viền theo màu nhấn của giao diện, hãy bật "Thống nhất kiểu từ điển" trong cài đặt tra từ.';
   @override
   String get onboarding_feature_backup => 'Sao lưu & đồng bộ';
   @override
@@ -367488,26 +368260,26 @@ class _StringsVi extends _StringsEn {
   String get onboarding_feature_pack_hint =>
       'Từ điển tiếng Nhật cùng âm thanh phát âm JA/EN trong một lần tải';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => 'Thẻ & ôn tập';
   @override
   String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+      'Biến từ đã tra thành thẻ và chọn nơi ôn tập';
   @override
   String get onboarding_feature_video => 'Video';
   @override
   String get onboarding_feature_video_hint => 'Tra từ trên phụ đề và tạo thẻ';
   @override
   String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+      'Duyệt web ngay trong Fushi và tra từ trên mọi trang.';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Duyệt web ngay trong Fushi: xem trang video bằng trình phát Fushi, đọc truyện tranh web bằng trình đọc Fushi và tra từ trên mọi trang. Trên máy tính bạn còn có thể cài tiện ích mở rộng trình duyệt.';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      'Duyệt web ngay trong Fushi: đọc truyện tranh và tiểu thuyết web bằng trình đọc Fushi và tra từ trên mọi trang. Trên máy tính bạn còn có thể cài tiện ích mở rộng trình duyệt.';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      'Duyệt web ngay trong Fushi: đọc truyện tranh và tiểu thuyết web bằng trình đọc Fushi và tra từ trên mọi trang.';
   @override
   String get onboarding_features_modules_hint =>
       'Những trang không đánh dấu sẽ bị ẩn khỏi thanh điều hướng. Đổi lại bất cứ lúc nào ở Cài đặt → Giao diện.';
@@ -367525,16 +368297,16 @@ class _StringsVi extends _StringsEn {
       'Bạn có thể mở lại hướng dẫn này bất cứ lúc nào từ Cài đặt → Hệ thống.';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      'Trên trang Ôn tập, chạm Nhập ở thanh trên cùng và chọn tệp .apkg hoặc .colpkg đã xuất từ Anki.';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => 'Mang bộ thẻ Anki của bạn vào';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => 'Các bước tiếp theo';
   @override
   String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+      'Thẻ bạn tạo sẽ vào thẻ Ôn tập; các thẻ đến hạn sẽ chờ bạn ở đó.';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => 'Ôn tập ở thẻ Ôn tập';
   @override
   String get onboarding_finish_summary_modules => 'Trang thư viện hiển thị';
   @override
@@ -367792,38 +368564,38 @@ class _StringsVi extends _StringsEn {
   String get onboarding_permission_storage_label => 'Quyền truy cập mọi tệp';
   @override
   String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+      'Chỉ dùng để chọn sẵn cho bước tiếp theo. Bạn vẫn có thể chọn từng tính năng.';
   @override
   String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+      'Tra từ khi đọc và xem, rồi tạo thẻ và ôn tập.';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => 'Học ngoại ngữ';
   @override
   String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+      'Từ điển, tạo thẻ và ôn tập sẽ bị ẩn. Bạn có thể bật lại bất cứ lúc nào trong Cài đặt.';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => 'Chỉ đọc, xem và nghe';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => 'Bạn sẽ dùng Fushi để làm gì?';
   @override
   String get onboarding_reopen => 'Hướng dẫn bắt đầu';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      'Gửi thẻ sang Anki (AnkiDroid, AnkiMobile hoặc Anki trên máy tính với AnkiConnect) và ôn tập ở đó. Bước tiếp theo sẽ kết nối Anki và chọn bộ thẻ cùng loại ghi chú.';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => 'Dùng Anki thay thế…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      'Ôn tập ngắt quãng tích hợp, mặc định lên lịch bằng RWKV (một mô hình nhỏ tải về khi dùng lần đầu). Không cần cài Anki hay thiết lập gì — thẻ bạn tạo sẽ vào ôn tập ngay.';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Ôn tập Fushi';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      'Thẻ bạn tạo khi tra từ sẽ được ôn tập ở đây. Bạn có thể đổi bất cứ lúc nào trong Cài đặt → Tạo thẻ.';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => 'Cách ôn tập';
   @override
   String get onboarding_sample_sentence_hint =>
       'Chạm để mở trong trang tra từ, rồi chạm vào một từ bất kỳ.';
@@ -367837,35 +368609,35 @@ class _StringsVi extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => 'Bỏ qua hướng dẫn bắt đầu?';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => 'Mở bộ thẻ';
   @override
   String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+      'Thêm thẻ đầu tiên từ danh sách bộ thẻ';
   @override
   String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+      'Ôn tập thẻ bạn tạo ngay trong Fushi — không cần Anki, không cần thiết lập.';
   @override
   String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+      'Bộ thẻ mặc định và loại ghi chú "Fushi Card" đã được thiết lập sẵn.';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => 'Dùng được ngay';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      'Lịch ôn dùng FSRS-7, một trong những thuật toán lặp lại ngắt quãng tốt nhất, và tự điều chỉnh theo lịch sử ôn tập của bạn.';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => 'Mặc định dùng FSRS-7';
   @override
   String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+      'Thẻ bạn tạo khi đọc hoặc xem có thể vào ôn tập ngay.';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => 'Từ tạo thẻ đến ôn tập';
   @override
   String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+      'Bộ thẻ và tiến độ ôn tập theo bạn sang các thiết bị khác.';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => 'Đồng bộ giữa các thiết bị';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Ôn tập tích hợp của Fushi';
   @override
   String get onboarding_step_anki_action => 'Cài đặt tạo thẻ';
   @override
@@ -370604,6 +371376,12 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      'Chỉ thẻ Fushi. Mẫu đã chỉnh sửa phải giữ phần tử .fc-translation';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -371146,7 +371924,7 @@ class _StringsVi extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => 'Nhập';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -371855,6 +372633,46 @@ class _StringsVi extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => 'Không';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar =>
+      'Hiện / ẩn thanh trên cùng';
+  @override
+  String get srs_review_gestures_back => 'Mặt đáp án';
+  @override
+  String get srs_review_gestures_double_tap => 'Chạm hai lần';
+  @override
+  String get srs_review_gestures_front => 'Mặt câu hỏi';
+  @override
+  String get srs_review_gestures_hint =>
+      'Vùng chạm, chạm hai lần, nhấn giữ và vuốt trên thẻ';
+  @override
+  String get srs_review_gestures_long_press => 'Nhấn giữ';
+  @override
+  String get srs_review_gestures_note =>
+      'Chạm và nhấn giữ chỉ tính ở vùng trống: chữ, liên kết, nút và văn bản đang chọn vẫn hoạt động như cũ. Khi thẻ còn cuộn được theo hướng đó, vuốt là cuộn.';
+  @override
+  String get srs_review_gestures_rating_hidden =>
+      'Không có tác dụng khi chỉ hiện Again / Good';
+  @override
+  String get srs_review_gestures_reset => 'Khôi phục mặc định';
+  @override
+  String get srs_review_gestures_swipe_down => 'Vuốt xuống';
+  @override
+  String get srs_review_gestures_swipe_left => 'Vuốt sang trái';
+  @override
+  String get srs_review_gestures_swipe_right => 'Vuốt sang phải';
+  @override
+  String get srs_review_gestures_swipe_up => 'Vuốt lên';
+  @override
+  String get srs_review_gestures_tap_center => 'Chạm ở giữa';
+  @override
+  String get srs_review_gestures_tap_left => 'Chạm bên trái';
+  @override
+  String get srs_review_gestures_tap_right => 'Chạm bên phải';
+  @override
+  String get srs_review_gestures_title => 'Cử chỉ';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -389182,6 +390000,13 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => '歌词模式';
   @override
+  String get lyrics_search_empty_hint => '搜索本书的有声书字幕';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => '仅显示前 ${n} 条（共 ${total} 条）';
+  @override
   String get lyrics_sentence_replay => '重播当前句';
   @override
   String get lyrics_skipped_text_show => '显示未朗读的原文';
@@ -392098,6 +392923,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get onboarding_anki_auto_reposition_hint =>
       '制卡约 30 秒后，自动把该牌组的新卡按词频排序，常见词先学，不动复习卡。需要电脑版 Anki + AnkiConnect（手机可改连电脑上的 AnkiConnect）；AnkiDroid / AnkiMobile 无法重排。';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect（${address}）';
   @override
   String get onboarding_anki_backend_label => '连接方式';
   @override
@@ -395071,6 +395899,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_browse_unsuspended => '已取消暂停';
   @override
+  String get srs_card_appearance_blur_translation => '翻译模糊，点按显示';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      '仅 Fushi 卡片生效；改过模板时需保留 .fc-translation 元素';
+  @override
   String get srs_card_appearance_color_app => '跟随 app 主题';
   @override
   String get srs_card_appearance_color_custom => '自定义强调色';
@@ -396222,6 +397055,43 @@ class _StringsZhCn extends _StringsEn {
   String get srs_review_done => '今天的复习做完了';
   @override
   String srs_review_done_detail({required Object n}) => '本次复习了 ${n} 张';
+  @override
+  String get srs_review_gestures_action_none => '无';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '显示 / 隐藏顶栏';
+  @override
+  String get srs_review_gestures_back => '答案面';
+  @override
+  String get srs_review_gestures_double_tap => '双击';
+  @override
+  String get srs_review_gestures_front => '问题面';
+  @override
+  String get srs_review_gestures_hint => '卡面点按分区、双击、长按与滑动';
+  @override
+  String get srs_review_gestures_long_press => '长按';
+  @override
+  String get srs_review_gestures_note =>
+      '点按与长按只认空白处：字、链接、按钮和选中的文字照旧各管各的。卡面还能往那个方向滚时，滑动就是滚动。';
+  @override
+  String get srs_review_gestures_rating_hidden => '评分栏只留「重来 / 良好」时不生效';
+  @override
+  String get srs_review_gestures_reset => '恢复默认';
+  @override
+  String get srs_review_gestures_swipe_down => '向下滑';
+  @override
+  String get srs_review_gestures_swipe_left => '向左滑';
+  @override
+  String get srs_review_gestures_swipe_right => '向右滑';
+  @override
+  String get srs_review_gestures_swipe_up => '向上滑';
+  @override
+  String get srs_review_gestures_tap_center => '点中间';
+  @override
+  String get srs_review_gestures_tap_left => '点左侧';
+  @override
+  String get srs_review_gestures_tap_right => '点右侧';
+  @override
+  String get srs_review_gestures_title => '手势';
   @override
   String get srs_review_hide_hard_easy => '隐藏「困难」和「简单」按钮';
   @override
@@ -413028,7 +413898,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get lookup_dictionary_font_hint => '詞典彈窗使用的字體，可實時預覽日文效果';
   @override
-  String get lookup_dictionary_unified_style => 'Unify dictionary styles';
+  String get lookup_dictionary_unified_style => '統一詞典樣式';
   @override
   String get lookup_dictionary_unified_style_hint =>
       'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
@@ -413195,6 +414065,13 @@ class _StringsZhHk extends _StringsEn {
   String get lyrics_mode_hint_body => '歌詞模式有自己的字體大小設定。你可以在 ⚙ 設定 → 排版 中調整。';
   @override
   String get lyrics_mode_hint_title => '歌詞模式';
+  @override
+  String get lyrics_search_empty_hint => 'Search this audiobook\'s subtitles';
+  @override
+  String lyrics_search_results_truncated({
+    required Object n,
+    required Object total,
+  }) => 'Showing the first ${n} of ${total} matches';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -415940,7 +416817,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get nav_video => '影片';
   @override
-  String get nav_web => 'Browser';
+  String get nav_web => '瀏覽器';
   @override
   String get network_proxy_address_hint => '所有公網請求都會使用的 HTTP 代理伺服器';
   @override
@@ -416204,7 +417081,10 @@ class _StringsZhHk extends _StringsEn {
       '找不到 Anki 資料夾。先安裝 Anki 並打開一次，再重試。';
   @override
   String get onboarding_anki_auto_reposition_hint =>
-      'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      '製卡約 30 秒後，自動把該牌組的新卡按詞頻排序，常見詞先學，不動複習卡。需要電腦版 Anki + AnkiConnect（手機可改連電腦上的 AnkiConnect）；AnkiDroid / AnkiMobile 無法重排。';
+  @override
+  String onboarding_anki_backend_ankiconnect({required Object address}) =>
+      'AnkiConnect（${address}）';
   @override
   String get onboarding_anki_backend_label => '連接方式';
   @override
@@ -416212,7 +417092,7 @@ class _StringsZhHk extends _StringsEn {
       'Anki 內建了 FSRS —— 目前最好的間隔重複演算法之一，但你不打開它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真實複習記錄預測遺忘時點，同樣的記憶效果複習量更少。這個開關只在 Anki 裡開一次，Fushi 這邊不用改任何設定。';
   @override
   String get onboarding_anki_fsrs_srs_note =>
-      'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+      'Fushi 內置複習已預設使用 FSRS-7。只有你還要在 Anki 裏複習時，才需要下面這幾步。';
   @override
   String get onboarding_anki_fsrs_step_optimize_desc =>
       '在開關下方點「最佳化」，讓參數貼合你自己的複習記錄，然後儲存。複習記錄不足約 1000 條時預設參數已經比 SM-2 準，攢夠以後再最佳化一次即可。';
@@ -416282,7 +417162,7 @@ class _StringsZhHk extends _StringsEn {
   String get onboarding_click_lookup_tap_title => '點一下文字';
   @override
   String get onboarding_click_lookup_unified_style_desc =>
-      'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+      '詞典預設保留自帶的配色。想讓標籤、強調字和邊框統一跟隨主題強調色，到查詞設定裏打開「統一詞典樣式」。';
   @override
   String get onboarding_feature_backup => '備份與同步';
   @override
@@ -416318,26 +417198,24 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get onboarding_feature_pack_hint => '一次下載：日語詞典 + 日／英發音音頻';
   @override
-  String get onboarding_feature_review => 'Cards & review';
+  String get onboarding_feature_review => '製卡與複習';
   @override
-  String get onboarding_feature_review_hint =>
-      'Turn lookups into cards and choose where to review them';
+  String get onboarding_feature_review_hint => '查詞後一鍵製卡，並選擇在哪裏複習';
   @override
   String get onboarding_feature_video => '影片';
   @override
   String get onboarding_feature_video_hint => '字幕查詞與製卡';
   @override
-  String get onboarding_feature_web_basic_hint =>
-      'Browse sites inside Fushi and look up words on any page.';
+  String get onboarding_feature_web_basic_hint => '在 Fushi 裏直接瀏覽網站，任何網頁都能查詞。';
   @override
   String get onboarding_feature_web_hint =>
-      'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      '在 Fushi 裏直接瀏覽網站：影片網站用 Fushi 播放器看、網頁漫畫用 Fushi 閱讀器讀，任何網頁都能查詞；桌面版還可以裝瀏覽器擴充功能。';
   @override
   String get onboarding_feature_web_reader_desktop_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+      '在 Fushi 裏直接瀏覽網站：網頁漫畫和網絡小說用 Fushi 閱讀器讀，任何網頁都能查詞；桌面版還可以裝瀏覽器擴充功能。';
   @override
   String get onboarding_feature_web_reader_hint =>
-      'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+      '在 Fushi 裏直接瀏覽網站：網頁漫畫和網絡小說用 Fushi 閱讀器讀，任何網頁都能查詞。';
   @override
   String get onboarding_features_modules_hint =>
       '未勾選的頁面不顯示在導航欄，之後可在「設定 → 外觀」改回。';
@@ -416353,16 +417231,15 @@ class _StringsZhHk extends _StringsEn {
   String get onboarding_finish_body => '之後隨時可以在「設定 → 系統」重新打開本引導。';
   @override
   String get onboarding_finish_import_desc =>
-      'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+      '在「複習」頁頂欄點「匯入」，選擇從 Anki 匯出的 .apkg 或 .colpkg 檔案。';
   @override
-  String get onboarding_finish_import_title => 'Bring your Anki decks';
+  String get onboarding_finish_import_title => '匯入已有的 Anki 牌組';
   @override
-  String get onboarding_finish_next_title => 'Next steps';
+  String get onboarding_finish_next_title => '下一步';
   @override
-  String get onboarding_finish_review_desc =>
-      'Cards you make land on the Review tab; cards that are due wait for you there.';
+  String get onboarding_finish_review_desc => '製的卡會進入底欄的「複習」頁，到期的卡在那裏等你複習。';
   @override
-  String get onboarding_finish_review_title => 'Review on the Review tab';
+  String get onboarding_finish_review_title => '在「複習」裏複習';
   @override
   String get onboarding_finish_summary_modules => '顯示的庫頁';
   @override
@@ -416589,39 +417466,36 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get onboarding_permission_storage_label => '所有檔案存取權';
   @override
-  String get onboarding_purpose_hint =>
-      'Only presets the next step. You can still pick features one by one.';
+  String get onboarding_purpose_hint => '只用來預選下一步的功能，之後仍可逐項調整。';
   @override
-  String get onboarding_purpose_learning_desc =>
-      'Look up words while reading and watching, then make cards and review them.';
+  String get onboarding_purpose_learning_desc => '看書、看動畫時查詞，製卡並複習。';
   @override
-  String get onboarding_purpose_learning_title => 'Learn a language';
+  String get onboarding_purpose_learning_title => '學外語';
   @override
-  String get onboarding_purpose_media_desc =>
-      'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+  String get onboarding_purpose_media_desc => '隱藏詞典、製卡和複習，之後可隨時在設定裏打開。';
   @override
-  String get onboarding_purpose_media_title => 'Just read, watch and listen';
+  String get onboarding_purpose_media_title => '只看書、看動畫、聽書';
   @override
-  String get onboarding_purpose_title => 'What will you use Fushi for?';
+  String get onboarding_purpose_title => '你打算用 Fushi 做甚麼？';
   @override
   String get onboarding_reopen => '新手引導';
   @override
   String get onboarding_review_anki_desc =>
-      'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+      '把卡片發到 Anki（AnkiDroid、AnkiMobile，或桌面版 Anki + AnkiConnect），在 Anki 裏複習。下一步需要連接 Anki 並選好牌組和筆記類型。';
   @override
   String get onboarding_review_anki_title => 'Anki';
   @override
-  String get onboarding_review_anki_toggle => 'Use Anki instead…';
+  String get onboarding_review_anki_toggle => '改用 Anki…';
   @override
   String get onboarding_review_fushi_desc =>
-      'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+      '內置間隔複習，排程預設使用 RWKV（首次使用時下載一個小模型）。無需安裝 Anki，也不用任何設定，製的卡直接進入複習。';
   @override
-  String get onboarding_review_fushi_title => 'Fushi review';
+  String get onboarding_review_fushi_title => 'Fushi 複習';
   @override
   String get onboarding_review_method_body =>
-      'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+      '查詞時製的卡在這裏複習。之後隨時可以在「設定 → 製卡」裏更改。';
   @override
-  String get onboarding_review_method_title => 'How you review';
+  String get onboarding_review_method_title => '複習方式';
   @override
   String get onboarding_sample_sentence_hint => '點一下就會在查詞頁打開，再點其中任何一個詞。';
   @override
@@ -416634,35 +417508,30 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get onboarding_skip_confirm_title => '確定略過新手引導？';
   @override
-  String get onboarding_srs_action => 'Open decks';
+  String get onboarding_srs_action => '打開牌組';
   @override
-  String get onboarding_srs_action_desc =>
-      'Add your first card from the deck list';
+  String get onboarding_srs_action_desc => '從牌組列表添加第一張卡';
   @override
-  String get onboarding_srs_body =>
-      'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+  String get onboarding_srs_body => '直接在 Fushi 裏複習你製的卡：不需要 Anki，也不用任何設定。';
   @override
-  String get onboarding_srs_builtin_desc =>
-      'A default deck and the Fushi Card note type are already set up.';
+  String get onboarding_srs_builtin_desc => '已經備好預設牌組和「Fushi 卡片」筆記類型。';
   @override
-  String get onboarding_srs_builtin_title => 'Ready to use';
+  String get onboarding_srs_builtin_title => '開箱即用';
   @override
   String get onboarding_srs_fsrs_desc =>
-      'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+      '排程用的是 FSRS-7——目前最好的間隔複習演算法之一，並會按你自己的複習記錄調整。';
   @override
-  String get onboarding_srs_fsrs_title => 'FSRS-7 by default';
+  String get onboarding_srs_fsrs_title => '預設使用 FSRS-7';
   @override
-  String get onboarding_srs_mining_desc =>
-      'Cards you make while reading or watching can go straight into review.';
+  String get onboarding_srs_mining_desc => '閱讀、看影片時製的卡可以直接進入複習。';
   @override
-  String get onboarding_srs_mining_title => 'From mining to review';
+  String get onboarding_srs_mining_title => '製卡直接進複習';
   @override
-  String get onboarding_srs_sync_desc =>
-      'Your decks and review progress follow you to your other devices.';
+  String get onboarding_srs_sync_desc => '牌組和複習進度會同步到你的其他裝置。';
   @override
-  String get onboarding_srs_sync_title => 'Syncs across devices';
+  String get onboarding_srs_sync_title => '多裝置自動同步';
   @override
-  String get onboarding_srs_title => 'Fushi review';
+  String get onboarding_srs_title => 'Fushi 內置複習';
   @override
   String get onboarding_step_anki_action => '製卡設定';
   @override
@@ -419268,6 +420137,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_browse_unsuspended => 'Cards unsuspended';
   @override
+  String get srs_card_appearance_blur_translation =>
+      'Blur translation until tapped';
+  @override
+  String get srs_card_appearance_blur_translation_desc =>
+      '只適用於 Fushi 卡片；改過範本時需保留 .fc-translation 元素';
+  @override
   String get srs_card_appearance_color_app => 'Follow app theme';
   @override
   String get srs_card_appearance_color_custom => 'Custom accent';
@@ -419810,7 +420685,7 @@ class _StringsZhHk extends _StringsEn {
   String get srs_history_import_hint =>
       'Cards you mined in Fushi before (word, reading, definition, sentence)';
   @override
-  String get srs_import => 'Import';
+  String get srs_import => '匯入';
   @override
   String get srs_import_background_started =>
       'Importing in the background. You can keep using Fushi.';
@@ -420519,6 +421394,43 @@ class _StringsZhHk extends _StringsEn {
   @override
   String srs_review_done_detail({required Object n}) =>
       'Reviewed ${n} cards in this session';
+  @override
+  String get srs_review_gestures_action_none => '無';
+  @override
+  String get srs_review_gestures_action_toggle_toolbar => '顯示 / 隱藏頂欄';
+  @override
+  String get srs_review_gestures_back => '答案面';
+  @override
+  String get srs_review_gestures_double_tap => '雙擊';
+  @override
+  String get srs_review_gestures_front => '問題面';
+  @override
+  String get srs_review_gestures_hint => '卡面點按分區、雙擊、長按與滑動';
+  @override
+  String get srs_review_gestures_long_press => '長按';
+  @override
+  String get srs_review_gestures_note =>
+      '點按與長按只認空白處：字、連結、按鈕和選取的文字照舊各管各的。卡面還能往那個方向捲動時，滑動就是捲動。';
+  @override
+  String get srs_review_gestures_rating_hidden => '評分欄只留「Again / Good」時不生效';
+  @override
+  String get srs_review_gestures_reset => '恢復預設';
+  @override
+  String get srs_review_gestures_swipe_down => '向下滑';
+  @override
+  String get srs_review_gestures_swipe_left => '向左滑';
+  @override
+  String get srs_review_gestures_swipe_right => '向右滑';
+  @override
+  String get srs_review_gestures_swipe_up => '向上滑';
+  @override
+  String get srs_review_gestures_tap_center => '點中間';
+  @override
+  String get srs_review_gestures_tap_left => '點左側';
+  @override
+  String get srs_review_gestures_tap_right => '點右側';
+  @override
+  String get srs_review_gestures_title => '手勢';
   @override
   String get srs_review_hide_hard_easy => 'Hide ‘Hard’ and ‘Easy’ buttons';
   @override
@@ -436621,6 +437533,11 @@ extension on _StringsEn {
         return 'Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.';
       case 'lyrics_mode_hint_title':
         return 'Lyrics mode';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -439393,6 +440310,8 @@ extension on _StringsEn {
         return 'Anki data folder not found. Install Anki, open it once, then try again.';
       case 'onboarding_anki_auto_reposition_hint':
         return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Connection';
       case 'onboarding_anki_fsrs_body':
@@ -442204,6 +443123,10 @@ extension on _StringsEn {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Fushi cards only. Edited templates must keep the .fc-translation element';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -443291,6 +444214,42 @@ extension on _StringsEn {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nothing';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Show / hide top bar';
+      case 'srs_review_gestures_back':
+        return 'Answer side';
+      case 'srs_review_gestures_double_tap':
+        return 'Double tap';
+      case 'srs_review_gestures_front':
+        return 'Question side';
+      case 'srs_review_gestures_hint':
+        return 'Tap zones, double tap, long press and swipes on the card';
+      case 'srs_review_gestures_long_press':
+        return 'Long press';
+      case 'srs_review_gestures_note':
+        return 'Taps and long presses only count on blank space: words, links, buttons and selected text keep their own behaviour. While the card can still scroll that way, a swipe is a scroll.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactive while only Again / Good are shown';
+      case 'srs_review_gestures_reset':
+        return 'Restore defaults';
+      case 'srs_review_gestures_swipe_down':
+        return 'Swipe down';
+      case 'srs_review_gestures_swipe_left':
+        return 'Swipe left';
+      case 'srs_review_gestures_swipe_right':
+        return 'Swipe right';
+      case 'srs_review_gestures_swipe_up':
+        return 'Swipe up';
+      case 'srs_review_gestures_tap_center':
+        return 'Tap center';
+      case 'srs_review_gestures_tap_left':
+        return 'Tap left';
+      case 'srs_review_gestures_tap_right':
+        return 'Tap right';
+      case 'srs_review_gestures_title':
+        return 'Gestures';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -458608,7 +459567,7 @@ extension on _StringsAr {
       case 'lookup_dictionary_font_hint':
         return 'خطوط نوافذ القاموس، مع معاينة يابانية مباشرة';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'توحيد أنماط القواميس';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -458750,6 +459709,11 @@ extension on _StringsAr {
         return 'وضع كلمات الأغاني له إعداد حجم خط خاص به. يمكنك ضبطه في ⚙ الإعدادات ← الطباعة.';
       case 'lyrics_mode_hint_title':
         return 'وضع كلمات الأغاني';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -461283,7 +462247,7 @@ extension on _StringsAr {
       case 'nav_video':
         return 'فيديو';
       case 'nav_web':
-        return 'Browser';
+        return 'المتصفح';
       case 'network_proxy_address_hint':
         return 'خادم وكيل HTTP تستخدمه كل طلبات الإنترنت العامة';
       case 'network_proxy_auto_hint':
@@ -461497,7 +462461,7 @@ extension on _StringsAr {
       case 'onboarding_action_next':
         return 'التالي';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'مرّر للأسفل';
       case 'onboarding_action_skip':
         return 'تخطّي الآن';
       case 'onboarding_action_start':
@@ -461521,13 +462485,15 @@ extension on _StringsAr {
       case 'onboarding_anki_addon_no_anki':
         return 'لم يُعثر على مجلد بيانات Anki. ثبّت Anki وافتحه مرة واحدة، ثم حاول مجدداً.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'بعد نحو 30 ثانية من إنشاء البطاقة، يُعاد ترتيب البطاقات الجديدة في تلك المجموعة حسب تكرار الكلمات لتأتي الكلمات الشائعة أولًا. لا تُمَسّ بطاقات المراجعة أبدًا. يتطلب Anki لسطح المكتب مع AnkiConnect (يمكن للهاتف استخدامه بالاتصال بـ AnkiConnect على حاسوب)؛ لا يستطيع AnkiDroid وAnkiMobile إعادة ترتيب البطاقات.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'الاتصال';
       case 'onboarding_anki_fsrs_body':
         return 'يحتوي Anki على FSRS مدمجًا · وهي من أفضل خوارزميات التكرار المتباعد · لكنه يواصل الجدولة بخوارزمية SM-2 من الثمانينيات حتى تفعّل FSRS. تقرأ FSRS سجل مراجعاتك الفعلي وتتنبأ بموعد نسيانك، فتحتفظ بنفس مستوى الاسترجاع بمراجعات أقل. تفعّل هذا المفتاح مرة واحدة داخل Anki؛ ولا يتغير شيء في Fushi.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'تستخدم المراجعة المدمجة في Fushi خوارزمية FSRS-7 افتراضيًا. لا تحتاج إلى الخطوات أدناه إلا إذا كنت تراجع في Anki أيضًا.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'اضغط «تحسين» أسفل المفتاح لضبط المعاملات وفق سجل مراجعاتك، ثم احفظ. دون نحو 1000 مراجعة تتفوق القيم الافتراضية أصلًا على SM-2، فأعد التحسين بعد أن تدرس لفترة.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -461584,7 +462550,7 @@ extension on _StringsAr {
       case 'onboarding_click_lookup_tap_title':
         return 'انقر على كلمة';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'تحتفظ القواميس بألوانها الخاصة افتراضيًا. لتلوين وسومها والكلمات المميَّزة وحدودها بلون التمييز في سمتك، فعّل «توحيد أنماط القواميس» في إعدادات البحث.';
       case 'onboarding_feature_backup':
         return 'نسخ احتياطي ومزامنة';
       case 'onboarding_feature_backup_hint':
@@ -461620,21 +462586,21 @@ extension on _StringsAr {
       case 'onboarding_feature_pack_hint':
         return 'قواميس يابانية وصوت نطق ياباني/إنجليزي في تنزيل واحد';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'البطاقات والمراجعة';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'حوّل ما تبحث عنه إلى بطاقات واختر مكان مراجعتها';
       case 'onboarding_feature_video':
         return 'الفيديو';
       case 'onboarding_feature_video_hint':
         return 'بحث في الترجمات وإنشاء بطاقات';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'تصفّح المواقع داخل Fushi وابحث عن الكلمات في أي صفحة.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'تصفّح المواقع داخل Fushi: شاهد مواقع الفيديو في مشغّل Fushi، واقرأ القصص المصوّرة على الويب في قارئ Fushi، وابحث عن الكلمات في أي صفحة. ويمكن على سطح المكتب أيضًا تثبيت إضافة المتصفح.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'تصفّح المواقع داخل Fushi: اقرأ القصص المصوّرة والروايات على الويب في قارئ Fushi، وابحث عن الكلمات في أي صفحة. ويمكن على سطح المكتب أيضًا تثبيت إضافة المتصفح.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'تصفّح المواقع داخل Fushi: اقرأ القصص المصوّرة والروايات على الويب في قارئ Fushi، وابحث عن الكلمات في أي صفحة.';
       case 'onboarding_features_modules_hint':
         return 'الصفحات غير المحدّدة تُخفى من شريط التنقل. يمكنك تغيير ذلك في أي وقت من الإعدادات → المظهر.';
       case 'onboarding_features_modules_title':
@@ -461648,15 +462614,15 @@ extension on _StringsAr {
       case 'onboarding_finish_body':
         return 'يمكنك فتح هذا الدليل مجدداً في أي وقت من الإعدادات → النظام.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'في صفحة «المراجعة»، اضغط «استيراد» في الشريط العلوي واختر ملف ‎.apkg أو ‎.colpkg مُصدَّرًا من Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'استورد مجموعات Anki الخاصة بك';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'الخطوات التالية';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'تصل البطاقات التي تنشئها إلى تبويب «المراجعة»، وتنتظرك هناك البطاقات المستحقة.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'راجع في تبويب «المراجعة»';
       case 'onboarding_finish_summary_modules':
         return 'صفحات المكتبة المعروضة';
       case 'onboarding_finish_summary_none':
@@ -461853,33 +462819,33 @@ extension on _StringsAr {
       case 'onboarding_permission_storage_label':
         return 'الوصول إلى جميع الملفات';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'يحدّد هذا الاختيار الخطوة التالية مسبقًا فقط، ويمكنك بعدها اختيار الميزات واحدة تلو الأخرى.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'ابحث عن الكلمات أثناء القراءة والمشاهدة، ثم أنشئ بطاقات وراجعها.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'تعلّم لغة';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'يُخفى القاموس وإنشاء البطاقات والمراجعة. يمكنك إعادة تشغيلها من الإعدادات في أي وقت.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'للقراءة والمشاهدة والاستماع فقط';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'لأي غرض ستستخدم Fushi؟';
       case 'onboarding_reopen':
         return 'دليل البدء';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'أرسل البطاقات إلى Anki ‏(AnkiDroid أو AnkiMobile أو Anki لسطح المكتب مع AnkiConnect) وراجعها هناك. في الخطوة التالية تربط Anki وتختار مجموعة ونوع ملاحظة.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'استخدام Anki بدلًا من ذلك…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'تكرار متباعد مدمج، تُجدوَل مواعيده افتراضيًا بنموذج RWKV (نموذج صغير يُنزَّل عند أول استخدام). لا حاجة إلى تثبيت Anki ولا إلى أي إعداد — تدخل البطاقات التي تنشئها إلى المراجعة مباشرة.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'مراجعة Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'تُراجَع هنا البطاقات التي تنشئها أثناء البحث عن الكلمات. يمكنك تغيير ذلك في أي وقت من الإعدادات ← إنشاء البطاقات.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'طريقة المراجعة';
       case 'onboarding_sample_sentence_hint':
         return 'انقر لفتحها في صفحة البحث، ثم انقر على أي كلمة.';
       case 'onboarding_sample_sentence_label':
@@ -461891,29 +462857,29 @@ extension on _StringsAr {
       case 'onboarding_skip_confirm_title':
         return 'تخطي دليل البدء؟';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'فتح المجموعات';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'أضف بطاقتك الأولى من قائمة المجموعات';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'راجع البطاقات التي تنشئها داخل Fushi مباشرة — دون حاجة إلى Anki ودون أي إعداد.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'تم إعداد مجموعة افتراضية ونوع الملاحظة «Fushi Card» مسبقًا.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'جاهز للاستخدام';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'تعتمد الجدولة على FSRS-7، أحد أفضل خوارزميات التكرار المتباعد، وتتكيّف مع سجل مراجعاتك.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'FSRS-7 افتراضيًا';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'يمكن أن تدخل البطاقات التي تنشئها أثناء القراءة أو المشاهدة إلى المراجعة مباشرة.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'من إنشاء البطاقة إلى المراجعة';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'تنتقل مجموعاتك وتقدّم مراجعتك معك إلى أجهزتك الأخرى.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'مزامنة بين الأجهزة';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'المراجعة المدمجة في Fushi';
       case 'onboarding_step_anki_action':
         return 'إعدادات إنشاء البطاقات';
       case 'onboarding_step_anki_action_desc':
@@ -464334,6 +465300,10 @@ extension on _StringsAr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'بطاقات Fushi فقط. يجب أن تحتفظ القوالب المعدّلة بالعنصر .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -464809,7 +465779,7 @@ extension on _StringsAr {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'استيراد';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -465421,6 +466391,42 @@ extension on _StringsAr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'لا شيء';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'إظهار / إخفاء الشريط العلوي';
+      case 'srs_review_gestures_back':
+        return 'الوجه الخلفي';
+      case 'srs_review_gestures_double_tap':
+        return 'نقر مزدوج';
+      case 'srs_review_gestures_front':
+        return 'الوجه الأمامي';
+      case 'srs_review_gestures_hint':
+        return 'مناطق النقر والنقر المزدوج والضغط المطوّل والسحب على البطاقة';
+      case 'srs_review_gestures_long_press':
+        return 'ضغط مطوّل';
+      case 'srs_review_gestures_note':
+        return 'يُحتسب النقر والضغط المطوّل على المساحة الفارغة فقط: الكلمات والروابط والأزرار والنص المحدد تحتفظ بسلوكها. ما دامت البطاقة قابلة للتمرير في ذلك الاتجاه، فالسحب تمرير.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'غير فعّال عند عرض Again / Good فقط';
+      case 'srs_review_gestures_reset':
+        return 'استعادة الافتراضي';
+      case 'srs_review_gestures_swipe_down':
+        return 'السحب للأسفل';
+      case 'srs_review_gestures_swipe_left':
+        return 'السحب لليسار';
+      case 'srs_review_gestures_swipe_right':
+        return 'السحب لليمين';
+      case 'srs_review_gestures_swipe_up':
+        return 'السحب للأعلى';
+      case 'srs_review_gestures_tap_center':
+        return 'النقر في الوسط';
+      case 'srs_review_gestures_tap_left':
+        return 'النقر يسارًا';
+      case 'srs_review_gestures_tap_right':
+        return 'النقر يمينًا';
+      case 'srs_review_gestures_title':
+        return 'الإيماءات';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -480778,7 +481784,7 @@ extension on _StringsDe {
       case 'lookup_dictionary_font_hint':
         return 'Schriften für Wörterbuch-Popups, mit Live-Vorschau auf Japanisch';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Wörterbuchstile vereinheitlichen';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -480920,6 +481926,11 @@ extension on _StringsDe {
         return 'Der Liedtextmodus hat eine eigene Schriftgrößeneinstellung. Du kannst sie unter ⚙ Einstellungen → Typografie anpassen.';
       case 'lyrics_mode_hint_title':
         return 'Liedtextmodus';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -483679,7 +484690,7 @@ extension on _StringsDe {
       case 'onboarding_action_next':
         return 'Weiter';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Nach unten scrollen';
       case 'onboarding_action_skip':
         return 'Vorerst überspringen';
       case 'onboarding_action_start':
@@ -483704,13 +484715,15 @@ extension on _StringsDe {
       case 'onboarding_anki_addon_no_anki':
         return 'Anki-Datenordner nicht gefunden. Installieren Sie Anki, öffnen Sie es einmal und versuchen Sie es erneut.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Etwa 30 Sekunden nach dem Erstellen einer Karte werden die neuen Karten in diesem Stapel nach Worthäufigkeit sortiert, sodass häufige Wörter zuerst kommen. Wiederholungskarten bleiben unangetastet. Erfordert Desktop-Anki mit AnkiConnect (ein Smartphone kann sich mit AnkiConnect auf einem Computer verbinden); AnkiDroid und AnkiMobile können Karten nicht umsortieren.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Verbindung';
       case 'onboarding_anki_fsrs_body':
         return 'Anki hat FSRS integriert – einen der besten Algorithmen für verteilte Wiederholung –, plant aber weiter mit SM-2 aus den 1980ern, bis du FSRS einschaltest. FSRS liest deinen echten Wiederholungsverlauf und sagt voraus, wann du kurz vor dem Vergessen bist, sodass du dieselbe Behaltensrate mit weniger Wiederholungen erreichst. Du legst diesen Schalter einmal in Anki um; auf Fushi-Seite ändert sich nichts.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Die integrierte Wiederholung von Fushi nutzt standardmäßig bereits FSRS-7. Die folgenden Schritte brauchst du nur, wenn du auch in Anki wiederholst.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Tippe unter dem Schalter auf „Optimieren“, um die Parameter an deinen eigenen Wiederholungsverlauf anzupassen, und speichere dann. Bis etwa 1000 Wiederholungen sind die Standardwerte bereits besser als SM-2; optimiere einfach erneut, wenn du eine Weile gelernt hast.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -483767,7 +484780,7 @@ extension on _StringsDe {
       case 'onboarding_click_lookup_tap_title':
         return 'Auf ein Wort tippen';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Wörterbücher behalten standardmäßig ihre eigenen Farben. Um ihre Tags, hervorgehobenen Wörter und Rahmen in der Akzentfarbe deines Designs einzufärben, aktiviere „Wörterbuchstile vereinheitlichen“ in den Nachschlage-Einstellungen.';
       case 'onboarding_feature_backup':
         return 'Sicherung & Synchronisierung';
       case 'onboarding_feature_backup_hint':
@@ -483803,21 +484816,21 @@ extension on _StringsDe {
       case 'onboarding_feature_pack_hint':
         return 'Japanische Wörterbücher plus JA/EN-Aussprache-Audio in einem Download';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Karten & Wiederholung';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Nachgeschlagene Wörter zu Karten machen und wählen, wo du sie wiederholst';
       case 'onboarding_feature_video':
         return 'Video';
       case 'onboarding_feature_video_hint':
         return 'Untertitel nachschlagen und Karten erstellen';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Websites direkt in Fushi aufrufen und auf jeder Seite Wörter nachschlagen.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Websites direkt in Fushi: Videoseiten im Fushi-Player ansehen, Web-Comics im Fushi-Reader lesen und auf jeder Seite Wörter nachschlagen. Auf dem Desktop lässt sich zusätzlich die Browsererweiterung installieren.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Websites direkt in Fushi: Web-Comics und Web-Romane im Fushi-Reader lesen und auf jeder Seite Wörter nachschlagen. Auf dem Desktop lässt sich zusätzlich die Browsererweiterung installieren.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Websites direkt in Fushi: Web-Comics und Web-Romane im Fushi-Reader lesen und auf jeder Seite Wörter nachschlagen.';
       case 'onboarding_features_modules_hint':
         return 'Nicht angehakte Seiten werden in der Navigationsleiste ausgeblendet. Jederzeit änderbar unter Einstellungen → Erscheinungsbild.';
       case 'onboarding_features_modules_title':
@@ -483831,15 +484844,15 @@ extension on _StringsDe {
       case 'onboarding_finish_body':
         return 'Sie können diese Anleitung jederzeit unter Einstellungen → System wieder öffnen.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Tippe auf der Seite „Wiederholen“ oben auf „Importieren“ und wähle eine aus Anki exportierte .apkg- oder .colpkg-Datei.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Deine Anki-Stapel mitnehmen';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Nächste Schritte';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Deine erstellten Karten landen im Tab „Wiederholen“; fällige Karten warten dort auf dich.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Im Tab „Wiederholen“ wiederholen';
       case 'onboarding_finish_summary_modules':
         return 'Angezeigte Bibliotheksseiten';
       case 'onboarding_finish_summary_none':
@@ -484037,33 +485050,33 @@ extension on _StringsDe {
       case 'onboarding_permission_storage_label':
         return 'Zugriff auf alle Dateien';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Legt nur die Vorauswahl für den nächsten Schritt fest. Du kannst die Funktionen danach weiterhin einzeln wählen.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Beim Lesen und Schauen Wörter nachschlagen, dann Karten erstellen und wiederholen.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Eine Sprache lernen';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Wörterbuch, Kartenerstellung und Wiederholung werden ausgeblendet. Du kannst sie jederzeit in den Einstellungen wieder einschalten.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Nur lesen, schauen und hören';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Wofür möchtest du Fushi nutzen?';
       case 'onboarding_reopen':
         return 'Erste-Schritte-Anleitung';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Karten an Anki senden (AnkiDroid, AnkiMobile oder Desktop-Anki mit AnkiConnect) und dort wiederholen. Im nächsten Schritt verbindest du Anki und wählst Stapel und Notiztyp.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Stattdessen Anki verwenden…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Integrierte verteilte Wiederholung, standardmäßig mit RWKV geplant (ein kleines Modell, das beim ersten Gebrauch heruntergeladen wird). Kein Anki zu installieren, nichts einzurichten – deine Karten landen direkt in der Wiederholung.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Fushi-Wiederholung';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Hier wiederholst du die Karten, die du beim Nachschlagen erstellst. Du kannst das jederzeit unter Einstellungen → Kartenerstellung ändern.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Wie du wiederholst';
       case 'onboarding_sample_sentence_hint':
         return 'Tippen, um ihn auf der Nachschlageseite zu öffnen, dann auf ein beliebiges Wort tippen.';
       case 'onboarding_sample_sentence_label':
@@ -484075,29 +485088,29 @@ extension on _StringsDe {
       case 'onboarding_skip_confirm_title':
         return 'Einführung überspringen?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Stapel öffnen';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Füge deine erste Karte über die Stapelliste hinzu';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Wiederhole deine Karten direkt in Fushi – ohne Anki und ohne Einrichtung.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Ein Standardstapel und der Notiztyp „Fushi Card“ sind bereits eingerichtet.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Sofort einsatzbereit';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'Die Planung nutzt FSRS-7, einen der besten Algorithmen für verteilte Wiederholung, und passt sich an deinen eigenen Wiederholungsverlauf an.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'Standardmäßig FSRS-7';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Karten, die du beim Lesen oder Schauen erstellst, können direkt in die Wiederholung gehen.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'Vom Erstellen zur Wiederholung';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Deine Stapel und dein Lernfortschritt begleiten dich auf deine anderen Geräte.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Geräteübergreifend synchron';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Integrierte Wiederholung in Fushi';
       case 'onboarding_step_anki_action':
         return 'Kartenerstell-Einstellungen';
       case 'onboarding_step_anki_action_desc':
@@ -484141,7 +485154,7 @@ extension on _StringsDe {
       case 'onboarding_step_interconnect_body':
         return 'Geräte im LAN koppeln, um eine Bibliothek zu teilen und den Fortschritt synchron zu halten.';
       case 'onboarding_step_interconnect_title':
-        return 'Interconnect';
+        return 'Geräteverbund';
       case 'onboarding_step_manual_resources_body':
         return 'Importieren Sie mindestens ein Wörterbuch vor der Nachschlage-Anleitung. Hörbücher und Aussprache-Audio sind optional.';
       case 'onboarding_step_manual_resources_title':
@@ -486520,6 +487533,10 @@ extension on _StringsDe {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Nur Fushi-Karten. Bearbeitete Vorlagen müssen das Element .fc-translation behalten';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -486995,7 +488012,7 @@ extension on _StringsDe {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Importieren';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -487607,6 +488624,42 @@ extension on _StringsDe {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nichts';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Obere Leiste ein- / ausblenden';
+      case 'srs_review_gestures_back':
+        return 'Rückseite';
+      case 'srs_review_gestures_double_tap':
+        return 'Doppeltippen';
+      case 'srs_review_gestures_front':
+        return 'Vorderseite';
+      case 'srs_review_gestures_hint':
+        return 'Tippbereiche, Doppeltippen, langes Drücken und Wischen auf der Karte';
+      case 'srs_review_gestures_long_press':
+        return 'Lange drücken';
+      case 'srs_review_gestures_note':
+        return 'Tippen und langes Drücken zählen nur auf leeren Flächen: Wörter, Links, Schaltflächen und markierter Text verhalten sich wie gewohnt. Solange die Karte in diese Richtung noch scrollen kann, ist Wischen ein Scrollen.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inaktiv, solange nur Again / Good angezeigt werden';
+      case 'srs_review_gestures_reset':
+        return 'Standard wiederherstellen';
+      case 'srs_review_gestures_swipe_down':
+        return 'Nach unten wischen';
+      case 'srs_review_gestures_swipe_left':
+        return 'Nach links wischen';
+      case 'srs_review_gestures_swipe_right':
+        return 'Nach rechts wischen';
+      case 'srs_review_gestures_swipe_up':
+        return 'Nach oben wischen';
+      case 'srs_review_gestures_tap_center':
+        return 'Mitte tippen';
+      case 'srs_review_gestures_tap_left':
+        return 'Links tippen';
+      case 'srs_review_gestures_tap_right':
+        return 'Rechts tippen';
+      case 'srs_review_gestures_title':
+        return 'Gesten';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -502969,7 +504022,7 @@ extension on _StringsEs {
       case 'lookup_dictionary_font_hint':
         return 'Fuentes para las ventanas del diccionario, con vista previa en japonés en tiempo real';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Unificar estilos de diccionario';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -503111,6 +504164,11 @@ extension on _StringsEs {
         return 'El modo de letras tiene su propia configuración de tamaño de fuente. Puedes ajustarlo en ⚙ Ajustes → Tipografía.';
       case 'lyrics_mode_hint_title':
         return 'Modo de letras';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -505653,7 +506711,7 @@ extension on _StringsEs {
       case 'nav_video':
         return 'Vídeo';
       case 'nav_web':
-        return 'Browser';
+        return 'Navegador';
       case 'network_proxy_address_hint':
         return 'Servidor proxy HTTP usado por todas las solicitudes a Internet público';
       case 'network_proxy_auto_hint':
@@ -505868,7 +506926,7 @@ extension on _StringsEs {
       case 'onboarding_action_next':
         return 'Siguiente';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Desplázate hacia abajo';
       case 'onboarding_action_skip':
         return 'Omitir por ahora';
       case 'onboarding_action_start':
@@ -505893,13 +506951,15 @@ extension on _StringsEs {
       case 'onboarding_anki_addon_no_anki':
         return 'No se encontró la carpeta de datos de Anki. Instale Anki, ábralo una vez e inténtelo de nuevo.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Unos 30 segundos después de crear una tarjeta, las tarjetas nuevas de ese mazo se reordenan por frecuencia de palabra para que las palabras comunes vayan primero. Las tarjetas en repaso nunca se tocan. Requiere Anki de escritorio con AnkiConnect (un móvil puede usarlo conectándose a AnkiConnect en un ordenador); AnkiDroid y AnkiMobile no pueden reordenar tarjetas.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Conexión';
       case 'onboarding_anki_fsrs_body':
         return 'Anki incluye FSRS, uno de los mejores algoritmos de repetición espaciada, pero sigue programando con SM-2, de los años 80, hasta que activas FSRS. FSRS lee tu historial real de repasos y predice cuándo estás a punto de olvidar, de modo que mantienes la misma retención con menos repasos. Solo tienes que activar este interruptor una vez, dentro de Anki; en Fushi no cambia nada.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'El repaso integrado de Fushi ya usa FSRS-7 de forma predeterminada. Solo necesitas los pasos siguientes si también repasas en Anki.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Pulsa Optimizar bajo el interruptor para ajustar los parámetros a tu propio historial de repasos y guarda. Por debajo de unos 1000 repasos, los valores por defecto ya superan a SM-2; vuelve a optimizar cuando lleves un tiempo estudiando.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -505956,7 +507016,7 @@ extension on _StringsEs {
       case 'onboarding_click_lookup_tap_title':
         return 'Toque una palabra';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Los diccionarios conservan sus propios colores de forma predeterminada. Para teñir sus etiquetas, palabras resaltadas y bordes con el color de acento de tu tema, activa «Unificar estilos de diccionario» en los ajustes de búsqueda.';
       case 'onboarding_feature_backup':
         return 'Respaldo y sincronización';
       case 'onboarding_feature_backup_hint':
@@ -505992,21 +507052,21 @@ extension on _StringsEs {
       case 'onboarding_feature_pack_hint':
         return 'Diccionarios japoneses más audio de pronunciación JA/EN en una descarga';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Tarjetas y repaso';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Convierte tus búsquedas en tarjetas y elige dónde repasarlas';
       case 'onboarding_feature_video':
         return 'Vídeo';
       case 'onboarding_feature_video_hint':
         return 'Consulta en subtítulos y creación de tarjetas';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Navega por sitios dentro de Fushi y busca palabras en cualquier página.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Navega por sitios dentro de Fushi: mira sitios de vídeo en el reproductor de Fushi, lee cómics web en el lector de Fushi y busca palabras en cualquier página. En escritorio también puedes instalar la extensión del navegador.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Navega por sitios dentro de Fushi: lee cómics y novelas web en el lector de Fushi y busca palabras en cualquier página. En escritorio también puedes instalar la extensión del navegador.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Navega por sitios dentro de Fushi: lee cómics y novelas web en el lector de Fushi y busca palabras en cualquier página.';
       case 'onboarding_features_modules_hint':
         return 'Las páginas sin marcar se ocultan de la barra de navegación. Puede cambiarlo cuando quiera en Ajustes → Apariencia.';
       case 'onboarding_features_modules_title':
@@ -506020,15 +507080,15 @@ extension on _StringsEs {
       case 'onboarding_finish_body':
         return 'Puede volver a abrir esta guía en cualquier momento desde Ajustes → Sistema.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'En la página Repaso, toca Importar en la barra superior y elige un archivo .apkg o .colpkg exportado desde Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Trae tus mazos de Anki';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Próximos pasos';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Las tarjetas que creas llegan a la pestaña Repaso; allí te esperan las que toca repasar.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Repasa en la pestaña Repaso';
       case 'onboarding_finish_summary_modules':
         return 'Páginas de biblioteca visibles';
       case 'onboarding_finish_summary_none':
@@ -506225,33 +507285,33 @@ extension on _StringsEs {
       case 'onboarding_permission_storage_label':
         return 'Acceso a todos los archivos';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Solo preselecciona el siguiente paso. Aún puedes elegir las funciones una a una.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Busca palabras mientras lees y ves contenido, y luego crea tarjetas y repásalas.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Aprender un idioma';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Se ocultan el diccionario, la creación de tarjetas y el repaso. Puedes reactivarlos en Ajustes cuando quieras.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Solo leer, ver y escuchar';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return '¿Para qué vas a usar Fushi?';
       case 'onboarding_reopen':
         return 'Guía de primeros pasos';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Envía las tarjetas a Anki (AnkiDroid, AnkiMobile o Anki de escritorio con AnkiConnect) y repásalas allí. En el siguiente paso conectas Anki y eliges un mazo y un tipo de nota.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Usar Anki en su lugar…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Repetición espaciada integrada, programada con RWKV de forma predeterminada (un modelo pequeño que se descarga la primera vez). Sin instalar Anki ni configurar nada: las tarjetas que creas pasan directamente al repaso.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Repaso de Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Aquí se repasan las tarjetas que creas a partir de tus búsquedas. Puedes cambiarlo cuando quieras en Ajustes → Creación de tarjetas.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Cómo repasas';
       case 'onboarding_sample_sentence_hint':
         return 'Toque para abrirla en la página de consulta y luego toque cualquier palabra.';
       case 'onboarding_sample_sentence_label':
@@ -506263,29 +507323,29 @@ extension on _StringsEs {
       case 'onboarding_skip_confirm_title':
         return '¿Omitir la guía de inicio?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Abrir mazos';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Añade tu primera tarjeta desde la lista de mazos';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Repasa las tarjetas que creas directamente en Fushi: sin Anki y sin configurar nada.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Ya están preparados un mazo predeterminado y el tipo de nota «Fushi Card».';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Listo para usar';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'La programación usa FSRS-7, uno de los mejores algoritmos de repetición espaciada, y se adapta a tu propio historial de repaso.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'FSRS-7 por defecto';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Las tarjetas que creas mientras lees o ves contenido pueden pasar directamente al repaso.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'De la creación al repaso';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Tus mazos y tu progreso de repaso te acompañan a tus otros dispositivos.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Se sincroniza entre dispositivos';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Repaso integrado de Fushi';
       case 'onboarding_step_anki_action':
         return 'Ajustes de creación de tarjetas';
       case 'onboarding_step_anki_action_desc':
@@ -506329,7 +507389,7 @@ extension on _StringsEs {
       case 'onboarding_step_interconnect_body':
         return 'Empareje dispositivos de su LAN para compartir una misma biblioteca y mantener el progreso sincronizado.';
       case 'onboarding_step_interconnect_title':
-        return 'Interconnect';
+        return 'Interconexión';
       case 'onboarding_step_manual_resources_body':
         return 'Importe al menos un diccionario antes del tutorial de consulta. Los audiolibros y el audio de pronunciación son opcionales.';
       case 'onboarding_step_manual_resources_title':
@@ -508710,6 +509770,10 @@ extension on _StringsEs {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Solo tarjetas Fushi. Las plantillas editadas deben conservar el elemento .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -509185,7 +510249,7 @@ extension on _StringsEs {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Importar';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -509797,6 +510861,42 @@ extension on _StringsEs {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nada';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Mostrar / ocultar barra superior';
+      case 'srs_review_gestures_back':
+        return 'Reverso';
+      case 'srs_review_gestures_double_tap':
+        return 'Doble toque';
+      case 'srs_review_gestures_front':
+        return 'Anverso';
+      case 'srs_review_gestures_hint':
+        return 'Zonas de toque, doble toque, pulsación larga y deslizamientos en la tarjeta';
+      case 'srs_review_gestures_long_press':
+        return 'Pulsación larga';
+      case 'srs_review_gestures_note':
+        return 'Los toques y pulsaciones largas solo cuentan en espacio vacío: palabras, enlaces, botones y texto seleccionado conservan su comportamiento. Mientras la tarjeta aún pueda desplazarse en esa dirección, deslizar es desplazar.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactivo mientras solo se muestran Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Restaurar valores predeterminados';
+      case 'srs_review_gestures_swipe_down':
+        return 'Deslizar hacia abajo';
+      case 'srs_review_gestures_swipe_left':
+        return 'Deslizar a la izquierda';
+      case 'srs_review_gestures_swipe_right':
+        return 'Deslizar a la derecha';
+      case 'srs_review_gestures_swipe_up':
+        return 'Deslizar hacia arriba';
+      case 'srs_review_gestures_tap_center':
+        return 'Tocar en el centro';
+      case 'srs_review_gestures_tap_left':
+        return 'Tocar a la izquierda';
+      case 'srs_review_gestures_tap_right':
+        return 'Tocar a la derecha';
+      case 'srs_review_gestures_title':
+        return 'Gestos';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -525170,7 +526270,7 @@ extension on _StringsFr {
       case 'lookup_dictionary_font_hint':
         return 'Polices pour les fenêtres du dictionnaire, avec aperçu japonais en direct';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Unifier les styles des dictionnaires';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -525312,6 +526412,11 @@ extension on _StringsFr {
         return 'Le mode paroles a son propre réglage de taille de police. Vous pouvez l\'ajuster dans ⚙ Paramètres → Typographie.';
       case 'lyrics_mode_hint_title':
         return 'Mode paroles';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -527853,7 +528958,7 @@ extension on _StringsFr {
       case 'nav_video':
         return 'Vidéo';
       case 'nav_web':
-        return 'Browser';
+        return 'Navigateur';
       case 'network_proxy_address_hint':
         return 'Serveur proxy HTTP utilisé par toutes les requêtes vers Internet public';
       case 'network_proxy_auto_hint':
@@ -528069,7 +529174,7 @@ extension on _StringsFr {
       case 'onboarding_action_next':
         return 'Suivant';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Faites défiler vers le bas';
       case 'onboarding_action_skip':
         return 'Passer pour le moment';
       case 'onboarding_action_start':
@@ -528094,13 +529199,15 @@ extension on _StringsFr {
       case 'onboarding_anki_addon_no_anki':
         return 'Dossier de données Anki introuvable. Installez Anki, ouvrez-le une fois, puis réessayez.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Environ 30 secondes après la création d\'une carte, les nouvelles cartes de ce paquet sont réordonnées par fréquence des mots pour que les mots courants passent en premier. Les cartes en révision ne sont jamais modifiées. Nécessite Anki sur ordinateur avec AnkiConnect (un téléphone peut s\'en servir en se connectant à AnkiConnect sur un ordinateur) ; AnkiDroid et AnkiMobile ne peuvent pas réordonner les cartes.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Connexion';
       case 'onboarding_anki_fsrs_body':
         return 'Anki intègre FSRS — l\'un des meilleurs algorithmes de répétition espacée — mais il continue de planifier avec le SM-2 des années 1980 tant que vous n\'activez pas FSRS. FSRS lit votre historique de révisions réel et prédit le moment où vous allez oublier, ce qui permet de garder la même rétention avec moins de révisions. Cet interrupteur s\'active une seule fois, dans Anki ; rien ne change du côté de Fushi.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'La révision intégrée de Fushi utilise déjà FSRS-7 par défaut. Les étapes ci-dessous ne sont utiles que si vous révisez aussi dans Anki.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Appuyez sur Optimiser sous l\'interrupteur pour ajuster les paramètres à votre propre historique de révisions, puis enregistrez. En dessous d\'environ 1000 révisions, les valeurs par défaut font déjà mieux que SM-2 ; réoptimisez simplement après avoir étudié un moment.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -528157,7 +529264,7 @@ extension on _StringsFr {
       case 'onboarding_click_lookup_tap_title':
         return 'Touchez un mot';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Par défaut, les dictionnaires conservent leurs propres couleurs. Pour recolorer leurs étiquettes, mots mis en évidence et bordures avec la couleur d\'accent de votre thème, activez « Unifier les styles des dictionnaires » dans les paramètres de recherche.';
       case 'onboarding_feature_backup':
         return 'Sauvegarde et synchronisation';
       case 'onboarding_feature_backup_hint':
@@ -528193,21 +529300,21 @@ extension on _StringsFr {
       case 'onboarding_feature_pack_hint':
         return 'Dictionnaires japonais et audio de prononciation JA/EN en un seul téléchargement';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Cartes et révision';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Transformez vos recherches en cartes et choisissez où les réviser';
       case 'onboarding_feature_video':
         return 'Vidéo';
       case 'onboarding_feature_video_hint':
         return 'Recherche dans les sous-titres et création de cartes';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Naviguez sur des sites dans Fushi et recherchez des mots sur n\'importe quelle page.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Naviguez sur des sites dans Fushi : regardez les sites vidéo dans le lecteur Fushi, lisez les webcomics dans la liseuse Fushi et recherchez des mots sur n\'importe quelle page. Sur ordinateur, vous pouvez aussi installer l\'extension de navigateur.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Naviguez sur des sites dans Fushi : lisez webcomics et web novels dans la liseuse Fushi et recherchez des mots sur n\'importe quelle page. Sur ordinateur, vous pouvez aussi installer l\'extension de navigateur.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Naviguez sur des sites dans Fushi : lisez webcomics et web novels dans la liseuse Fushi et recherchez des mots sur n\'importe quelle page.';
       case 'onboarding_features_modules_hint':
         return 'Les pages non cochées sont masquées de la barre de navigation. Modifiable à tout moment dans Paramètres → Apparence.';
       case 'onboarding_features_modules_title':
@@ -528221,15 +529328,15 @@ extension on _StringsFr {
       case 'onboarding_finish_body':
         return 'Vous pouvez rouvrir ce guide à tout moment depuis Paramètres → Système.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Sur la page Révision, touchez Importer dans la barre du haut et choisissez un fichier .apkg ou .colpkg exporté depuis Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Importez vos paquets Anki';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Étapes suivantes';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Les cartes que vous créez arrivent dans l\'onglet Révision ; les cartes à réviser vous y attendent.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Révisez dans l\'onglet Révision';
       case 'onboarding_finish_summary_modules':
         return 'Pages de bibliothèque affichées';
       case 'onboarding_finish_summary_none':
@@ -528427,33 +529534,33 @@ extension on _StringsFr {
       case 'onboarding_permission_storage_label':
         return 'Accès à tous les fichiers';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Ne fait que présélectionner l\'étape suivante. Vous pourrez toujours choisir les fonctions une par une.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Recherchez des mots en lisant et en regardant, puis créez des cartes et révisez-les.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Apprendre une langue';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Le dictionnaire, la création de cartes et la révision sont masqués. Réactivez-les à tout moment dans les Paramètres.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Juste lire, regarder et écouter';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Pour quoi utiliserez-vous Fushi ?';
       case 'onboarding_reopen':
         return 'Guide de démarrage';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Envoyez les cartes vers Anki (AnkiDroid, AnkiMobile ou Anki sur ordinateur avec AnkiConnect) et révisez-les là-bas. L\'étape suivante connecte Anki et choisit un paquet et un type de note.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Utiliser Anki à la place…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Répétition espacée intégrée, planifiée par défaut avec RWKV (un petit modèle téléchargé à la première utilisation). Pas d\'Anki à installer, rien à configurer : les cartes que vous créez passent directement en révision.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Révision Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Les cartes créées à partir de vos recherches sont révisées ici. Vous pouvez changer cela à tout moment dans Paramètres → Création de cartes.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Mode de révision';
       case 'onboarding_sample_sentence_hint':
         return 'Touchez pour l\'ouvrir dans la page de recherche, puis touchez n\'importe quel mot.';
       case 'onboarding_sample_sentence_label':
@@ -528465,29 +529572,29 @@ extension on _StringsFr {
       case 'onboarding_skip_confirm_title':
         return 'Passer le guide de démarrage ?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Ouvrir les paquets';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Ajoutez votre première carte depuis la liste des paquets';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Révisez les cartes que vous créez directement dans Fushi — sans Anki, sans rien configurer.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Un paquet par défaut et le type de note « Fushi Card » sont déjà en place.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Prêt à l\'emploi';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'La planification utilise FSRS-7, l\'un des meilleurs algorithmes de répétition espacée, et s\'adapte à votre propre historique de révision.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'FSRS-7 par défaut';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Les cartes créées pendant la lecture ou le visionnage peuvent passer directement en révision.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'De la création à la révision';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Vos paquets et votre progression vous suivent sur vos autres appareils.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Synchronisé entre appareils';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Révision intégrée de Fushi';
       case 'onboarding_step_anki_action':
         return 'Paramètres de création de cartes';
       case 'onboarding_step_anki_action_desc':
@@ -530911,6 +532018,10 @@ extension on _StringsFr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Cartes Fushi uniquement. Les modèles modifiés doivent conserver l’élément .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -531386,7 +532497,7 @@ extension on _StringsFr {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Importer';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -531998,6 +533109,42 @@ extension on _StringsFr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Rien';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Afficher / masquer la barre supérieure';
+      case 'srs_review_gestures_back':
+        return 'Verso';
+      case 'srs_review_gestures_double_tap':
+        return 'Double toucher';
+      case 'srs_review_gestures_front':
+        return 'Recto';
+      case 'srs_review_gestures_hint':
+        return 'Zones de toucher, double toucher, appui long et balayages sur la carte';
+      case 'srs_review_gestures_long_press':
+        return 'Appui long';
+      case 'srs_review_gestures_note':
+        return 'Les touchers et appuis longs ne comptent que sur les zones vides : mots, liens, boutons et texte sélectionné gardent leur comportement. Tant que la carte peut encore défiler dans ce sens, un balayage est un défilement.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactif tant que seuls Again / Good sont affichés';
+      case 'srs_review_gestures_reset':
+        return 'Rétablir les valeurs par défaut';
+      case 'srs_review_gestures_swipe_down':
+        return 'Balayer vers le bas';
+      case 'srs_review_gestures_swipe_left':
+        return 'Balayer vers la gauche';
+      case 'srs_review_gestures_swipe_right':
+        return 'Balayer vers la droite';
+      case 'srs_review_gestures_swipe_up':
+        return 'Balayer vers le haut';
+      case 'srs_review_gestures_tap_center':
+        return 'Toucher au centre';
+      case 'srs_review_gestures_tap_left':
+        return 'Toucher à gauche';
+      case 'srs_review_gestures_tap_right':
+        return 'Toucher à droite';
+      case 'srs_review_gestures_title':
+        return 'Gestes';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -547346,7 +548493,7 @@ extension on _StringsId {
       case 'lookup_dictionary_font_hint':
         return 'Font untuk popup kamus, dengan pratinjau Jepang langsung';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Seragamkan gaya kamus';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -547488,6 +548635,11 @@ extension on _StringsId {
         return 'Mode lirik memiliki pengaturan ukuran font sendiri. Anda dapat menyesuaikannya di ⚙ Pengaturan → Tipografi.';
       case 'lyrics_mode_hint_title':
         return 'Mode Lirik';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -550022,7 +551174,7 @@ extension on _StringsId {
       case 'nav_video':
         return 'Video';
       case 'nav_web':
-        return 'Browser';
+        return 'Peramban';
       case 'network_proxy_address_hint':
         return 'Server proxy HTTP yang dipakai semua permintaan internet publik';
       case 'network_proxy_auto_hint':
@@ -550236,7 +551388,7 @@ extension on _StringsId {
       case 'onboarding_action_next':
         return 'Berikutnya';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Gulir ke bawah';
       case 'onboarding_action_skip':
         return 'Lewati untuk sekarang';
       case 'onboarding_action_start':
@@ -550260,13 +551412,15 @@ extension on _StringsId {
       case 'onboarding_anki_addon_no_anki':
         return 'Folder data Anki tidak ditemukan. Pasang Anki, buka sekali, lalu coba lagi.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Sekitar 30 detik setelah kamu membuat kartu, kartu baru di dek itu diurutkan ulang berdasarkan frekuensi kata agar kata umum muncul lebih dulu. Kartu ulasan tidak pernah diubah. Memerlukan Anki desktop dengan AnkiConnect (ponsel bisa memakainya dengan terhubung ke AnkiConnect di komputer); AnkiDroid dan AnkiMobile tidak bisa mengurutkan ulang kartu.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Koneksi';
       case 'onboarding_anki_fsrs_body':
         return 'Anki memiliki FSRS bawaan · salah satu algoritma pengulangan berjarak terbaik · tetapi tetap menjadwalkan dengan SM-2 dari tahun 1980-an sampai Anda mengaktifkan FSRS. FSRS membaca riwayat ulasan asli Anda dan memprediksi kapan Anda akan lupa, sehingga retensi tetap sama dengan ulasan lebih sedikit. Anda mengaktifkan sakelar ini sekali, di dalam Anki; tidak ada yang berubah di sisi Fushi.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Ulasan bawaan Fushi sudah memakai FSRS-7 secara default. Kamu hanya perlu langkah di bawah jika juga mengulas di Anki.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Tekan Optimalkan di bawah sakelar untuk menyesuaikan parameter dengan riwayat ulasan Anda sendiri, lalu simpan. Di bawah sekitar 1000 ulasan, nilai default sudah mengungguli SM-2, jadi optimalkan lagi setelah Anda belajar beberapa waktu.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -550322,7 +551476,7 @@ extension on _StringsId {
       case 'onboarding_click_lookup_tap_title':
         return 'Ketuk sebuah kata';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Secara default kamus mempertahankan warnanya sendiri. Untuk mewarnai ulang tag, kata yang ditekankan, dan bingkainya dengan warna aksen tema, aktifkan "Seragamkan gaya kamus" di pengaturan pencarian kata.';
       case 'onboarding_feature_backup':
         return 'Cadangan & sinkronisasi';
       case 'onboarding_feature_backup_hint':
@@ -550358,21 +551512,21 @@ extension on _StringsId {
       case 'onboarding_feature_pack_hint':
         return 'Kamus Jepang plus audio pengucapan JA/EN dalam satu unduhan';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Kartu & ulasan';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Ubah kata yang kamu cari jadi kartu dan pilih tempat mengulasnya';
       case 'onboarding_feature_video':
         return 'Video';
       case 'onboarding_feature_video_hint':
         return 'Pencarian pada takarir dan pembuatan kartu';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Jelajahi situs di dalam Fushi dan cari kata di halaman mana pun.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Jelajahi situs di dalam Fushi: tonton situs video di pemutar Fushi, baca komik web di pembaca Fushi, dan cari kata di halaman mana pun. Di desktop kamu juga bisa memasang ekstensi browser.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Jelajahi situs di dalam Fushi: baca komik web dan novel web di pembaca Fushi, dan cari kata di halaman mana pun. Di desktop kamu juga bisa memasang ekstensi browser.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Jelajahi situs di dalam Fushi: baca komik web dan novel web di pembaca Fushi, dan cari kata di halaman mana pun.';
       case 'onboarding_features_modules_hint':
         return 'Halaman yang tidak dicentang disembunyikan dari bilah navigasi. Bisa diubah kapan saja di Pengaturan → Tampilan.';
       case 'onboarding_features_modules_title':
@@ -550386,15 +551540,15 @@ extension on _StringsId {
       case 'onboarding_finish_body':
         return 'Anda bisa membuka lagi panduan ini kapan saja dari Pengaturan → Sistem.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Di halaman Ulasan, ketuk Impor di bilah atas lalu pilih file .apkg atau .colpkg yang diekspor dari Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Bawa dek Anki-mu';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Langkah berikutnya';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Kartu yang kamu buat masuk ke tab Ulasan; kartu yang jatuh tempo menunggumu di sana.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Mengulas di tab Ulasan';
       case 'onboarding_finish_summary_modules':
         return 'Halaman perpustakaan yang ditampilkan';
       case 'onboarding_finish_summary_none':
@@ -550591,33 +551745,33 @@ extension on _StringsId {
       case 'onboarding_permission_storage_label':
         return 'Akses semua file';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Hanya memilih awal untuk langkah berikutnya. Kamu tetap bisa memilih fitur satu per satu.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Cari kata saat membaca dan menonton, lalu buat kartu dan ulas.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Belajar bahasa';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Kamus, pembuatan kartu, dan ulasan disembunyikan. Aktifkan lagi kapan saja di Pengaturan.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Hanya membaca, menonton, dan mendengar';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Untuk apa kamu akan memakai Fushi?';
       case 'onboarding_reopen':
         return 'Panduan memulai';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Kirim kartu ke Anki (AnkiDroid, AnkiMobile, atau Anki desktop dengan AnkiConnect) dan ulas di sana. Langkah berikutnya menghubungkan Anki serta memilih dek dan tipe catatan.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Pakai Anki saja…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Pengulangan berjarak bawaan, dijadwalkan dengan RWKV secara default (model kecil yang diunduh saat pertama dipakai). Tidak perlu memasang Anki atau mengatur apa pun — kartu yang kamu buat langsung masuk ke ulasan.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Ulasan Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Kartu yang kamu buat dari pencarian kata diulas di sini. Kamu bisa mengubahnya kapan saja di Pengaturan → Pembuatan Kartu.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Cara mengulas';
       case 'onboarding_sample_sentence_hint':
         return 'Ketuk untuk membukanya di halaman pencarian, lalu ketuk kata mana pun.';
       case 'onboarding_sample_sentence_label':
@@ -550629,29 +551783,29 @@ extension on _StringsId {
       case 'onboarding_skip_confirm_title':
         return 'Lewati panduan memulai?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Buka dek';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Tambahkan kartu pertamamu dari daftar dek';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Ulas kartu yang kamu buat langsung di Fushi — tanpa Anki, tanpa pengaturan.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Dek default dan tipe catatan "Fushi Card" sudah disiapkan.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Siap dipakai';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'Penjadwalan memakai FSRS-7, salah satu algoritma pengulangan berjarak terbaik, dan menyesuaikan dengan riwayat ulasanmu sendiri.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'FSRS-7 secara default';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Kartu yang kamu buat saat membaca atau menonton bisa langsung masuk ke ulasan.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'Dari membuat kartu ke ulasan';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Dek dan progres ulasanmu ikut ke perangkatmu yang lain.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Sinkron antarperangkat';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Ulasan bawaan Fushi';
       case 'onboarding_step_anki_action':
         return 'Pengaturan pembuatan kartu';
       case 'onboarding_step_anki_action_desc':
@@ -553072,6 +554226,10 @@ extension on _StringsId {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Hanya kartu Fushi. Templat yang diubah harus mempertahankan elemen .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -553547,7 +554705,7 @@ extension on _StringsId {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Impor';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -554159,6 +555317,42 @@ extension on _StringsId {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Tidak ada';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Tampilkan / sembunyikan bilah atas';
+      case 'srs_review_gestures_back':
+        return 'Sisi jawaban';
+      case 'srs_review_gestures_double_tap':
+        return 'Ketuk dua kali';
+      case 'srs_review_gestures_front':
+        return 'Sisi pertanyaan';
+      case 'srs_review_gestures_hint':
+        return 'Zona ketuk, ketuk dua kali, tekan lama, dan geser pada kartu';
+      case 'srs_review_gestures_long_press':
+        return 'Tekan lama';
+      case 'srs_review_gestures_note':
+        return 'Ketukan dan tekan lama hanya berlaku di ruang kosong: kata, tautan, tombol, dan teks terpilih tetap berperilaku seperti biasa. Selama kartu masih bisa digulir ke arah itu, geseran adalah guliran.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Tidak aktif saat hanya Again / Good yang ditampilkan';
+      case 'srs_review_gestures_reset':
+        return 'Pulihkan bawaan';
+      case 'srs_review_gestures_swipe_down':
+        return 'Geser ke bawah';
+      case 'srs_review_gestures_swipe_left':
+        return 'Geser ke kiri';
+      case 'srs_review_gestures_swipe_right':
+        return 'Geser ke kanan';
+      case 'srs_review_gestures_swipe_up':
+        return 'Geser ke atas';
+      case 'srs_review_gestures_tap_center':
+        return 'Ketuk tengah';
+      case 'srs_review_gestures_tap_left':
+        return 'Ketuk kiri';
+      case 'srs_review_gestures_tap_right':
+        return 'Ketuk kanan';
+      case 'srs_review_gestures_title':
+        return 'Gestur';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -569506,7 +570700,7 @@ extension on _StringsIt {
       case 'lookup_dictionary_font_hint':
         return 'Font per i popup del dizionario, con anteprima giapponese in tempo reale';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Uniforma gli stili dei dizionari';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -569648,6 +570842,11 @@ extension on _StringsIt {
         return 'La modalità testi ha la propria impostazione della dimensione del carattere. Puoi regolarla in ⚙ Impostazioni → Tipografia.';
       case 'lyrics_mode_hint_title':
         return 'Modalità testi';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -572403,7 +573602,7 @@ extension on _StringsIt {
       case 'onboarding_action_next':
         return 'Avanti';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Scorri in basso';
       case 'onboarding_action_skip':
         return 'Salta per ora';
       case 'onboarding_action_start':
@@ -572428,13 +573627,15 @@ extension on _StringsIt {
       case 'onboarding_anki_addon_no_anki':
         return 'Cartella dati Anki non trovata. Installa Anki, aprilo una volta e riprova.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Circa 30 secondi dopo la creazione di una scheda, le nuove schede di quel mazzo vengono riordinate per frequenza delle parole, così le parole comuni vengono prima. Le schede in ripasso non vengono mai toccate. Richiede Anki desktop con AnkiConnect (un telefono può usarlo collegandosi ad AnkiConnect su un computer); AnkiDroid e AnkiMobile non possono riordinare le schede.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Connessione';
       case 'onboarding_anki_fsrs_body':
         return 'Anki include FSRS — uno dei migliori algoritmi di ripetizione dilazionata — ma continua a pianificare con l\'SM-2 degli anni \'80 finché non attivi FSRS. FSRS legge la cronologia reale dei tuoi ripassi e prevede quando stai per dimenticare, così mantieni la stessa ritenzione con meno ripassi. Attivi questo interruttore una sola volta, dentro Anki; lato Fushi non cambia nulla.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Il ripasso integrato di Fushi usa già FSRS-7 per impostazione predefinita. I passaggi seguenti servono solo se ripassi anche in Anki.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Premi Ottimizza sotto l\'interruttore per adattare i parametri alla tua cronologia di ripassi, poi salva. Sotto i 1000 ripassi circa i valori predefiniti battono già SM-2, quindi ottimizza di nuovo dopo aver studiato per un po\'.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -572490,7 +573691,7 @@ extension on _StringsIt {
       case 'onboarding_click_lookup_tap_title':
         return 'Tocca una parola';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Per impostazione predefinita i dizionari mantengono i propri colori. Per ricolorare etichette, parole evidenziate e bordi con il colore d\'accento del tema, attiva «Uniforma gli stili dei dizionari» nelle impostazioni di ricerca.';
       case 'onboarding_feature_backup':
         return 'Backup e sincronizzazione';
       case 'onboarding_feature_backup_hint':
@@ -572526,21 +573727,21 @@ extension on _StringsIt {
       case 'onboarding_feature_pack_hint':
         return 'Dizionari giapponesi più audio di pronuncia JA/EN in un solo download';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Schede e ripasso';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Trasforma le ricerche in schede e scegli dove ripassarle';
       case 'onboarding_feature_video':
         return 'Video';
       case 'onboarding_feature_video_hint':
         return 'Ricerca sui sottotitoli e creazione di carte';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Naviga i siti dentro Fushi e cerca parole in qualsiasi pagina.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Naviga i siti dentro Fushi: guarda i siti video nel player di Fushi, leggi i fumetti web nel lettore di Fushi e cerca parole in qualsiasi pagina. Su desktop puoi anche installare l\'estensione del browser.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Naviga i siti dentro Fushi: leggi fumetti e romanzi web nel lettore di Fushi e cerca parole in qualsiasi pagina. Su desktop puoi anche installare l\'estensione del browser.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Naviga i siti dentro Fushi: leggi fumetti e romanzi web nel lettore di Fushi e cerca parole in qualsiasi pagina.';
       case 'onboarding_features_modules_hint':
         return 'Le pagine non selezionate vengono nascoste dalla barra di navigazione. Puoi cambiarle quando vuoi in Impostazioni → Aspetto.';
       case 'onboarding_features_modules_title':
@@ -572554,15 +573755,15 @@ extension on _StringsIt {
       case 'onboarding_finish_body':
         return 'Puoi riaprire questa guida in qualsiasi momento da Impostazioni → Sistema.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Nella pagina Ripasso, tocca Importa nella barra in alto e scegli un file .apkg o .colpkg esportato da Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Porta i tuoi mazzi di Anki';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Prossimi passi';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Le schede che crei finiscono nella scheda Ripasso; quelle da ripassare ti aspettano lì.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Ripassa nella scheda Ripasso';
       case 'onboarding_finish_summary_modules':
         return 'Pagine della libreria mostrate';
       case 'onboarding_finish_summary_none':
@@ -572759,33 +573960,33 @@ extension on _StringsIt {
       case 'onboarding_permission_storage_label':
         return 'Accesso a tutti i file';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Preimposta solo il passaggio successivo. Puoi comunque scegliere le funzioni una per una.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Cerca parole mentre leggi e guardi, poi crea schede e ripassale.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Imparare una lingua';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Dizionario, creazione schede e ripasso vengono nascosti. Puoi riattivarli in qualsiasi momento nelle Impostazioni.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Solo leggere, guardare e ascoltare';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Per cosa userai Fushi?';
       case 'onboarding_reopen':
         return 'Guida per iniziare';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Invia le schede ad Anki (AnkiDroid, AnkiMobile o Anki desktop con AnkiConnect) e ripassale lì. Nel passaggio successivo colleghi Anki e scegli un mazzo e un tipo di nota.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Usa invece Anki…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Ripetizione dilazionata integrata, pianificata con RWKV per impostazione predefinita (un piccolo modello scaricato al primo utilizzo). Nessun Anki da installare e niente da configurare: le schede che crei vanno direttamente in ripasso.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Ripasso di Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Qui ripassi le schede create dalle ricerche. Puoi cambiarlo in qualsiasi momento in Impostazioni → Creazione schede.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Come ripassi';
       case 'onboarding_sample_sentence_hint':
         return 'Tocca per aprirla nella pagina di ricerca, poi tocca una parola qualsiasi.';
       case 'onboarding_sample_sentence_label':
@@ -572797,29 +573998,29 @@ extension on _StringsIt {
       case 'onboarding_skip_confirm_title':
         return 'Saltare la guida introduttiva?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Apri mazzi';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Aggiungi la tua prima scheda dall\'elenco dei mazzi';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Ripassa le schede che crei direttamente in Fushi: niente Anki, niente da configurare.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Un mazzo predefinito e il tipo di nota «Fushi Card» sono già pronti.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Pronto all\'uso';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'La pianificazione usa FSRS-7, uno dei migliori algoritmi di ripetizione dilazionata, e si adatta alla tua cronologia di ripasso.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'FSRS-7 predefinito';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Le schede create mentre leggi o guardi possono andare direttamente in ripasso.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'Dalla creazione al ripasso';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'I tuoi mazzi e i progressi di ripasso ti seguono sugli altri dispositivi.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Sincronizzato tra dispositivi';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Ripasso integrato di Fushi';
       case 'onboarding_step_anki_action':
         return 'Impostazioni creazione carte';
       case 'onboarding_step_anki_action_desc':
@@ -572863,7 +574064,7 @@ extension on _StringsIt {
       case 'onboarding_step_interconnect_body':
         return 'Accoppia i dispositivi sulla tua LAN per condividere un\'unica libreria e mantenere sincronizzati i progressi.';
       case 'onboarding_step_interconnect_title':
-        return 'Interconnect';
+        return 'Interconnessione';
       case 'onboarding_step_manual_resources_body':
         return 'Importa almeno un dizionario prima del tutorial di ricerca. Audiolibri e audio di pronuncia sono facoltativi.';
       case 'onboarding_step_manual_resources_title':
@@ -575242,6 +576443,10 @@ extension on _StringsIt {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Solo schede Fushi. I modelli modificati devono mantenere l’elemento .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -575717,7 +576922,7 @@ extension on _StringsIt {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Importa';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -576329,6 +577534,42 @@ extension on _StringsIt {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nessuna';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Mostra / nascondi barra superiore';
+      case 'srs_review_gestures_back':
+        return 'Retro';
+      case 'srs_review_gestures_double_tap':
+        return 'Doppio tocco';
+      case 'srs_review_gestures_front':
+        return 'Fronte';
+      case 'srs_review_gestures_hint':
+        return 'Zone di tocco, doppio tocco, pressione prolungata e scorrimenti sulla carta';
+      case 'srs_review_gestures_long_press':
+        return 'Pressione prolungata';
+      case 'srs_review_gestures_note':
+        return 'Tocchi e pressioni prolungate contano solo sugli spazi vuoti: parole, link, pulsanti e testo selezionato mantengono il loro comportamento. Finché la carta può ancora scorrere in quella direzione, lo scorrimento è uno scroll.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inattivo quando sono mostrati solo Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Ripristina predefiniti';
+      case 'srs_review_gestures_swipe_down':
+        return 'Scorri in basso';
+      case 'srs_review_gestures_swipe_left':
+        return 'Scorri a sinistra';
+      case 'srs_review_gestures_swipe_right':
+        return 'Scorri a destra';
+      case 'srs_review_gestures_swipe_up':
+        return 'Scorri in alto';
+      case 'srs_review_gestures_tap_center':
+        return 'Tocca al centro';
+      case 'srs_review_gestures_tap_left':
+        return 'Tocca a sinistra';
+      case 'srs_review_gestures_tap_right':
+        return 'Tocca a destra';
+      case 'srs_review_gestures_title':
+        return 'Gesti';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -591630,7 +592871,7 @@ extension on _StringsJa {
       case 'lookup_dictionary_font_hint':
         return '辞書ポップアップ用のフォント。日本語のライブプレビュー付き';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return '辞書スタイルを統一';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -591772,6 +593013,11 @@ extension on _StringsJa {
         return '歌詞モードには独自のフォントサイズ設定があります。⚙ 設定 → タイポグラフィで調整できます。';
       case 'lyrics_mode_hint_title':
         return '歌詞モード';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -594302,7 +595548,7 @@ extension on _StringsJa {
       case 'nav_video':
         return '動画';
       case 'nav_web':
-        return 'Browser';
+        return 'ブラウザ';
       case 'network_proxy_address_hint':
         return 'すべての公開インターネット通信で使う HTTP プロキシサーバー';
       case 'network_proxy_auto_hint':
@@ -594537,13 +595783,15 @@ extension on _StringsJa {
       case 'onboarding_anki_addon_no_anki':
         return 'Anki のデータフォルダが見つかりません。Anki をインストールし、一度開いてから再試行してください。';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'カード作成から約 30 秒後、そのデッキの新規カードを語の頻度順に並べ替え、よく使う語から学べるようにします。復習カードには触れません。デスクトップ版 Anki と AnkiConnect が必要です（スマートフォンはパソコン上の AnkiConnect に接続すれば使えます）。AnkiDroid / AnkiMobile では並べ替えできません。';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect（${address}）';
       case 'onboarding_anki_backend_label':
         return '接続';
       case 'onboarding_anki_fsrs_body':
         return 'Anki には FSRS が内蔵されています。最高クラスの間隔反復アルゴリズムの一つですが、オンにするまでは 1980 年代の SM-2 でスケジューリングされます。FSRS は実際の復習履歴から忘れそうなタイミングを予測するため、同じ記憶定着率をより少ない復習で保てます。この切り替えは Anki 内で一度行うだけで、Fushi 側では何も変わりません。';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Fushi の内蔵復習は既定で FSRS-7 を使っています。Anki でも復習する場合だけ、以下の手順が必要です。';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'スイッチの下の「最適化」を押して、自分の復習履歴にパラメーターを合わせてから保存します。復習が約 1000 回未満でもデフォルトで SM-2 より優れているので、しばらく学習してからもう一度最適化すれば十分です。';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -594599,7 +595847,7 @@ extension on _StringsJa {
       case 'onboarding_click_lookup_tap_title':
         return '単語をタップ';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return '辞書は既定でそれぞれの配色を保ちます。タグ・強調語・枠線をテーマのアクセントカラーにそろえたい場合は、検索設定で「辞書スタイルを統一」をオンにしてください。';
       case 'onboarding_feature_backup':
         return 'バックアップと同期';
       case 'onboarding_feature_backup_hint':
@@ -594635,21 +595883,21 @@ extension on _StringsJa {
       case 'onboarding_feature_pack_hint':
         return '日本語辞書と日英発音音声を1回のダウンロードで';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'カード作成と復習';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return '調べた語をカードにして、どこで復習するかを選びます';
       case 'onboarding_feature_video':
         return '動画';
       case 'onboarding_feature_video_hint':
         return '字幕から調べてカードを作る';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Fushi 内でサイトを閲覧し、どのページでも単語を調べられます。';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Fushi 内でサイトを閲覧：動画サイトは Fushi プレーヤーで観て、Web 漫画は Fushi リーダーで読め、どのページでも単語を調べられます。デスクトップではブラウザ拡張機能も入れられます。';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Fushi 内でサイトを閲覧：Web 漫画や Web 小説は Fushi リーダーで読め、どのページでも単語を調べられます。デスクトップではブラウザ拡張機能も入れられます。';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Fushi 内でサイトを閲覧：Web 漫画や Web 小説は Fushi リーダーで読め、どのページでも単語を調べられます。';
       case 'onboarding_features_modules_hint':
         return 'チェックを外したページはナビゲーションバーに表示されません。設定 → 外観でいつでも変更できます。';
       case 'onboarding_features_modules_title':
@@ -594663,15 +595911,15 @@ extension on _StringsJa {
       case 'onboarding_finish_body':
         return 'このガイドは設定 → システムからいつでも開き直せます。';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return '「復習」ページの上部バーで「インポート」をタップし、Anki から書き出した .apkg または .colpkg ファイルを選んでください。';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Anki のデッキを取り込む';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return '次のステップ';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return '作ったカードは「復習」タブに入り、期日が来たカードはそこで待っています。';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return '「復習」タブで復習';
       case 'onboarding_finish_summary_modules':
         return '表示するライブラリのページ';
       case 'onboarding_finish_summary_none':
@@ -594867,33 +596115,33 @@ extension on _StringsJa {
       case 'onboarding_permission_storage_label':
         return 'すべてのファイルへのアクセス';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return '次のステップの初期選択を決めるだけです。機能はそのあと 1 つずつ選べます。';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return '読んだり観たりしながら単語を調べ、カードにして復習します。';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return '語学を学ぶ';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return '辞書・カード作成・復習を非表示にします。設定からいつでも戻せます。';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return '読む・観る・聴くだけ';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Fushi を何に使いますか？';
       case 'onboarding_reopen':
         return 'はじめにガイド';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'カードを Anki（AnkiDroid、AnkiMobile、または AnkiConnect を入れたデスクトップ版 Anki）に送り、Anki で復習します。次のステップで Anki に接続し、デッキとノートタイプを選びます。';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return '代わりに Anki を使う…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return '内蔵の間隔反復です。スケジュールは既定で RWKV を使います（初回利用時に小さなモデルをダウンロード）。Anki のインストールも設定も不要で、作ったカードはそのまま復習に入ります。';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Fushi で復習';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return '調べた語から作ったカードはここで復習します。設定 → カード作成 でいつでも変更できます。';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return '復習方法';
       case 'onboarding_sample_sentence_hint':
         return 'タップすると辞書ページで開きます。その後、好きな単語をタップしてください。';
       case 'onboarding_sample_sentence_label':
@@ -594905,29 +596153,29 @@ extension on _StringsJa {
       case 'onboarding_skip_confirm_title':
         return 'はじめにガイドをスキップしますか？';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'デッキを開く';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'デッキ一覧から最初のカードを追加';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return '作ったカードを Fushi の中でそのまま復習できます。Anki も設定も不要です。';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return '既定のデッキとノートタイプ「Fushi Card」が用意されています。';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'すぐに使える';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'スケジュールには間隔反復の代表的な最良アルゴリズムの一つである FSRS-7 を使い、あなた自身の復習履歴に合わせて調整します。';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return '既定で FSRS-7';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return '読書や視聴中に作ったカードを、そのまま復習に回せます。';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return '作ったらそのまま復習';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'デッキと復習の進み具合は他のデバイスにも引き継がれます。';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'デバイス間で同期';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Fushi 内蔵の復習';
       case 'onboarding_step_anki_action':
         return 'カード作成設定';
       case 'onboarding_step_anki_action_desc':
@@ -597346,6 +598594,10 @@ extension on _StringsJa {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Fushi カードのみ。テンプレートを編集した場合は .fc-translation 要素を残してください';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -597821,7 +599073,7 @@ extension on _StringsJa {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'インポート';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -598433,6 +599685,42 @@ extension on _StringsJa {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'なし';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '上部バーの表示 / 非表示';
+      case 'srs_review_gestures_back':
+        return '解答面';
+      case 'srs_review_gestures_double_tap':
+        return 'ダブルタップ';
+      case 'srs_review_gestures_front':
+        return '問題面';
+      case 'srs_review_gestures_hint':
+        return 'カード上のタップ領域、ダブルタップ、長押し、スワイプ';
+      case 'srs_review_gestures_long_press':
+        return '長押し';
+      case 'srs_review_gestures_note':
+        return 'タップと長押しは空白部分でのみ反応します。文字・リンク・ボタン・選択中のテキストはそれぞれ本来の動作のままです。カードがまだその方向にスクロールできる間は、スワイプはスクロールになります。';
+      case 'srs_review_gestures_rating_hidden':
+        return '「Again / Good」のみ表示中は無効';
+      case 'srs_review_gestures_reset':
+        return 'デフォルトに戻す';
+      case 'srs_review_gestures_swipe_down':
+        return '下にスワイプ';
+      case 'srs_review_gestures_swipe_left':
+        return '左にスワイプ';
+      case 'srs_review_gestures_swipe_right':
+        return '右にスワイプ';
+      case 'srs_review_gestures_swipe_up':
+        return '上にスワイプ';
+      case 'srs_review_gestures_tap_center':
+        return '中央をタップ';
+      case 'srs_review_gestures_tap_left':
+        return '左をタップ';
+      case 'srs_review_gestures_tap_right':
+        return '右をタップ';
+      case 'srs_review_gestures_title':
+        return 'ジェスチャー';
       case 'srs_review_hide_hard_easy':
         return '「Hard」と「Easy」ボタンを隠す';
       case 'srs_review_hide_hard_easy_hint':
@@ -613684,7 +614972,7 @@ extension on _StringsKo {
       case 'lookup_dictionary_font_hint':
         return '일본어 실시간 미리보기와 함께 사전 팝업용 글꼴을 설정합니다';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return '사전 스타일 통일';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -613826,6 +615114,11 @@ extension on _StringsKo {
         return '가사 모드에는 자체 글꼴 크기 설정이 있습니다. ⚙ 설정 → 타이포그래피에서 조정할 수 있습니다.';
       case 'lyrics_mode_hint_title':
         return '가사 모드';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -616354,7 +617647,7 @@ extension on _StringsKo {
       case 'nav_video':
         return '비디오';
       case 'nav_web':
-        return 'Browser';
+        return '브라우저';
       case 'network_proxy_address_hint':
         return '모든 공용 인터넷 요청에 사용되는 HTTP 프록시 서버';
       case 'network_proxy_auto_hint':
@@ -616566,7 +617859,7 @@ extension on _StringsKo {
       case 'onboarding_action_next':
         return '다음';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return '아래로 스크롤';
       case 'onboarding_action_skip':
         return '나중에 하기';
       case 'onboarding_action_start':
@@ -616590,13 +617883,15 @@ extension on _StringsKo {
       case 'onboarding_anki_addon_no_anki':
         return 'Anki 데이터 폴더를 찾을 수 없습니다. Anki를 설치하고 한 번 연 다음 다시 시도하세요.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return '카드를 만든 지 약 30초 후, 해당 덱의 새 카드를 단어 빈도순으로 다시 정렬해 자주 쓰는 단어부터 학습하게 합니다. 복습 카드는 건드리지 않습니다. 데스크톱 Anki와 AnkiConnect가 필요합니다(휴대폰은 컴퓨터의 AnkiConnect에 연결하면 사용 가능). AnkiDroid와 AnkiMobile은 카드를 재정렬할 수 없습니다.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return '연결';
       case 'onboarding_anki_fsrs_body':
         return 'Anki에는 가장 뛰어난 간격 반복 알고리즘 중 하나인 FSRS가 내장되어 있지만, FSRS를 켜기 전까지는 1980년대의 SM-2로 일정을 관리합니다. FSRS는 실제 복습 기록을 읽고 잊어버릴 시점을 예측하므로 더 적은 복습으로 같은 기억 유지율을 얻을 수 있습니다. 이 스위치는 Anki 안에서 한 번만 켜면 되며, Fushi 쪽에서는 달라지는 것이 없습니다.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Fushi 내장 복습은 이미 기본으로 FSRS-7을 사용합니다. Anki에서도 복습할 때만 아래 단계가 필요합니다.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return '스위치 아래의 최적화를 눌러 매개변수를 본인의 복습 기록에 맞춘 다음 저장하세요. 복습이 약 1000회 미만일 때는 기본값만으로도 SM-2보다 낫습니다. 한동안 학습한 뒤 다시 최적화하세요.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -616652,7 +617947,7 @@ extension on _StringsKo {
       case 'onboarding_click_lookup_tap_title':
         return '단어를 탭하세요';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return '사전은 기본적으로 자체 색상을 유지합니다. 태그, 강조 단어, 테두리를 테마 강조색으로 바꾸려면 검색 설정에서 \'사전 스타일 통일\'을 켜세요.';
       case 'onboarding_feature_backup':
         return '백업 및 동기화';
       case 'onboarding_feature_backup_hint':
@@ -616688,21 +617983,21 @@ extension on _StringsKo {
       case 'onboarding_feature_pack_hint':
         return '일본어 사전과 일/영 발음 오디오를 한 번에 다운로드';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return '카드와 복습';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return '검색한 단어를 카드로 만들고 복습할 곳을 고르세요';
       case 'onboarding_feature_video':
         return '동영상';
       case 'onboarding_feature_video_hint':
         return '자막에서 단어 찾고 카드 만들기';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Fushi 안에서 사이트를 둘러보고 어느 페이지에서든 단어를 찾아보세요.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Fushi 안에서 사이트를 둘러보세요: 동영상 사이트는 Fushi 플레이어로, 웹 만화는 Fushi 리더로 보고, 어느 페이지에서든 단어를 찾아볼 수 있습니다. 데스크톱에서는 브라우저 확장 프로그램도 설치할 수 있습니다.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Fushi 안에서 사이트를 둘러보세요: 웹 만화와 웹소설은 Fushi 리더로 읽고, 어느 페이지에서든 단어를 찾아볼 수 있습니다. 데스크톱에서는 브라우저 확장 프로그램도 설치할 수 있습니다.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Fushi 안에서 사이트를 둘러보세요: 웹 만화와 웹소설은 Fushi 리더로 읽고, 어느 페이지에서든 단어를 찾아볼 수 있습니다.';
       case 'onboarding_features_modules_hint':
         return '선택하지 않은 페이지는 내비게이션 바에서 숨겨집니다. 설정 → 외관에서 언제든 바꿀 수 있습니다.';
       case 'onboarding_features_modules_title':
@@ -616716,15 +618011,15 @@ extension on _StringsKo {
       case 'onboarding_finish_body':
         return '설정 → 시스템에서 이 가이드를 언제든 다시 열 수 있습니다.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return '복습 페이지 상단 바에서 \'가져오기\'를 누르고 Anki에서 내보낸 .apkg 또는 .colpkg 파일을 선택하세요.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Anki 덱 가져오기';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return '다음 단계';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return '만든 카드는 복습 탭으로 들어가고, 복습할 때가 된 카드가 그곳에서 기다립니다.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return '복습 탭에서 복습하기';
       case 'onboarding_finish_summary_modules':
         return '표시할 라이브러리 페이지';
       case 'onboarding_finish_summary_none':
@@ -616920,33 +618215,33 @@ extension on _StringsKo {
       case 'onboarding_permission_storage_label':
         return '모든 파일 액세스';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return '다음 단계의 기본 선택만 정합니다. 기능은 여전히 하나씩 고를 수 있습니다.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return '읽고 보면서 단어를 찾아보고, 카드로 만들어 복습합니다.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return '언어 배우기';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return '사전, 카드 만들기, 복습이 숨겨집니다. 설정에서 언제든 다시 켤 수 있습니다.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return '읽고 보고 듣기만';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Fushi를 어디에 쓰실 건가요?';
       case 'onboarding_reopen':
         return '시작 가이드';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return '카드를 Anki(AnkiDroid, AnkiMobile 또는 AnkiConnect를 설치한 데스크톱 Anki)로 보내 그곳에서 복습합니다. 다음 단계에서 Anki를 연결하고 덱과 노트 유형을 고릅니다.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return '대신 Anki 사용…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return '내장 간격 반복 학습으로, 기본 일정은 RWKV가 정합니다(처음 사용할 때 작은 모델을 내려받음). Anki를 설치하거나 설정할 필요 없이 만든 카드가 바로 복습에 들어갑니다.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Fushi 복습';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return '검색하면서 만든 카드는 여기서 복습합니다. 설정 → 카드 만들기에서 언제든 바꿀 수 있습니다.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return '복습 방식';
       case 'onboarding_sample_sentence_hint':
         return '탭하면 단어 찾기 페이지에서 열립니다. 그다음 아무 단어나 탭하세요.';
       case 'onboarding_sample_sentence_label':
@@ -616958,29 +618253,29 @@ extension on _StringsKo {
       case 'onboarding_skip_confirm_title':
         return '시작 가이드를 건너뛸까요?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return '덱 열기';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return '덱 목록에서 첫 카드를 추가하세요';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return '만든 카드를 Fushi 안에서 바로 복습하세요. Anki도, 설정도 필요 없습니다.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return '기본 덱과 \'Fushi Card\' 노트 유형이 이미 준비되어 있습니다.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return '바로 사용 가능';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return '일정은 최고의 간격 반복 알고리즘 중 하나인 FSRS-7을 사용하며, 나의 복습 기록에 맞춰 조정됩니다.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return '기본으로 FSRS-7';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return '읽거나 보면서 만든 카드를 바로 복습에 넣을 수 있습니다.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return '카드 만들기에서 복습까지';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return '덱과 복습 진행 상황이 다른 기기로도 이어집니다.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return '기기 간 동기화';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Fushi 내장 복습';
       case 'onboarding_step_anki_action':
         return '카드 생성 설정';
       case 'onboarding_step_anki_action_desc':
@@ -619400,6 +620695,10 @@ extension on _StringsKo {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Fushi 카드에만 적용됩니다. 템플릿을 수정했다면 .fc-translation 요소를 유지해야 합니다';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -619875,7 +621174,7 @@ extension on _StringsKo {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return '가져오기';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -620487,6 +621786,42 @@ extension on _StringsKo {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return '없음';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '상단 바 표시 / 숨기기';
+      case 'srs_review_gestures_back':
+        return '답 면';
+      case 'srs_review_gestures_double_tap':
+        return '두 번 탭';
+      case 'srs_review_gestures_front':
+        return '질문 면';
+      case 'srs_review_gestures_hint':
+        return '카드의 탭 영역, 두 번 탭, 길게 누르기, 스와이프';
+      case 'srs_review_gestures_long_press':
+        return '길게 누르기';
+      case 'srs_review_gestures_note':
+        return '탭과 길게 누르기는 빈 공간에서만 동작합니다. 글자, 링크, 버튼, 선택한 텍스트는 원래 동작을 유지합니다. 카드가 그 방향으로 아직 스크롤될 수 있으면 스와이프는 스크롤이 됩니다.';
+      case 'srs_review_gestures_rating_hidden':
+        return '「Again / Good」만 표시할 때는 비활성';
+      case 'srs_review_gestures_reset':
+        return '기본값 복원';
+      case 'srs_review_gestures_swipe_down':
+        return '아래로 스와이프';
+      case 'srs_review_gestures_swipe_left':
+        return '왼쪽으로 스와이프';
+      case 'srs_review_gestures_swipe_right':
+        return '오른쪽으로 스와이프';
+      case 'srs_review_gestures_swipe_up':
+        return '위로 스와이프';
+      case 'srs_review_gestures_tap_center':
+        return '가운데 탭';
+      case 'srs_review_gestures_tap_left':
+        return '왼쪽 탭';
+      case 'srs_review_gestures_tap_right':
+        return '오른쪽 탭';
+      case 'srs_review_gestures_title':
+        return '제스처';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -635804,7 +637139,7 @@ extension on _StringsNl {
       case 'lookup_dictionary_font_hint':
         return 'Lettertypen voor woordenboekpopups, met een live Japans voorbeeld';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Woordenboekstijlen gelijktrekken';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -635946,6 +637281,11 @@ extension on _StringsNl {
         return 'De songtekstmodus heeft een eigen lettergrootte-instelling. Je kunt deze aanpassen via ⚙ Instellingen → Typografie.';
       case 'lyrics_mode_hint_title':
         return 'Songtekstmodus';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -638704,7 +640044,7 @@ extension on _StringsNl {
       case 'onboarding_action_next':
         return 'Volgende';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Scroll omlaag';
       case 'onboarding_action_skip':
         return 'Later';
       case 'onboarding_action_start':
@@ -638728,13 +640068,15 @@ extension on _StringsNl {
       case 'onboarding_anki_addon_no_anki':
         return 'Anki-gegevensmap niet gevonden. Installeer Anki, open het eenmaal en probeer opnieuw.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Ongeveer 30 seconden nadat je een kaart hebt gemaakt, worden de nieuwe kaarten in die stapel op woordfrequentie geordend, zodat veelvoorkomende woorden eerst komen. Herhalingskaarten worden nooit aangeraakt. Vereist Anki op de computer met AnkiConnect (een telefoon kan het gebruiken door verbinding te maken met AnkiConnect op een computer); AnkiDroid en AnkiMobile kunnen kaarten niet herordenen.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Verbinding';
       case 'onboarding_anki_fsrs_body':
         return 'Anki heeft FSRS ingebouwd — een van de beste algoritmen voor gespreide herhaling — maar blijft plannen met SM-2 uit de jaren 80 totdat je FSRS inschakelt. FSRS leest je echte herhalingsgeschiedenis en voorspelt wanneer je iets bijna vergeet, zodat je dezelfde retentie houdt met minder herhalingen. Je zet deze schakelaar één keer om, in Anki; aan de Fushi-kant verandert er niets.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'De ingebouwde herhaling van Fushi gebruikt standaard al FSRS-7. De stappen hieronder heb je alleen nodig als je ook in Anki herhaalt.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Druk onder de schakelaar op Optimaliseren om de parameters af te stemmen op je eigen herhalingsgeschiedenis en sla daarna op. Onder ongeveer 1000 herhalingen presteren de standaardwaarden al beter dan SM-2; optimaliseer dus gewoon opnieuw als je een tijdje hebt geleerd.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -638791,7 +640133,7 @@ extension on _StringsNl {
       case 'onboarding_click_lookup_tap_title':
         return 'Tik op een woord';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Woordenboeken behouden standaard hun eigen kleuren. Wil je hun labels, benadrukte woorden en randen in de accentkleur van je thema, zet dan \'Woordenboekstijlen gelijktrekken\' aan in de opzoekinstellingen.';
       case 'onboarding_feature_backup':
         return 'Back-up & sync';
       case 'onboarding_feature_backup_hint':
@@ -638827,21 +640169,21 @@ extension on _StringsNl {
       case 'onboarding_feature_pack_hint':
         return 'Japanse woordenboeken plus JA/EN-uitspraakaudio in één download';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Kaarten & herhalen';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Maak kaarten van opgezochte woorden en kies waar je ze herhaalt';
       case 'onboarding_feature_video':
         return 'Video';
       case 'onboarding_feature_video_hint':
         return 'Opzoeken in ondertitels en kaarten maken';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Surf in Fushi naar sites en zoek woorden op elke pagina op.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Surf in Fushi naar sites: bekijk videosites in de Fushi-speler, lees webstrips in de Fushi-lezer en zoek woorden op elke pagina op. Op de computer kun je ook de browserextensie installeren.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Surf in Fushi naar sites: lees webstrips en webromans in de Fushi-lezer en zoek woorden op elke pagina op. Op de computer kun je ook de browserextensie installeren.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Surf in Fushi naar sites: lees webstrips en webromans in de Fushi-lezer en zoek woorden op elke pagina op.';
       case 'onboarding_features_modules_hint':
         return 'Niet-aangevinkte pagina\'s worden verborgen in de navigatiebalk. Later aan te passen via Instellingen → Uiterlijk.';
       case 'onboarding_features_modules_title':
@@ -638855,15 +640197,15 @@ extension on _StringsNl {
       case 'onboarding_finish_body':
         return 'Je kunt deze gids altijd opnieuw openen via Instellingen → Systeem.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Tik op de pagina Herhalen bovenaan op Importeren en kies een .apkg- of .colpkg-bestand dat uit Anki is geëxporteerd.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Neem je Anki-stapels mee';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Volgende stappen';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Kaarten die je maakt komen op het tabblad Herhalen; kaarten die aan de beurt zijn wachten daar op je.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Herhalen op het tabblad Herhalen';
       case 'onboarding_finish_summary_modules':
         return 'Getoonde bibliotheekpagina\'s';
       case 'onboarding_finish_summary_none':
@@ -639060,33 +640402,33 @@ extension on _StringsNl {
       case 'onboarding_permission_storage_label':
         return 'Toegang tot alle bestanden';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Stelt alleen de volgende stap alvast in. Je kunt de functies daarna nog één voor één kiezen.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Zoek woorden op tijdens het lezen en kijken, maak er kaarten van en herhaal ze.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Een taal leren';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Woordenboek, kaarten maken en herhalen worden verborgen. Zet ze altijd weer aan in Instellingen.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Alleen lezen, kijken en luisteren';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Waarvoor ga je Fushi gebruiken?';
       case 'onboarding_reopen':
         return 'Aan-de-slaggids';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Stuur kaarten naar Anki (AnkiDroid, AnkiMobile of Anki op de computer met AnkiConnect) en herhaal ze daar. In de volgende stap verbind je Anki en kies je een stapel en notitietype.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Toch Anki gebruiken…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Ingebouwde gespreide herhaling, standaard ingepland met RWKV (een klein model dat bij het eerste gebruik wordt gedownload). Geen Anki te installeren en niets in te stellen: de kaarten die je maakt gaan meteen de herhaling in.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Fushi-herhaling';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Kaarten die je bij het opzoeken maakt, herhaal je hier. Je kunt dit altijd wijzigen via Instellingen → Kaart aanmaken.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Hoe je herhaalt';
       case 'onboarding_sample_sentence_hint':
         return 'Tik om hem in de opzoekpagina te openen en tik daarna op een willekeurig woord.';
       case 'onboarding_sample_sentence_label':
@@ -639098,29 +640440,29 @@ extension on _StringsNl {
       case 'onboarding_skip_confirm_title':
         return 'Introductiegids overslaan?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Stapels openen';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Voeg je eerste kaart toe vanuit de stapellijst';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Herhaal de kaarten die je maakt direct in Fushi — geen Anki nodig, niets in te stellen.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Een standaardstapel en het notitietype \'Fushi Card\' staan al klaar.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Direct klaar voor gebruik';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'De planning gebruikt FSRS-7, een van de beste algoritmen voor gespreide herhaling, en past zich aan je eigen herhaalgeschiedenis aan.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'Standaard FSRS-7';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Kaarten die je tijdens het lezen of kijken maakt, kunnen meteen de herhaling in.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'Van kaart maken naar herhalen';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Je stapels en herhaalvoortgang gaan mee naar je andere apparaten.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Synchroniseert tussen apparaten';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Ingebouwde herhaling van Fushi';
       case 'onboarding_step_anki_action':
         return 'Kaartaanmaak-instellingen';
       case 'onboarding_step_anki_action_desc':
@@ -639164,7 +640506,7 @@ extension on _StringsNl {
       case 'onboarding_step_interconnect_body':
         return 'Koppel apparaten op je LAN om één bibliotheek te delen en de voortgang gelijk te houden.';
       case 'onboarding_step_interconnect_title':
-        return 'Interconnect';
+        return 'Apparaten koppelen';
       case 'onboarding_step_manual_resources_body':
         return 'Importeer minstens één woordenboek vóór de opzoekhandleiding. Luisterboeken en uitspraakaudio zijn optioneel.';
       case 'onboarding_step_manual_resources_title':
@@ -641543,6 +642885,10 @@ extension on _StringsNl {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Alleen Fushi-kaarten. Bewerkte sjablonen moeten het element .fc-translation behouden';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -642018,7 +643364,7 @@ extension on _StringsNl {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Importeren';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -642630,6 +643976,42 @@ extension on _StringsNl {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Niets';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Bovenbalk tonen / verbergen';
+      case 'srs_review_gestures_back':
+        return 'Achterkant';
+      case 'srs_review_gestures_double_tap':
+        return 'Dubbeltikken';
+      case 'srs_review_gestures_front':
+        return 'Voorkant';
+      case 'srs_review_gestures_hint':
+        return 'Tikzones, dubbeltikken, lang drukken en vegen op de kaart';
+      case 'srs_review_gestures_long_press':
+        return 'Lang drukken';
+      case 'srs_review_gestures_note':
+        return 'Tikken en lang drukken tellen alleen op lege plekken: woorden, links, knoppen en geselecteerde tekst werken zoals altijd. Zolang de kaart die kant nog op kan scrollen, is vegen scrollen.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inactief zolang alleen Again / Good worden getoond';
+      case 'srs_review_gestures_reset':
+        return 'Standaard herstellen';
+      case 'srs_review_gestures_swipe_down':
+        return 'Omlaag vegen';
+      case 'srs_review_gestures_swipe_left':
+        return 'Naar links vegen';
+      case 'srs_review_gestures_swipe_right':
+        return 'Naar rechts vegen';
+      case 'srs_review_gestures_swipe_up':
+        return 'Omhoog vegen';
+      case 'srs_review_gestures_tap_center':
+        return 'Midden tikken';
+      case 'srs_review_gestures_tap_left':
+        return 'Links tikken';
+      case 'srs_review_gestures_tap_right':
+        return 'Rechts tikken';
+      case 'srs_review_gestures_title':
+        return 'Gebaren';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -657980,7 +659362,7 @@ extension on _StringsPtBr {
       case 'lookup_dictionary_font_hint':
         return 'Fontes para os pop-ups do dicionário, com pré-visualização em japonês ao vivo';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Unificar estilos dos dicionários';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -658122,6 +659504,11 @@ extension on _StringsPtBr {
         return 'O modo de letras tem sua própria configuração de tamanho de fonte. Você pode ajustá-lo em ⚙ Configurações → Tipografia.';
       case 'lyrics_mode_hint_title':
         return 'Modo de letras';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -660663,7 +662050,7 @@ extension on _StringsPtBr {
       case 'nav_video':
         return 'Vídeo';
       case 'nav_web':
-        return 'Browser';
+        return 'Navegador';
       case 'network_proxy_address_hint':
         return 'Servidor proxy HTTP usado por todas as requisições à internet pública';
       case 'network_proxy_auto_hint':
@@ -660878,7 +662265,7 @@ extension on _StringsPtBr {
       case 'onboarding_action_next':
         return 'Próximo';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Role para baixo';
       case 'onboarding_action_skip':
         return 'Pular por enquanto';
       case 'onboarding_action_start':
@@ -660902,13 +662289,15 @@ extension on _StringsPtBr {
       case 'onboarding_anki_addon_no_anki':
         return 'Pasta de dados do Anki não encontrada. Instale o Anki, abra-o uma vez e tente novamente.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Cerca de 30 segundos depois de você criar um cartão, os cartões novos desse baralho são reordenados por frequência de palavra para que as palavras comuns venham primeiro. Cartões em revisão nunca são alterados. Requer o Anki para desktop com AnkiConnect (um celular pode usá-lo conectando-se ao AnkiConnect em um computador); AnkiDroid e AnkiMobile não conseguem reordenar cartões.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Conexão';
       case 'onboarding_anki_fsrs_body':
         return 'O Anki tem o FSRS integrado — um dos melhores algoritmos de repetição espaçada que existem — mas continua agendando com o SM-2 dos anos 1980 até você ativar o FSRS. O FSRS lê seu histórico real de revisões e prevê quando você está prestes a esquecer, mantendo a mesma retenção com menos revisões. Você liga essa chave uma vez, dentro do Anki; nada muda no lado do Fushi.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'A revisão integrada do Fushi já usa FSRS-7 por padrão. Você só precisa dos passos abaixo se também revisar no Anki.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Toque em Otimizar abaixo da chave para ajustar os parâmetros ao seu próprio histórico de revisões e depois salve. Com menos de cerca de 1000 revisões, os valores padrão já superam o SM-2; basta otimizar de novo depois de estudar por um tempo.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -660965,7 +662354,7 @@ extension on _StringsPtBr {
       case 'onboarding_click_lookup_tap_title':
         return 'Toque em uma palavra';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Por padrão, os dicionários mantêm as próprias cores. Para recolorir as etiquetas, palavras destacadas e bordas com a cor de destaque do tema, ative "Unificar estilos dos dicionários" nas configurações de consulta.';
       case 'onboarding_feature_backup':
         return 'Backup e sincronização';
       case 'onboarding_feature_backup_hint':
@@ -661001,21 +662390,21 @@ extension on _StringsPtBr {
       case 'onboarding_feature_pack_hint':
         return 'Dicionários de japonês mais áudio de pronúncia JA/EN em um download';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Cartões e revisão';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Transforme consultas em cartões e escolha onde revisá-los';
       case 'onboarding_feature_video':
         return 'Vídeo';
       case 'onboarding_feature_video_hint':
         return 'Consulta em legendas e criação de cartões';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Navegue por sites dentro do Fushi e consulte palavras em qualquer página.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Navegue por sites dentro do Fushi: assista a sites de vídeo no player do Fushi, leia quadrinhos web no leitor do Fushi e consulte palavras em qualquer página. No desktop também dá para instalar a extensão do navegador.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Navegue por sites dentro do Fushi: leia quadrinhos e novels web no leitor do Fushi e consulte palavras em qualquer página. No desktop também dá para instalar a extensão do navegador.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Navegue por sites dentro do Fushi: leia quadrinhos e novels web no leitor do Fushi e consulte palavras em qualquer página.';
       case 'onboarding_features_modules_hint':
         return 'Páginas não marcadas ficam ocultas na barra de navegação. Dá para mudar quando quiser em Configurações → Aparência.';
       case 'onboarding_features_modules_title':
@@ -661029,15 +662418,15 @@ extension on _StringsPtBr {
       case 'onboarding_finish_body':
         return 'Você pode reabrir este guia a qualquer momento em Configurações → Sistema.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Na página Revisão, toque em Importar na barra superior e escolha um arquivo .apkg ou .colpkg exportado do Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Traga seus baralhos do Anki';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Próximos passos';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Os cartões que você cria vão para a aba Revisão; os cartões pendentes esperam por você lá.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Revise na aba Revisão';
       case 'onboarding_finish_summary_modules':
         return 'Páginas de biblioteca exibidas';
       case 'onboarding_finish_summary_none':
@@ -661234,33 +662623,33 @@ extension on _StringsPtBr {
       case 'onboarding_permission_storage_label':
         return 'Acesso a todos os arquivos';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Só pré-seleciona o próximo passo. Você ainda pode escolher os recursos um a um.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Consulte palavras enquanto lê e assiste, depois crie cartões e revise-os.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Aprender um idioma';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Dicionário, criação de cartões e revisão ficam ocultos. Reative-os quando quiser em Configurações.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Só ler, assistir e ouvir';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Para que você vai usar o Fushi?';
       case 'onboarding_reopen':
         return 'Guia de primeiros passos';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Envie os cartões ao Anki (AnkiDroid, AnkiMobile ou Anki para desktop com AnkiConnect) e revise-os lá. No próximo passo você conecta o Anki e escolhe um baralho e um tipo de nota.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Usar o Anki em vez disso…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Repetição espaçada integrada, agendada com RWKV por padrão (um modelo pequeno baixado no primeiro uso). Nada de instalar o Anki ou configurar algo: os cartões que você cria vão direto para a revisão.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Revisão do Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Os cartões criados a partir das consultas são revisados aqui. Você pode mudar isso a qualquer momento em Configurações → Criação de cartões.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Como revisar';
       case 'onboarding_sample_sentence_hint':
         return 'Toque para abri-la na página de consulta e depois toque em qualquer palavra.';
       case 'onboarding_sample_sentence_label':
@@ -661272,29 +662661,29 @@ extension on _StringsPtBr {
       case 'onboarding_skip_confirm_title':
         return 'Pular o guia de introdução?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Abrir baralhos';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Adicione seu primeiro cartão pela lista de baralhos';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Revise os cartões que você cria direto no Fushi — sem Anki e sem nada para configurar.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Um baralho padrão e o tipo de nota "Fushi Card" já estão configurados.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Pronto para usar';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'O agendamento usa o FSRS-7, um dos melhores algoritmos de repetição espaçada, e se ajusta ao seu próprio histórico de revisões.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'FSRS-7 por padrão';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Os cartões criados enquanto você lê ou assiste podem ir direto para a revisão.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'Da criação à revisão';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Seus baralhos e o progresso de revisão acompanham você nos outros dispositivos.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Sincroniza entre dispositivos';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Revisão integrada do Fushi';
       case 'onboarding_step_anki_action':
         return 'Configurações de criação de cartões';
       case 'onboarding_step_anki_action_desc':
@@ -663717,6 +665106,10 @@ extension on _StringsPtBr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Somente cartões Fushi. Modelos editados devem manter o elemento .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -664192,7 +665585,7 @@ extension on _StringsPtBr {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Importar';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -664804,6 +666197,42 @@ extension on _StringsPtBr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Nada';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Mostrar / ocultar barra superior';
+      case 'srs_review_gestures_back':
+        return 'Verso';
+      case 'srs_review_gestures_double_tap':
+        return 'Toque duplo';
+      case 'srs_review_gestures_front':
+        return 'Frente';
+      case 'srs_review_gestures_hint':
+        return 'Zonas de toque, toque duplo, toque longo e deslizes no cartão';
+      case 'srs_review_gestures_long_press':
+        return 'Toque longo';
+      case 'srs_review_gestures_note':
+        return 'Toques e toques longos só contam em espaço vazio: palavras, links, botões e texto selecionado mantêm o próprio comportamento. Enquanto o cartão ainda puder rolar nessa direção, deslizar é rolar.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Inativo enquanto só Again / Good são exibidos';
+      case 'srs_review_gestures_reset':
+        return 'Restaurar padrões';
+      case 'srs_review_gestures_swipe_down':
+        return 'Deslizar para baixo';
+      case 'srs_review_gestures_swipe_left':
+        return 'Deslizar para a esquerda';
+      case 'srs_review_gestures_swipe_right':
+        return 'Deslizar para a direita';
+      case 'srs_review_gestures_swipe_up':
+        return 'Deslizar para cima';
+      case 'srs_review_gestures_tap_center':
+        return 'Tocar no centro';
+      case 'srs_review_gestures_tap_left':
+        return 'Tocar à esquerda';
+      case 'srs_review_gestures_tap_right':
+        return 'Tocar à direita';
+      case 'srs_review_gestures_title':
+        return 'Gestos';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -680158,7 +681587,7 @@ extension on _StringsRu {
       case 'lookup_dictionary_font_hint':
         return 'Шрифты для окон словаря с живым предпросмотром японского текста';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Единый стиль словарей';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -680300,6 +681729,11 @@ extension on _StringsRu {
         return 'Режим текстов песен имеет собственную настройку размера шрифта. Вы можете настроить его в ⚙ Настройки → Типографика.';
       case 'lyrics_mode_hint_title':
         return 'Режим текстов песен';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -682841,7 +684275,7 @@ extension on _StringsRu {
       case 'nav_video':
         return 'Видео';
       case 'nav_web':
-        return 'Browser';
+        return 'Браузер';
       case 'network_proxy_address_hint':
         return 'HTTP-прокси, через который идут все запросы в публичный интернет';
       case 'network_proxy_auto_hint':
@@ -683056,7 +684490,7 @@ extension on _StringsRu {
       case 'onboarding_action_next':
         return 'Далее';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Прокрутите вниз';
       case 'onboarding_action_skip':
         return 'Пропустить';
       case 'onboarding_action_start':
@@ -683080,13 +684514,15 @@ extension on _StringsRu {
       case 'onboarding_anki_addon_no_anki':
         return 'Папка данных Anki не найдена. Установите Anki, откройте его один раз и повторите попытку.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Примерно через 30 секунд после создания карточки новые карточки в этой колоде упорядочиваются по частотности слов, чтобы частые слова шли первыми. Карточки на повторении не затрагиваются. Нужен Anki для компьютера с AnkiConnect (телефон может подключиться к AnkiConnect на компьютере); AnkiDroid и AnkiMobile не умеют менять порядок карточек.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Подключение';
       case 'onboarding_anki_fsrs_body':
         return 'В Anki встроен FSRS — один из лучших алгоритмов интервального повторения, — но пока вы его не включите, планирование идёт по SM-2 из 1980-х. FSRS анализирует вашу реальную историю повторений и предсказывает, когда вы начнёте забывать, так что вы сохраняете тот же уровень запоминания при меньшем числе повторений. Переключатель нужно включить один раз в самом Anki; на стороне Fushi ничего не меняется.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Встроенное повторение Fushi по умолчанию уже использует FSRS-7. Шаги ниже нужны, только если вы повторяете и в Anki.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Нажмите «Оптимизировать» под переключателем, чтобы подогнать параметры под вашу историю повторений, затем сохраните. При менее чем примерно 1000 повторений значения по умолчанию уже лучше SM-2, поэтому просто оптимизируйте снова, когда позанимаетесь подольше.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -683143,7 +684579,7 @@ extension on _StringsRu {
       case 'onboarding_click_lookup_tap_title':
         return 'Нажмите на слово';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'По умолчанию словари сохраняют собственные цвета. Чтобы перекрасить их метки, выделенные слова и рамки в акцентный цвет темы, включите «Единый стиль словарей» в настройках поиска слов.';
       case 'onboarding_feature_backup':
         return 'Резервное копирование и синхронизация';
       case 'onboarding_feature_backup_hint':
@@ -683179,21 +684615,21 @@ extension on _StringsRu {
       case 'onboarding_feature_pack_hint':
         return 'Японские словари и аудио произношения JA/EN одной загрузкой';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Карточки и повторение';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Превращайте найденные слова в карточки и выбирайте, где их повторять';
       case 'onboarding_feature_video':
         return 'Видео';
       case 'onboarding_feature_video_hint':
         return 'Поиск по субтитрам и создание карточек';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Открывайте сайты прямо в Fushi и ищите слова на любой странице.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Открывайте сайты прямо в Fushi: смотрите видеосайты в плеере Fushi, читайте веб-комиксы в читалке Fushi и ищите слова на любой странице. На компьютере также можно установить расширение для браузера.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Открывайте сайты прямо в Fushi: читайте веб-комиксы и веб-новеллы в читалке Fushi и ищите слова на любой странице. На компьютере также можно установить расширение для браузера.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Открывайте сайты прямо в Fushi: читайте веб-комиксы и веб-новеллы в читалке Fushi и ищите слова на любой странице.';
       case 'onboarding_features_modules_hint':
         return 'Неотмеченные страницы скрываются из панели навигации. Изменить можно в любой момент: Настройки → Внешний вид.';
       case 'onboarding_features_modules_title':
@@ -683207,15 +684643,15 @@ extension on _StringsRu {
       case 'onboarding_finish_body':
         return 'Вы можете снова открыть это руководство в любое время: Настройки → Система.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'На странице «Повторение» нажмите «Импорт» на верхней панели и выберите файл .apkg или .colpkg, экспортированный из Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Перенесите колоды Anki';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Что дальше';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Созданные карточки попадают на вкладку «Повторение»; там же вас ждут карточки, которые пора повторить.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Повторяйте на вкладке «Повторение»';
       case 'onboarding_finish_summary_modules':
         return 'Показанные страницы библиотеки';
       case 'onboarding_finish_summary_none':
@@ -683412,33 +684848,33 @@ extension on _StringsRu {
       case 'onboarding_permission_storage_label':
         return 'Доступ ко всем файлам';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Это лишь предварительно настраивает следующий шаг. Функции по-прежнему можно выбрать по одной.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Ищите слова во время чтения и просмотра, создавайте карточки и повторяйте их.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Изучать язык';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Словарь, создание карточек и повторение будут скрыты. Их можно в любой момент снова включить в настройках.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Просто читать, смотреть и слушать';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Для чего вы будете использовать Fushi?';
       case 'onboarding_reopen':
         return 'Руководство по началу работы';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Отправляйте карточки в Anki (AnkiDroid, AnkiMobile или Anki для компьютера с AnkiConnect) и повторяйте их там. На следующем шаге вы подключите Anki и выберете колоду и тип заметки.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Использовать Anki…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Встроенное интервальное повторение; по умолчанию расписание строит RWKV (небольшая модель, загружается при первом использовании). Не нужно ставить Anki и что-либо настраивать — созданные карточки сразу попадают на повторение.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Повторение в Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Карточки, созданные при поиске слов, повторяются здесь. Это можно изменить в любой момент в разделе Настройки → Создание карточек.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Способ повторения';
       case 'onboarding_sample_sentence_hint':
         return 'Нажмите, чтобы открыть его на странице поиска, затем нажмите на любое слово.';
       case 'onboarding_sample_sentence_label':
@@ -683450,29 +684886,29 @@ extension on _StringsRu {
       case 'onboarding_skip_confirm_title':
         return 'Пропустить вводное руководство?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Открыть колоды';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Добавьте первую карточку из списка колод';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Повторяйте созданные карточки прямо в Fushi — без Anki и без настройки.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Колода по умолчанию и тип заметки «Fushi Card» уже настроены.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Готово к работе';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'Расписание строится по FSRS-7 — одному из лучших алгоритмов интервального повторения — и подстраивается под вашу историю повторений.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'FSRS-7 по умолчанию';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Карточки, созданные во время чтения или просмотра, могут сразу попадать на повторение.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'От создания к повторению';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Колоды и прогресс повторения синхронизируются с другими вашими устройствами.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Синхронизация между устройствами';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Встроенное повторение Fushi';
       case 'onboarding_step_anki_action':
         return 'Настройки создания карточек';
       case 'onboarding_step_anki_action_desc':
@@ -685895,6 +687331,10 @@ extension on _StringsRu {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Только для карточек Fushi. В изменённых шаблонах должен остаться элемент .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -686370,7 +687810,7 @@ extension on _StringsRu {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Импорт';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -686982,6 +688422,42 @@ extension on _StringsRu {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Ничего';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Показать / скрыть верхнюю панель';
+      case 'srs_review_gestures_back':
+        return 'Оборотная сторона';
+      case 'srs_review_gestures_double_tap':
+        return 'Двойное касание';
+      case 'srs_review_gestures_front':
+        return 'Лицевая сторона';
+      case 'srs_review_gestures_hint':
+        return 'Зоны касания, двойное касание, долгое нажатие и свайпы по карточке';
+      case 'srs_review_gestures_long_press':
+        return 'Долгое нажатие';
+      case 'srs_review_gestures_note':
+        return 'Касания и долгие нажатия срабатывают только на пустом месте: слова, ссылки, кнопки и выделенный текст ведут себя как обычно. Пока карточку ещё можно прокрутить в эту сторону, свайп — это прокрутка.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Не действует, пока показаны только Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Сбросить по умолчанию';
+      case 'srs_review_gestures_swipe_down':
+        return 'Свайп вниз';
+      case 'srs_review_gestures_swipe_left':
+        return 'Свайп влево';
+      case 'srs_review_gestures_swipe_right':
+        return 'Свайп вправо';
+      case 'srs_review_gestures_swipe_up':
+        return 'Свайп вверх';
+      case 'srs_review_gestures_tap_center':
+        return 'Касание по центру';
+      case 'srs_review_gestures_tap_left':
+        return 'Касание слева';
+      case 'srs_review_gestures_tap_right':
+        return 'Касание справа';
+      case 'srs_review_gestures_title':
+        return 'Жесты';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -702309,7 +703785,7 @@ extension on _StringsTh {
       case 'lookup_dictionary_font_hint':
         return 'ฟอนต์สำหรับป๊อปอัปพจนานุกรม พร้อมตัวอย่างภาษาญี่ปุ่นสด';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'รวมสไตล์พจนานุกรมให้เหมือนกัน';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -702451,6 +703927,11 @@ extension on _StringsTh {
         return 'โหมดเนื้อเพลงมีการตั้งค่าขนาดตัวอักษรของตัวเอง คุณสามารถปรับได้ใน ⚙ การตั้งค่า → การจัดรูปแบบ';
       case 'lyrics_mode_hint_title':
         return 'โหมดเนื้อเพลง';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -704984,7 +706465,7 @@ extension on _StringsTh {
       case 'nav_video':
         return 'วิดีโอ';
       case 'nav_web':
-        return 'Browser';
+        return 'เบราว์เซอร์';
       case 'network_proxy_address_hint':
         return 'เซิร์ฟเวอร์พร็อกซี HTTP ที่ใช้กับคำขออินเทอร์เน็ตสาธารณะทั้งหมด';
       case 'network_proxy_auto_hint':
@@ -705197,7 +706678,7 @@ extension on _StringsTh {
       case 'onboarding_action_next':
         return 'ถัดไป';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'เลื่อนลง';
       case 'onboarding_action_skip':
         return 'ข้ามไปก่อน';
       case 'onboarding_action_start':
@@ -705221,13 +706702,15 @@ extension on _StringsTh {
       case 'onboarding_anki_addon_no_anki':
         return 'ไม่พบโฟลเดอร์ข้อมูล Anki ติดตั้ง Anki เปิดหนึ่งครั้ง แล้วลองอีกครั้ง';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'ประมาณ 30 วินาทีหลังสร้างการ์ด การ์ดใหม่ในสำรับนั้นจะถูกเรียงใหม่ตามความถี่ของคำ เพื่อให้คำที่พบบ่อยมาก่อน การ์ดที่อยู่ระหว่างทบทวนจะไม่ถูกแตะต้อง ต้องใช้ Anki บนเดสก์ท็อปพร้อม AnkiConnect (มือถือใช้ได้โดยเชื่อมต่อกับ AnkiConnect บนคอมพิวเตอร์) ส่วน AnkiDroid และ AnkiMobile เรียงการ์ดใหม่ไม่ได้';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'การเชื่อมต่อ';
       case 'onboarding_anki_fsrs_body':
         return 'Anki มี FSRS ในตัว ซึ่งเป็นหนึ่งในอัลกอริทึมการทบทวนแบบเว้นระยะที่ดีที่สุด แต่จะยังใช้การจัดตารางแบบ SM-2 จากยุค 1980 จนกว่าคุณจะเปิด FSRS FSRS อ่านประวัติการทบทวนจริงของคุณและทำนายว่าคุณใกล้จะลืมเมื่อไร ทำให้จำได้เท่าเดิมด้วยการทบทวนน้อยลง คุณเปิดสวิตช์นี้ครั้งเดียวภายใน Anki ฝั่ง Fushi ไม่มีอะไรเปลี่ยน';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'ระบบทบทวนในตัวของ Fushi ใช้ FSRS-7 เป็นค่าเริ่มต้นอยู่แล้ว คุณต้องทำขั้นตอนด้านล่างก็ต่อเมื่อทบทวนใน Anki ด้วย';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'กด ปรับให้เหมาะสม ใต้สวิตช์เพื่อปรับพารามิเตอร์ให้เข้ากับประวัติการทบทวนของคุณ แล้วบันทึก หากทบทวนน้อยกว่าประมาณ 1000 ครั้ง ค่าเริ่มต้นก็ดีกว่า SM-2 อยู่แล้ว เมื่อเรียนไปสักพักค่อยปรับให้เหมาะสมอีกครั้ง';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -705283,7 +706766,7 @@ extension on _StringsTh {
       case 'onboarding_click_lookup_tap_title':
         return 'แตะที่คำหนึ่งคำ';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'โดยค่าเริ่มต้นพจนานุกรมจะใช้สีของตัวเอง หากต้องการให้แท็ก คำที่เน้น และกรอบใช้สีเน้นของธีม ให้เปิด "รวมสไตล์พจนานุกรมให้เหมือนกัน" ในการตั้งค่าการค้นหาคำ';
       case 'onboarding_feature_backup':
         return 'สำรองข้อมูลและซิงค์';
       case 'onboarding_feature_backup_hint':
@@ -705319,21 +706802,21 @@ extension on _StringsTh {
       case 'onboarding_feature_pack_hint':
         return 'พจนานุกรมภาษาญี่ปุ่นพร้อมเสียงออกเสียง JA/EN ในการดาวน์โหลดครั้งเดียว';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'การ์ดและการทบทวน';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'เปลี่ยนคำที่ค้นหาเป็นการ์ดและเลือกที่ทบทวน';
       case 'onboarding_feature_video':
         return 'วิดีโอ';
       case 'onboarding_feature_video_hint':
         return 'ค้นคำจากคำบรรยายและสร้างการ์ด';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'ท่องเว็บภายใน Fushi และค้นหาคำได้ในทุกหน้า';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'ท่องเว็บภายใน Fushi: ดูเว็บวิดีโอด้วยเครื่องเล่นของ Fushi อ่านเว็บคอมิกด้วยตัวอ่านของ Fushi และค้นหาคำได้ในทุกหน้า บนเดสก์ท็อปยังติดตั้งส่วนขยายเบราว์เซอร์ได้ด้วย';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'ท่องเว็บภายใน Fushi: อ่านเว็บคอมิกและนิยายออนไลน์ด้วยตัวอ่านของ Fushi และค้นหาคำได้ในทุกหน้า บนเดสก์ท็อปยังติดตั้งส่วนขยายเบราว์เซอร์ได้ด้วย';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'ท่องเว็บภายใน Fushi: อ่านเว็บคอมิกและนิยายออนไลน์ด้วยตัวอ่านของ Fushi และค้นหาคำได้ในทุกหน้า';
       case 'onboarding_features_modules_hint':
         return 'หน้าที่ไม่ได้เลือกจะถูกซ่อนจากแถบนำทาง เปลี่ยนได้ทุกเมื่อที่ การตั้งค่า → รูปลักษณ์';
       case 'onboarding_features_modules_title':
@@ -705347,15 +706830,15 @@ extension on _StringsTh {
       case 'onboarding_finish_body':
         return 'คุณเปิดคู่มือนี้อีกครั้งได้ทุกเมื่อจาก การตั้งค่า → ระบบ';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'ในหน้า ทบทวน ให้แตะ นำเข้า ที่แถบด้านบน แล้วเลือกไฟล์ .apkg หรือ .colpkg ที่ส่งออกจาก Anki';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'นำสำรับ Anki ของคุณเข้ามา';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'ขั้นตอนถัดไป';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'การ์ดที่คุณสร้างจะไปอยู่ในแท็บ ทบทวน และการ์ดที่ถึงกำหนดจะรอคุณอยู่ที่นั่น';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'ทบทวนในแท็บ ทบทวน';
       case 'onboarding_finish_summary_modules':
         return 'หน้าคลังที่แสดง';
       case 'onboarding_finish_summary_none':
@@ -705552,33 +707035,33 @@ extension on _StringsTh {
       case 'onboarding_permission_storage_label':
         return 'สิทธิ์เข้าถึงไฟล์ทั้งหมด';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'ใช้เพียงเพื่อเลือกไว้ล่วงหน้าในขั้นตอนถัดไป คุณยังเลือกฟีเจอร์ทีละรายการได้';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'ค้นหาคำระหว่างอ่านและดู แล้วสร้างการ์ดไว้ทบทวน';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'เรียนภาษา';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'ซ่อนพจนานุกรม การสร้างการ์ด และการทบทวน เปิดกลับได้ทุกเมื่อในการตั้งค่า';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'แค่อ่าน ดู และฟัง';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'คุณจะใช้ Fushi ทำอะไร';
       case 'onboarding_reopen':
         return 'คู่มือเริ่มต้นใช้งาน';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'ส่งการ์ดไปที่ Anki (AnkiDroid, AnkiMobile หรือ Anki บนเดสก์ท็อปพร้อม AnkiConnect) แล้วทบทวนที่นั่น ขั้นตอนถัดไปจะเชื่อมต่อ Anki และเลือกสำรับกับประเภทโน้ต';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'ใช้ Anki แทน…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'ระบบทบทวนแบบเว้นระยะในตัว ใช้ RWKV จัดตารางเป็นค่าเริ่มต้น (โมเดลขนาดเล็กที่ดาวน์โหลดเมื่อใช้ครั้งแรก) ไม่ต้องติดตั้ง Anki และไม่ต้องตั้งค่าใด ๆ การ์ดที่คุณสร้างจะเข้าสู่การทบทวนทันที';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'ทบทวนใน Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'การ์ดที่สร้างจากการค้นหาคำจะถูกทบทวนที่นี่ เปลี่ยนได้ทุกเมื่อใน การตั้งค่า → สร้างการ์ด';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'วิธีทบทวน';
       case 'onboarding_sample_sentence_hint':
         return 'แตะเพื่อเปิดในหน้าค้นคำ แล้วแตะคำใดก็ได้';
       case 'onboarding_sample_sentence_label':
@@ -705590,29 +707073,29 @@ extension on _StringsTh {
       case 'onboarding_skip_confirm_title':
         return 'ข้ามคู่มือเริ่มต้นใช้งานหรือไม่';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'เปิดสำรับ';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'เพิ่มการ์ดใบแรกจากรายการสำรับ';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'ทบทวนการ์ดที่คุณสร้างได้ใน Fushi ทันที ไม่ต้องใช้ Anki และไม่ต้องตั้งค่าใด ๆ';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'เตรียมสำรับเริ่มต้นและประเภทโน้ต "Fushi Card" ไว้แล้ว';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'พร้อมใช้งาน';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'การจัดตารางใช้ FSRS-7 หนึ่งในอัลกอริทึมการทบทวนแบบเว้นระยะที่ดีที่สุด และปรับตามประวัติการทบทวนของคุณเอง';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'ใช้ FSRS-7 เป็นค่าเริ่มต้น';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'การ์ดที่สร้างระหว่างอ่านหรือดูสามารถเข้าสู่การทบทวนได้ทันที';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'จากสร้างการ์ดสู่การทบทวน';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'สำรับและความคืบหน้าการทบทวนจะตามคุณไปยังอุปกรณ์อื่น';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'ซิงก์ข้ามอุปกรณ์';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'ระบบทบทวนในตัวของ Fushi';
       case 'onboarding_step_anki_action':
         return 'การตั้งค่าการสร้างการ์ด';
       case 'onboarding_step_anki_action_desc':
@@ -708033,6 +709516,10 @@ extension on _StringsTh {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'เฉพาะการ์ด Fushi เท่านั้น เทมเพลตที่แก้ไขต้องคงองค์ประกอบ .fc-translation ไว้';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -708508,7 +709995,7 @@ extension on _StringsTh {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'นำเข้า';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -709120,6 +710607,42 @@ extension on _StringsTh {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'ไม่มี';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'แสดง / ซ่อนแถบด้านบน';
+      case 'srs_review_gestures_back':
+        return 'ด้านคำตอบ';
+      case 'srs_review_gestures_double_tap':
+        return 'แตะสองครั้ง';
+      case 'srs_review_gestures_front':
+        return 'ด้านคำถาม';
+      case 'srs_review_gestures_hint':
+        return 'โซนแตะ แตะสองครั้ง กดค้าง และปัดบนการ์ด';
+      case 'srs_review_gestures_long_press':
+        return 'กดค้าง';
+      case 'srs_review_gestures_note':
+        return 'การแตะและกดค้างนับเฉพาะพื้นที่ว่าง: คำ ลิงก์ ปุ่ม และข้อความที่เลือกยังทำงานตามเดิม ขณะที่การ์ดยังเลื่อนไปทางนั้นได้ การปัดคือการเลื่อน';
+      case 'srs_review_gestures_rating_hidden':
+        return 'ไม่มีผลขณะแสดงเฉพาะ Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'คืนค่าเริ่มต้น';
+      case 'srs_review_gestures_swipe_down':
+        return 'ปัดลง';
+      case 'srs_review_gestures_swipe_left':
+        return 'ปัดซ้าย';
+      case 'srs_review_gestures_swipe_right':
+        return 'ปัดขวา';
+      case 'srs_review_gestures_swipe_up':
+        return 'ปัดขึ้น';
+      case 'srs_review_gestures_tap_center':
+        return 'แตะกลาง';
+      case 'srs_review_gestures_tap_left':
+        return 'แตะซ้าย';
+      case 'srs_review_gestures_tap_right':
+        return 'แตะขวา';
+      case 'srs_review_gestures_title':
+        return 'ท่าทาง';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -724460,7 +725983,7 @@ extension on _StringsTr {
       case 'lookup_dictionary_font_hint':
         return 'Sözlük açılır pencereleri için yazı tipleri, canlı Japonca önizlemeyle';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Sözlük stillerini birleştir';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -724602,6 +726125,11 @@ extension on _StringsTr {
         return 'Şarkı sözü modunun kendi yazı boyutu ayarı vardır. ⚙ Ayarlar → Tipografi bölümünden ayarlayabilirsiniz.';
       case 'lyrics_mode_hint_title':
         return 'Şarkı Sözü Modu';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -727140,7 +728668,7 @@ extension on _StringsTr {
       case 'nav_video':
         return 'Video';
       case 'nav_web':
-        return 'Browser';
+        return 'Tarayıcı';
       case 'network_proxy_address_hint':
         return 'Tüm genel internet isteklerinde kullanılan HTTP proxy sunucusu';
       case 'network_proxy_auto_hint':
@@ -727353,7 +728881,7 @@ extension on _StringsTr {
       case 'onboarding_action_next':
         return 'İleri';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Aşağı kaydır';
       case 'onboarding_action_skip':
         return 'Şimdilik atla';
       case 'onboarding_action_start':
@@ -727377,13 +728905,15 @@ extension on _StringsTr {
       case 'onboarding_anki_addon_no_anki':
         return 'Anki veri klasörü bulunamadı. Anki\'yi yükleyin, bir kez açın ve tekrar deneyin.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Kart oluşturduktan yaklaşık 30 saniye sonra, o destedeki yeni kartlar kelime sıklığına göre yeniden sıralanır; böylece yaygın kelimeler önce gelir. Tekrar kartlarına asla dokunulmaz. AnkiConnect ile masaüstü Anki gerekir (telefon, bir bilgisayardaki AnkiConnect\'e bağlanarak kullanabilir); AnkiDroid ve AnkiMobile kartları yeniden sıralayamaz.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Bağlantı';
       case 'onboarding_anki_fsrs_body':
         return 'Anki\'de FSRS yerleşik olarak bulunur — en iyi aralıklı tekrar algoritmalarından biridir — ancak siz FSRS\'yi açana kadar 1980\'lerden kalma SM-2 ile zamanlamaya devam eder. FSRS gerçek tekrar geçmişinizi okur ve ne zaman unutmak üzere olduğunuzu tahmin eder; böylece aynı kalıcılığı daha az tekrarla korursunuz. Bu anahtarı Anki içinde bir kez çevirirsiniz; Fushi tarafında hiçbir şey değişmez.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Fushi\'nin yerleşik tekrarı varsayılan olarak zaten FSRS-7 kullanır. Aşağıdaki adımlara yalnızca Anki\'de de tekrar yapıyorsan ihtiyacın var.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Parametreleri kendi tekrar geçmişinize uydurmak için anahtarın altındaki Optimize et\'e basın, ardından kaydedin. Yaklaşık 1000 tekrarın altında varsayılanlar zaten SM-2\'yi geçer; bu yüzden bir süre çalıştıktan sonra yeniden optimize edin.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -727439,7 +728969,7 @@ extension on _StringsTr {
       case 'onboarding_click_lookup_tap_title':
         return 'Bir kelimeye dokunun';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Sözlükler varsayılan olarak kendi renklerini korur. Etiketlerini, vurgulanan kelimeleri ve kenarlıklarını tema vurgu renginle boyamak için arama ayarlarında "Sözlük stillerini birleştir" seçeneğini aç.';
       case 'onboarding_feature_backup':
         return 'Yedekleme ve senkronizasyon';
       case 'onboarding_feature_backup_hint':
@@ -727475,21 +729005,21 @@ extension on _StringsTr {
       case 'onboarding_feature_pack_hint':
         return 'Japonca sözlükler ve JA/EN telaffuz sesleri tek indirmede';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Kartlar ve tekrar';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Aramaları karta dönüştür ve nerede tekrar edeceğini seç';
       case 'onboarding_feature_video':
         return 'Video';
       case 'onboarding_feature_video_hint':
         return 'Altyazıda arama ve kart oluşturma';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Siteleri Fushi içinde gez ve her sayfada kelime ara.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Siteleri Fushi içinde gez: video sitelerini Fushi oynatıcısında izle, web çizgi romanlarını Fushi okuyucusunda oku ve her sayfada kelime ara. Masaüstünde tarayıcı uzantısını da kurabilirsin.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Siteleri Fushi içinde gez: web çizgi romanlarını ve web romanlarını Fushi okuyucusunda oku ve her sayfada kelime ara. Masaüstünde tarayıcı uzantısını da kurabilirsin.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Siteleri Fushi içinde gez: web çizgi romanlarını ve web romanlarını Fushi okuyucusunda oku ve her sayfada kelime ara.';
       case 'onboarding_features_modules_hint':
         return 'İşaretlenmeyen sayfalar gezinme çubuğunda gizlenir. İstediğiniz zaman Ayarlar → Görünüm\'den değiştirebilirsiniz.';
       case 'onboarding_features_modules_title':
@@ -727503,15 +729033,15 @@ extension on _StringsTr {
       case 'onboarding_finish_body':
         return 'Bu rehberi istediğiniz zaman Ayarlar → Sistem\'den yeniden açabilirsiniz.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Tekrar sayfasında üst çubuktaki İçe aktar\'a dokun ve Anki\'den dışa aktarılmış bir .apkg veya .colpkg dosyası seç.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Anki destelerini getir';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Sonraki adımlar';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Oluşturduğun kartlar Tekrar sekmesine düşer; zamanı gelen kartlar seni orada bekler.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Tekrar sekmesinde tekrar et';
       case 'onboarding_finish_summary_modules':
         return 'Gösterilen kitaplık sayfaları';
       case 'onboarding_finish_summary_none':
@@ -727708,33 +729238,33 @@ extension on _StringsTr {
       case 'onboarding_permission_storage_label':
         return 'Tüm dosyalara erişim';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Yalnızca bir sonraki adımı önceden ayarlar. Özellikleri yine tek tek seçebilirsin.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Okurken ve izlerken kelime ara, sonra kart oluşturup tekrar et.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Dil öğrenmek';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Sözlük, kart oluşturma ve tekrar gizlenir. İstediğin zaman Ayarlar\'dan yeniden açabilirsin.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Sadece okumak, izlemek ve dinlemek';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Fushi\'yi ne için kullanacaksın?';
       case 'onboarding_reopen':
         return 'Başlangıç rehberi';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Kartları Anki\'ye (AnkiDroid, AnkiMobile veya AnkiConnect ile masaüstü Anki) gönder ve orada tekrar et. Sonraki adımda Anki\'ye bağlanıp bir deste ve not türü seçersin.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Bunun yerine Anki kullan…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Yerleşik aralıklı tekrar; zamanlama varsayılan olarak RWKV ile yapılır (ilk kullanımda indirilen küçük bir model). Anki kurmana veya bir şey ayarlamana gerek yok — oluşturduğun kartlar doğrudan tekrara girer.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Fushi tekrarı';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Aramalardan oluşturduğun kartlar burada tekrar edilir. Bunu istediğin zaman Ayarlar → Kart Oluşturma bölümünden değiştirebilirsin.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Nasıl tekrar edersin';
       case 'onboarding_sample_sentence_hint':
         return 'Arama sayfasında açmak için dokunun, sonra herhangi bir kelimeye dokunun.';
       case 'onboarding_sample_sentence_label':
@@ -727746,29 +729276,29 @@ extension on _StringsTr {
       case 'onboarding_skip_confirm_title':
         return 'Başlangıç rehberi atlansın mı?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Desteleri aç';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'İlk kartını deste listesinden ekle';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Oluşturduğun kartları doğrudan Fushi içinde tekrar et — Anki gerekmez, ayarlanacak bir şey yok.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Varsayılan bir deste ve "Fushi Card" not türü zaten hazır.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Kullanıma hazır';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'Zamanlama, en iyi aralıklı tekrar algoritmalarından biri olan FSRS-7\'yi kullanır ve kendi tekrar geçmişine göre ayarlanır.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'Varsayılan olarak FSRS-7';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Okurken veya izlerken oluşturduğun kartlar doğrudan tekrara girebilir.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'Oluşturmadan tekrara';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Destelerin ve tekrar ilerlemen diğer cihazlarına da gelir.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Cihazlar arasında eşitlenir';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Fushi yerleşik tekrar';
       case 'onboarding_step_anki_action':
         return 'Kart oluşturma ayarları';
       case 'onboarding_step_anki_action_desc':
@@ -730189,6 +731719,10 @@ extension on _StringsTr {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Yalnızca Fushi kartları. Düzenlenen şablonlar .fc-translation öğesini korumalıdır';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -730664,7 +732198,7 @@ extension on _StringsTr {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'İçe aktar';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -731276,6 +732810,42 @@ extension on _StringsTr {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Hiçbiri';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Üst çubuğu göster / gizle';
+      case 'srs_review_gestures_back':
+        return 'Cevap yüzü';
+      case 'srs_review_gestures_double_tap':
+        return 'Çift dokunma';
+      case 'srs_review_gestures_front':
+        return 'Soru yüzü';
+      case 'srs_review_gestures_hint':
+        return 'Kart üzerinde dokunma bölgeleri, çift dokunma, uzun basma ve kaydırmalar';
+      case 'srs_review_gestures_long_press':
+        return 'Uzun basma';
+      case 'srs_review_gestures_note':
+        return 'Dokunma ve uzun basma yalnızca boş alanda geçerlidir: kelimeler, bağlantılar, düğmeler ve seçili metin kendi davranışını korur. Kart o yöne hâlâ kaydırılabiliyorsa, kaydırma hareketi kaydırmadır.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Yalnızca Again / Good gösterilirken etkisiz';
+      case 'srs_review_gestures_reset':
+        return 'Varsayılanlara dön';
+      case 'srs_review_gestures_swipe_down':
+        return 'Aşağı kaydır';
+      case 'srs_review_gestures_swipe_left':
+        return 'Sola kaydır';
+      case 'srs_review_gestures_swipe_right':
+        return 'Sağa kaydır';
+      case 'srs_review_gestures_swipe_up':
+        return 'Yukarı kaydır';
+      case 'srs_review_gestures_tap_center':
+        return 'Ortaya dokun';
+      case 'srs_review_gestures_tap_left':
+        return 'Sola dokun';
+      case 'srs_review_gestures_tap_right':
+        return 'Sağa dokun';
+      case 'srs_review_gestures_title':
+        return 'Hareketler';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -746613,7 +748183,7 @@ extension on _StringsVi {
       case 'lookup_dictionary_font_hint':
         return 'Phông cho cửa sổ từ điển, kèm xem trước tiếng Nhật trực tiếp';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return 'Thống nhất kiểu từ điển';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -746755,6 +748325,11 @@ extension on _StringsVi {
         return 'Chế độ lời bài hát có cài đặt cỡ chữ riêng. Bạn có thể điều chỉnh trong ⚙ Cài đặt → Kiểu chữ.';
       case 'lyrics_mode_hint_title':
         return 'Chế độ lời bài hát';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -749288,7 +750863,7 @@ extension on _StringsVi {
       case 'nav_video':
         return 'Video';
       case 'nav_web':
-        return 'Browser';
+        return 'Trình duyệt';
       case 'network_proxy_address_hint':
         return 'Máy chủ proxy HTTP dùng cho mọi yêu cầu ra Internet công cộng';
       case 'network_proxy_auto_hint':
@@ -749501,7 +751076,7 @@ extension on _StringsVi {
       case 'onboarding_action_next':
         return 'Tiếp theo';
       case 'onboarding_action_scroll_more':
-        return 'Scroll down';
+        return 'Cuộn xuống';
       case 'onboarding_action_skip':
         return 'Bỏ qua';
       case 'onboarding_action_start':
@@ -749525,13 +751100,15 @@ extension on _StringsVi {
       case 'onboarding_anki_addon_no_anki':
         return 'Không tìm thấy thư mục dữ liệu Anki. Cài Anki, mở một lần rồi thử lại.';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return 'Khoảng 30 giây sau khi bạn tạo thẻ, các thẻ mới trong bộ thẻ đó được sắp xếp lại theo tần suất từ để từ thông dụng xuất hiện trước. Thẻ đang ôn tập không bao giờ bị động đến. Cần Anki trên máy tính với AnkiConnect (điện thoại có thể dùng bằng cách kết nối tới AnkiConnect trên máy tính); AnkiDroid và AnkiMobile không thể sắp xếp lại thẻ.';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect (${address})';
       case 'onboarding_anki_backend_label':
         return 'Kết nối';
       case 'onboarding_anki_fsrs_body':
         return 'Anki có sẵn FSRS - một trong những thuật toán lặp lại ngắt quãng tốt nhất hiện nay - nhưng vẫn lập lịch bằng SM-2 từ thập niên 1980 cho đến khi bạn bật FSRS. FSRS đọc lịch sử ôn tập thực tế của bạn và dự đoán khi nào bạn sắp quên, nhờ đó giữ được cùng mức ghi nhớ với ít lượt ôn hơn. Bạn chỉ cần bật công tắc này một lần trong Anki; phía Fushi không có gì thay đổi.';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Ôn tập tích hợp của Fushi mặc định đã dùng FSRS-7. Bạn chỉ cần các bước dưới đây nếu cũng ôn tập trong Anki.';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return 'Nhấn Tối ưu hóa dưới công tắc để điều chỉnh tham số theo lịch sử ôn tập của riêng bạn, rồi lưu. Dưới khoảng 1000 lượt ôn, giá trị mặc định đã tốt hơn SM-2, nên hãy tối ưu lại sau khi bạn đã học một thời gian.';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -749588,7 +751165,7 @@ extension on _StringsVi {
       case 'onboarding_click_lookup_tap_title':
         return 'Chạm vào một từ';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return 'Mặc định các từ điển giữ màu riêng. Để tô lại nhãn, từ được nhấn mạnh và viền theo màu nhấn của giao diện, hãy bật "Thống nhất kiểu từ điển" trong cài đặt tra từ.';
       case 'onboarding_feature_backup':
         return 'Sao lưu & đồng bộ';
       case 'onboarding_feature_backup_hint':
@@ -749624,21 +751201,21 @@ extension on _StringsVi {
       case 'onboarding_feature_pack_hint':
         return 'Từ điển tiếng Nhật cùng âm thanh phát âm JA/EN trong một lần tải';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return 'Thẻ & ôn tập';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return 'Biến từ đã tra thành thẻ và chọn nơi ôn tập';
       case 'onboarding_feature_video':
         return 'Video';
       case 'onboarding_feature_video_hint':
         return 'Tra từ trên phụ đề và tạo thẻ';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return 'Duyệt web ngay trong Fushi và tra từ trên mọi trang.';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Duyệt web ngay trong Fushi: xem trang video bằng trình phát Fushi, đọc truyện tranh web bằng trình đọc Fushi và tra từ trên mọi trang. Trên máy tính bạn còn có thể cài tiện ích mở rộng trình duyệt.';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return 'Duyệt web ngay trong Fushi: đọc truyện tranh và tiểu thuyết web bằng trình đọc Fushi và tra từ trên mọi trang. Trên máy tính bạn còn có thể cài tiện ích mở rộng trình duyệt.';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return 'Duyệt web ngay trong Fushi: đọc truyện tranh và tiểu thuyết web bằng trình đọc Fushi và tra từ trên mọi trang.';
       case 'onboarding_features_modules_hint':
         return 'Những trang không đánh dấu sẽ bị ẩn khỏi thanh điều hướng. Đổi lại bất cứ lúc nào ở Cài đặt → Giao diện.';
       case 'onboarding_features_modules_title':
@@ -749652,15 +751229,15 @@ extension on _StringsVi {
       case 'onboarding_finish_body':
         return 'Bạn có thể mở lại hướng dẫn này bất cứ lúc nào từ Cài đặt → Hệ thống.';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return 'Trên trang Ôn tập, chạm Nhập ở thanh trên cùng và chọn tệp .apkg hoặc .colpkg đã xuất từ Anki.';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return 'Mang bộ thẻ Anki của bạn vào';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return 'Các bước tiếp theo';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return 'Thẻ bạn tạo sẽ vào thẻ Ôn tập; các thẻ đến hạn sẽ chờ bạn ở đó.';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return 'Ôn tập ở thẻ Ôn tập';
       case 'onboarding_finish_summary_modules':
         return 'Trang thư viện hiển thị';
       case 'onboarding_finish_summary_none':
@@ -749857,33 +751434,33 @@ extension on _StringsVi {
       case 'onboarding_permission_storage_label':
         return 'Quyền truy cập mọi tệp';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return 'Chỉ dùng để chọn sẵn cho bước tiếp theo. Bạn vẫn có thể chọn từng tính năng.';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return 'Tra từ khi đọc và xem, rồi tạo thẻ và ôn tập.';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return 'Học ngoại ngữ';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return 'Từ điển, tạo thẻ và ôn tập sẽ bị ẩn. Bạn có thể bật lại bất cứ lúc nào trong Cài đặt.';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return 'Chỉ đọc, xem và nghe';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return 'Bạn sẽ dùng Fushi để làm gì?';
       case 'onboarding_reopen':
         return 'Hướng dẫn bắt đầu';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return 'Gửi thẻ sang Anki (AnkiDroid, AnkiMobile hoặc Anki trên máy tính với AnkiConnect) và ôn tập ở đó. Bước tiếp theo sẽ kết nối Anki và chọn bộ thẻ cùng loại ghi chú.';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return 'Dùng Anki thay thế…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return 'Ôn tập ngắt quãng tích hợp, mặc định lên lịch bằng RWKV (một mô hình nhỏ tải về khi dùng lần đầu). Không cần cài Anki hay thiết lập gì — thẻ bạn tạo sẽ vào ôn tập ngay.';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Ôn tập Fushi';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return 'Thẻ bạn tạo khi tra từ sẽ được ôn tập ở đây. Bạn có thể đổi bất cứ lúc nào trong Cài đặt → Tạo thẻ.';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return 'Cách ôn tập';
       case 'onboarding_sample_sentence_hint':
         return 'Chạm để mở trong trang tra từ, rồi chạm vào một từ bất kỳ.';
       case 'onboarding_sample_sentence_label':
@@ -749895,29 +751472,29 @@ extension on _StringsVi {
       case 'onboarding_skip_confirm_title':
         return 'Bỏ qua hướng dẫn bắt đầu?';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return 'Mở bộ thẻ';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return 'Thêm thẻ đầu tiên từ danh sách bộ thẻ';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return 'Ôn tập thẻ bạn tạo ngay trong Fushi — không cần Anki, không cần thiết lập.';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return 'Bộ thẻ mặc định và loại ghi chú "Fushi Card" đã được thiết lập sẵn.';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return 'Dùng được ngay';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return 'Lịch ôn dùng FSRS-7, một trong những thuật toán lặp lại ngắt quãng tốt nhất, và tự điều chỉnh theo lịch sử ôn tập của bạn.';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return 'Mặc định dùng FSRS-7';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return 'Thẻ bạn tạo khi đọc hoặc xem có thể vào ôn tập ngay.';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return 'Từ tạo thẻ đến ôn tập';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return 'Bộ thẻ và tiến độ ôn tập theo bạn sang các thiết bị khác.';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return 'Đồng bộ giữa các thiết bị';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Ôn tập tích hợp của Fushi';
       case 'onboarding_step_anki_action':
         return 'Cài đặt tạo thẻ';
       case 'onboarding_step_anki_action_desc':
@@ -752340,6 +753917,10 @@ extension on _StringsVi {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return 'Chỉ thẻ Fushi. Mẫu đã chỉnh sửa phải giữ phần tử .fc-translation';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -752815,7 +754396,7 @@ extension on _StringsVi {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return 'Nhập';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -753427,6 +755008,42 @@ extension on _StringsVi {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return 'Không';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return 'Hiện / ẩn thanh trên cùng';
+      case 'srs_review_gestures_back':
+        return 'Mặt đáp án';
+      case 'srs_review_gestures_double_tap':
+        return 'Chạm hai lần';
+      case 'srs_review_gestures_front':
+        return 'Mặt câu hỏi';
+      case 'srs_review_gestures_hint':
+        return 'Vùng chạm, chạm hai lần, nhấn giữ và vuốt trên thẻ';
+      case 'srs_review_gestures_long_press':
+        return 'Nhấn giữ';
+      case 'srs_review_gestures_note':
+        return 'Chạm và nhấn giữ chỉ tính ở vùng trống: chữ, liên kết, nút và văn bản đang chọn vẫn hoạt động như cũ. Khi thẻ còn cuộn được theo hướng đó, vuốt là cuộn.';
+      case 'srs_review_gestures_rating_hidden':
+        return 'Không có tác dụng khi chỉ hiện Again / Good';
+      case 'srs_review_gestures_reset':
+        return 'Khôi phục mặc định';
+      case 'srs_review_gestures_swipe_down':
+        return 'Vuốt xuống';
+      case 'srs_review_gestures_swipe_left':
+        return 'Vuốt sang trái';
+      case 'srs_review_gestures_swipe_right':
+        return 'Vuốt sang phải';
+      case 'srs_review_gestures_swipe_up':
+        return 'Vuốt lên';
+      case 'srs_review_gestures_tap_center':
+        return 'Chạm ở giữa';
+      case 'srs_review_gestures_tap_left':
+        return 'Chạm bên trái';
+      case 'srs_review_gestures_tap_right':
+        return 'Chạm bên phải';
+      case 'srs_review_gestures_title':
+        return 'Cử chỉ';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':
@@ -768773,6 +770390,11 @@ extension on _StringsZhCn {
         return '歌词模式有独立的字号设置，可在 ⚙ 设置 → 排版 中调整。';
       case 'lyrics_mode_hint_title':
         return '歌词模式';
+      case 'lyrics_search_empty_hint':
+        return '搜索本书的有声书字幕';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            '仅显示前 ${n} 条（共 ${total} 条）';
       case 'lyrics_sentence_replay':
         return '重播当前句';
       case 'lyrics_skipped_text_show':
@@ -771511,6 +773133,8 @@ extension on _StringsZhCn {
         return '没找到 Anki 数据目录。先安装 Anki 并打开一次，再重试。';
       case 'onboarding_anki_auto_reposition_hint':
         return '制卡约 30 秒后，自动把该牌组的新卡按词频排序，常见词先学，不动复习卡。需要电脑版 Anki + AnkiConnect（手机可改连电脑上的 AnkiConnect）；AnkiDroid / AnkiMobile 无法重排。';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect（${address}）';
       case 'onboarding_anki_backend_label':
         return '连接方式';
       case 'onboarding_anki_fsrs_body':
@@ -774309,6 +775933,10 @@ extension on _StringsZhCn {
         return '已撤销';
       case 'srs_browse_unsuspended':
         return '已取消暂停';
+      case 'srs_card_appearance_blur_translation':
+        return '翻译模糊，点按显示';
+      case 'srs_card_appearance_blur_translation_desc':
+        return '仅 Fushi 卡片生效；改过模板时需保留 .fc-translation 元素';
       case 'srs_card_appearance_color_app':
         return '跟随 app 主题';
       case 'srs_card_appearance_color_custom':
@@ -775371,6 +776999,42 @@ extension on _StringsZhCn {
         return '今天的复习做完了';
       case 'srs_review_done_detail':
         return ({required Object n}) => '本次复习了 ${n} 张';
+      case 'srs_review_gestures_action_none':
+        return '无';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '显示 / 隐藏顶栏';
+      case 'srs_review_gestures_back':
+        return '答案面';
+      case 'srs_review_gestures_double_tap':
+        return '双击';
+      case 'srs_review_gestures_front':
+        return '问题面';
+      case 'srs_review_gestures_hint':
+        return '卡面点按分区、双击、长按与滑动';
+      case 'srs_review_gestures_long_press':
+        return '长按';
+      case 'srs_review_gestures_note':
+        return '点按与长按只认空白处：字、链接、按钮和选中的文字照旧各管各的。卡面还能往那个方向滚时，滑动就是滚动。';
+      case 'srs_review_gestures_rating_hidden':
+        return '评分栏只留「重来 / 良好」时不生效';
+      case 'srs_review_gestures_reset':
+        return '恢复默认';
+      case 'srs_review_gestures_swipe_down':
+        return '向下滑';
+      case 'srs_review_gestures_swipe_left':
+        return '向左滑';
+      case 'srs_review_gestures_swipe_right':
+        return '向右滑';
+      case 'srs_review_gestures_swipe_up':
+        return '向上滑';
+      case 'srs_review_gestures_tap_center':
+        return '点中间';
+      case 'srs_review_gestures_tap_left':
+        return '点左侧';
+      case 'srs_review_gestures_tap_right':
+        return '点右侧';
+      case 'srs_review_gestures_title':
+        return '手势';
       case 'srs_review_hide_hard_easy':
         return '隐藏「困难」和「简单」按钮';
       case 'srs_review_hide_hard_easy_hint':
@@ -790543,7 +792207,7 @@ extension on _StringsZhHk {
       case 'lookup_dictionary_font_hint':
         return '詞典彈窗使用的字體，可實時預覽日文效果';
       case 'lookup_dictionary_unified_style':
-        return 'Unify dictionary styles';
+        return '統一詞典樣式';
       case 'lookup_dictionary_unified_style_hint':
         return 'Recolor imported dictionaries\' tags, highlights and borders with the current accent color (Material). Turn off to keep each dictionary\'s original colors.';
       case 'lookup_history_favorite':
@@ -790685,6 +792349,11 @@ extension on _StringsZhHk {
         return '歌詞模式有自己的字體大小設定。你可以在 ⚙ 設定 → 排版 中調整。';
       case 'lyrics_mode_hint_title':
         return '歌詞模式';
+      case 'lyrics_search_empty_hint':
+        return 'Search this audiobook\'s subtitles';
+      case 'lyrics_search_results_truncated':
+        return ({required Object n, required Object total}) =>
+            'Showing the first ${n} of ${total} matches';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -793210,7 +794879,7 @@ extension on _StringsZhHk {
       case 'nav_video':
         return '影片';
       case 'nav_web':
-        return 'Browser';
+        return '瀏覽器';
       case 'network_proxy_address_hint':
         return '所有公網請求都會使用的 HTTP 代理伺服器';
       case 'network_proxy_auto_hint':
@@ -793445,13 +795114,15 @@ extension on _StringsZhHk {
       case 'onboarding_anki_addon_no_anki':
         return '找不到 Anki 資料夾。先安裝 Anki 並打開一次，再重試。';
       case 'onboarding_anki_auto_reposition_hint':
-        return 'About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can\'t reorder cards.';
+        return '製卡約 30 秒後，自動把該牌組的新卡按詞頻排序，常見詞先學，不動複習卡。需要電腦版 Anki + AnkiConnect（手機可改連電腦上的 AnkiConnect）；AnkiDroid / AnkiMobile 無法重排。';
+      case 'onboarding_anki_backend_ankiconnect':
+        return ({required Object address}) => 'AnkiConnect（${address}）';
       case 'onboarding_anki_backend_label':
         return '連接方式';
       case 'onboarding_anki_fsrs_body':
         return 'Anki 內建了 FSRS —— 目前最好的間隔重複演算法之一，但你不打開它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真實複習記錄預測遺忘時點，同樣的記憶效果複習量更少。這個開關只在 Anki 裡開一次，Fushi 這邊不用改任何設定。';
       case 'onboarding_anki_fsrs_srs_note':
-        return 'Fushi\'s built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.';
+        return 'Fushi 內置複習已預設使用 FSRS-7。只有你還要在 Anki 裏複習時，才需要下面這幾步。';
       case 'onboarding_anki_fsrs_step_optimize_desc':
         return '在開關下方點「最佳化」，讓參數貼合你自己的複習記錄，然後儲存。複習記錄不足約 1000 條時預設參數已經比 SM-2 準，攢夠以後再最佳化一次即可。';
       case 'onboarding_anki_fsrs_step_optimize_title':
@@ -793507,7 +795178,7 @@ extension on _StringsZhHk {
       case 'onboarding_click_lookup_tap_title':
         return '點一下文字';
       case 'onboarding_click_lookup_unified_style_desc':
-        return 'Dictionaries keep their own colors by default. To recolor their tags, emphasized words and borders with your theme accent, turn on "Unify dictionary styles" in the lookup settings.';
+        return '詞典預設保留自帶的配色。想讓標籤、強調字和邊框統一跟隨主題強調色，到查詞設定裏打開「統一詞典樣式」。';
       case 'onboarding_feature_backup':
         return '備份與同步';
       case 'onboarding_feature_backup_hint':
@@ -793543,21 +795214,21 @@ extension on _StringsZhHk {
       case 'onboarding_feature_pack_hint':
         return '一次下載：日語詞典 + 日／英發音音頻';
       case 'onboarding_feature_review':
-        return 'Cards & review';
+        return '製卡與複習';
       case 'onboarding_feature_review_hint':
-        return 'Turn lookups into cards and choose where to review them';
+        return '查詞後一鍵製卡，並選擇在哪裏複習';
       case 'onboarding_feature_video':
         return '影片';
       case 'onboarding_feature_video_hint':
         return '字幕查詞與製卡';
       case 'onboarding_feature_web_basic_hint':
-        return 'Browse sites inside Fushi and look up words on any page.';
+        return '在 Fushi 裏直接瀏覽網站，任何網頁都能查詞。';
       case 'onboarding_feature_web_hint':
-        return 'Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return '在 Fushi 裏直接瀏覽網站：影片網站用 Fushi 播放器看、網頁漫畫用 Fushi 閱讀器讀，任何網頁都能查詞；桌面版還可以裝瀏覽器擴充功能。';
       case 'onboarding_feature_web_reader_desktop_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.';
+        return '在 Fushi 裏直接瀏覽網站：網頁漫畫和網絡小說用 Fushi 閱讀器讀，任何網頁都能查詞；桌面版還可以裝瀏覽器擴充功能。';
       case 'onboarding_feature_web_reader_hint':
-        return 'Browse sites inside Fushi: read web comics and web novels in the Fushi reader, and look up words on any page.';
+        return '在 Fushi 裏直接瀏覽網站：網頁漫畫和網絡小說用 Fushi 閱讀器讀，任何網頁都能查詞。';
       case 'onboarding_features_modules_hint':
         return '未勾選的頁面不顯示在導航欄，之後可在「設定 → 外觀」改回。';
       case 'onboarding_features_modules_title':
@@ -793571,15 +795242,15 @@ extension on _StringsZhHk {
       case 'onboarding_finish_body':
         return '之後隨時可以在「設定 → 系統」重新打開本引導。';
       case 'onboarding_finish_import_desc':
-        return 'On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.';
+        return '在「複習」頁頂欄點「匯入」，選擇從 Anki 匯出的 .apkg 或 .colpkg 檔案。';
       case 'onboarding_finish_import_title':
-        return 'Bring your Anki decks';
+        return '匯入已有的 Anki 牌組';
       case 'onboarding_finish_next_title':
-        return 'Next steps';
+        return '下一步';
       case 'onboarding_finish_review_desc':
-        return 'Cards you make land on the Review tab; cards that are due wait for you there.';
+        return '製的卡會進入底欄的「複習」頁，到期的卡在那裏等你複習。';
       case 'onboarding_finish_review_title':
-        return 'Review on the Review tab';
+        return '在「複習」裏複習';
       case 'onboarding_finish_summary_modules':
         return '顯示的庫頁';
       case 'onboarding_finish_summary_none':
@@ -793775,33 +795446,33 @@ extension on _StringsZhHk {
       case 'onboarding_permission_storage_label':
         return '所有檔案存取權';
       case 'onboarding_purpose_hint':
-        return 'Only presets the next step. You can still pick features one by one.';
+        return '只用來預選下一步的功能，之後仍可逐項調整。';
       case 'onboarding_purpose_learning_desc':
-        return 'Look up words while reading and watching, then make cards and review them.';
+        return '看書、看動畫時查詞，製卡並複習。';
       case 'onboarding_purpose_learning_title':
-        return 'Learn a language';
+        return '學外語';
       case 'onboarding_purpose_media_desc':
-        return 'Dictionary, card creation and review are hidden. Turn them back on in Settings anytime.';
+        return '隱藏詞典、製卡和複習，之後可隨時在設定裏打開。';
       case 'onboarding_purpose_media_title':
-        return 'Just read, watch and listen';
+        return '只看書、看動畫、聽書';
       case 'onboarding_purpose_title':
-        return 'What will you use Fushi for?';
+        return '你打算用 Fushi 做甚麼？';
       case 'onboarding_reopen':
         return '新手引導';
       case 'onboarding_review_anki_desc':
-        return 'Send cards to Anki (AnkiDroid, AnkiMobile, or desktop Anki with AnkiConnect) and review them there. The next step connects Anki and picks a deck and note type.';
+        return '把卡片發到 Anki（AnkiDroid、AnkiMobile，或桌面版 Anki + AnkiConnect），在 Anki 裏複習。下一步需要連接 Anki 並選好牌組和筆記類型。';
       case 'onboarding_review_anki_title':
         return 'Anki';
       case 'onboarding_review_anki_toggle':
-        return 'Use Anki instead…';
+        return '改用 Anki…';
       case 'onboarding_review_fushi_desc':
-        return 'Built-in spaced repetition, scheduled with RWKV by default (a small model downloaded on first use). No Anki to install and nothing to set up — the cards you make go straight into review.';
+        return '內置間隔複習，排程預設使用 RWKV（首次使用時下載一個小模型）。無需安裝 Anki，也不用任何設定，製的卡直接進入複習。';
       case 'onboarding_review_fushi_title':
-        return 'Fushi review';
+        return 'Fushi 複習';
       case 'onboarding_review_method_body':
-        return 'Cards you make from lookups are reviewed here. You can change this anytime in Settings → Card creation.';
+        return '查詞時製的卡在這裏複習。之後隨時可以在「設定 → 製卡」裏更改。';
       case 'onboarding_review_method_title':
-        return 'How you review';
+        return '複習方式';
       case 'onboarding_sample_sentence_hint':
         return '點一下就會在查詞頁打開，再點其中任何一個詞。';
       case 'onboarding_sample_sentence_label':
@@ -793813,29 +795484,29 @@ extension on _StringsZhHk {
       case 'onboarding_skip_confirm_title':
         return '確定略過新手引導？';
       case 'onboarding_srs_action':
-        return 'Open decks';
+        return '打開牌組';
       case 'onboarding_srs_action_desc':
-        return 'Add your first card from the deck list';
+        return '從牌組列表添加第一張卡';
       case 'onboarding_srs_body':
-        return 'Review the cards you make right inside Fushi — no Anki needed, nothing to set up.';
+        return '直接在 Fushi 裏複習你製的卡：不需要 Anki，也不用任何設定。';
       case 'onboarding_srs_builtin_desc':
-        return 'A default deck and the Fushi Card note type are already set up.';
+        return '已經備好預設牌組和「Fushi 卡片」筆記類型。';
       case 'onboarding_srs_builtin_title':
-        return 'Ready to use';
+        return '開箱即用';
       case 'onboarding_srs_fsrs_desc':
-        return 'Scheduling uses FSRS-7, one of the best spaced-repetition algorithms, and adjusts to your own review history.';
+        return '排程用的是 FSRS-7——目前最好的間隔複習演算法之一，並會按你自己的複習記錄調整。';
       case 'onboarding_srs_fsrs_title':
-        return 'FSRS-7 by default';
+        return '預設使用 FSRS-7';
       case 'onboarding_srs_mining_desc':
-        return 'Cards you make while reading or watching can go straight into review.';
+        return '閱讀、看影片時製的卡可以直接進入複習。';
       case 'onboarding_srs_mining_title':
-        return 'From mining to review';
+        return '製卡直接進複習';
       case 'onboarding_srs_sync_desc':
-        return 'Your decks and review progress follow you to your other devices.';
+        return '牌組和複習進度會同步到你的其他裝置。';
       case 'onboarding_srs_sync_title':
-        return 'Syncs across devices';
+        return '多裝置自動同步';
       case 'onboarding_srs_title':
-        return 'Fushi review';
+        return 'Fushi 內置複習';
       case 'onboarding_step_anki_action':
         return '製卡設定';
       case 'onboarding_step_anki_action_desc':
@@ -796253,6 +797924,10 @@ extension on _StringsZhHk {
         return 'Undone';
       case 'srs_browse_unsuspended':
         return 'Cards unsuspended';
+      case 'srs_card_appearance_blur_translation':
+        return 'Blur translation until tapped';
+      case 'srs_card_appearance_blur_translation_desc':
+        return '只適用於 Fushi 卡片；改過範本時需保留 .fc-translation 元素';
       case 'srs_card_appearance_color_app':
         return 'Follow app theme';
       case 'srs_card_appearance_color_custom':
@@ -796728,7 +798403,7 @@ extension on _StringsZhHk {
       case 'srs_history_import_hint':
         return 'Cards you mined in Fushi before (word, reading, definition, sentence)';
       case 'srs_import':
-        return 'Import';
+        return '匯入';
       case 'srs_import_background_started':
         return 'Importing in the background. You can keep using Fushi.';
       case 'srs_import_colpkg_note':
@@ -797339,6 +799014,42 @@ extension on _StringsZhHk {
         return 'All done for today';
       case 'srs_review_done_detail':
         return ({required Object n}) => 'Reviewed ${n} cards in this session';
+      case 'srs_review_gestures_action_none':
+        return '無';
+      case 'srs_review_gestures_action_toggle_toolbar':
+        return '顯示 / 隱藏頂欄';
+      case 'srs_review_gestures_back':
+        return '答案面';
+      case 'srs_review_gestures_double_tap':
+        return '雙擊';
+      case 'srs_review_gestures_front':
+        return '問題面';
+      case 'srs_review_gestures_hint':
+        return '卡面點按分區、雙擊、長按與滑動';
+      case 'srs_review_gestures_long_press':
+        return '長按';
+      case 'srs_review_gestures_note':
+        return '點按與長按只認空白處：字、連結、按鈕和選取的文字照舊各管各的。卡面還能往那個方向捲動時，滑動就是捲動。';
+      case 'srs_review_gestures_rating_hidden':
+        return '評分欄只留「Again / Good」時不生效';
+      case 'srs_review_gestures_reset':
+        return '恢復預設';
+      case 'srs_review_gestures_swipe_down':
+        return '向下滑';
+      case 'srs_review_gestures_swipe_left':
+        return '向左滑';
+      case 'srs_review_gestures_swipe_right':
+        return '向右滑';
+      case 'srs_review_gestures_swipe_up':
+        return '向上滑';
+      case 'srs_review_gestures_tap_center':
+        return '點中間';
+      case 'srs_review_gestures_tap_left':
+        return '點左側';
+      case 'srs_review_gestures_tap_right':
+        return '點右側';
+      case 'srs_review_gestures_title':
+        return '手勢';
       case 'srs_review_hide_hard_easy':
         return 'Hide ‘Hard’ and ‘Easy’ buttons';
       case 'srs_review_hide_hard_easy_hint':

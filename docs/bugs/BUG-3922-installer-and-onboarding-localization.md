@@ -1,4 +1,4 @@
-## BUG-3915 · 安装器只有中文、onboarding 部分文字没翻译
+## BUG-3922 · 安装器只有中文、onboarding 部分文字没翻译
 - **报告**：2026-10-31（issue #2716：非中文系统用户反馈 Windows 安装器整屏中文、首次启动向导有些地方没翻译）
 - **真实性**：✅ 真 bug。安装器根因 `fushi/windows/installer/fushi.iss` 的 `[Languages]` 只有 `chinesesimplified` 一项 + 不带语言前缀的 `[Messages]` + `[Code]` 写死中文 + Inno 默认 `UsePreviousLanguage=yes`；onboarding 根因是 39 个 `onboarding_*` key 在 15 种语言里存的是英文原文，外加 `fushi/lib/src/pages/implementations/onboarding_wizard_page.dart` 的 `_ankiBackendLabel` 对所有语言写死全角括号 `AnkiConnect（host:port）`
 - **[x] ① 已修复** — 安装器：`[Languages]` 扩到与 app 一一对应的 17 种（english 第一）、`LanguageDetectionMethod=uilanguage` / `ShowLanguageDialog=auto` / `UsePreviousLanguage=no`、文案全部搬进 `fushi/windows/installer/messages.iss`（`[Messages]` 一律带前缀，`[CustomMessages]` 英文兜底 + 每种语言一份）、官方安装包不带的 4 个 `.isl` 入库到 `fushi/windows/installer/languages/`；MD3 布局按钮宽度按当前语言文字量出（德语原先被裁）、Show 之后重排的路径行在 RTL（阿拉伯语）下自行镜像（原先「浏览」按钮跑到窗口外）。onboarding：补齐 15 种语言的译文，新 key `onboarding_anki_backend_ankiconnect` 把括号排版交给各语言
