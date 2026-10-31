@@ -314,9 +314,15 @@ bool ShouldReserveSiglusKeyboardState() {
       (profile != nullptr && IsLegacySiglusLookup(*profile));
 }
 
+// Width/height pair offsets inside Gameexe's config object; height follows
+// width. Each value is fixed by the family's structural proof, never by title.
+constexpr uint32_t kSiglusDesignWidthLuna = 0x7c;
+constexpr uint32_t kSiglusDesignWidthLegacy = 0x90;
+constexpr uint32_t kSiglusDesignWidthCompact = 0x64;
+
 bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
-                          int32_t* width, int32_t* height, bool legacy = false,
-                          bool eightarg = false) {
+                          uint32_t width_offset, int32_t* width,
+                          int32_t* height) {
   if (module == nullptr || config_rva == 0 || width == nullptr || height == nullptr)
     return false;
   __try {
@@ -326,10 +332,50 @@ bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
     const uintptr_t config = *reinterpret_cast<const uint32_t*>(slot);
     if (config == 0 || (config & 3u) != 0 ||
         !fushi_voice_hook::exact_lookup::IsReadableSpan(
-            reinterpret_cast<const void*>(config), eightarg ? 0x6c : (legacy ? 0x98 : 0x84))) return false;
-    *width = *reinterpret_cast<const int32_t*>(config + (eightarg ? 0x64 : (legacy ? 0x90 : 0x7c)));
-    *height = *reinterpret_cast<const int32_t*>(config + (eightarg ? 0x68 : (legacy ? 0x94 : 0x80)));
+            reinterpret_cast<const void*>(config), width_offset + 8u)) return false;
+    *width = *reinterpret_cast<const int32_t*>(config + width_offset);
+    *height = *reinterpret_cast<const int32_t*>(config + width_offset + 4u);
     return fushi_voice_hook::siglus_viewport::ValidDesignSize(*width, *height);
+  } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+uint32_t SiglusDesignWidthOffset(
+    const fushi_voice_hook::SiglusLookupProfile& profile) {
+  if (IsEightArgSiglusLookup(profile) ||
+      profile.input_entry_abi == fushi_voice_hook::SiglusInputEntryAbi::kPlainFrame)
+    return kSiglusDesignWidthCompact;
+  return IsLegacySiglusLookup(profile) ? kSiglusDesignWidthLegacy
+                                       : kSiglusDesignWidthLuna;
+}
+
+// A protector that emulates imports (Enigma) leaves no user32 name in the
+// image: the key-poll loop's slot points at a private stub. The static proof
+// only fixes *which* slot the loop reads; this live proof establishes that the
+// slot really behaves as GetKeyState before anything is redirected through it.
+bool VerifyProtectorKeyStateSlot(HMODULE module, uintptr_t slot_rva,
+                                 decltype(&GetKeyState) real) {
+  if (module == nullptr || slot_rva == 0 || real == nullptr) return false;
+  __try {
+    const auto* slot = reinterpret_cast<const uint32_t*>(
+        reinterpret_cast<uintptr_t>(module) + slot_rva);
+    if (!fushi_voice_hook::exact_lookup::IsReadableSpan(slot, sizeof(*slot)))
+      return false;
+    const uintptr_t stub = *slot;
+    if (stub == 0) return false;
+    if (stub == reinterpret_cast<uintptr_t>(real)) return true;
+    MEMORY_BASIC_INFORMATION info = {};
+    if (VirtualQuery(reinterpret_cast<const void*>(stub), &info, sizeof(info)) == 0 ||
+        info.State != MEM_COMMIT || info.Type != MEM_PRIVATE ||
+        (info.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ |
+                         PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) == 0)
+      return false;
+    // Toggle bits are stable thread input state: an emulated GetKeyState must
+    // report exactly what user32 reports for them on the same thread.
+    const auto emulated = reinterpret_cast<decltype(&GetKeyState)>(stub);
+    for (const int vk : {VK_CAPITAL, VK_NUMLOCK, VK_SCROLL}) {
+      if ((emulated(vk) & 1) != (real(vk) & 1)) return false;
+    }
+    return true;
   } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
@@ -346,8 +392,13 @@ bool ResolveSiglusLiveFamily(HMODULE module,
         fushi_voice_hook::siglus_viewport::FindGetKeyStateImport(
             image, reinterpret_cast<uintptr_t>(key_state));
     fushi_voice_hook::SiglusLookupProfile luna_profile, native_profile;
-    const bool luna_matched = key_iat != 0 &&
-        fushi_voice_hook::ResolveSiglusFamilyProfile(image, key_iat, &luna_profile);
+    const bool luna_matched = key_iat != 0
+        ? fushi_voice_hook::ResolveSiglusFamilyProfile(image, key_iat, &luna_profile)
+        : fushi_voice_hook::ResolveSiglusFamilyProfileWithUnnamedKeySlot(
+              image, &luna_profile) &&
+          VerifyProtectorKeyStateSlot(
+              module, luna_profile.get_key_state_slot_rva,
+              reinterpret_cast<decltype(&GetKeyState)>(key_state));
     const bool native_matched = key_state != nullptr &&
         fushi_voice_hook::ResolveSiglusNativeFamilyProfile(
             image, reinterpret_cast<uintptr_t>(key_state), &native_profile);
@@ -424,12 +475,17 @@ bool ResolveSiglusLiveFamily(HMODULE module,
       return true;
     }
     *profile = luna_matched ? luna_profile : native_profile;
-    const uintptr_t config = luna_matched
+    const bool plain_frame = luna_matched &&
+        profile->input_entry_abi == fushi_voice_hook::SiglusInputEntryAbi::kPlainFrame;
+    const uintptr_t config = plain_frame
+        ? fushi_voice_hook::siglus_viewport::ResolvePlainFrameConfigSlot(image)
+        : luna_matched
         ? fushi_voice_hook::siglus_viewport::ResolveConfigSlot(image)
         : fushi_voice_hook::siglus_native_viewport::ResolveNativeConfigSlot(image);
     if (config == 0) return false;
     profile->viewport_config_rva = config;
-    return ReadSiglusDesignSize(module, config, &profile->viewport_width,
+    return ReadSiglusDesignSize(module, config, SiglusDesignWidthOffset(*profile),
+                                &profile->viewport_width,
                                 &profile->viewport_height);
   } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
@@ -887,6 +943,44 @@ void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
 
 #include "siglus_lookup_input.inc"
 
+// Protector slot transport: the loop reloads the slot every poll, so swapping
+// the pointer routes exactly that call site through the shared detour. The
+// original pointer is published before the swap; the swap fails closed.
+bool IsSiglusProtectorKeyStateSlotRedirected(
+    HMODULE module, const fushi_voice_hook::SiglusLookupProfile& profile) {
+  if (profile.get_key_state_slot_rva == 0) return true;
+  __try {
+    const auto* slot = reinterpret_cast<const uint32_t*>(
+        reinterpret_cast<uintptr_t>(module) + profile.get_key_state_slot_rva);
+    return *slot == reinterpret_cast<uintptr_t>(&Detour_SiglusGetKeyState);
+  } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+bool RedirectSiglusProtectorKeyStateSlot(
+    HMODULE module, const fushi_voice_hook::SiglusLookupProfile& profile) {
+  const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+  const auto real = user32 == nullptr ? nullptr :
+      reinterpret_cast<decltype(&GetKeyState)>(GetProcAddress(user32, "GetKeyState"));
+  if (!VerifyProtectorKeyStateSlot(module, profile.get_key_state_slot_rva, real))
+    return false;
+  auto* slot = reinterpret_cast<volatile LONG*>(
+      reinterpret_cast<uintptr_t>(module) + profile.get_key_state_slot_rva);
+  DWORD old_protect = 0;
+  if (!VirtualProtect(const_cast<LONG*>(slot), sizeof(LONG), PAGE_READWRITE,
+                      &old_protect)) return false;
+  const LONG original = *slot;
+  g_orig_SiglusGetKeyState = reinterpret_cast<decltype(&GetKeyState)>(
+      static_cast<uintptr_t>(static_cast<ULONG>(original)));
+  const LONG detour = static_cast<LONG>(
+      reinterpret_cast<uintptr_t>(&Detour_SiglusGetKeyState));
+  const bool swapped =
+      InterlockedCompareExchange(slot, detour, original) == original;
+  DWORD ignored = 0;
+  VirtualProtect(const_cast<LONG*>(slot), sizeof(LONG), old_protect, &ignored);
+  if (!swapped) g_orig_SiglusGetKeyState = nullptr;
+  return swapped;
+}
+
 bool InstallSiglusLookupSensor() {
   if (!IsSiglusLookupProfileMatched())
     return false;
@@ -900,7 +994,8 @@ bool InstallSiglusLookupSensor() {
   const bool legacy = IsLegacySiglusLookup(*profile);
   if (profile->viewport_config_rva != 0) {
     int32_t width = 0, height = 0;
-    if (!ReadSiglusDesignSize(module, profile->viewport_config_rva, &width, &height, legacy, eightarg) ||
+    if (!ReadSiglusDesignSize(module, profile->viewport_config_rva,
+                              SiglusDesignWidthOffset(*profile), &width, &height) ||
         width != profile->viewport_width || height != profile->viewport_height) {
       g_siglus_lookup_sensor_installed.store(false, std::memory_order_release);
       RevokeSiglusSampledInputShieldReady(g_siglus_sampled_input_property_window);
@@ -920,6 +1015,7 @@ bool InstallSiglusLookupSensor() {
                                         : g_orig_SiglusInputMessage != nullptr;
   if (glyph_installed &&
       g_orig_SiglusGetKeyState != nullptr &&
+      IsSiglusProtectorKeyStateSlotRedirected(module, *profile) &&
       (!legacy || g_orig_SiglusGetKeyboardState != nullptr) &&
       message_installed && cached_game != nullptr &&
       cached_game == g_siglus_sampled_input_property_window &&
@@ -949,6 +1045,17 @@ bool InstallSiglusLookupSensor() {
       return false;
     }
     SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGlyphHookReady);
+  }
+  if (profile->get_key_state_slot_rva != 0) {
+    // Already redirected once: a slot rewritten behind us is not re-taken.
+    const bool slot_ready = g_orig_SiglusGetKeyState != nullptr
+        ? IsSiglusProtectorKeyStateSlotRedirected(module, *profile)
+        : RedirectSiglusProtectorKeyStateSlot(module, *profile);
+    if (!slot_ready) {
+      RevokeSiglusSampledInputShieldReady(
+          g_siglus_sampled_input_property_window);
+      return false;
+    }
   }
   if (g_orig_SiglusGetKeyState == nullptr) {
     HMODULE user32 = GetModuleHandleW(L"user32.dll");

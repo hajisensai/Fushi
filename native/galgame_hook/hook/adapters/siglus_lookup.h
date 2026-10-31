@@ -56,6 +56,14 @@ enum class SiglusLookupTextFeed : uint8_t {
   kLunaScenarioLane = 2,
 };
 
+// The input-message entry of the Luna Scenario family exists in two compiler
+// shapes with the same (message, wparam, lparam) stdcall contract: an aligned
+// frame (Summer Pockets Reflection Blue) and a plain EBP frame (Rewrite+).
+enum class SiglusInputEntryAbi : uint8_t {
+  kAlignedFrame = 0,
+  kPlainFrame = 1,
+};
+
 inline bool HasUniqueSiglusLookupFamily(bool luna, bool native, bool legacy,
                                        bool eightarg = false) {
   return static_cast<int>(luna) + static_cast<int>(native) +
@@ -90,6 +98,12 @@ struct SiglusLookupProfile {
   uintptr_t get_keyboard_state_return_rva = 0;
   // Optional choice-text caller of the same glyph entry; zero when unproved.
   uintptr_t selection_glyph_return_rva = 0;
+  SiglusInputEntryAbi input_entry_abi = SiglusInputEntryAbi::kAlignedFrame;
+  // Nonzero only when the key sampler's pointer slot is not a named USER32
+  // import (a protector rebuilt the imports and emulates the API in a private
+  // stub). The sampler is then intercepted through this slot instead of the
+  // GetKeyState export, which the engine never reaches.
+  uintptr_t get_key_state_slot_rva = 0;
 };
 
 inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
@@ -250,13 +264,33 @@ inline constexpr exact_lookup::MaskedPattern kSprbInputMessageEntryPattern = {
     kSprbInputMessageEntryBytes, kSprbInputMessageEntryMask.data(),
     sizeof(kSprbInputMessageEntryBytes)};
 
+// Same dispatch as the SPRB entry (WM_LBUTTONDOWN split, then the 0x100..0x105
+// keyboard jump table) without the aligned frame; the input object is still a
+// global loaded into ECX. Measured on Rewrite+ (SiglusEngine 1.1.101.0).
+inline constexpr uint8_t kPlainFrameInputMessageEntryBytes[] = {
+    0x55, 0x8b, 0xec, 0x51, 0x8b, 0x45, 0x08, 0x8b, 0x0d,
+    0x00, 0x00, 0x00, 0x00, 0x3d, 0x01, 0x02, 0x00, 0x00,
+    0x0f, 0x87, 0x00, 0x00, 0x00, 0x00, 0x74, 0x00, 0x05,
+    0x00, 0xff, 0xff, 0xff, 0x83, 0xf8, 0x05,
+};
+inline constexpr auto kPlainFrameInputMessageEntryMask =
+    exact_lookup::MaskExceptRanges<sizeof(kPlainFrameInputMessageEntryBytes)>(
+        9u, 13u, 20u, 24u, 25u, 26u);
+inline constexpr exact_lookup::MaskedPattern
+    kPlainFrameInputMessageEntryPattern = {
+        kPlainFrameInputMessageEntryBytes,
+        kPlainFrameInputMessageEntryMask.data(),
+        sizeof(kPlainFrameInputMessageEntryBytes)};
+
 inline const exact_lookup::MaskedPattern* InputMessagePatternForProfile(
     const SiglusLookupProfile& profile) {
   if (profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion) {
     return &kAnemoiInputMessageEntryPattern;
   }
   if (profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane) {
-    return &kSprbInputMessageEntryPattern;
+    return profile.input_entry_abi == SiglusInputEntryAbi::kPlainFrame
+        ? &kPlainFrameInputMessageEntryPattern
+        : &kSprbInputMessageEntryPattern;
   }
   return nullptr;
 }
