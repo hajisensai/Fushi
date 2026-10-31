@@ -339,6 +339,32 @@ void main() {
         );
       },
     );
+
+    test('with coverage a worker takes its whole share at once, uncapped', () {
+      // Every coverage test process pays kDistCoverageProcessCost first, so
+      // more batches only add more of it.
+      final DistSpeed fast = measured(0.5);
+      const double sum = 1 / 0.5 + 1 / 2.0;
+      const int remaining = 1000000000;
+      expect(
+        distChunkBudgetMs(
+          remainingEligibleMs: remaining,
+          speed: fast,
+          liveSpeedSum: sum,
+          coverage: true,
+        ),
+        (remaining * (2 / sum)).round(),
+      );
+      expect(
+        distChunkBudgetMs(
+          remainingEligibleMs: 10,
+          speed: fast,
+          liveSpeedSum: sum,
+          coverage: true,
+        ),
+        (20000 / 0.5).round(),
+      );
+    });
   });
 
   test('isSafeDistTestPath', () {
@@ -467,5 +493,133 @@ void main() {
     expect(pick(any, 'local'), 'mac');
     expect(pick(win, 'local'), 'friend');
     expect(pick(mac, 'u@mac'), isNull, reason: 'the only Mac');
+  });
+
+  group('packages', () {
+    test('the app or packages/<name>, nothing else', () {
+      expect(isDistPackageDir(kDistAppPackage), isTrue);
+      expect(isDistPackageDir('packages/fushi_engine'), isTrue);
+      for (final String bad in <String>[
+        'packages',
+        'packages/../fushi',
+        'packages/a/b',
+        'packages/Fushi',
+        'tools/x',
+        '/etc',
+      ]) {
+        expect(isDistPackageDir(bad), isFalse, reason: bad);
+      }
+    });
+
+    test('pure Dart packages run under dart test, as on CI', () {
+      for (final String dir in <String>[
+        'packages/fushi_engine',
+        'packages/fushi_server',
+        'packages/fushi_compute',
+      ]) {
+        expect(
+          distTestRunnerOf(File('../$dir/pubspec.yaml').readAsStringSync()),
+          'dart',
+          reason: dir,
+        );
+      }
+      expect(
+        distTestRunnerOf(
+          File('../packages/fushi_dictionary/pubspec.yaml').readAsStringSync(),
+        ),
+        'flutter',
+      );
+      expect(
+        distTestRunnerOf(File('pubspec.yaml').readAsStringSync()),
+        'flutter',
+      );
+    });
+  });
+
+  group('distBuildOf', () {
+    test('flutter build: target first, options normalized, pub dropped', () {
+      final DistBuild? apk = distBuildOf(<String>[
+        r'D:\sdk\bin\flutter.bat',
+        'build',
+        'apk',
+        '--no-pub',
+        '--split-per-abi',
+        '--target-platform',
+        'android-arm64,android-x64',
+        '--debug',
+      ]);
+      expect(apk?.toolchain, DistToolchain.android);
+      expect(apk!.request, <String>[
+        'flutter',
+        'apk',
+        '--debug',
+        '--split-per-abi',
+        '--target-platform=android-arm64,android-x64',
+      ]);
+      expect(apk.runsOn(DistPlatform.macos), isTrue);
+      final DistBuild? win = distBuildOf(<String>[
+        'flutter',
+        'build',
+        'windows',
+      ]);
+      expect(win!.request, <String>['flutter', 'windows']);
+      expect(win.runsOn(DistPlatform.windows), isTrue);
+      expect(win.runsOn(DistPlatform.macos), isFalse);
+      expect(
+        distBuildOf(<String>[
+          'flutter',
+          'build',
+          'macos',
+          '--debug',
+        ])!.toolchain,
+        DistToolchain.macos,
+      );
+    });
+
+    test('gradlew tasks', () {
+      expect(
+        distBuildOf(<String>[
+          r'.\gradlew.bat',
+          ':app:assembleRelease',
+          '-Ptarget-platform=android-arm64',
+        ])!.request,
+        <String>[
+          'gradle',
+          ':app:assembleRelease',
+          '-Ptarget-platform=android-arm64',
+        ],
+      );
+      expect(distBuildOf(<String>['./gradlew', 'bundleDebug']), isNotNull);
+    });
+
+    test('anything carrying values out, needing signing, or unknown stays', () {
+      for (final List<String> c in <List<String>>[
+        <String>['flutter', 'build', 'ios'],
+        <String>['flutter', 'build', 'ipa'],
+        <String>['flutter', 'build', 'macos'],
+        <String>['flutter', 'build', 'macos', '--release'],
+        <String>['flutter', 'build', 'web'],
+        <String>['flutter', 'build', 'apk', '--dart-define=SECRET=x'],
+        <String>['flutter', 'build', 'apk', '--obfuscate'],
+        <String>['flutter', 'build', 'apk', '-t', 'lib/x.dart'],
+        <String>['flutter', 'build', 'apk', '--target-platform=ios'],
+        <String>['flutter', 'build', 'windows', '--split-per-abi'],
+        <String>[
+          'flutter',
+          'build',
+          'windows',
+          '--target-platform=android-arm',
+        ],
+        <String>['flutter', 'build'],
+        <String>['flutter', 'run'],
+        <String>['gradlew'],
+        <String>['gradlew', 'clean'],
+        <String>['gradlew', ':app:assembleRelease', '--stacktrace'],
+        <String>['gradlew', ':app:assembleRelease', '-Pk=v'],
+        <String>['dart', 'build'],
+      ]) {
+        expect(distBuildOf(c), isNull, reason: c.join(' '));
+      }
+    });
   });
 }

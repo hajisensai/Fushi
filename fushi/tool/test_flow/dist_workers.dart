@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'dist_coverage.dart';
 import 'dist_plan.dart';
 import 'dist_results.dart';
 import 'dist_snapshot.dart';
@@ -34,6 +35,10 @@ const List<String> kDistSshOptions = <String>[
 
 /// Path characters per local `flutter test` process (cmd.exe stops at 8191).
 const int kLocalMaxCommandChars = 6000;
+
+/// The same on a remote Windows worker (worker_run.sh's `max_chars`; Git
+/// Bash starts flutter without cmd.exe, so only Windows' 32767 cap applies).
+const int kRemoteWindowsMaxCommandChars = 24000;
 
 /// The ssh client for remote commands. On Windows the system OpenSSH
 /// (native Win32 pipes): Git for Windows' msys `ssh.exe`, which PATH often
@@ -104,6 +109,30 @@ const int kSshConnectionFailure = 255;
 /// `worker_shim.sh`: the worker refuses work for now (paused by its owner,
 /// low memory / disk). Not a failure of the batch.
 const int kDistShimBusy = 75;
+
+/// `worker_shim.sh`: the request itself is refused (unknown verb, bad
+/// argument).
+const int kDistShimRefused = 2;
+
+/// The exit code a failed remote command meant, read back from the tag the
+/// shim and the worker scripts put on the stderr line they turn work down
+/// with (`busy: ` [kDistShimBusy], `error: ` [kDistShimRefused],
+/// `toolchain: ` [kDistToolchainMissing]) when nothing came on stdout.
+/// A Windows worker's sshd runs the shim through its account's shell, which
+/// reports every failure as 1 (2026-10-30: the shim's exit 2 arrived as 1,
+/// and a busy worker read as three red batches); the tag survives that.
+int distRemoteExitCode(
+  int exitCode, {
+  required bool printedNothing,
+  required String stderr,
+}) {
+  if (exitCode == 0 || !printedNothing) return exitCode;
+  final String last = stderr.trim().split('\n').last.trim();
+  if (last.startsWith('busy: ')) return kDistShimBusy;
+  if (last.startsWith('toolchain: ')) return kDistToolchainMissing;
+  if (last.startsWith('error: ')) return kDistShimRefused;
+  return exitCode;
+}
 
 enum DistWorkerKind {
   /// This checkout, through the machine-wide heavy lease.
@@ -383,10 +412,15 @@ class DistBatchRun {
     required this.lines,
     this.infraError,
     this.busy,
+    this.coverage = const <String>[],
   });
 
   final int exitCode;
   final List<String> lines;
+
+  /// lcov texts of a `--coverage` batch (taken out of [lines]), one per
+  /// `flutter test` process; unchecked worker data (dist_coverage.dart).
+  final List<String> coverage;
 
   /// The run did not get a fair chance (connection lost, timed out, killed);
   /// the scheduler may hand the batch to another worker.
@@ -400,11 +434,68 @@ class DistBatchRun {
   bool get paused => busy != null && busy!.contains('paused');
 }
 
+/// Work `dist_test.dart` hands whole to one other machine, instead of test
+/// batches: `flutter analyze`, or a compile check.
+class DistJob {
+  const DistJob.analyze() : build = null;
+  const DistJob.build(DistBuild this.build);
+
+  final DistBuild? build;
+
+  String get label => build == null ? 'analyze' : 'build ${build!.label}';
+}
+
+/// worker_shim.sh's `hello` (`key=value` lines).
+Map<String, String> parseDistHello(String text) => <String, String>{
+  for (final String line in const LineSplitter().convert(text))
+    if (line.contains('='))
+      line.substring(0, line.indexOf('=')).trim(): line
+          .substring(line.indexOf('=') + 1)
+          .trim(),
+};
+
+/// Why a worker whose `hello` said [hello] cannot take [job]; null when it
+/// can. [shim]: an ssh-shim worker (a trusted one runs whatever script its
+/// checkout has, so only its toolchains matter).
+String? distJobBlocker(
+  Map<String, String> hello,
+  DistJob job, {
+  required bool shim,
+}) {
+  final DistBuild? build = job.build;
+  if (build == null) {
+    if (shim && hello['analyze'] != 'yes') {
+      return 'its shim predates analyze (the owner re-runs worker_setup)';
+    }
+  } else {
+    final String? have = hello['build'];
+    if (have == null) {
+      return 'its shim predates builds (the owner re-runs worker_setup)';
+    }
+    if (have == 'off') return 'builds turned off by the owner (ALLOW_BUILD=0)';
+    if (!have.split(',').contains(build.toolchain.name)) {
+      return 'no ${build.toolchain.name} toolchain there'
+          '${have.isEmpty ? '' : ' (has: $have)'}';
+    }
+  }
+  if (hello['paused'] == 'yes') return 'paused by the owner';
+  return null;
+}
+
 class DistWorkerError implements Exception {
   DistWorkerError(this.message);
   final String message;
   @override
   String toString() => message;
+}
+
+/// Test processes per batch on a worker configured for [configured] (null:
+/// flutter's default) when the caller capped them at [cap] (an explicit
+/// `flutter test -j N` handed to dist_test): the lower of the two.
+int? distEffectiveConcurrency(int? configured, int? cap) {
+  if (cap == null) return configured;
+  if (configured == null) return cap;
+  return configured < cap ? configured : cap;
 }
 
 abstract class DistWorker {
@@ -423,16 +514,59 @@ abstract class DistWorker {
       unit.eligibleFor(config.platform, config.capabilities) &&
       (!isDistItestPath(unit.path) || config.slotIndex == 1);
 
+  /// Path characters per test process this worker starts for a batch (0: no
+  /// limit, one process); see worker_run.sh's `max_chars`.
+  int get maxCommandChars => config.platform == DistPlatform.windows
+      ? kRemoteWindowsMaxCommandChars
+      : 0;
+
+  /// How many test processes [batch] runs as here.
+  int processCount(DistBatch batch) => maxCommandChars <= 0
+      ? 1
+      : splitByPathChars(batch.files, maxCommandChars).length;
+
   /// Gets the worker onto [snapshot] with dependencies and native libraries
   /// ready. Throws [DistWorkerError]; [log] receives the step output.
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log);
 
+  /// One batch of [package]'s suites ([kDistAppPackage] or `packages/<name>`;
+  /// a pure Dart package runs under `dart test`). With `--coverage` among
+  /// [flutterArgs] the batch's lcov comes back in [DistBatchRun.coverage].
   Future<DistBatchRun> run(
     DistBatch batch, {
+    required String package,
     required List<String> flutterArgs,
     required IOSink stderrLog,
     required Duration timeout,
+    int? concurrencyCap,
   });
+
+  /// `flutter analyze --no-pub [options] [paths]` of the prepared checkout
+  /// (tool/dist_test/worker_analyze.sh); [DistBatchRun.lines] is its stdout.
+  /// Only other machines analyze: the point is to take the work off this one.
+  Future<DistBatchRun> analyze(
+    List<String> paths, {
+    required List<String> options,
+    required IOSink stderrLog,
+    required Duration timeout,
+  });
+
+  /// The compile check [build] of the prepared checkout
+  /// (tool/dist_test/worker_build.sh); [DistBatchRun.lines] is its log.
+  /// Nothing it builds comes back. Other machines only, like [analyze].
+  Future<DistBatchRun> build(
+    DistBuild build, {
+    required IOSink stderrLog,
+    required Duration timeout,
+  });
+
+  /// Why this worker cannot take [job] right now, asked before anything is
+  /// pushed or prepared there; null when it can.
+  Future<String?> jobBlocker(DistJob job);
+
+  /// Stops waiting on a [prepare] still under way (the run needs this worker
+  /// no more): it fails soon after, and [finish] then releases the worker.
+  Future<void> abandon() async {}
 
   /// Kills whatever batch is in flight (Ctrl-C).
   Future<void> cancel();
@@ -516,6 +650,9 @@ class LocalDistWorker extends DistWorker {
   String get _fushiDir => '$repoRoot/fushi';
 
   @override
+  int get maxCommandChars => kLocalMaxCommandChars;
+
+  @override
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log) async {
     // pub workspace: the resolution lands in the workspace root's .dart_tool.
     if (!File('$repoRoot/.dart_tool/package_config.json').existsSync() &&
@@ -552,36 +689,64 @@ class LocalDistWorker extends DistWorker {
   @override
   Future<DistBatchRun> run(
     DistBatch batch, {
+    required String package,
     required List<String> flutterArgs,
     required IOSink stderrLog,
     required Duration timeout,
+    int? concurrencyCap,
   }) async {
     if (batch.files.any(isDistItestPath)) {
       return _runItests(batch, stderrLog: stderrLog, timeout: timeout);
     }
+    final String dir = '$repoRoot/$package';
+    final bool dart =
+        distTestRunnerOf(File('$dir/pubspec.yaml').readAsStringSync()) ==
+        'dart';
+    final bool coverage = flutterArgs.contains('--coverage');
+    final List<String> args = <String>[
+      for (final String a in flutterArgs)
+        if (a != '--coverage') a,
+    ];
     // cmd.exe (flutter.bat) caps a command line at 8191 characters, so a big
     // batch runs as several back-to-back processes; their event streams are
     // concatenated (each starts with its own `start` event).
     final List<String> lines = <String>[];
+    final List<String> lcov = <String>[];
     final Stopwatch elapsed = Stopwatch()..start();
     int exitCode = 0;
+    int part = 0;
     for (final List<String> chunk in splitByPathChars(
       batch.files,
       kLocalMaxCommandChars,
     )) {
+      final File? covFile = coverage
+          ? File(
+              '${Directory.systemTemp.path}/dist_cov_${pid}_${batch.id}_${part++}.info',
+            )
+          : null;
       final Process process = await Process.start(
-        FlutterSdkExecutables.current().flutter(),
+        dart
+            ? FlutterSdkExecutables.current().dart()
+            : FlutterSdkExecutables.current().flutter(),
         <String>[
           'test',
-          '--no-pub',
+          if (!dart) '--no-pub',
           '--reporter',
           'json',
-          // The heavy lease books memory for heavy.dart's default.
-          '--concurrency=${config.concurrency ?? kDefaultTestConcurrency}',
-          ...flutterArgs,
+          // The heavy lease books memory for heavy.dart's default. One at a
+          // time with coverage ([kDistCoverageConcurrency]).
+          if (covFile != null)
+            '--concurrency=$kDistCoverageConcurrency'
+          else
+            '--concurrency=${distEffectiveConcurrency(config.concurrency ?? kDefaultTestConcurrency, concurrencyCap)}',
+          if (covFile != null) ...<String>[
+            '--coverage',
+            '--coverage-path=${covFile.path}',
+          ],
+          ...args,
           ...chunk,
         ],
-        workingDirectory: _fushiDir,
+        workingDirectory: dir,
         environment: distTestEnvironment(Platform.environment),
         includeParentEnvironment: false,
         runInShell: Platform.isWindows,
@@ -601,6 +766,10 @@ class LocalDistWorker extends DistWorker {
       } finally {
         _process = null;
       }
+      if (covFile != null && covFile.existsSync()) {
+        lcov.add(covFile.readAsStringSync());
+        covFile.deleteSync();
+      }
       lines.addAll(run.lines);
       if (exitCode == 0) exitCode = run.exitCode;
       if (run.infraError != null) {
@@ -608,10 +777,11 @@ class LocalDistWorker extends DistWorker {
           exitCode: run.exitCode,
           lines: lines,
           infraError: run.infraError,
+          coverage: lcov,
         );
       }
     }
-    return DistBatchRun(exitCode: exitCode, lines: lines);
+    return DistBatchRun(exitCode: exitCode, lines: lines, coverage: lcov);
   }
 
   /// Integration tests: the app is built once per run from the generated
@@ -850,6 +1020,28 @@ class LocalDistWorker extends DistWorker {
   }
 
   @override
+  Future<DistBatchRun> analyze(
+    List<String> paths, {
+    required List<String> options,
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) => throw DistWorkerError(
+    'analyze is only handed to other machines; run it here directly',
+  );
+
+  @override
+  Future<DistBatchRun> build(
+    DistBuild build, {
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) => throw DistWorkerError(
+    'compile checks are only handed to other machines; build here directly',
+  );
+
+  @override
+  Future<String?> jobBlocker(DistJob job) async => 'this machine';
+
+  @override
   Future<void> cancel() async {
     final Process? p = _process;
     if (p != null) _killTree(p);
@@ -915,10 +1107,61 @@ class SshDistWorker extends DistWorker {
     <String>['-n', ..._sshBase, remoteCommand],
   );
 
+  /// The prepare step's process (ssh / git push) while one runs.
+  Process? _stepProcess;
+
+  /// [abandon] was called: no further prepare step starts.
+  bool _abandoned = false;
+
+  /// Runs one prepare step as a process [abandon] can stop.
+  Future<ProcessResult> _step(
+    String executable,
+    List<String> args, {
+    Map<String, String>? environment,
+    String? workingDirectory,
+  }) async {
+    if (_abandoned) throw DistWorkerError('$name: no longer needed');
+    final Process p = await Process.start(
+      executable,
+      args,
+      environment: environment,
+      workingDirectory: workingDirectory,
+    );
+    _stepProcess = p;
+    await p.stdin.close();
+    const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
+    final Future<String> out = p.stdout.transform(decoder).join();
+    final Future<String> err = p.stderr.transform(decoder).join();
+    final int code = await p.exitCode;
+    _stepProcess = null;
+    final ProcessResult r = ProcessResult(p.pid, code, await out, await err);
+    if (_abandoned) throw DistWorkerError('$name: no longer needed');
+    return r;
+  }
+
+  @override
+  Future<void> abandon() async {
+    _abandoned = true;
+    final Process? p = _stepProcess;
+    if (p == null) return;
+    // The local end only (with git push's ssh child): a remote prepare runs
+    // on to warm the caches, and the next run's worker_kill.sh waits for it.
+    if (Platform.isWindows) {
+      await Process.run('taskkill', <String>['/PID', '${p.pid}', '/T', '/F']);
+    } else {
+      p.kill();
+    }
+  }
+
   Future<void> _sshChecked(String step, String command, IOSink log) async {
-    final ProcessResult r = await _ssh(command);
+    final Stopwatch watch = Stopwatch()..start();
+    final ProcessResult r = await _step(distSshExecutable(), <String>[
+      '-n',
+      ..._sshBase,
+      command,
+    ]);
     log
-      ..writeln('== $step (exit ${r.exitCode})')
+      ..writeln('== $step (exit ${r.exitCode}, ${watch.elapsed.inSeconds}s)')
       ..write(r.stdout)
       ..write(r.stderr);
     if (r.exitCode != 0) {
@@ -1014,19 +1257,20 @@ class SshDistWorker extends DistWorker {
       for (final String a in _sshBase.sublist(0, _sshBase.length - 1))
         shellQuote(a),
     ].join(' ');
-    final ProcessResult push = await Process.run(
+    final Stopwatch watch = Stopwatch()..start();
+    final ProcessResult push = await _step(
       'git',
       <String>[
         'push',
         '--quiet',
         '${config.host}:$remotePath',
-        '${snapshot.commit}:refs/dist/$runId',
+        ...distPushRefspecs(snapshot, runId),
       ],
       workingDirectory: repoRoot,
       environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
     );
     log
-      ..writeln('== push (exit ${push.exitCode})')
+      ..writeln('== push (exit ${push.exitCode}, ${watch.elapsed.inSeconds}s)')
       ..write(push.stdout)
       ..write(push.stderr);
     if (push.exitCode != 0) {
@@ -1062,14 +1306,19 @@ class SshDistWorker extends DistWorker {
   @override
   Future<DistBatchRun> run(
     DistBatch batch, {
+    required String package,
     required List<String> flutterArgs,
     required IOSink stderrLog,
     required Duration timeout,
+    int? concurrencyCap,
   }) async {
     for (final String f in batch.files) {
       if (!isSafeDistTestPath(f)) {
         throw DistWorkerError('refusing to send unsafe test path "$f"');
       }
+    }
+    if (!isDistPackageDir(package)) {
+      throw DistWorkerError('refusing to send package "$package"');
     }
     final bool itest = batch.files.any(isDistItestPath);
     if (itest && (_shim || !batch.files.every(isDistItestPath))) {
@@ -1077,21 +1326,26 @@ class SshDistWorker extends DistWorker {
         'integration tests run alone and never through the shim',
       );
     }
+    // worker_run.sh (from the pushed snapshot, behind any shim) takes the
+    // package option off and runs that package's suites.
+    final List<String> args = <String>[
+      if (package != kDistAppPackage)
+        '$kDistPackageOption=${package.split('/').last}',
+      ...flutterArgs,
+    ];
     final String remote;
     if (itest) {
       remote = '${_prefix}bash fushi/tool/dist_test/worker_run.sh itest';
     } else if (_shim) {
       remote = shimRequest('run', <String>[
         '${config.slotIndex}',
-        '${config.concurrency ?? 0}',
-        ...flutterArgs,
+        '${distEffectiveConcurrency(config.concurrency, concurrencyCap) ?? 0}',
+        ...args,
       ]);
     } else {
-      final String args = <String>[
-        '${config.concurrency ?? 0}',
-        ...flutterArgs.map(shellQuote),
-      ].join(' ');
-      remote = '${_prefix}bash fushi/tool/dist_test/worker_run.sh $args';
+      remote =
+          '${_prefix}bash fushi/tool/dist_test/worker_run.sh '
+          '${<String>['${distEffectiveConcurrency(config.concurrency, concurrencyCap) ?? 0}', ...args.map(shellQuote)].join(' ')}';
     }
     final Process process = await Process.start(distSshExecutable(), <String>[
       ..._sshBase,
@@ -1114,10 +1368,15 @@ class SshDistWorker extends DistWorker {
     } finally {
       _process = null;
     }
-    if (run.exitCode == kDistShimBusy && run.lines.isEmpty) {
-      final String reason = errors.toString().trim().split('\n').last;
+    final int code = distRemoteExitCode(
+      run.exitCode,
+      printedNothing: run.lines.isEmpty,
+      stderr: errors.toString(),
+    );
+    if (code == kDistShimBusy) {
+      final String reason = errors.toString().trim().split('\n').last.trim();
       return DistBatchRun(
-        exitCode: run.exitCode,
+        exitCode: code,
         lines: const <String>[],
         busy: reason.isEmpty ? 'busy' : reason,
       );
@@ -1129,7 +1388,160 @@ class SshDistWorker extends DistWorker {
         infraError: run.infraError,
       );
     }
+    final ({List<String> lines, List<String> lcov}) split = splitDistCoverage(
+      run.lines,
+    );
+    return DistBatchRun(
+      exitCode: run.exitCode,
+      lines: split.lines,
+      infraError: run.infraError,
+      coverage: split.lcov,
+    );
+  }
+
+  @override
+  Future<DistBatchRun> analyze(
+    List<String> paths, {
+    required List<String> options,
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) async {
+    for (final String p in paths) {
+      if (!isSafeDistAnalyzePath(p)) {
+        throw DistWorkerError('refusing to send unsafe analyze path "$p"');
+      }
+    }
+    return _job(
+      _shim
+          ? shimRequest('analyze', <String>['${config.slotIndex}', ...options])
+          : '${_prefix}bash fushi/tool/dist_test/worker_analyze.sh '
+                '${options.map(shellQuote).join(' ')}',
+      input: paths.isEmpty ? '' : '${paths.join('\n')}\n',
+      stderrLog: stderrLog,
+      timeout: timeout,
+    );
+  }
+
+  @override
+  Future<DistBatchRun> build(
+    DistBuild build, {
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) {
+    // Builds download (Gradle, CMake), so they get the prepare step's
+    // environment (the owner's prepare.env behind a shim).
+    final String env = <String>[
+      for (final MapEntry<String, String> e in config.prepareEnv.entries)
+        '${e.key}=${shellQuote(e.value)}',
+    ].join(' ');
+    return _job(
+      _shim
+          ? shimRequest('build', <String>[
+              '${config.slotIndex}',
+              ...build.request,
+            ])
+          : '$_prefix${env.isEmpty ? '' : 'env $env '}'
+                'bash fushi/tool/dist_test/worker_build.sh '
+                '${build.request.map(shellQuote).join(' ')}',
+      input: '',
+      stderrLog: stderrLog,
+      timeout: timeout,
+    );
+  }
+
+  /// One [analyze] / [build] request: [input] on its stdin, its stdout
+  /// collected. Turned down (busy), refused by an older shim, or a missing
+  /// toolchain come back as not run, not as a red result.
+  Future<DistBatchRun> _job(
+    String remote, {
+    required String input,
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) async {
+    final Process process = await Process.start(distSshExecutable(), <String>[
+      ..._sshBase,
+      remote,
+    ]);
+    _process = process;
+    process.stdin.write(input);
+    await process.stdin.close();
+    final StringBuffer errors = StringBuffer();
+    final DistBatchRun run;
+    try {
+      run = await _drive(
+        process,
+        stderrLog: stderrLog,
+        timeout: timeout,
+        kill: _killRemote,
+        connectionFailure: (int code) => code,
+        stderrCopy: errors,
+      );
+    } finally {
+      _process = null;
+    }
+    final String reason = errors.toString().trim().split('\n').last.trim();
+    final int code = distRemoteExitCode(
+      run.exitCode,
+      printedNothing: run.lines.isEmpty,
+      stderr: errors.toString(),
+    );
+    if (code == kDistShimBusy) {
+      return DistBatchRun(
+        exitCode: code,
+        lines: const <String>[],
+        busy: reason.isEmpty ? 'busy' : reason,
+      );
+    }
+    // A shim installed before the verb existed refuses it: this machine
+    // cannot take the work, which is not a red result.
+    if (_shim && code == kDistShimRefused) {
+      return DistBatchRun(
+        exitCode: code,
+        lines: const <String>[],
+        infraError: 'refused by the worker shim: $reason',
+      );
+    }
+    if (code == kDistToolchainMissing) {
+      return DistBatchRun(
+        exitCode: code,
+        lines: const <String>[],
+        infraError: reason.isEmpty ? 'toolchain missing' : reason,
+      );
+    }
     return run;
+  }
+
+  @override
+  Future<String?> jobBlocker(DistJob job) async {
+    // A trusted machine runs the checkout's own analyze script; only a
+    // build depends on what is installed there.
+    if (!_shim && job.build == null) return null;
+    final ProcessResult r = await _hello();
+    if (r.exitCode != 0) {
+      return 'unreachable (exit ${r.exitCode})';
+    }
+    return distJobBlocker(parseDistHello('${r.stdout}'), job, shim: _shim);
+  }
+
+  /// The shim's `hello`. A trusted machine has no shim installed: the same
+  /// script goes over on stdin, so both kinds report their toolchains alike.
+  Future<ProcessResult> _hello() async {
+    if (_shim) return _ssh('hello');
+    final Process p = await Process.start(distSshExecutable(), <String>[
+      ..._sshBase,
+      '${_pathPrefix}SSH_ORIGINAL_COMMAND=hello bash -s',
+    ]);
+    p.stdin.write(
+      File(
+        '$repoRoot/fushi/tool/dist_test/worker_shim.sh',
+      ).readAsStringSync().replaceAll('\r\n', '\n'),
+    );
+    await p.stdin.close();
+    const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
+    final Future<String> out = p.stdout.transform(decoder).join();
+    final Future<String> err = p.stderr.transform(decoder).join();
+    final int code = await p.exitCode;
+    return ProcessResult(p.pid, code, await out, await err);
   }
 
   Future<void> _killRemote() async {
@@ -1187,6 +1599,21 @@ class SshDistWorker extends DistWorker {
     return '${r.stdout}'.trim();
   }
 }
+
+/// What a run pushes to a worker's checkout: the snapshot under its run's ref
+/// (deleted again when the run finishes), and HEAD under [kDistBaseRef], which
+/// stays. receive-pack advertises refs only, not the detached HEAD the batches
+/// run on, so without a ref that outlives the run the next push finds no
+/// common history and sends the whole repository again (measured 2026-10-30:
+/// 596 s to wight-win, all history sent again). Forced: the next run's HEAD
+/// need not descend from this one.
+List<String> distPushRefspecs(DistSnapshot snapshot, String runId) => <String>[
+  '${snapshot.commit}:refs/dist/$runId',
+  '+${snapshot.base}:$kDistBaseRef',
+];
+
+/// The ref [distPushRefspecs] keeps on every worker checkout.
+const String kDistBaseRef = 'refs/dist/base';
 
 /// Name of slot [slot]'s checkout on an ssh-shim worker, as `git push`
 /// addresses it (the shim maps it under its own home).

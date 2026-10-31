@@ -11,17 +11,21 @@
 # SSH_ORIGINAL_COMMAND, whatever the client asked for. Only these are accepted,
 # every argument checked against a fixed pattern:
 #
-#   hello                              platform, Flutter, cores, memory, pause
+#   hello                              platform, Flutter, cores, memory, pause,
+#                                      toolchains for compile checks
 #   lock <slot> <runId>                take checkout <slot> for one run
 #   git-receive-pack '<work|work-N>'   receive the run's snapshot commit
 #   prepare <slot> <sha>               check it out, pub get, native libraries
 #   run <slot> <concurrency> [args]    one batch; test files on stdin
-#   kill <slot>                        stop that slot's batch
+#   analyze <slot> [--[no-]fatal-*]    flutter analyze; paths on stdin
+#   build <slot> flutter|gradle ...    compile check (worker_build.sh); only
+#                                      its log comes back, never what it built
+#   kill <slot>                        stop that slot's batch / analyze / build
 #   finish <slot> <runId>              drop the run's ref and lock
 #
 # Anything else is refused. Nothing outside $FUSHI_WORKER_HOME is written by
-# the shim itself; the tests it runs are the requester's code (that part is
-# trust between friends, see the spec), run as this account.
+# the shim itself; the tests and builds it runs are the requester's code (that
+# part is trust between friends, see the spec), run as this account.
 #
 # Run by hand (no SSH_ORIGINAL_COMMAND) it is the owner's switch:
 #   bash ~/.fushi-worker/shim pause    # refuse new work (a running batch is
@@ -34,11 +38,12 @@
 #   MAX_CONCURRENCY    cap on flutter test --concurrency (default cores / 2)
 #   MIN_FREE_MEM_MB    refuse a batch below this much free memory (4096)
 #   MIN_FREE_DISK_GB   refuse a run below this much free disk (20)
+#   ALLOW_BUILD        0 turns compile checks (`build`) off (default 1)
 # ~/.fushi-worker/path (one directory per line: Flutter's bin, cargo's bin;
 # sshd's non-interactive shell does not read the login profile), and
-# ~/.fushi-worker/prepare.env (KEY=value lines) for the prepare step only,
-# e.g. HTTPS_PROXY for pub / cargo downloads. The requester can set none of
-# them.
+# ~/.fushi-worker/prepare.env (KEY=value lines) for the prepare and build
+# steps only, e.g. HTTPS_PROXY for pub / cargo / Gradle downloads, or
+# ANDROID_HOME / JAVA_HOME. The requester can set none of them.
 set -uo pipefail
 
 W="${FUSHI_WORKER_HOME:-$HOME/.fushi-worker}"
@@ -151,6 +156,67 @@ check_flutter_arg() {
 
 STALE_MIN=15
 
+# The owner's prepare.env as KEY=value words in the array prep_env (only
+# well-formed lines; nothing in the file is executed).
+load_prepare_env() {
+  prep_env=()
+  [ -f "$W/prepare.env" ] || return 0
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    if printf '%s\n' "$line" | grep -Eq '^[A-Z_][A-Z0-9_]*=.*$'; then
+      prep_env+=("$line")
+    fi
+  done < "$W/prepare.env"
+}
+
+# The Android SDK this account would build with, if any.
+android_sdk() {
+  local d local_appdata=
+  [ -n "${LOCALAPPDATA:-}" ] && local_appdata=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null)
+  for d in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Library/Android/sdk" \
+           "$HOME/Android/Sdk" "${local_appdata:+$local_appdata/Android/Sdk}"; do
+    if [ -n "$d" ] && [ -d "$d/platforms" ]; then
+      echo "$d"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Toolchains a compile check could use here, comma-separated (a quick look;
+# worker_build.sh checks exactly what a build needs and exits 78 short of
+# it), or `off` when the owner turned builds off.
+build_toolchains() {
+  if [ "$(limit ALLOW_BUILD 1)" = 0 ]; then
+    echo off
+    return
+  fi
+  local -a have=()
+  local sdk
+  if sdk=$(android_sdk) && [ -n "$(ls "$sdk/ndk" 2>/dev/null)" ] &&
+     cargo ndk --version > /dev/null 2>&1; then
+    have+=(android)
+  fi
+  case "$(os_kind)" in
+    windows)
+      local vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+      if [ -x "$vswhere" ] &&
+         [ -n "$("$vswhere" -latest -products '*' \
+           -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+           -property installationPath 2>/dev/null)" ]; then
+        have+=(windows)
+      fi ;;
+    macos)
+      if xcodebuild -version > /dev/null 2>&1 &&
+         command -v pod > /dev/null 2>&1; then
+        have+=(macos)
+      fi ;;
+  esac
+  local IFS=,
+  echo "${have[*]}"
+}
+
 cmd_hello() {
   echo "os=$(os_kind)"
   echo "flutter=$(flutter --version 2>/dev/null | sed -n 's/^Flutter \([^ ]*\).*/\1/p' | head -1)"
@@ -160,6 +226,13 @@ cmd_hello() {
   echo "max_slots=$(max_slots)"
   echo "max_concurrency=$(max_concurrency)"
   echo "paused=$(paused && echo yes || echo no)"
+  echo "analyze=yes"
+  # With the owner's prepare.env, which a build runs under too.
+  echo "build=$(
+    load_prepare_env
+    for kv in ${prep_env[@]+"${prep_env[@]}"}; do export "${kv?}"; done
+    build_toolchains
+  )"
 }
 
 cmd_lock() {
@@ -236,16 +309,8 @@ cmd_prepare() {
   cd "$dir" || die "no checkout"
   git checkout -q --detach --force "$2" || die "checkout $2 failed"
   git clean -qfd -e 'native/*/prebuilt/' -e 'native/*/target/'
-  local -a env=()
-  if [ -f "$W/prepare.env" ]; then
-    local line
-    while IFS= read -r line || [ -n "$line" ]; do
-      line=${line%$'\r'}
-      if printf '%s\n' "$line" | grep -Eq '^[A-Z_][A-Z0-9_]*=.*$'; then
-        env+=("$line")
-      fi
-    done < "$W/prepare.env"
-  fi
+  load_prepare_env
+  local -a env=(${prep_env[@]+"${prep_env[@]}"})
   [ "$1" != 1 ] && env+=("DIST_NATIVE_PEER=$W/work")
   # Output to a file, printed afterwards: a daemon left behind by pub / cargo
   # would inherit the ssh channel and keep the connection open forever.
@@ -282,6 +347,56 @@ cmd_run() {
   # worker_run.sh reads the test files from stdin and accepts only
   # test/<...>_test.dart paths that exist in this checkout.
   exec bash fushi/tool/dist_test/worker_run.sh "$concurrency" "$@"
+}
+
+cmd_analyze() {
+  [ $# -ge 1 ] || die "usage: analyze <slot> [--[no-]fatal-infos|--[no-]fatal-warnings]"
+  check_slot "$1"
+  local dir
+  dir=$(slot_dir "$1")
+  check_owner "$dir"
+  shift
+  local a
+  for a in "$@"; do
+    case "$a" in
+      --fatal-infos|--no-fatal-infos|--fatal-warnings|--no-fatal-warnings) ;;
+      *) die "rejected analyze option '$a'" ;;
+    esac
+  done
+  paused && busy "paused by the owner"
+  local mem need
+  mem=$(free_mem_mb)
+  need=$(limit MIN_FREE_MEM_MB 4096)
+  [ "$mem" -ge "$need" ] || busy "low memory: ${mem} MB free (MIN_FREE_MEM_MB=$need)"
+  cd "$dir" || die "no checkout"
+  # worker_analyze.sh reads the paths from stdin and accepts only existing
+  # lib/ test/ tool/ ... paths of this checkout.
+  exec bash fushi/tool/dist_test/worker_analyze.sh "$@"
+}
+
+cmd_build() {
+  [ $# -ge 3 ] || die "usage: build <slot> flutter <target> [options] | build <slot> gradle <task...>"
+  check_slot "$1"
+  local dir
+  dir=$(slot_dir "$1")
+  check_owner "$dir"
+  shift
+  [ "$(limit ALLOW_BUILD 1)" != 0 ] || die "builds turned off by the owner (ALLOW_BUILD=0)"
+  case "$1" in flutter|gradle) ;; *) die "rejected build tool '$1'" ;; esac
+  # The words worker_build.sh knows; it checks how they go together.
+  local a
+  for a in "${@:2}"; do
+    printf '%s\n' "$a" | grep -Eq '^(apk|appbundle|windows|macos|--debug|--profile|--release|--split-per-abi|--(no-)?tree-shake-icons|(--target-platform=|-Ptarget-platform=)android-(arm|arm64|x64)(,android-(arm|arm64|x64))*|(:app:)?(assemble|bundle)(Debug|Profile|Release))$' ||
+      die "rejected build argument '$a'"
+  done
+  paused && busy "paused by the owner"
+  local mem need
+  mem=$(free_mem_mb)
+  need=$(limit MIN_FREE_MEM_MB 4096)
+  [ "$mem" -ge "$need" ] || busy "low memory: ${mem} MB free (MIN_FREE_MEM_MB=$need)"
+  cd "$dir" || die "no checkout"
+  load_prepare_env
+  exec env ${prep_env[@]+"${prep_env[@]}"} bash fushi/tool/dist_test/worker_build.sh "$@"
 }
 
 cmd_kill() {
@@ -333,6 +448,8 @@ case "$verb" in
   lock) cmd_lock ${args[@]+"${args[@]}"} ;;
   prepare) cmd_prepare ${args[@]+"${args[@]}"} ;;
   run) cmd_run ${args[@]+"${args[@]}"} ;;
+  analyze) cmd_analyze ${args[@]+"${args[@]}"} ;;
+  build) cmd_build ${args[@]+"${args[@]}"} ;;
   kill) cmd_kill ${args[@]+"${args[@]}"} ;;
   finish) cmd_finish ${args[@]+"${args[@]}"} ;;
   *) die "not allowed: $verb" ;;

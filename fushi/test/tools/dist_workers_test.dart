@@ -152,6 +152,61 @@ void main() {
     );
   });
 
+  test('a Windows worker\'s squashed exit code is read back from the tag', () {
+    // Its sshd reports every failure as 1; the shim's stderr tag says which.
+    int code(int exit, String stderr, {bool printedNothing = true}) =>
+        distRemoteExitCode(
+          exit,
+          printedNothing: printedNothing,
+          stderr: stderr,
+        );
+    expect(
+      code(1, 'busy: low memory: 2556 MB free (MIN_FREE_MEM_MB=6144)\r\n'),
+      kDistShimBusy,
+    );
+    expect(code(1, 'error: not allowed: bogusverb\n'), kDistShimRefused);
+    expect(code(1, 'x\ntoolchain: Android NDK 28\n'), kDistToolchainMissing);
+    // The true code where the transport keeps it.
+    expect(code(kDistShimBusy, 'busy: paused\n'), kDistShimBusy);
+    // Anything that printed output, or carries no tag, keeps its code.
+    expect(code(1, 'busy: x\n', printedNothing: false), 1);
+    expect(code(1, 'Some tests failed.\n'), 1);
+    expect(code(0, 'busy: x\n'), 0);
+  });
+
+  test('processCount follows how each worker splits a batch', () {
+    // A batch's coverage timeout is paid per test process (dist_test.dart).
+    final List<DistWorker> workers = <DistWorker>[
+      for (final DistWorkerConfig c in readDistWorkers(
+        '{"workers": ['
+        '{"name": "here", "kind": "local", "os": "windows"}, '
+        '{"name": "mac", "kind": "ssh-trusted", "os": "macos", "host": "u@m"}, '
+        '{"name": "win", "kind": "ssh-shim", "os": "windows", "host": "u@w", '
+        '"identity": "k"}'
+        ']}',
+      ))
+        ...createDistWorkers(c, repoRoot: '.'),
+    ];
+    final DistBatch batch = DistBatch(
+      id: 1,
+      units: <DistUnit>[
+        for (int i = 0; i < 1000; i++)
+          DistUnit(path: 'test/a/suite_${i}_test.dart', weightMs: 1),
+      ],
+    );
+    final int chars = batch.files.fold<int>(
+      0,
+      (int s, String f) => s + f.length + 1,
+    );
+    expect(chars, greaterThan(kRemoteWindowsMaxCommandChars));
+    expect(workers.map((DistWorker w) => w.processCount(batch)), <int>[
+      splitByPathChars(batch.files, kLocalMaxCommandChars).length,
+      1,
+      splitByPathChars(batch.files, kRemoteWindowsMaxCommandChars).length,
+    ]);
+    expect(workers.first.processCount(batch), greaterThan(2));
+  });
+
   group('ssh-shim workers', () {
     test('parse, and address their checkouts by slot', () {
       final List<DistWorkerConfig> configs = readDistWorkers(
@@ -293,6 +348,75 @@ void main() {
         'FUSHI_DIST_SSH': r'C:\tools\fake ssh.sh',
       }),
       "'C:/tools/fake ssh.sh'",
+    );
+  });
+
+  group('analyze / build go only where hello says they can', () {
+    Map<String, String> hello(String extra) =>
+        parseDistHello('os=windows\r\nflutter=3.47.6\npaused=no\n$extra');
+    const DistJob analyze = DistJob.analyze();
+    final DistJob apk = DistJob.build(
+      distBuildOf(<String>['flutter', 'build', 'apk'])!,
+    );
+    final DistJob mac = DistJob.build(
+      distBuildOf(<String>['flutter', 'build', 'macos', '--debug'])!,
+    );
+
+    test('a shim from before the verb is passed over', () {
+      expect(
+        distJobBlocker(hello(''), analyze, shim: true),
+        contains('analyze'),
+      );
+      expect(distJobBlocker(hello(''), analyze, shim: false), isNull);
+      expect(
+        distJobBlocker(hello('analyze=yes'), apk, shim: true),
+        contains('predates builds'),
+      );
+    });
+
+    test('a build needs its toolchain there and the owner\'s consent', () {
+      expect(
+        distJobBlocker(hello('build=android,windows'), apk, shim: true),
+        isNull,
+      );
+      expect(
+        distJobBlocker(hello('build=windows'), apk, shim: true),
+        'no android toolchain there (has: windows)',
+      );
+      expect(
+        distJobBlocker(hello('build='), mac, shim: false),
+        'no macos toolchain there',
+      );
+      expect(
+        distJobBlocker(hello('build=off'), apk, shim: true),
+        contains('ALLOW_BUILD=0'),
+      );
+    });
+
+    test('paused is paused for every job', () {
+      expect(
+        distJobBlocker(
+          parseDistHello('paused=yes\nanalyze=yes\nbuild=android'),
+          apk,
+          shim: true,
+        ),
+        'paused by the owner',
+      );
+    });
+  });
+
+  test('build requests reach the shim as plain words', () {
+    expect(
+      shimRequest('build', <String>[
+        '1',
+        ...distBuildOf(<String>[
+          'gradlew',
+          ':app:assembleRelease',
+          '-Ptarget-platform=android-arm64,android-x64',
+        ])!.request,
+      ]),
+      'build 1 gradle :app:assembleRelease '
+      '-Ptarget-platform=android-arm64,android-x64',
     );
   });
 
