@@ -113,6 +113,8 @@ namespace flutter_inappwebview_plugin
         capture_scale_factor = scale_factor / kShaderUpscaleFactor;
       }
 #endif
+      // 帧池按捕获倍率下的容量分配（FramePoolSizeFor），与 capacity_ 同一把锁更新。
+      capture_scale_ratio_ = capture_scale_factor / scale_factor;
       callback = surface_size_changed_;
       // 容量换档后，引擎缓存的上一张纹理（旧容量）不能再画进新尺寸的 Texture 盒子：
       // 标一次新帧让引擎下一帧重新取描述符（SelectSurfaceSize 给它对得上的那份）。
@@ -305,6 +307,9 @@ namespace flutter_inappwebview_plugin
       }
 
       const bool is_enabled = placebo_ && placebo_->enabled();
+      // 着色器开 = 按设备倍率的一半捕获；帧池尺寸随之换算（FramePoolSizeFor）。关
+      // 掉时捕获源变大，下面的回调触发 NotifySurfaceSizeChanged，放不下才重建帧池。
+      capture_scale_ratio_ = is_enabled ? 1.0f / kShaderUpscaleFactor : 1.0f;
       if (was_enabled != is_enabled && requested_surface_size_.width > 0 &&
         requested_surface_size_.height > 0 && requested_scale_factor_ > 0.0f) {
         logical_size = requested_surface_size_;

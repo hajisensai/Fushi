@@ -174,6 +174,7 @@ import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/webview/parked_webview_slot.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
@@ -2178,7 +2179,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ++_lyricsLoadGeneration;
       _lyricsReadyFinalizingGeneration = null;
       _lyricsDocumentLoadGeneration = null;
-      _lyricsController = null;
+      _lyricsWebViewController = null;
       _lyricsPageReady = false;
       if (_caretSurface == CaretSurface.lyrics) {
         _caretSurface = CaretSurface.none;
@@ -2375,10 +2376,29 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // WebView（[_lyricsController]）。正文 WebView（[_controller]）在下面照常存活、
   // 照常跟随音频翻页 / 高亮，阅读统计（账本字数、StudyClock 时长）也照常由正文
   // 这条路产生——歌词层不写任何统计。
-  InAppWebViewController? _lyricsController;
+  //
+  // BUG-3913：歌词 WebView 第一次进歌词模式时创建，之后**整页存活期间复用同一个
+  // 实例**——退出时不卸载，按 [_lyricsWebViewKey] 停到屏外（[ParkedWebViewSlot]），
+  // 再进入时搬回覆盖层、重装歌词文档。Windows 上每新建一个 WebView 都留下一份不归还
+  // 的显存，旧实现每进出一轮就新建一个。
+  InAppWebViewController? _lyricsWebViewController;
+
+  /// 歌词 WebView 已经挂上过（第一次进入歌词模式之后恒真）：此后不在歌词模式时
+  /// 它停在屏外，不卸载。
+  bool _lyricsWebViewRetained = false;
+
+  /// 离开覆盖层那一刻歌词 WebView 的尺寸：停放时按它摆，尺寸不变就不触发 Windows
+  /// 侧重新下发尺寸 / 扩纹理容量。
+  Size? _lyricsWebViewParkedSize;
+
+  /// 当前可交互的歌词文档控制器：只在歌词模式里非 null。停放中的实例不算——
+  /// 所有往歌词文档推 cue / 主题 / caret 的路径都经它，停放期间自然全部短路。
+  InAppWebViewController? get _lyricsController =>
+      _lyricsMode ? _lyricsWebViewController : null;
 
   /// 歌词 WebView 的 RenderBox 钥匙：查词弹窗屏障的点击 / 悬停要映射回歌词文档的
   /// 局部坐标（正文用 [_webViewKey]），歌词选区矩形也要映射回页面 Stack 坐标。
+  /// 它同时是歌词 WebView 在「覆盖层 ↔ 屏外停放」之间搬家的身份（BUG-3913）。
   final GlobalKey _lyricsWebViewKey = GlobalKey(
     debugLabel: 'reader_lyrics_webview',
   );

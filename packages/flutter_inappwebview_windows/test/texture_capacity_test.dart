@@ -33,14 +33,49 @@ void main() {
     return (reallocations: reallocations, capacity: capacity);
   }
 
-  test('首次按内容取整到 256 档', () {
+  test('首份分配贴身：正好是内容尺寸，不取整、不放大', () {
     expect(
       nextTextureCapacity(
         current: zero,
         needed: (width: 1001, height: 700),
         display: display4k,
       ),
-      (width: 1024, height: 768),
+      (width: 1001, height: 700),
+    );
+    // 歌词层实测尺寸（BUG-3913 备注）：取整会把它放大到 2816×2048（面积 ×1.18）。
+    expect(
+      nextTextureCapacity(
+        current: zero,
+        needed: (width: 2576, height: 1892),
+        display: display4k,
+      ),
+      (width: 2576, height: 1892),
+    );
+  });
+
+  test('贴身之后第一次扩容才取整并按 1.5 倍跳档', () {
+    final TextureCapacity first = nextTextureCapacity(
+      current: zero,
+      needed: (width: 1001, height: 700),
+      display: display4k,
+    );
+    expect(
+      nextTextureCapacity(
+        current: first,
+        needed: (width: 1018, height: 700),
+        display: display4k,
+      ),
+      (width: 1536, height: 1280),
+      reason: '1001×1.5=1502 → 1536；高 700×1.5=1050 → 1280，两维一起跳档',
+    );
+    expect(
+      nextTextureCapacity(
+        current: first,
+        needed: (width: 1001, height: 690),
+        display: display4k,
+      ),
+      same(first),
+      reason: '缩小仍在贴身容量内，不重新分配',
     );
   });
 
@@ -90,8 +125,19 @@ void main() {
         needed: (width: 3856, height: 2128),
         display: display4k,
       ),
-      (width: 4096, height: 2160),
-      reason: '宽 3856 > 显示器宽，不封顶只取整；高 2128 ≤ 显示器高，封顶 2160',
+      (width: 3856, height: 2128),
+      reason: '首份贴身，与显示器无关',
+    );
+    expect(
+      nextTextureCapacity(
+        current: (width: 3856, height: 2128),
+        needed: (width: 3900, height: 2128),
+        display: display4k,
+      ),
+      (width: 5888, height: 2160),
+      reason:
+          '宽 3900 > 显示器宽：不封顶，只取整（5784 → 5888）；'
+          '高 2128 ≤ 显示器高：跟着一起跳档但封顶 2160',
     );
   });
 
@@ -118,6 +164,7 @@ void main() {
   });
 
   test('从小窗一路拖到满屏：扩容次数有界、最终停在显示器尺寸', () {
+    // 首份贴身（800×450），之后每次扩容取整 + 1.5 倍，封顶显示器。
     final List<TextureCapacity> sizes = <TextureCapacity>[
       for (int w = 800; w <= 3840; w += 16)
         (width: w, height: (w * 9 / 16).round()),

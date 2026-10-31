@@ -114,6 +114,77 @@ void main() {
     );
   });
 
+  test('帧池按捕获倍率下的容量分配（着色器路径不按设备倍率超配 4 倍）', () {
+    final String poolSize = _functionBody(
+      bridge,
+      'TextureBridge::FramePoolSizeFor(',
+    );
+    expect(
+      poolSize,
+      contains('capture_scale_ratio_'),
+      reason: '容量是设备倍率的物理像素，捕获源按捕获倍率栅格化；着色器开时捕获倍率减半',
+    );
+    expect(poolSize, contains('std::ceil('));
+    final String setOutput = _functionBody(
+      gpu,
+      'void TextureBridgeGpu::SetOutputSize(',
+    );
+    expect(
+      setOutput,
+      contains('capture_scale_ratio_ = capture_scale_factor / scale_factor;'),
+    );
+    final String setShaders = _functionBody(
+      gpu,
+      'bool TextureBridgeGpu::SetShaders(',
+    );
+    expect(setShaders, contains('capture_scale_ratio_ ='));
+  });
+
+  test('销毁：引擎确认注销前纹理回调落点不释放，注销完成后 Flush 插件设备', () {
+    final String cpv = _read(
+      '$_pkg/windows/custom_platform_view/custom_platform_view.cc',
+    );
+    final String dtor = _functionBody(
+      cpv,
+      'CustomPlatformView::~CustomPlatformView()',
+    );
+    expect(
+      dtor,
+      isNot(contains('UnregisterTexture(texture_id_, nullptr)')),
+      reason: '无完成回调就随即释放 flutter_texture_ = 栅格线程迟到的纹理回调落在已释放内存上',
+    );
+    final int detach = dtor.indexOf('texture_endpoint_->bridge = nullptr;');
+    final int stop = dtor.indexOf('texture_bridge_->Stop();');
+    final int unregister = dtor.indexOf('UnregisterTexture(texture_id_,');
+    expect(detach, isNonNegative);
+    expect(stop, greaterThan(detach), reason: '先摘桥再停桥，回调不再进入桥');
+    expect(unregister, greaterThan(stop));
+    final String completion = dtor.substring(unregister);
+    expect(completion, contains('retired_texture'));
+    expect(
+      completion,
+      contains('device_context->Flush();'),
+      reason: 'D3D11 延迟销毁：不 Flush，释放掉的共享纹理 / 帧池缓冲要等别的 WebView 来帧才归还',
+    );
+    expect(
+      cpv,
+      contains('endpoint->descriptor = *descriptor;'),
+      reason: '引擎在锁外读描述符，必须指向落点自己的存储而不是桥的成员',
+    );
+  });
+
+  test('首份纹理容量贴身分配，只在扩容时取整 / 增长', () {
+    final String capacity = _read(
+      '$_pkg/lib/src/in_app_webview/texture_capacity.dart',
+    );
+    final String next = _functionBody(capacity, 'int _nextDimension(');
+    expect(
+      next,
+      contains('if (current <= 0) return needed;'),
+      reason: '每新建一个 WebView 那一份显存不全数归还，首份取整会把它放大约 18%',
+    );
+  });
+
   test('Dart 侧下发容量，并把 Texture 摆成容量尺寸后裁剪', () {
     final String setSize = _functionBody(dart, 'Future<void> _setSize(');
     expect(setSize, contains('nextTextureCapacity('));
