@@ -2395,7 +2395,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   /// 插图停留秒数：步进器（0 = 关，1 秒一档，上限
   /// [AudiobookPlayerController.maxImagePauseSec]）。原先只给 0/5/10/15 四档分段，
-  /// 所有者要求能自定义停留多少秒（BUG-3887）。
+  /// 所有者要求能自定义停留多少秒（BUG-3891）。
   Widget _buildImagePauseSection(AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.imagePauseSec,
