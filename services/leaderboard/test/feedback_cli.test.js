@@ -25,7 +25,7 @@ describe('scripts/feedback.mjs', () => {
     const env = makeEnv();
     const id = await seed(env);
     const before = env.DB.raw.prepare('SELECT updated_at, dev_reply_at FROM feedback WHERE id = ?').get(id);
-    const nasty = "总结'); DROP TABLE feedback; --\n第二行‮";
+    const nasty = "总结'); DROP TABLE feedback; --\n第二行\u202e";
     env.DB.raw.exec(summarizeSql(id, nasty, NOW + 5));
     const row = env.DB.raw.prepare('SELECT ai_summary, ai_summary_at, updated_at, dev_reply_at FROM feedback WHERE id = ?').get(id);
     expect(row.ai_summary).toBe("总结'); DROP TABLE feedback; --\n第二行");
@@ -96,7 +96,7 @@ describe('scripts/feedback.mjs', () => {
     expect(() => devAccountSql('')).toThrow(/--as/);
 
     const statuses = Object.fromEntries(env.DB.raw.prepare(statusesSql([a, b])).all().map((r) => [r.id, r.status]));
-    env.DB.raw.exec(replySql({ [a]: "请补充版本号'); DROP TABLE feedback; --‮", [b]: '第二条' }, dev.id, statuses, NOW + 9));
+    env.DB.raw.exec(replySql({ [a]: "请补充版本号'); DROP TABLE feedback; --\u202e", [b]: '第二条' }, dev.id, statuses, NOW + 9));
     for (const [id, status, body] of [[a, 'open', "请补充版本号'); DROP TABLE feedback; --"], [b, 'in_progress', '第二条']]) {
       const row = env.DB.raw.prepare('SELECT status, dev_reply_at, updated_at FROM feedback WHERE id = ?').get(id);
       expect(row).toEqual({ status, dev_reply_at: NOW + 9, updated_at: NOW + 9 });
