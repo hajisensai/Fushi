@@ -1,0 +1,11 @@
+## BUG-3892 · 電書協书的章标题在换了主题字体的 Android 机上竖排叠字
+- **报告**：2026-10-31（反馈 KFtRi4FjnO，小米 23116PN5BC / Android SDK 36 / 3.0.1-debug.21021：「阅读あそびのかんけい时每一章的标题文字都会重叠，导致无法识别」；补充：1～3 卷与 BOOK☆WALKER 特典都这样，手机上出现、Windows 正常，翻页模式，只在阅读界面，目录正常）
+- **真实性**：✅ 真 bug。用户截图放大后标题是一款**毛笔字体**、竖排时逐字叠成一团，正文明朝体正常。
+  - 书是電書協 / KADOKAWA 模板：标题 `<div class="start-3em gfont bold"><p><span class="font-1em30">【閑話　…】`，`style-standard.css:499` 给 `.gfont` 的是 `font-family: sans-serif-ja, sans-serif`。`sans-serif-ja` / `sans-serif-ja-v` 是规范留给阅读系统定义的别名，书里不带 `@font-face`，阅读器以前也没定义 → 标题落进 generic `sans-serif`。
+  - 正文不受影响：`reader_content_styles.dart` 的 `body { font-family: … !important }` 只钉 body，`.gfont` 的声明覆盖了继承值。
+  - Android 的 generic `sans-serif` 是 OEM 主题可替换的槽位：小米 Pad 5（HyperOS 4 / Android 17）`/system/etc/fonts.xml` 里 `sans-serif` = `MiSansVF_Overlay.ttf`。用平板 Chrome 打开这一章、CDP `CSS.getPlatformFontsForNode` 量标题：25 个字形用 `MiSans VF`、1 个 `Noto Sans CJK SC`——用户换了主题字体，这个槽位就是那款缺竖排度量的毛笔字体。Windows 的 generic 黑体是系统日文黑体，所以同书正常。
+  - 同时实测：Android Blink **不按 family 名匹配系统字体**（`"Noto Sans CJK JP"`、`"Roboto"` 写进 `font-family` 都不命中），但 `local("Noto Sans CJK JP Regular")` / `local("NotoSansCJKjp-Regular")` / `local("NotoSansCJKJP-Regular")` 命中；Noto Serif CJK 只登记为 `fallbackFor="serif"`，`local()` 不命中；系统无 Noto Sans CJK Bold。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/reader/reader_book_font_aliases.dart`（`ReaderBookFontAliases`）：Android 上把 `sans-serif-ja` / `sans-serif-ja-v` 声明为 `@font-face`，`src` 为上述三个 `local()`；`ReaderContentStyles.css` 把它拼进 `resolvedFontFaces`（翻页 / 滚动 / VN 三种布局共用）。不声明粗体 face（系统没有，挂了会让粗体整族落空）、不做明朝体别名（不命中）、其它平台不注入。全部 `local()` 落空时按规范退回书里的下一项 `sans-serif`，与修前一致。平板实测修后标题 26 个字形全部 `Noto Sans CJK JP`，竖排正常（顺带由中文字形变成日文字形）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_book_font_aliases_test.dart`：Android × 横/竖排 × 翻页/滚动/VN × 有无用户字体都注入两个别名且 `src` 精确；不带 `font-weight` / Bold；不定义 `serif-ja`；Windows / macOS / iOS / Linux 不注入。`local()` 在 Android 上能命中只能真机取证（CI 桌面 Chrome 没有这些系统字体），证据见上。
+- **验证**：三种 view mode——改动只在共用的 `@font-face` 段，CSS 层三种模式都有用例；真机只在平板 Chrome 上用真书章节 + 生成的同一段 CSS 验证（同 Blink、同系统字体），未装测试包进真 app。未拿到用户那款主题字体，没有在它上面直接复现叠字，叠字的直接原因（主题字体竖排度量）是据截图字形推断。
+- **备注**：同一机制下，Android 上阅读器正文链 `"Noto Serif CJK JP", …, serif` 里的 family 名也全部不命中、实际只靠 generic `serif`；书里直接写 generic `sans-serif`（不走 `sans-serif-ja`）的黑体段落仍会落进主题字体。两者都未在本条处理。
