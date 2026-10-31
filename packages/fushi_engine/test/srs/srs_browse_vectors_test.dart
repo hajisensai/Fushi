@@ -118,6 +118,16 @@ Future<SrsDbStore> buildBrowseVecLibrary(
   final String zeta = await s.ensureDeckPath('Zeta');
   final String gone = await s.ensureDeckPath('Gone');
   final List<String> decks = <String>[root, a, b, zeta, gone];
+  // 向量是加「RWKV 牌组没写过步长 = 不用步长」（PR #2663）之前生成的：把那时的生效步长明确写上，
+  // 作答后的队列（学习 / 复习）照旧逐项对拍。
+  for (final String d in <String>[s.defaultDeckId, ...decks]) {
+    await s.editFields(SrsEntityKind.deck, d, <String, Object?>{
+      SrsFieldKeys.deckSteps: <String, Object?>{
+        'learn': SrsDeckView.defaultLearnSteps,
+        'relearn': SrsDeckView.defaultRelearnSteps,
+      },
+    });
+  }
   final SrsNoteTypeView fushi = (await s.noteTypes()).firstWhere(
     (SrsNoteTypeView t) => t.builtinKey == kSrsBuiltinFushiCardKey,
   );
