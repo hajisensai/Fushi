@@ -1510,6 +1510,26 @@ class FushiShellInlineTitle extends InheritedWidget {
       enabled != oldWidget.enabled;
 }
 
+/// 库页壳一级只剩一组、不画分区页签时，页签位置改放的标题胶囊（iOS 合规门下
+/// 书 / 漫画 / 视频库只剩「书架 / 媒体库」，左上角原本整块空着，2026-10-31）。
+/// 宽窗外壳已经把页面名画进本行（[FushiShellInlineTitle]）时不再重复。
+class FushiFloatingChromeSoloTitle extends StatelessWidget {
+  const FushiFloatingChromeSoloTitle({required this.title, super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    if (title.isEmpty || FushiShellInlineTitle.of(context)) {
+      return const SizedBox.shrink();
+    }
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: FushiPageChromeTitle(title: Text(title)),
+    );
+  }
+}
+
 class FushiFloatingChromeBar extends StatefulWidget {
   const FushiFloatingChromeBar({
     required this.tabs,

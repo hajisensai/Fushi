@@ -342,10 +342,12 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
               if (_groupOf(tab.value) == currentGroup) tab,
           ];
-    // 一级只剩一组（iOS 合规门下没有在线分区）时不画胶囊；停在导入页时高亮
-    // 「媒体库」组（导入管理的就是本地库）。
+    // 一级只剩一组（iOS 合规门下没有在线分区）时不画胶囊、改放该组名的标题
+    // 胶囊（媒体库）；停在导入页时高亮「媒体库」组（导入管理的就是本地库）。
     final Widget navigation = groupTabs.length < 2
-        ? const SizedBox.shrink()
+        ? FushiFloatingChromeSoloTitle(
+            title: groupTabs.isEmpty ? '' : groupTabs.single.label,
+          )
         : LibrarySectionTabs<VideoLibrarySection>(
             tabs: groupTabs,
             selected: currentGroup == null ? groupTabs.first.value : _section,
