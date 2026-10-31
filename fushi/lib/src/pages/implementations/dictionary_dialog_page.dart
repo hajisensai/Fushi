@@ -2721,7 +2721,6 @@ class _DictionaryDialogPageState extends BasePageState {
           name: name,
           replaceTargetName: dictionary.name,
           sourceOverride: sourceOverride,
-          forceReplaceExisting: false,
         ).toPayload(),
       );
       enterDictionaryImportStage(
