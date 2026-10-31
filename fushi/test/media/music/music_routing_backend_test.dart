@@ -15,6 +15,12 @@ class _FakeBackend implements MusicOutputBackend {
       StreamController<MusicBackendEvent>.broadcast(sync: true);
   final List<String> log = <String>[];
   final Set<String> failOpen = <String>{};
+
+  /// 这些曲目打开时抛**非** [MusicTrackOpenException] 的异常（后端自身出错）。
+  final Set<String> crashOpen = <String>{};
+
+  /// true 时 [stop] 抛异常。
+  bool crashStop = false;
   MusicOutputSettings? settings;
   bool disposed = false;
 
@@ -42,6 +48,9 @@ class _FakeBackend implements MusicOutputBackend {
         ),
       );
     }
+    if (crashOpen.contains(current.trackUid)) {
+      throw StateError('bridge gone');
+    }
   }
 
   @override
@@ -65,7 +74,10 @@ class _FakeBackend implements MusicOutputBackend {
       log.add('loop:${a?.inMilliseconds}-${b?.inMilliseconds}');
 
   @override
-  Future<void> stop() async => log.add('stop');
+  Future<void> stop() async {
+    log.add('stop');
+    if (crashStop) throw StateError('stop failed');
+  }
 
   @override
   Future<void> dispose() async => disposed = true;
@@ -205,6 +217,28 @@ void main() {
     expect(f.reason, MusicPlaybackFailure.trackUnavailable);
   });
 
+  test('接力时新后端抛非 MusicTrackOpenException：同样按下一首失败上报，不漏成未处理异常', () async {
+    hosted.crashOpen.add('am:x');
+    await router.openPair(_item('a'), _item('am:x'), play: true);
+    mpv.emit(const MusicBackendCompleted());
+    await pumpEventQueue();
+    final MusicBackendFailed f = events.single as MusicBackendFailed;
+    expect(f.trackUid, 'am:x');
+    expect(f.message, contains('bridge gone'));
+    expect(f.reason, isNull);
+  });
+
+  test('接力时旧后端 stop 抛错：不打开下一首，按下一首失败上报', () async {
+    mpv.crashStop = true;
+    await router.openPair(_item('a'), _item('am:x'), play: true);
+    mpv.emit(const MusicBackendCompleted());
+    await pumpEventQueue();
+    expect(hosted.log, isEmpty);
+    final MusicBackendFailed f = events.single as MusicBackendFailed;
+    expect(f.trackUid, 'am:x');
+    expect(f.message, contains('stop failed'));
+  });
+
   test('replaceNext 换回同后端 / 清空后，播完照常上报 Completed', () async {
     await router.openPair(_item('a'), _item('am:x'), play: true);
     await router.replaceNext(null);
@@ -295,6 +329,26 @@ void main() {
         'next:null:false',
       ]);
       expect(engine.capabilities, MusicBackendCapabilities.full);
+    });
+
+    test('接力打开时后端崩了：引擎推进到失败的那首、停下并报错，不再以为在播', () async {
+      hosted.crashOpen.add('am:x');
+      final List<MusicBackendFailed> failures = <MusicBackendFailed>[];
+      engine.onPlaybackFailed = failures.add;
+      await engine.playQueue(<MusicPlayItem>[
+        _item('a'),
+        _item('am:x'),
+        _item('b'),
+      ]);
+      mpv.emit(const MusicBackendPlaying(true));
+      expect(engine.isPlaying, isTrue);
+
+      mpv.emit(const MusicBackendCompleted());
+      await pumpEventQueue();
+
+      expect(engine.current?.trackUid, 'am:x');
+      expect(engine.isPlaying, isFalse);
+      expect(failures.single.message, contains('bridge gone'));
     });
   });
 }

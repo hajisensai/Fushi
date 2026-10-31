@@ -1,6 +1,6 @@
 # Apple Music 官方集成（MusicKit 播放后端）
 
-状态：方案稿（2026-10-31），**待所有者拍板**（§9）。未拍板前不动代码。
+状态（2026-10-31）：**P1 基础设施已合入**（能力标志 + `MusicRoutingBackend`，路由表为空、行为不变；签发端 Worker 见 §3.6）；其余阶段（P0 spike 起，§6）**待所有者拍板**（§9），拍板前不动 P1 以外的代码。
 
 ## 0. 一句话
 
@@ -36,13 +36,13 @@ MusicKit JS 经网页播放上限 256 kbps AAC（原生 MusicKit 由系统决定
 ### 3.1 一个桥，两种实现
 
 ```
-AppleMusicBridge (Dart 接口：授权 / 订阅状态 / catalog 请求 / 播放控制 / 事件流)
+AppleMusicBridge (Dart 接口：授权 / 订阅状态 / 播放控制 / 事件流)
  ├─ AppleMusicNativeBridge   method/event channel → Swift MusicKit（iOS、macOS 14+）
  └─ AppleMusicWebBridge      隐藏 InAppWebView 加载 https://<fushi 域名>/musickit/ → MusicKit JS
 ```
 
-catalog 查询也走桥：原生用 `MusicCatalogSearchRequest` / `MusicCatalogResourceRequest`（token 由系统
-注入），网页用 `music.api.music(...)`。Dart 侧不直接持有 developer token。
+桥**只管授权（含 Music-User-Token）、订阅状态与播放**。catalog 浏览不经桥：Dart 侧
+`AppleMusicTokenSource` 从签发端取 developer token、直接调 `api.music.apple.com`（以 §3.6 为准）。
 
 ### 3.2 来源：`MusicServerBrowser` 的 Apple Music 实现
 
@@ -92,7 +92,7 @@ catalog 查询也走桥：原生用 `MusicCatalogSearchRequest` / `MusicCatalogR
 - **卡片音频：不提供**。拿不到 PCM，录制输出违反 MusicKit 条款；卡片只有文本 + 封面，UI 写明原因。
 - 听歌时长进学习统计：照常（`music_study_tracker.dart` 只读引擎状态）。
 
-### 3.6 developer token 与页面托管（2026-10-31 已落地签发端）
+### 3.6 developer token 与页面托管（2026-10-31 已落地签发端；token 归属与 catalog 路径以本节为准）
 
 - 签发端：排行榜 Worker `GET https://rank.fushi.moe/v1/musickit/token` → `{token, expiresAt}`
   （PR hajisensai/Fushi#2712，`services/leaderboard/src/musickit.js`；ES256、claims 只有
