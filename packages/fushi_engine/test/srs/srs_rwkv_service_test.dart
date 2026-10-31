@@ -182,6 +182,19 @@ class _FakeBackend implements SrsRwkvBackend {
   Future<void> close() async => closed = true;
 }
 
+/// 回放卡在 [gate] 上的后端：模拟后台重建跑了很久。
+class _GatedBackend extends _FakeBackend {
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<void> replay(RwkvRows rows) async {
+    if (!entered.isCompleted) entered.complete();
+    await gate.future;
+    await super.replay(rows);
+  }
+}
+
 class _Fixture {
   _Fixture._(this.store, this.dir, this.clock);
 
@@ -428,6 +441,90 @@ void main() {
   });
 
   group('服务', () {
+    test('已就绪后的全量重建在另一个 runtime 里做：期间一直就绪、照常按 R 出卡，建好再换上并关掉旧的', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(3);
+      await f.graduate(cards);
+      final _FakeBackend first = _FakeBackend()..defaultR = 0.1;
+      final _GatedBackend second = _GatedBackend()..defaultR = 0.1;
+      final List<_FakeBackend> opened = <_FakeBackend>[first, second];
+      final SrsRwkvService service = SrsRwkvService(
+        store: f.store,
+        models: f.models(),
+        snapshotDir: Directory('${f.dir.path}/state'),
+        openBackend: (File weights) async => opened.removeAt(0),
+      );
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+      expect(first.replayedCards, hasLength(3));
+      f.advance(kDay);
+
+      final Future<void> rebuilding = service.rebuild();
+      await second.entered.future;
+      // 重建卡在半路：RWKV 仍就绪，复习卡照常按旧状态的 R 出。
+      expect(service.ready, isTrue);
+      final int before = first.queries;
+      final SrsStudyState? during = await f.store.studyState(
+        f.store.defaultDeckId,
+      );
+      expect(during!.next, isNotNull);
+      expect(during.rwkvPending, isFalse);
+      expect(first.queries, greaterThan(before));
+
+      second.gate.complete();
+      await rebuilding;
+      expect(service.ready, isTrue);
+      expect(second.replayedCards, hasLength(3));
+      f.advance(1000);
+      final int q = second.queries;
+      expect(await f.store.nextCard(f.store.defaultDeckId), isNotNull);
+      expect(
+        second.queries,
+        greaterThan(q),
+        reason: 'scores come from the new runtime',
+      );
+      expect(first.closed, isTrue);
+      await service.close();
+    });
+
+    test('对端时钟慢几分钟（同一天里早于已回放的最后一条）：直接追加，不重建；落在更早日子才重建（后台、不停服）', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(3);
+      await f.graduate(cards);
+      final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
+      final SrsRwkvService service = f.service(backend);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+      f.advance(kDay);
+      await f.store.answer(cards[0], 3);
+      expect(await service.refresh(), isTrue);
+      expect(backend.resets, 1);
+
+      // 时钟往回 5 分钟（对端设备慢）：同一天，追加。
+      f.advance(-5 * 60 * 1000);
+      await f.store.answer(cards[1], 3);
+      expect(await service.refresh(), isTrue);
+      expect(
+        backend.resets,
+        1,
+        reason: 'same-day out-of-order rating is appended',
+      );
+      expect(backend.replayedCards, hasLength(5));
+
+      // 落在前一天：全量重建，但在后台，RWKV 一直就绪。
+      f.advance(-2 * kDay);
+      await f.store.answer(cards[2], 3);
+      expect(await service.refresh(), isTrue);
+      expect(service.ready, isTrue);
+      await service.debugRebuildDone;
+      expect(service.ready, isTrue);
+      expect(backend.resets, 2);
+      expect(backend.replayedCards, hasLength(6));
+      await service.close();
+    });
+
     test('启动全量回放；作答只追加这一条；撤销按撤销日志撤回（不重建、不退回 FSRS）；快照命中', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(3);
@@ -678,8 +775,11 @@ void main() {
       await f.store.answer(d, 3);
       await service.refresh();
       expect(await f.store.undo(c, lc.id), isTrue);
-      expect(await service.refresh(), isFalse);
-      await _settled(service);
+      // 全量重建在后台另开 runtime 做：这一次照旧用当前状态，RWKV 不退回「准备中」。
+      expect(await service.refresh(), isTrue);
+      expect(service.ready, isTrue);
+      await service.debugRebuildDone;
+      expect(service.ready, isTrue);
       expect(backend.resets, 2);
       expect(backend.replayedCards, hasLength(9));
     });
