@@ -91,7 +91,7 @@ void main() {
     final String createBody = _body(
       src,
       'bool TextureBridge::CreateAndStartFramePoolLocked()',
-      'void TextureBridge::RecreateFramePoolLocked()',
+      'bool TextureBridge::RecreateFramePoolLocked()',
     );
     final int createPool =
         createBody.indexOf('graphics_context_->CreateCaptureFramePool(');
