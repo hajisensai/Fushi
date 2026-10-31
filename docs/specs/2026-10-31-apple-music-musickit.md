@@ -68,10 +68,12 @@ catalog 查询也走桥：原生用 `MusicCatalogSearchRequest` / `MusicCatalogR
   （原生 ~250 ms 轮询 `playbackTime`，网页监听 `playbackTimeDidChange`）喂出，歌词时钟已有外推
   （`music_lyrics_clock.dart` 的 `extrapolateMusicPosition`），不要求高频。
   只给 MusicKit 单曲队列，Fushi 队列仍是唯一真相，避免两套队列分叉。
-- 能力标志：`MusicOutputBackend` 增 `MusicBackendCapabilities get capabilities`
-  （signalPath / audioDevices / exclusive / equalizer / crossfade / replayGain / abLoop / speed），
-  mpv 全真，MusicKit 后端按平台填；设置页、信号路径面板、A-B 循环入口按**当前曲目所属后端**置灰
-  并说明原因。这是本方案唯一的跨模块接口变更。
+- 能力标志（P1 已落地）：`MusicBackendCapabilities{signalPath, abLoop}` 由路由**静态声明**
+  （`MusicBackendRoute.capabilities`），引擎经 `capabilitiesOf` 按**当前曲目**给出
+  `MusicPlayerEngine.capabilities`；歌词页 A-B 循环按钮、信号路径入口（歌词页菜单、播放条菜单）
+  按它隐藏，引擎侧 `setAbLoop` / `readSignalPath` 同样拒绝。不进 `MusicOutputBackend` 接口（免得
+  每个测试替身都要实现）。均衡器 / 交叉淡入 / 独占 / 设备 / DSD 是全局设置、只作用于默认链路，
+  不按曲目置灰。
 
 ### 3.4 系统 Now Playing / 媒体键（⚠ 冲突点）
 
@@ -132,7 +134,7 @@ catalog 查询也走桥：原生用 `MusicCatalogSearchRequest` / `MusicCatalogR
 | 阶段 | 内容 | 前置 |
 |---|---|---|
 | P0 spike | ① Mac + iPhone：Flutter 宿主里 `ApplicationMusicPlayer` 整曲播放、进度、Now Playing 与 audio_service 共存；② Windows WebView2 + MusicKit JS：`authorize()`、整曲（非 30 s）播放、SMTC 是否多出会话；③ Android WebView 同②；每项记证据 | §9 ①② |
-| P1 | `MusicBackendCapabilities` + `MusicRoutingBackend`（只有 mpv 一个子后端，行为不变，单测钉跨后端推进） | 可先做 |
+| P1 ✅ | `MusicBackendCapabilities` + `MusicRoutingBackend`（`music_routing_backend.dart`；路由表暂空、行为不变；`test/media/music/music_routing_backend_test.dart` 钉跨后端接力） | — |
 | P2 | Apple 平台：Swift 桥 + `AppleMusicNativeBridge` + 来源浏览 + 设置页 | P0① 通过 |
 | P1b | `AppleMusicTokenSource` + catalog REST 来源（五端浏览 + 预览试听走 mpv） | #2712 合入并部署 |
 | P3 | Windows：Worker 托管页 + `AppleMusicWebBridge` | P0② 通过、§9 ③ |
