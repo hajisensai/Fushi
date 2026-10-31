@@ -2195,11 +2195,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 当前是否在手机底栏布局（[_buildMobileLayout] 每次构建时置位）。
   bool _inMobileLayout = false;
 
-  /// 横滑切模块此刻是否启用：手机底栏布局、Material 设计系统（Apple 的玻璃底栏
-  /// 单独保持 iOS 的点按切换语义），且当前 tab 在横滑序列里（[homeModuleSwipeArmed]，
-  /// 含设置，BUG-3351）。
+  /// 横滑切模块此刻是否启用：手机底栏布局，且当前 tab 在横滑序列里
+  /// （[homeModuleSwipeArmed]，含设置，BUG-3351）。两套设计系统一致——Apple 也
+  /// 要能跨分区、跨模块横滑，切模块时同样轻震（用户 2026-10-30）。
   bool _moduleSwipeEnabled() {
-    if (!_inMobileLayout || isGlassDesign(context)) return false;
+    if (!_inMobileLayout) return false;
     return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);
   }
 
