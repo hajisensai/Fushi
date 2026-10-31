@@ -158,7 +158,8 @@ void main() {
           BuildContext context,
           SrsCardFace face,
         ) {
-          faces.add(face.cardId);
+          // 卡面占位（还没有卡）的 id 是空串：只记真正上屏的卡。
+          if (face.cardId.isNotEmpty) faces.add(face.cardId);
           return SrsPlainCardFace(face: face);
         }),
       ],
@@ -289,10 +290,7 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    final ProviderSubscription<AsyncValue<SrsDeckListData?>> sub = container
-        .listen(srsDeckListProvider, (_, _) {});
-    addTearDown(sub.close);
-
+    // 只在 runAsync 里读：provider 的构建要真异步（库 / 内核），在假时钟的 zone 里起步会永远等不到。
     final SrsDeckListData pending = (await tester.runAsync<SrsDeckListData?>(
       () => container.read(srsDeckListProvider.future),
     ))!;
