@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179367 (10551 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3307,6 +3307,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
     required Object error,
   }) => '${success} / ${total} OK. Failed: ${error}';
   String get dict_download_progress_show => 'View progress';
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   String get dict_download_select_title => 'Select dictionaries';
   String dict_downloading({required Object name}) => 'Downloading ${name}…';
   String dict_downloading_size({
@@ -20436,6 +20438,9 @@ class _StringsAr extends _StringsEn {
   }) => '${success} / ${total} ناجح. فشل: ${error}';
   @override
   String get dict_download_progress_show => 'عرض التقدم';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => 'اختيار القواميس';
   @override
@@ -46073,6 +46078,9 @@ class _StringsDe extends _StringsEn {
   }) => '${success} / ${total} OK. Fehlgeschlagen: ${error}';
   @override
   String get dict_download_progress_show => 'Fortschritt anzeigen';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => 'Wörterbücher auswählen';
   @override
@@ -72049,6 +72057,9 @@ class _StringsEs extends _StringsEn {
   }) => '${success} / ${total} correctos. Fallidos: ${error}';
   @override
   String get dict_download_progress_show => 'Ver progreso';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => 'Seleccionar diccionarios';
   @override
@@ -98091,6 +98102,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get dict_download_progress_show => 'Voir la progression';
   @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
+  @override
   String get dict_download_select_title => 'Sélectionner des dictionnaires';
   @override
   String dict_downloading({required Object name}) =>
@@ -124116,6 +124130,9 @@ class _StringsId extends _StringsEn {
   @override
   String get dict_download_progress_show => 'Lihat progres';
   @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
+  @override
   String get dict_download_select_title => 'Pilih Kamus';
   @override
   String dict_downloading({required Object name}) => 'Mengunduh ${name}…';
@@ -149898,6 +149915,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get dict_download_progress_show => 'Visualizza progresso';
   @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
+  @override
   String get dict_download_select_title => 'Seleziona dizionari';
   @override
   String dict_downloading({required Object name}) => 'Download di ${name}…';
@@ -175619,6 +175639,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get dict_download_progress_show => '進捗を表示';
   @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
+  @override
   String get dict_download_select_title => '辞書を選択';
   @override
   String dict_downloading({required Object name}) => '${name} をダウンロード中…';
@@ -200500,6 +200523,9 @@ class _StringsKo extends _StringsEn {
   }) => '${success} / ${total} 성공. 실패: ${error}';
   @override
   String get dict_download_progress_show => '진행 상황 보기';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => '사전 선택';
   @override
@@ -225636,6 +225662,9 @@ class _StringsNl extends _StringsEn {
   }) => '${success} / ${total} OK. Mislukt: ${error}';
   @override
   String get dict_download_progress_show => 'Voortgang bekijken';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => 'Selecteer woordenboeken';
   @override
@@ -251516,6 +251545,9 @@ class _StringsPtBr extends _StringsEn {
   }) => '${success} / ${total} OK. Falharam: ${error}';
   @override
   String get dict_download_progress_show => 'Ver progresso';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => 'Selecionar Dicionários';
   @override
@@ -277436,6 +277468,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get dict_download_progress_show => 'Показать прогресс';
   @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
+  @override
   String get dict_download_select_title => 'Выбрать словари';
   @override
   String dict_downloading({required Object name}) => 'Загрузка ${name}…';
@@ -303250,6 +303285,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get dict_download_progress_show => 'ดูความคืบหน้า';
   @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
+  @override
   String get dict_download_select_title => 'เลือกพจนานุกรม';
   @override
   String dict_downloading({required Object name}) => 'กำลังดาวน์โหลด ${name}…';
@@ -328853,6 +328891,9 @@ class _StringsTr extends _StringsEn {
   }) => '${success} / ${total} tamam. Başarısız: ${error}';
   @override
   String get dict_download_progress_show => 'İlerlemeyi görüntüle';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => 'Sözlükleri Seçin';
   @override
@@ -354603,6 +354644,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get dict_download_progress_show => 'Xem tiến trình';
   @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
+  @override
   String get dict_download_select_title => 'Chọn từ điển';
   @override
   String dict_downloading({required Object name}) => 'Đang tải ${name}…';
@@ -379844,6 +379888,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get dict_download_progress_show => '查看进度';
   @override
+  String dict_download_resuming({required Object name}) => '正在继续下载：${name}';
+  @override
   String get dict_download_select_title => '选择词典';
   @override
   String dict_downloading({required Object name}) => '正在下载 ${name}…';
@@ -403510,6 +403556,9 @@ class _StringsZhHk extends _StringsEn {
   }) => '成功 ${success} / ${total}。失敗：${error}';
   @override
   String get dict_download_progress_show => '查看進度';
+  @override
+  String dict_download_resuming({required Object name}) =>
+      'Resuming download: ${name}';
   @override
   String get dict_download_select_title => '選擇辭典';
   @override
@@ -427223,6 +427272,8 @@ extension on _StringsEn {
         }) => '${success} / ${total} OK. Failed: ${error}';
       case 'dict_download_progress_show':
         return 'View progress';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Select dictionaries';
       case 'dict_downloading':
@@ -449145,6 +449196,8 @@ extension on _StringsAr {
         }) => '${success} / ${total} ناجح. فشل: ${error}';
       case 'dict_download_progress_show':
         return 'عرض التقدم';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'اختيار القواميس';
       case 'dict_downloading':
@@ -471083,6 +471136,8 @@ extension on _StringsDe {
         }) => '${success} / ${total} OK. Fehlgeschlagen: ${error}';
       case 'dict_download_progress_show':
         return 'Fortschritt anzeigen';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Wörterbücher auswählen';
       case 'dict_downloading':
@@ -493069,6 +493124,8 @@ extension on _StringsEs {
         }) => '${success} / ${total} correctos. Fallidos: ${error}';
       case 'dict_download_progress_show':
         return 'Ver progreso';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Seleccionar diccionarios';
       case 'dict_downloading':
@@ -515048,6 +515105,8 @@ extension on _StringsFr {
         }) => '${success} / ${total} OK. Échecs : ${error}';
       case 'dict_download_progress_show':
         return 'Voir la progression';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Sélectionner des dictionnaires';
       case 'dict_downloading':
@@ -537024,6 +537083,8 @@ extension on _StringsId {
         }) => '${success} / ${total} OK. Gagal: ${error}';
       case 'dict_download_progress_show':
         return 'Lihat progres';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Pilih Kamus';
       case 'dict_downloading':
@@ -558964,6 +559025,8 @@ extension on _StringsIt {
         }) => '${success} / ${total} OK. Falliti: ${error}';
       case 'dict_download_progress_show':
         return 'Visualizza progresso';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Seleziona dizionari';
       case 'dict_downloading':
@@ -580903,6 +580966,8 @@ extension on _StringsJa {
         }) => '${success} / ${total} 成功。失敗: ${error}';
       case 'dict_download_progress_show':
         return '進捗を表示';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return '辞書を選択';
       case 'dict_downloading':
@@ -602741,6 +602806,8 @@ extension on _StringsKo {
         }) => '${success} / ${total} 성공. 실패: ${error}';
       case 'dict_download_progress_show':
         return '진행 상황 보기';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return '사전 선택';
       case 'dict_downloading':
@@ -624624,6 +624691,8 @@ extension on _StringsNl {
         }) => '${success} / ${total} OK. Mislukt: ${error}';
       case 'dict_download_progress_show':
         return 'Voortgang bekijken';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Selecteer woordenboeken';
       case 'dict_downloading':
@@ -646591,6 +646660,8 @@ extension on _StringsPtBr {
         }) => '${success} / ${total} OK. Falharam: ${error}';
       case 'dict_download_progress_show':
         return 'Ver progresso';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Selecionar Dicionários';
       case 'dict_downloading':
@@ -668553,6 +668624,8 @@ extension on _StringsRu {
         }) => '${success} / ${total} успешно. Ошибок: ${error}';
       case 'dict_download_progress_show':
         return 'Показать прогресс';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Выбрать словари';
       case 'dict_downloading':
@@ -690496,6 +690569,8 @@ extension on _StringsTh {
         }) => '${success} / ${total} สำเร็จ ล้มเหลว: ${error}';
       case 'dict_download_progress_show':
         return 'ดูความคืบหน้า';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'เลือกพจนานุกรม';
       case 'dict_downloading':
@@ -712431,6 +712506,8 @@ extension on _StringsTr {
         }) => '${success} / ${total} tamam. Başarısız: ${error}';
       case 'dict_download_progress_show':
         return 'İlerlemeyi görüntüle';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Sözlükleri Seçin';
       case 'dict_downloading':
@@ -734373,6 +734450,8 @@ extension on _StringsVi {
         }) => '${success} / ${total} thành công. Thất bại: ${error}';
       case 'dict_download_progress_show':
         return 'Xem tiến trình';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return 'Chọn từ điển';
       case 'dict_downloading':
@@ -756235,6 +756314,8 @@ extension on _StringsZhCn {
         }) => '成功 ${success} / ${total}。失败：${error}';
       case 'dict_download_progress_show':
         return '查看进度';
+      case 'dict_download_resuming':
+        return ({required Object name}) => '正在继续下载：${name}';
       case 'dict_download_select_title':
         return '选择词典';
       case 'dict_downloading':
@@ -777915,6 +777996,8 @@ extension on _StringsZhHk {
         }) => '成功 ${success} / ${total}。失敗：${error}';
       case 'dict_download_progress_show':
         return '查看進度';
+      case 'dict_download_resuming':
+        return ({required Object name}) => 'Resuming download: ${name}';
       case 'dict_download_select_title':
         return '選擇辭典';
       case 'dict_downloading':
