@@ -7,6 +7,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 歌词模式 MD3 新版播放控件（2026-10-31 用户拍板，设计稿 layout_v3）：
@@ -71,6 +72,7 @@ void main() {
   Widget app({
     LyricsControlsStyle style = LyricsControlsStyle.modern,
     bool expanded = false,
+    bool playing = false,
     ValueChanged<Rect>? onLyricsRect,
   }) => MaterialApp(
     home: Scaffold(
@@ -86,7 +88,7 @@ void main() {
           title: 'book',
           chapterLabel: '第四章　聖歌',
           cover: null,
-          isPlaying: false,
+          isPlaying: playing,
           speed: 1,
           lyricsMasked: false,
           clock: _Clock(),
@@ -376,11 +378,30 @@ void main() {
   });
 
   // 2026-10-31 用户拍板：歌词模式网格背景静止（原 30fps 常驻流动是发热源），
-  // 只在配色变化时交叉过渡一次，过渡完不再出帧。新旧两种布局都适用。
+  // 只在配色变化时交叉过渡一次，过渡完不再出帧。新旧两种布局都适用。进度条两种
+  // 布局都是 FushiWavySeekBar：播放中照经典按 ≈30fps 流动，暂停时振幅收完不再
+  // 要帧——所以这里在暂停态断言整页零出帧（= 背景静止 + 波浪按经典暂停行为）。
   group('static mesh backdrop', () {
+    testWidgets('lyrics backdrop params: static, no frames once painted', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 600);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: FushiMeshBackdrop(animate: false, colorTransition: true),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+
     for (final LyricsControlsStyle style in LyricsControlsStyle.values) {
       for (final Size size in const <Size>[Size(390, 844), Size(1600, 900)]) {
-        testWidgets('${style.name} $size: idle overlay schedules no frames', (
+        testWidgets('${style.name} $size: paused overlay schedules no frames', (
           WidgetTester tester,
         ) async {
           await pumpAt(tester, size, app(style: style));
@@ -391,6 +412,47 @@ void main() {
           expect(tester.binding.hasScheduledFrame, isFalse);
         });
       }
+    }
+
+    // 进度条按经典行为：暂停时不流动（上面的空闲用例已断言不出帧），播放时波浪
+    // 按 ≈30fps 档位流动；背景网格静止，所以整页出帧数就是波浪那一档（不会叠出
+    // 背景的另一档）。
+    for (final Size size in const <Size>[Size(390, 844), Size(1600, 900)]) {
+      testWidgets('modern $size uses wavy seek bars, flows only when playing', (
+        WidgetTester tester,
+      ) async {
+        int drawn = 0;
+        bool counting = false;
+        tester.binding.addPersistentFrameCallback((_) {
+          if (counting) drawn++;
+        });
+        // 每次推 1ms，数这段时间实际画了几帧（测试绑定只在有人要帧时才画）。
+        Future<int> framesOver(int ms) async {
+          drawn = 0;
+          counting = true;
+          for (int i = 0; i < ms; i++) {
+            await tester.pump(const Duration(milliseconds: 1));
+          }
+          counting = false;
+          return drawn;
+        }
+
+        await pumpAt(tester, size, app());
+        expect(find.byType(FushiWavySeekBar), findsWidgets);
+        await tester.pump(const Duration(seconds: 2));
+        expect(await framesOver(300), 0, reason: '暂停空闲');
+        await pumpAt(tester, size, app(playing: true));
+        expect(
+          await framesOver(1000),
+          inInclusiveRange(20, 40),
+          reason: '播放时波浪按 ≈30fps 流动，背景不另出帧',
+        );
+        // 换回暂停：振幅收成直线后重新静止。
+        await pumpAt(tester, size, app());
+        await tester.pump(const Duration(seconds: 3));
+        await tester.pump(const Duration(seconds: 1));
+        expect(await framesOver(300), 0, reason: '暂停后重新静止');
+      });
     }
 
     testWidgets('color change crossfades once, then stops', (

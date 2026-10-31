@@ -4417,7 +4417,6 @@
   "lyrics_mode": "歌詞モード",
   "lyrics_mode_hint_body": "歌詞モードには独自のフォントサイズ設定があります。⚙ 設定 → タイポグラフィで調整できます。",
   "lyrics_mode_hint_title": "歌詞モード",
-  "lyrics_seek_bar": "Playback position",
   "lyrics_sentence_replay": "Replay current sentence",
   "lyrics_skipped_text_show": "朗読されなかった本文を表示",
   "lyrics_skipped_text_show_hint": "朗読で飛ばされた、または字幕と対応できなかった本文を、行の間に小さな灰色の文字で表示します",
