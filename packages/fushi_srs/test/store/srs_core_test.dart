@@ -159,4 +159,51 @@ void main() {
     // 关闭返回时库文件已没有打开的句柄（覆盖恢复要删换 srs.db）。
     File(path).deleteSync();
   });
+
+  test('an upgrade refused for disk space surfaces as a typed, readable error', () {
+    // 与 Rust 侧同一份契约：状态码 store/ffi.rs STORE_NO_SPACE、前缀 store/schema.rs UPGRADE_NO_SPACE。
+    final String ffi = File(
+      '../../native/fushi_fsrs/src/store/ffi.rs',
+    ).readAsStringSync();
+    final String schema = File(
+      '../../native/fushi_fsrs/src/store/schema.rs',
+    ).readAsStringSync();
+    expect(
+      ffi,
+      contains(
+        'pub const STORE_NO_SPACE: i32 = ${SrsUpgradeNoSpaceException.statusCode};',
+      ),
+    );
+    expect(
+      schema,
+      contains(
+        'pub const UPGRADE_NO_SPACE: &str = "${SrsUpgradeNoSpaceException.prefix}";',
+      ),
+    );
+    final SrsUpgradeNoSpaceException? e = SrsUpgradeNoSpaceException.tryParse(
+      -3,
+      '${SrsUpgradeNoSpaceException.prefix}'
+      '{"need":209715200,"free":1048576,"from":8,"to":18}',
+    );
+    expect(e, isNotNull);
+    expect(e!.neededBytes, 209715200);
+    expect(e.freeBytes, 1048576);
+    expect(e, isA<SrsCoreException>());
+    expect('$e', contains('209715200'));
+    // 别的状态码 / 形状不对：照一般错误报。
+    expect(
+      SrsUpgradeNoSpaceException.tryParse(
+        -1,
+        '${SrsUpgradeNoSpaceException.prefix}{"need":1,"free":0}',
+      ),
+      isNull,
+    );
+    expect(
+      SrsUpgradeNoSpaceException.tryParse(
+        -3,
+        '${SrsUpgradeNoSpaceException.prefix}oops',
+      ),
+      isNull,
+    );
+  });
 }
