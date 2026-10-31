@@ -50,7 +50,7 @@ export function pemToDer(pem) {
   const b64 = String(pem).replace(/-----(BEGIN|END)[^-]*-----/g, '').replace(/\s+/g, '');
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.codePointAt(i);
   return out;
 }
 
