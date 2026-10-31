@@ -50,19 +50,26 @@ Future<Dio> createDictionaryDio() async {
 /// 失败**必须**抛 [DioError]（取消用 [DioErrorType.cancel]，连不上 / 超时 / 已答复
 /// 的错误状态码各用对应的 type）：候选回退（[isDictionaryTransportFailure]）、
 /// 失败归因与「取消不算失败」的判据全按 [DioError] 写，换了传输也不能换契约。
+///
+/// [handoff] 非 null 时调用方要求这次传输**跨进程可接管**：能在进程死后继续跑的
+/// 传输（iOS 系统后台会话）必须把它与任务一起持久化，供下一个进程经
+/// [dictionaryDownloadRecovery] 接回；进程内传输随进程一起死，忽略它即可。
 typedef DictionaryDownloadTransport = Future<void> Function({
   required String url,
   required String destPath,
   required void Function(int received, int total) onReceiveProgress,
   CancelToken? cancelToken,
+  DictionaryDownloadHandoff? handoff,
 });
 
-/// 默认传输：进程内 [Dio]（代理与超时见 [createDictionaryDio]）。
+/// 默认传输：进程内 [Dio]（代理与超时见 [createDictionaryDio]）。进程死了下载就没了，
+/// [handoff] 无处可交，忽略。
 Future<void> dioDictionaryDownloadTransport({
   required String url,
   required String destPath,
   required void Function(int received, int total) onReceiveProgress,
   CancelToken? cancelToken,
+  DictionaryDownloadHandoff? handoff,
 }) async {
   final Dio dio = await createDictionaryDio();
   try {
@@ -88,6 +95,115 @@ Future<void> dioDictionaryDownloadTransport({
 /// 在启动时把它接成系统后台 `URLSession`（`ios_background_download.dart`），传输
 /// 交给系统守护进程，app 挂起期间照常下载。与 [dictionaryDioFactory] 同一套装配方向。
 DictionaryDownloadTransport? dictionaryDownloadTransport;
+
+/// 一次**跨进程可接管**的词典下载的持久化描述（BUG-3887 续）。
+///
+/// iOS 系统后台会话的任务在 app 进程被系统回收后照常在守护进程里跑；新进程要接着
+/// 用它，就得知道它是哪本词典的哪个候选、下到哪、下完怎么导入。这些随任务一起持久化
+/// （[toJson]），新进程经 [dictionaryDownloadRecovery] 拿回来，交给
+/// [DictionaryDownloader.resume] 续上候选回退，再按 [payload] 走原导入流程。
+@immutable
+class DictionaryDownloadHandoff {
+  const DictionaryDownloadHandoff({
+    required this.url,
+    required this.candidates,
+    required this.candidateIndex,
+    required this.destPath,
+    required this.payload,
+  });
+
+  /// 原址（[DictionaryDownloadException.url] 与落盘文件名都取自它）。
+  final String url;
+
+  /// [dictionaryDownloadCandidates] 展开的候选序列（持久化的是**当时**的序列：
+  /// 新进程的镜像清单可能已经变了，续传必须按原序列走完剩下的候选）。
+  final List<String> candidates;
+
+  /// 当前这次传输用的是 [candidates] 的第几个。
+  final int candidateIndex;
+
+  /// 落盘位置。
+  final String destPath;
+
+  /// 调用方的导入配方（不透明 JSON，本包不解读）。
+  final Map<String, Object?> payload;
+
+  /// 当前候选地址。
+  String get candidate => candidates[candidateIndex];
+
+  DictionaryDownloadHandoff atCandidate(int index) => DictionaryDownloadHandoff(
+    url: url,
+    candidates: candidates,
+    candidateIndex: index,
+    destPath: destPath,
+    payload: payload,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'url': url,
+    'candidates': candidates,
+    'candidateIndex': candidateIndex,
+    'destPath': destPath,
+    'payload': payload,
+  };
+
+  /// 解析 [toJson] 的产物；字段缺失 / 类型不对 / 下标越界返回 null（记录坏了 = 没人
+  /// 接得住，调用方按孤儿处理）。
+  static DictionaryDownloadHandoff? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final Object? url = json['url'];
+    final Object? candidates = json['candidates'];
+    final Object? index = json['candidateIndex'];
+    final Object? destPath = json['destPath'];
+    final Object? payload = json['payload'];
+    if (url is! String ||
+        candidates is! List ||
+        index is! int ||
+        destPath is! String ||
+        payload is! Map) {
+      return null;
+    }
+    if (candidates.isEmpty || candidates.any((Object? c) => c is! String)) {
+      return null;
+    }
+    if (index < 0 || index >= candidates.length) return null;
+    return DictionaryDownloadHandoff(
+      url: url,
+      candidates: List<String>.unmodifiable(candidates.cast<String>()),
+      candidateIndex: index,
+      destPath: destPath,
+      payload: Map<String, Object?>.unmodifiable(
+        payload.map(
+          (Object? k, Object? v) => MapEntry<String, Object?>('$k', v),
+        ),
+      ),
+    );
+  }
+}
+
+/// 上一个进程发起、本进程接管的一次在途下载（BUG-3887 续）。
+abstract interface class AdoptedDictionaryDownload {
+  DictionaryDownloadHandoff get handoff;
+
+  /// 等它落盘到 [DictionaryDownloadHandoff.destPath]：任务还在跑就接上进度等它跑完，
+  /// 进程不在时已经下完就立即完成，已经失败就抛同一份失败。失败契约同
+  /// [DictionaryDownloadTransport]（一律 [DioError]）。**只能调一次**；结束后记录即释放。
+  Future<void> wait({
+    required void Function(int received, int total) onReceiveProgress,
+    CancelToken? cancelToken,
+  });
+
+  /// 没人要了：取消任务、删掉已交付的文件、释放记录。
+  Future<void> discard();
+}
+
+/// 列出上一个进程留下的在途词典下载（BUG-3887 续）。由支持跨进程传输的平台在启动时
+/// 接线（iOS：`ios_background_download.dart`）；未接线 = 没有可接管的下载。
+typedef DictionaryDownloadRecovery =
+    Future<List<AdoptedDictionaryDownload>> Function();
+
+/// 见 [DictionaryDownloadRecovery]。
+DictionaryDownloadRecovery? dictionaryDownloadRecovery;
 
 /// 候选地址解析钩子（BUG-2188）：把 catalog 里的**一个**下载地址展开成按优先级排序的
 /// 候选序列（首位必须是原址）。app 在启动时接线成 GitHub 公共镜像展开
@@ -1012,12 +1128,17 @@ class DictionaryDownloader {
   /// 服务器已答复的 404/403 与用户取消都立即停。全部候选失败时抛
   /// [DictionaryDownloadException]，它带着归因、原址与试过的地址——调用方因此能给出
   /// 人话原因，而不是把 `DioError [connection ...` 甩给用户。
+  ///
+  /// [handoffPayload] 非 null = 本次下载跨进程可接管（BUG-3887 续）：每个候选都带着
+  /// [DictionaryDownloadHandoff] 交给传输，进程死后下一个进程经
+  /// [dictionaryDownloadRecovery] + [resume] 接着下，下完按 payload 导入。
   static Future<File> download({
     required String url,
     required Directory tempDir,
     required ValueNotifier<double> progressNotifier,
     CancelToken? cancelToken,
     void Function(int received, int total)? onBytes,
+    Map<String, Object?>? handoffPayload,
   }) async {
     if (!tempDir.existsSync()) {
       tempDir.createSync(recursive: true);
@@ -1031,7 +1152,70 @@ class DictionaryDownloader {
       throw ArgumentError.value(url, 'url', 'download file name escapes tempDir');
     }
     final List<String> candidates = dictionaryDownloadCandidates(url);
-    final List<String> attempted = <String>[];
+    return _downloadCandidates(
+      url: url,
+      candidates: candidates,
+      startIndex: 0,
+      destPath: destPath,
+      progressNotifier: progressNotifier,
+      cancelToken: cancelToken,
+      onBytes: onBytes,
+      handoff: handoffPayload == null
+          ? null
+          : DictionaryDownloadHandoff(
+              url: url,
+              candidates: candidates,
+              candidateIndex: 0,
+              destPath: destPath,
+              payload: handoffPayload,
+            ),
+    );
+  }
+
+  /// 接着上一个进程的下载往下走（BUG-3887 续）：先等 [adopted] 本身（在途的接上、已
+  /// 交付的直接拿文件），它若以**传输层**失败结束，就按持久化的候选序列从下一个候选
+  /// 继续——与 [download] 同一个候选循环、同一份失败归因，只是起点不在第一个候选。
+  static Future<File> resume({
+    required AdoptedDictionaryDownload adopted,
+    required ValueNotifier<double> progressNotifier,
+    CancelToken? cancelToken,
+    void Function(int received, int total)? onBytes,
+  }) {
+    final DictionaryDownloadHandoff handoff = adopted.handoff;
+    final Directory parent = File(handoff.destPath).parent;
+    if (!parent.existsSync()) parent.createSync(recursive: true);
+    return _downloadCandidates(
+      url: handoff.url,
+      candidates: handoff.candidates,
+      startIndex: handoff.candidateIndex,
+      destPath: handoff.destPath,
+      progressNotifier: progressNotifier,
+      cancelToken: cancelToken,
+      onBytes: onBytes,
+      handoff: handoff,
+      firstAttempt: adopted.wait,
+    );
+  }
+
+  /// [download] / [resume] 共用的候选循环：从 [startIndex] 起逐个候选试。
+  /// [firstAttempt] 非 null 时第一跳不新发传输而是等它（接管的在途任务）。
+  static Future<File> _downloadCandidates({
+    required String url,
+    required List<String> candidates,
+    required int startIndex,
+    required String destPath,
+    required ValueNotifier<double> progressNotifier,
+    required CancelToken? cancelToken,
+    required void Function(int received, int total)? onBytes,
+    required DictionaryDownloadHandoff? handoff,
+    Future<void> Function({
+      required void Function(int received, int total) onReceiveProgress,
+      CancelToken? cancelToken,
+    })?
+    firstAttempt,
+  }) async {
+    // 续传时前面的候选已在上一个进程里试过，归因里照样列出来。
+    final List<String> attempted = candidates.sublist(0, startIndex);
 
     Object? lastError;
     void onReceiveProgress(int received, int total) {
@@ -1043,15 +1227,24 @@ class DictionaryDownloader {
 
     final DictionaryDownloadTransport transport =
         dictionaryDownloadTransport ?? dioDictionaryDownloadTransport;
-    for (final String candidate in candidates) {
+    for (int i = startIndex; i < candidates.length; i++) {
+      final String candidate = candidates[i];
       attempted.add(candidate);
       try {
-        await transport(
-          url: candidate,
-          destPath: destPath,
-          onReceiveProgress: onReceiveProgress,
-          cancelToken: cancelToken,
-        );
+        if (i == startIndex && firstAttempt != null) {
+          await firstAttempt(
+            onReceiveProgress: onReceiveProgress,
+            cancelToken: cancelToken,
+          );
+        } else {
+          await transport(
+            url: candidate,
+            destPath: destPath,
+            onReceiveProgress: onReceiveProgress,
+            cancelToken: cancelToken,
+            handoff: handoff?.atCandidate(i),
+          );
+        }
         return File(destPath);
       } catch (e) {
         lastError = e;

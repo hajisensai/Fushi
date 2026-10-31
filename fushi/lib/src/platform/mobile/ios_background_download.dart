@@ -6,11 +6,20 @@
 /// 进程里跑，app 挂起期间照常推进，下完系统把 app 唤醒到后台交付文件。
 ///
 /// 契约（方法名 / 参数名是跨语言契约，改一边必须改另一边）：
-/// * Dart → 原生 `start {id, url, dest, proxyMode, proxyHost?, proxyPort?}`、
+/// * Dart → 原生 `start {id, url, dest, proxyMode, proxyHost?, proxyPort?, meta?}`、
 ///   `cancel {id}`；
 /// * 原生 → Dart `progress {id, received, total}`（total 未知为 -1）、
 ///   `complete {id, error?}`，error = `{kind, status?, message?}`，kind 取
-///   [_kindCancel] / [_kindConnection] / [_kindStall] / [_kindBadResponse] / 其它。
+///   [_kindCancel] / [_kindConnection] / [_kindStall] / [_kindBadResponse] / 其它；
+/// * 跨进程接管：带 `meta`（[DictionaryDownloadHandoff] 的 JSON）发起的任务进原生
+///   持久化注册表。`recover` → `[{id, meta}]` 列出注册表；`attach {id}` →
+///   `{state: running|delivered|failed|missing, received?, total?, error?}` 答复它此刻的
+///   结局；`forget {id}` 释放记录、`discard {id}` 取消任务 + 删已交付文件 + 释放记录。
+///
+/// 进程被系统回收：传输照常在守护进程里跑，新进程启动时原生侧把注册表里的任务接回
+/// （进程不在时交付的文件照样挪到目标路径），只取消注册表里没有的真孤儿；Dart 侧由
+/// `DictionaryDownloadController.resumeAdoptedDownloads` 经 [IosBackgroundDownloadTransport.recover]
+/// 接手，续上候选回退，再走原导入流程。
 ///
 /// 失败一律翻译成 [DioError]：`DictionaryDownloader.download` 的候选回退、失败归因与
 /// 「取消不算失败」全按 [DioError] 判，换传输不换契约。
@@ -22,6 +31,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:dio/dio.dart';
@@ -138,12 +148,17 @@ class _PendingDownload {
   bool receivedBytes = false;
   DateTime lastActivity;
 
+  void succeed() {
+    if (!completer.isCompleted) completer.complete();
+  }
+
   void fail(Object error) {
     if (!completer.isCompleted) completer.completeError(error);
   }
 }
 
-/// 系统后台 `URLSession` 传输，实现 [DictionaryDownloadTransport] 契约。
+/// 系统后台 `URLSession` 传输，实现 [DictionaryDownloadTransport] 与
+/// [DictionaryDownloadRecovery] 契约。
 class IosBackgroundDownloadTransport {
   IosBackgroundDownloadTransport({
     MethodChannel channel = kIosBackgroundDownloadChannel,
@@ -183,12 +198,14 @@ class IosBackgroundDownloadTransport {
   /// 当前在途的下载 id（测试 / 诊断用）。
   Iterable<String> get pendingIds => _pending.keys;
 
-  /// [DictionaryDownloadTransport] 的实现。
+  /// [DictionaryDownloadTransport] 的实现。[handoff] 非 null 时随任务交给原生
+  /// 注册表（`meta`），进程被回收后新进程经 [recover] 接回。
   Future<void> download({
     required String url,
     required String destPath,
     required void Function(int received, int total) onReceiveProgress,
     CancelToken? cancelToken,
+    DictionaryDownloadHandoff? handoff,
   }) async {
     final IosBackgroundDownloadProxy? proxy = _proxy();
     if (proxy == null || _channelMissing) {
@@ -197,6 +214,7 @@ class IosBackgroundDownloadTransport {
         destPath: destPath,
         onReceiveProgress: onReceiveProgress,
         cancelToken: cancelToken,
+        handoff: handoff,
       );
     }
     final CancelToken? token = cancelToken;
@@ -205,6 +223,138 @@ class IosBackgroundDownloadTransport {
     }
 
     final String id = 'dict-${_now().microsecondsSinceEpoch}-${_sequence++}';
+    try {
+      await _drive(
+        id: id,
+        url: url,
+        onReceiveProgress: onReceiveProgress,
+        cancelToken: cancelToken,
+        persistent: handoff != null,
+        begin: (_PendingDownload pending) =>
+            _channel.invokeMethod<void>('start', <String, Object?>{
+              'id': id,
+              'url': url,
+              'dest': destPath,
+              ...proxy.toArguments(),
+              if (handoff != null) 'meta': jsonEncode(handoff.toJson()),
+            }),
+      );
+    } on MissingPluginException {
+      // 没注册原生侧的引擎入口（弹窗词典等）：本进程从此一律走进程内传输。
+      _channelMissing = true;
+      return _fallback(
+        url: url,
+        destPath: destPath,
+        onReceiveProgress: onReceiveProgress,
+        cancelToken: cancelToken,
+        handoff: handoff,
+      );
+    }
+  }
+
+  /// [DictionaryDownloadRecovery] 的实现：列出上一个进程登记、原生注册表里还在的
+  /// 下载。记录坏了（解析不出接管描述）的没人接得住，当场 `discard`。
+  Future<List<AdoptedDictionaryDownload>> recover() async {
+    if (_channelMissing) return const <AdoptedDictionaryDownload>[];
+    final List<Object?>? raw;
+    try {
+      raw = await _channel.invokeListMethod<Object?>('recover');
+    } on MissingPluginException {
+      _channelMissing = true;
+      return const <AdoptedDictionaryDownload>[];
+    } on PlatformException catch (e) {
+      debugPrint('[BackgroundDownload] recover failed: $e');
+      return const <AdoptedDictionaryDownload>[];
+    }
+    final List<AdoptedDictionaryDownload> adopted =
+        <AdoptedDictionaryDownload>[];
+    for (final Object? entry in raw ?? const <Object?>[]) {
+      if (entry is! Map<Object?, Object?>) continue;
+      final Object? id = entry['id'];
+      if (id is! String) continue;
+      DictionaryDownloadHandoff? handoff;
+      final Object? meta = entry['meta'];
+      if (meta is String) {
+        try {
+          handoff = DictionaryDownloadHandoff.tryParse(jsonDecode(meta));
+        } on FormatException {
+          handoff = null;
+        }
+      }
+      if (handoff == null) {
+        await _invokeQuietly('discard', id);
+        continue;
+      }
+      adopted.add(_AdoptedIosDownload(this, id, handoff));
+    }
+    return adopted;
+  }
+
+  /// 接手一条上一个进程的记录：先挂上等待（之后到的原生事件都能路由过来），再问
+  /// 原生此刻的结局——任务在进程不在时已经交付 / 失败的，结局就在答复里。
+  Future<void> _attach(
+    String id,
+    DictionaryDownloadHandoff handoff, {
+    required void Function(int received, int total) onReceiveProgress,
+    CancelToken? cancelToken,
+  }) {
+    final String url = handoff.candidate;
+    return _drive(
+      id: id,
+      url: url,
+      onReceiveProgress: onReceiveProgress,
+      cancelToken: cancelToken,
+      persistent: true,
+      begin: (_PendingDownload pending) async {
+        final Map<Object?, Object?>? state = await _channel
+            .invokeMapMethod<Object?, Object?>('attach', <String, Object?>{
+              'id': id,
+            });
+        switch (state?['state']) {
+          case 'running':
+            final int received = (state!['received'] as num?)?.toInt() ?? 0;
+            final int total = (state['total'] as num?)?.toInt() ?? -1;
+            if (received > 0) {
+              pending.receivedBytes = true;
+              pending.lastActivity = _now();
+              pending.onReceiveProgress(received, total);
+            }
+          case 'delivered':
+            pending.succeed();
+          case 'failed':
+            final Object? error = state!['error'];
+            pending.fail(
+              _dioErrorFor(
+                url,
+                error is Map<Object?, Object?>
+                    ? error
+                    : const <Object?, Object?>{},
+              ),
+            );
+          default:
+            pending.fail(
+              DioError(
+                requestOptions: RequestOptions(path: url),
+                message: 'background download $id is gone',
+              ),
+            );
+        }
+      },
+    );
+  }
+
+  /// 一次原生任务的等待骨架：挂等待 → [begin]（发起 / 接手）→ 等原生 complete。
+  /// 取消令牌与前台看门狗都在这里接；[persistent] 的任务结束后释放原生注册表记录
+  /// （**先释放再返回**：返回后调用方就要导入并删文件，记录残留会让下一个进程拿一个
+  /// 已经删掉的文件再导一次）。
+  Future<void> _drive({
+    required String id,
+    required String url,
+    required void Function(int received, int total) onReceiveProgress,
+    required CancelToken? cancelToken,
+    required bool persistent,
+    required Future<void> Function(_PendingDownload pending) begin,
+  }) async {
     final _PendingDownload pending = _PendingDownload(
       url,
       onReceiveProgress,
@@ -212,6 +362,7 @@ class IosBackgroundDownloadTransport {
     );
     _pending[id] = pending;
 
+    final CancelToken? token = cancelToken;
     unawaited(
       token?.whenCancel.then((DioError error) {
         if (pending.completer.isCompleted) return;
@@ -226,23 +377,7 @@ class IosBackgroundDownloadTransport {
 
     try {
       try {
-        await _channel.invokeMethod<void>('start', <String, Object?>{
-          'id': id,
-          'url': url,
-          'dest': destPath,
-          ...proxy.toArguments(),
-        });
-      } on MissingPluginException {
-        // 没注册原生侧的引擎入口（弹窗词典等）：本进程从此一律走进程内传输。
-        _channelMissing = true;
-        _pending.remove(id);
-        watchdog.cancel();
-        return await _fallback(
-          url: url,
-          destPath: destPath,
-          onReceiveProgress: onReceiveProgress,
-          cancelToken: cancelToken,
-        );
+        await begin(pending);
       } on PlatformException catch (e) {
         pending.fail(
           DioError(
@@ -256,6 +391,7 @@ class IosBackgroundDownloadTransport {
     } finally {
       watchdog.cancel();
       _pending.remove(id);
+      if (persistent) await _invokeQuietly('forget', id);
     }
   }
 
@@ -283,13 +419,17 @@ class IosBackgroundDownloadTransport {
     unawaited(_cancelNative(id));
   }
 
-  Future<void> _cancelNative(String id) async {
+  Future<void> _cancelNative(String id) => _invokeQuietly('cancel', id);
+
+  /// 只带 id 的原生调用（cancel / forget / discard）：失败只记日志——它们都在收尾
+  /// 路径上，不能盖住真正的下载结局。
+  Future<void> _invokeQuietly(String method, String id) async {
     try {
-      await _channel.invokeMethod<void>('cancel', <String, Object?>{'id': id});
+      await _channel.invokeMethod<void>(method, <String, Object?>{'id': id});
     } on PlatformException catch (e) {
-      debugPrint('[BackgroundDownload] cancel $id failed: $e');
+      debugPrint('[BackgroundDownload] $method $id failed: $e');
     } on MissingPluginException catch (e) {
-      debugPrint('[BackgroundDownload] cancel $id: channel missing ($e)');
+      debugPrint('[BackgroundDownload] $method $id: channel missing ($e)');
     }
   }
 
@@ -298,7 +438,8 @@ class IosBackgroundDownloadTransport {
         (call.arguments as Map<Object?, Object?>?) ??
         const <Object?, Object?>{};
     final _PendingDownload? pending = _pending[args['id']];
-    // 不认识的 id：上一个进程留下的任务，或已被看门狗 / 取消了结的任务。
+    // 不认识的 id：还没被 Dart 接手的上一进程任务（结局记在原生注册表里，接手时
+    // `attach` 会答复），或已被看门狗 / 取消了结的任务。
     if (pending == null || pending.completer.isCompleted) return null;
     switch (call.method) {
       case 'progress':
@@ -312,10 +453,43 @@ class IosBackgroundDownloadTransport {
         if (error is Map<Object?, Object?>) {
           pending.fail(_dioErrorFor(pending.url, error));
         } else {
-          pending.completer.complete();
+          pending.succeed();
         }
     }
     return null;
+  }
+}
+
+/// 原生注册表里一条上一进程的记录，由 [IosBackgroundDownloadTransport.recover] 交出。
+class _AdoptedIosDownload implements AdoptedDictionaryDownload {
+  _AdoptedIosDownload(this._transport, this._id, this.handoff);
+
+  final IosBackgroundDownloadTransport _transport;
+  final String _id;
+  bool _claimed = false;
+
+  @override
+  final DictionaryDownloadHandoff handoff;
+
+  @override
+  Future<void> wait({
+    required void Function(int received, int total) onReceiveProgress,
+    CancelToken? cancelToken,
+  }) {
+    if (_claimed) throw StateError('adopted download $_id already claimed');
+    _claimed = true;
+    return _transport._attach(
+      _id,
+      handoff,
+      onReceiveProgress: onReceiveProgress,
+      cancelToken: cancelToken,
+    );
+  }
+
+  @override
+  Future<void> discard() {
+    _claimed = true;
+    return _transport._invokeQuietly('discard', _id);
   }
 }
 
@@ -355,10 +529,16 @@ DioError _dioErrorFor(String url, Map<Object?, Object?> error) {
   }
 }
 
+
 /// 在 iOS 上把词典包下载接到系统后台会话（启动时调一次，幂等；其余平台 no-op）。
 /// 用户配了带认证的手动代理、或本引擎入口没注册原生通道时退回进程内 dio。
+/// 同一个传输实例同时接上 [dictionaryDownloadRecovery]：通道 handler 只有一个，
+/// 接手上一进程任务的事件也得路由到同一份 pending 表。
 void installIosBackgroundDictionaryTransport() {
   if (!Platform.isIOS) return;
   if (dictionaryDownloadTransport != null) return;
-  dictionaryDownloadTransport = IosBackgroundDownloadTransport().download;
+  final IosBackgroundDownloadTransport transport =
+      IosBackgroundDownloadTransport();
+  dictionaryDownloadTransport = transport.download;
+  dictionaryDownloadRecovery = transport.recover;
 }
