@@ -61,11 +61,15 @@ class DictionaryPopupHistoryPage {
     required this.result,
     required this.allLoaded,
     required this.scrollTop,
+    this.rubySpans = const <FushiRubySpan>[],
   });
 
   final String searchTerm;
   final DictionarySearchResult? result;
   final bool allLoaded;
+
+  /// 该页 [searchTerm] 上来源自带的振假名（见 [DictionaryPopupEntry.rubySpans]）。
+  final List<FushiRubySpan> rubySpans;
 
   /// 离开该页时弹窗内容的 `scrollTop`（CSS px，WebView 局部）；回来时恢复。
   final double scrollTop;
@@ -81,12 +85,20 @@ class DictionaryPopupEntry {
     this.visible = true,
     this.isWarmSlot = false,
     this.allLoaded = false,
+    this.rubySpans = const <FushiRubySpan>[],
     GlobalKey<DictionaryPopupWebViewState>? webViewKey,
   }) : webViewKey = webViewKey ?? GlobalKey<DictionaryPopupWebViewState>();
 
   String searchTerm;
   Rect selectionRect;
   DictionarySearchResult? result;
+
+  /// [searchTerm] 上来源自带的振假名（以 [searchTerm] 为坐标系），即本层首查时交给
+  /// 引擎、让读音吻合的候选排前的那组区间。「加载更多」是**同一个查询**扩大上限重查，
+  /// 必须带着同一组 ruby，否则续查结果按纯频率重排、整份替换掉首查的读音排序
+  /// （PR #2671 审查）。与 [searchTerm] 同生同灭：换词（热槽复用 / 原地跳转 / 后退
+  /// 前进 / 热槽复位）时一并替换。
+  List<FushiRubySpan> rubySpans;
 
   /// 该层是否被绘制/可交互。常驻热槽在两次查词之间 `visible=false` 隐身，
   /// 但 WebView 仍挂载预热；一次查词把它翻为可见。
@@ -467,6 +479,7 @@ class DictionaryPopupController extends ChangeNotifier {
   void _restoreWarmSeed(DictionaryPopupEntry e) {
     e
       ..searchTerm = ''
+      ..rubySpans = const <FushiRubySpan>[]
       ..selectionRect = Rect.zero
       ..result = kPopupSearchingPlaceholderResult
       ..visible = false
@@ -519,6 +532,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required bool replaceStack,
     required bool visible,
     DictionarySearchResult? initialResult,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
     onLookupStarted?.call();
     final bool warmHit =
@@ -544,6 +558,7 @@ class DictionaryPopupController extends ChangeNotifier {
       _cancelRevealTimer(_entries.first);
       e = _entries.first
         ..searchTerm = term
+        ..rubySpans = rubySpans
         ..selectionRect = rect
         ..result = initialResult
         ..allLoaded = false
@@ -564,6 +579,7 @@ class DictionaryPopupController extends ChangeNotifier {
         selectionRect: rect,
         result: initialResult,
         visible: visible,
+        rubySpans: rubySpans,
         webViewKey: _takeRealmKey(),
       )..isSearching = true;
       _entries.add(e);
@@ -587,6 +603,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required Rect rect,
     required int parentIndex,
     required bool visible,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
     onLookupStarted?.call();
     truncateTo(parentIndex + 1);
@@ -594,6 +611,7 @@ class DictionaryPopupController extends ChangeNotifier {
       searchTerm: term,
       selectionRect: rect,
       visible: visible,
+      rubySpans: rubySpans,
       webViewKey: _takeRealmKey(),
     )..isSearching = true;
     _entries.add(e);
@@ -672,6 +690,7 @@ class DictionaryPopupController extends ChangeNotifier {
       result: e.result,
       allLoaded: e.allLoaded,
       scrollTop: scrollTop,
+      rubySpans: e.rubySpans,
     );
   }
 
@@ -682,6 +701,7 @@ class DictionaryPopupController extends ChangeNotifier {
   }) {
     e
       ..searchTerm = page.searchTerm
+      ..rubySpans = page.rubySpans
       ..result = page.result
       ..allLoaded = page.allLoaded
       ..isSearching = false
@@ -704,6 +724,7 @@ class DictionaryPopupController extends ChangeNotifier {
     required DictionarySearchResult result,
     required bool allLoaded,
     required double scrollTop,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
     if (!_entries.contains(e)) return false;
     onLookupStarted?.call();
@@ -716,6 +737,7 @@ class DictionaryPopupController extends ChangeNotifier {
         result: result,
         allLoaded: allLoaded,
         scrollTop: 0,
+        rubySpans: rubySpans,
       ),
       restoreScrollTop: null,
     );

@@ -1720,7 +1720,8 @@
         var showCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
         var shown = typeof window.fushiShowLookupFromSidePanel === 'function' &&
           window.fushiShowLookupFromSidePanel(
-            String(msg.term || ''), showCue, msg.anchorRatio) === true;
+            String(msg.term || ''), showCue, msg.anchorRatio,
+            Array.isArray(msg.ruby) ? msg.ruby : null) === true;
         sendResponse({ ok: shown });
         return false;
       }

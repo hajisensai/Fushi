@@ -144,7 +144,15 @@ function loadContentAndFireShift(options) {
     // 与 Flutter app 同款 vendor/selection.js 的最小行为桩：命中一个字、扩成一个词。
     fushiSelection: {
       getCharacterAtPoint: () => ({ node: { textContent: '世界です', nodeType: 3 }, offset: 0 }),
-      selectFromPosition: () => '世界',
+      // options.selection：模拟真 selection.js 选词后留下的 selection（含 rubyReadings）。
+      selection: null,
+      selectFromPosition() {
+        if (options.selection) {
+          this.selection = options.selection;
+          return options.selection.text;
+        }
+        return '世界';
+      },
       getSelectionRect: () => ({ x: 100, y: 100, width: 20, height: 16 }),
       highlightSelection: () => ({ x: 100, y: 100, width: 20, height: 16 }),
       clearSelection() {},
@@ -415,4 +423,104 @@ test('BUG-1024 截止时间内仍拦截在途重复查词（防洪未退化）',
     1,
     '截止时间内不应放行第二次查词（在途闸防洪失效）',
   );
+});
+
+// 原文自带振假名随查词带给 app（selection.js 选词后把 `[{s,e,r}]` 放在
+// fushiSelection.selection.rubyReadings，以 selection.text 为坐标系）。只用来源自带的读音。
+test('Shift 悬停：选区带 rubyReadings 时 lookup 消息携带 ruby（对齐到 term）', () => {
+  const h = loadContentAndFireShift({
+    selection: { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] },
+  });
+  fireShiftLookup(h.docListeners, 300, 400);
+  const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1);
+  assert.strictEqual(lookups[0].term, '忙しい');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+// 同词去重的「同词」= 词 + 原文振假名：同写作「忙しい」，一处 ruby 标「せわ」、一处没有，
+// 引擎排出的候选不同，不能被当成「还在同一个词上」吞掉。
+test('Shift 悬停同词去重把 ruby 算进身份：同字不同 ruby 重查，同字同 ruby 仍去重', () => {
+  const options = {
+    selection: { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] },
+  };
+  const h = loadContentAndFireShift(options);
+  const lookups = () => h.sent.filter((m) => m && m.type === 'lookup');
+  const hover = (x) => {
+    for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: x, clientY: 400 });
+  };
+  hover(300);
+  assert.strictEqual(lookups().length, 1);
+
+  // 同一个字、同一组 ruby：仍是同一个查词身份，不重发。
+  hover(340);
+  assert.strictEqual(lookups().length, 1, '同字同 ruby 必须继续去重');
+
+  // 移到另一处没有 ruby 的「忙しい」：查词身份变了，必须重查。
+  options.selection = { text: '忙しい' };
+  hover(380);
+  assert.strictEqual(lookups().length, 2, '同字不同 ruby 被当成同词吞掉，读音排序失效');
+  assert.ok(!('ruby' in lookups()[1]));
+
+  // 再回到带「せわ」的那处：又换了身份，照样重查。
+  options.selection = { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] };
+  hover(420);
+  assert.strictEqual(lookups().length, 3);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups()[2].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+test('fushiLookupKey：无 ruby 时等于词本身（旧去重语义不变），有 ruby 时带上区间与读音', () => {
+  const { windowObj } = loadContentAndFireShift();
+  assert.strictEqual(windowObj.fushiLookupKey('忙しい', null), '忙しい');
+  assert.strictEqual(windowObj.fushiLookupKey('忙しい', []), '忙しい');
+  assert.notStrictEqual(
+    windowObj.fushiLookupKey('忙しい', [{ s: 0, e: 1, r: 'せわ' }]),
+    windowObj.fushiLookupKey('忙しい', [{ s: 0, e: 1, r: 'いそが' }]),
+  );
+});
+
+test('没有 rubyReadings / 空数组 时 lookup 消息不带 ruby 字段（旧消息形态不变）', () => {
+  for (const selection of [{ text: '忙しい' }, { text: '忙しい', rubyReadings: [] }]) {
+    const h = loadContentAndFireShift({ selection });
+    fireShiftLookup(h.docListeners, 300, 400);
+    const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+    assert.strictEqual(lookups.length, 1);
+    assert.ok(!('ruby' in lookups[0]), 'ruby 为空时不得出现在消息里');
+  }
+});
+
+test('点击查词（fushiLookupAtPoint）同样携带 ruby', () => {
+  const h = loadContentAndFireShift({
+    selection: { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] },
+  });
+  h.windowObj.fushiLookupAtPoint(300, 400, null);
+  const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+test('fushiAlignLookupRuby：按裁掉的句首空白平移，越界 / 畸形丢弃，term 不是原文前缀整份不用', () => {
+  const { windowObj } = loadContentAndFireShift();
+  const align = (raw, term, ruby) => {
+    const out = windowObj.fushiAlignLookupRuby(raw, term, ruby);
+    return out === null ? null : JSON.parse(JSON.stringify(out));
+  };
+  assert.deepStrictEqual(align('  忙しい', '忙しい', [{ s: 2, e: 3, r: ' せわ ' }]), [{ s: 0, e: 1, r: 'せわ' }]);
+  // term 被截短：落在截掉部分的段丢弃。
+  assert.deepStrictEqual(
+    align('忙しい日々', '忙しい', [{ s: 0, e: 1, r: 'せわ' }, { s: 3, e: 5, r: 'ひび' }]),
+    [{ s: 0, e: 1, r: 'せわ' }],
+  );
+  assert.strictEqual(align('忙しい', '忙しい', [{ s: 0, e: 0, r: 'x' }, { s: 'a', e: 1, r: 'x' }, { s: 0, e: 1, r: '' }, null]), null);
+  assert.strictEqual(align('忙しい', '楽しい', [{ s: 0, e: 1, r: 'せわ' }]), null);
+  assert.strictEqual(align('忙しい', '忙しい', undefined), null);
+});
+
+test('侧栏把词交回页面：ruby 按侧栏 term 的 trim 对齐后随 lookup 发出', () => {
+  const h = loadContentAndFireShift();
+  h.windowObj.fushiShowLookupFromSidePanel(' 忙しい ', null, 0, [{ s: 1, e: 2, r: 'せわ' }]);
+  const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1);
+  assert.strictEqual(lookups[0].term, '忙しい');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
 });

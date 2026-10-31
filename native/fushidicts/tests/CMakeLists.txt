@@ -117,6 +117,10 @@ add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
 add_fushi_test(korean_hangul_lookup_test korean_hangul_lookup_test.cpp
     "${FUSHI_SRC}/text_processor"
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
+# 原文振假名参与排序：同匹配长度内 ruby 读音吻合者居首、截断前生效。
+add_fushi_test(ruby_reading_lookup_test ruby_reading_lookup_test.cpp
+    "${FUSHI_SRC}/scan"
+    "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # 中文查词简体 → 繁體回落：开关门控、原形保留、端到端命中繁體词条。
 add_fushi_test(chinese_simp_trad_lookup_test chinese_simp_trad_lookup_test.cpp
     "${FUSHI_SRC}/text_processor"

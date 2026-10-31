@@ -225,6 +225,21 @@ typedef _LookupWithFlagsDart = FfiLookupResults Function(
     Pointer<Utf8> primaryReading,
     int flags);
 
+// 带原文振假名的 lookup：rubyBounds = 2*rubyCount 个查询串码点偏移（start, end 交替），
+// rubyReadings = rubyCount 个 <rt> 读音以 U+001F 连接。
+typedef _LookupWithRubyDart = FfiLookupResults Function(
+    Pointer<Void> handle,
+    Pointer<Utf8> text,
+    int maxResults,
+    int scanLength,
+    Pointer<Utf8> freqDict,
+    int freqOrder,
+    Pointer<Utf8> primaryReading,
+    int flags,
+    Pointer<Int32> rubyBounds,
+    Pointer<Utf8> rubyReadings,
+    int rubyCount);
+
 typedef _FreeLookupResultsDart = void Function(Pointer<FfiLookupResults> r);
 
 typedef _GetStylesDart = FfiDictStyles Function(Pointer<Void> handle);
@@ -320,6 +335,20 @@ class FushidictsFfiBindings {
         FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32,
             Pointer<Utf8>, Int32, Pointer<Utf8>, Int32),
         _LookupWithFlagsDart>('fushidicts_lookup_with_flags');
+    lookupWithRuby = _lib.lookupFunction<
+        FfiLookupResults Function(
+            Pointer<Void>,
+            Pointer<Utf8>,
+            Int32,
+            Int32,
+            Pointer<Utf8>,
+            Int32,
+            Pointer<Utf8>,
+            Int32,
+            Pointer<Int32>,
+            Pointer<Utf8>,
+            Int32),
+        _LookupWithRubyDart>('fushidicts_lookup_with_ruby');
     freeLookupResults = _lib.lookupFunction<
         Void Function(Pointer<FfiLookupResults>),
         _FreeLookupResultsDart>('fushidicts_free_lookup_results');
@@ -377,6 +406,7 @@ class FushidictsFfiBindings {
   late final _LookupDart lookup;
   late final _LookupWithOptionsDart lookupWithOptions;
   late final _LookupWithFlagsDart lookupWithFlags;
+  late final _LookupWithRubyDart lookupWithRuby;
   late final _FreeLookupResultsDart freeLookupResults;
   late final _GetStylesDart getStyles;
   late final _FreeStylesDart freeStyles;

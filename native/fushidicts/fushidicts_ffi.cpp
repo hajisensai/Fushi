@@ -9,6 +9,7 @@
 #include <mutex>
 #include <shared_mutex>  // std::shared_lock
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -818,7 +819,30 @@ struct LookupOptionArgs {
   int32_t freq_order;
   const char* primary_reading;
   int32_t flags;
+  // 原文振假名：ruby_bounds 是 2*ruby_count 个码点偏移（start, end 交替），
+  // ruby_readings 是 ruby_count 个读音以 U+001F 连接。count<=0 / 指针为空 = 无。
+  const int32_t* ruby_bounds = nullptr;
+  const char* ruby_readings = nullptr;
+  int32_t ruby_count = 0;
 };
+
+std::vector<RubyReading> parse_ruby_readings(const LookupOptionArgs& args) {
+  std::vector<RubyReading> out;
+  if (args.ruby_count <= 0 || !args.ruby_bounds || !args.ruby_readings) return out;
+  std::string_view rest(args.ruby_readings);
+  for (int32_t i = 0; i < args.ruby_count; ++i) {
+    const std::size_t cut = rest.find('\x1f');
+    const std::string_view reading = rest.substr(0, cut);
+    const int32_t start = args.ruby_bounds[2 * i];
+    const int32_t end = args.ruby_bounds[2 * i + 1];
+    if (start >= 0 && end > start && !reading.empty()) {
+      out.push_back(RubyReading{static_cast<std::size_t>(start), static_cast<std::size_t>(end), std::string(reading)});
+    }
+    if (cut == std::string_view::npos) break;
+    rest.remove_prefix(cut + 1);
+  }
+  return out;
+}
 
 LookupOptions make_lookup_options(const LookupOptionArgs& args) {
   LookupOptions options;
@@ -835,6 +859,7 @@ LookupOptions make_lookup_options(const LookupOptionArgs& args) {
     options.primary_reading = std::string(args.primary_reading);
   }
   options.chinese_simp_to_trad = (args.flags & kLookupFlagChineseSimpToTrad) != 0;
+  options.ruby_readings = parse_ruby_readings(args);
   return options;
 }
 
@@ -868,6 +893,21 @@ FfiLookupResults fushidicts_lookup_with_flags(void* handle, const char* text, in
   return ffi_guard("fushidicts_lookup_with_flags", [&]() -> FfiLookupResults {
     return lookup_with_option_args(handle, text, max_results, scan_length,
                                    LookupOptionArgs{freq_dict, freq_order, primary_reading, flags});
+  });
+}
+
+// 带原文振假名的 lookup（其余参数同 fushidicts_lookup_with_flags）。ruby_bounds：
+// 2*ruby_count 个查询串**码点**偏移（start, end 交替）；ruby_readings：ruby_count 个
+// <rt> 读音以 U+001F 连接。见 LookupOptions::ruby_readings。老导出不动。
+FUSHI_EXPORT
+FfiLookupResults fushidicts_lookup_with_ruby(void* handle, const char* text, int32_t max_results,
+                                             int32_t scan_length, const char* freq_dict, int32_t freq_order,
+                                             const char* primary_reading, int32_t flags, const int32_t* ruby_bounds,
+                                             const char* ruby_readings, int32_t ruby_count) {
+  return ffi_guard("fushidicts_lookup_with_ruby", [&]() -> FfiLookupResults {
+    return lookup_with_option_args(
+        handle, text, max_results, scan_length,
+        LookupOptionArgs{freq_dict, freq_order, primary_reading, flags, ruby_bounds, ruby_readings, ruby_count});
   });
 }
 

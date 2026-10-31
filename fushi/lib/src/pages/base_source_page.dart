@@ -391,6 +391,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     int? overrideMaximumTerms,
     bool deferDisplay = false,
     LookupOrigin origin = LookupOrigin.explicit,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
@@ -414,11 +415,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         _isSearchingNotifier.value = true;
       }
 
-      final dictionaryResult = await appModel.searchDictionary(
-        searchTerm: searchTerm,
-        searchWithWildcards: false,
-        overrideMaximumTerms: overrideMaximumTerms,
-      );
+      // 原文自带振假名（取词处的 ruby）时让读音吻合的同长度候选排前；没有就走原入口。
+      final dictionaryResult = rubySpans.isEmpty
+          ? await appModel.searchDictionary(
+              searchTerm: searchTerm,
+              searchWithWildcards: false,
+              overrideMaximumTerms: overrideMaximumTerms,
+            )
+          : await appModel.searchDictionaryWithRuby(
+              searchTerm: searchTerm,
+              rubySpans: rubySpans,
+              overrideMaximumTerms: overrideMaximumTerms,
+            );
       trace?.mark(
         'search',
         detail: 'entries=${dictionaryResult.entries.length} '
@@ -443,6 +451,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         reuseWarmSlot: reuse,
         replaceStack: false,
         visible: false,
+        rubySpans: rubySpans,
       );
       // TODO-962：阅读器/有声书弹窗此前硬编码 allLoaded:true，关掉了「加载更多」分页
       // （[_buildPopupLayer] 的 onScrolledToBottom 恒 null），使弹窗永远停在第一页。
@@ -521,13 +530,22 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // 后者是另一个单位，一个词头带十几条注释时上限会一次暴涨十几倍。
     final int newMax = current.headwordCount + appModel.maximumTerms;
     final String term = entry.searchTerm;
+    // 续查是同一个查询扩大上限：带着首查那组来源振假名（与 [searchDictionaryResult]
+    // 同一分叉），读音排序才不会在 fillResult 整份替换时丢掉。
+    final List<FushiRubySpan> rubySpans = entry.rubySpans;
     entry.isSearching = true;
     try {
-      final DictionarySearchResult result = await appModel.searchDictionary(
-        searchTerm: term,
-        searchWithWildcards: false,
-        overrideMaximumTerms: newMax,
-      );
+      final DictionarySearchResult result = rubySpans.isEmpty
+          ? await appModel.searchDictionary(
+              searchTerm: term,
+              searchWithWildcards: false,
+              overrideMaximumTerms: newMax,
+            )
+          : await appModel.searchDictionaryWithRuby(
+              searchTerm: term,
+              rubySpans: rubySpans,
+              overrideMaximumTerms: newMax,
+            );
       // 续查期间该层可能被裁掉/换词（嵌套查词、关栈）；用身份核对确保只更新原层。
       // 原地跳转 / 后退 / 前进会在**同一个 entry** 上换词，所以还要核对词没变，
       // 否则旧词的续查结果会灌进新页。
@@ -1166,7 +1184,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           dictionaryFontSize: appModel.dictionaryFontSize,
         ),
         overlayWidget: isTop ? buildDictionaryLoading() : null,
-        onTextSelected: (text, localRect) async {
+        onTextSelected: (text, localRect, rubySpans) async {
           final childRect = localRect == Rect.zero
               ? item.selectionRect
               : popupWordScreenRect(
@@ -1180,6 +1198,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             searchTerm: text,
             selectionRect: childRect,
             origin: LookupOrigin.nested,
+            rubySpans: rubySpans,
           );
           if (count > 0) {
             final int generation = activeLookupGeneration;
