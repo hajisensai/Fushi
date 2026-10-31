@@ -16,6 +16,19 @@ Future<Set<String>> loadPendingRemoteDeletionKeys(
   SyncTombstoneKind kind, {
   required String remoteLibrarySourceId,
 }) async {
+  // 云盘书库的书：发布「从所有设备删除」墓碑时云通道会把书文件夹一起删掉（发布成功
+  // ⇔ 文件夹已删，见 `SyncOrchestrator` 墓碑扫描；书架「同时从远端删除」同理）。所以
+  // 已发布的墓碑之后云盘上再出现同名书文件夹，只能是删除之后重新导入、重新上传的新书
+  // ——不能再藏，否则别的设备重新导入的书在本机永远看不见。只藏还没发布（文件夹还
+  // 没删）的那些残留。
+  if (kind == SyncTombstoneKind.book &&
+      remoteLibrarySourceId.startsWith(kCloudRemoteLibrarySourceIdPrefix)) {
+    return <String>{
+      for (final SyncDeletionTombstoneRow row
+          in await db.getSyncDeletionTombstonesOfType(kind.dbValue))
+        if (row.remotePublishedAt == 0) row.itemKey,
+    };
+  }
   final Map<String, int> deletedAtByKey = await db
       .getSyncDeletionDeletedAtByKey(kind.dbValue);
   if (deletedAtByKey.isEmpty) return const <String>{};
