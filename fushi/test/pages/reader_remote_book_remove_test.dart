@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -24,10 +25,12 @@ import '../helpers/test_platform_services.dart';
 /// 反馈 nvlhtczbro：云端（互联）书从书架移除给两个明确的按钮。
 ///
 /// * 「仅从本机移除」：恒有，只在本机隐藏这张占位卡，对端不收任何删除请求；
-/// * 「彻底删除」：只在 host 允许 client 删除时出现——判据是远端来源为
+/// * 「同时从远端删除」：只在 host 允许 client 删除时出现——判据是远端来源为
 ///   [InterconnectSyncBackend]（已配对 host 对鉴权通过的 peer 开放
 ///   `DELETE /api/library/books/<id>`）；云盘来源没有删除接口，按钮不出现。
 ///   二次确认点名是哪台 host 上的哪本书。
+///   反馈 R8duEiqRuy（所有者 2026-10-31）：只在对端此刻在线、可达时可点；探测中 /
+///   离线 / 配对被拒时照样显示但禁用，并写明原因。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -116,7 +119,7 @@ void main() {
     expect(
       find.text(t.remote_book_delete_everywhere),
       findsNothing,
-      reason: '云盘来源没有删除接口，不能给「彻底删除」',
+      reason: '云盘来源没有删除接口，不能给「同时从远端删除」',
     );
 
     await tester.tap(find.text(t.remote_book_hide_local));
@@ -152,7 +155,9 @@ void main() {
     expect(prefs.hiddenRemoteBooks, hasLength(1));
   });
 
-  testWidgets('互联来源：「彻底删除」二次确认点名 host 与书名，确认才删对端', (WidgetTester tester) async {
+  testWidgets('互联来源、对端在线：「同时从远端删除」二次确认点名 host 与书名，确认才删对端', (
+    WidgetTester tester,
+  ) async {
     await SyncRepository(db).addFushiClientUrl(
       _FakeInterconnectClient.baseUrl,
       deviceName: 'Study-PC',
@@ -201,7 +206,98 @@ void main() {
     await tester.pumpAndSettle();
     expect(client.deleted, <String>['Remote Book']);
     expect(card, findsNothing);
-    expect(prefs.hiddenRemoteBooks, isEmpty, reason: '彻底删除不走本机隐藏清单');
+    expect(prefs.hiddenRemoteBooks, isEmpty, reason: '从远端删除不走本机隐藏清单');
+  });
+
+  // ── 远端删除的可用性（反馈 R8duEiqRuy，所有者 2026-10-31 拍板）────────
+
+  Finder confirmDialog() =>
+      find.byKey(const ValueKey<String>('remote_book_delete_confirm'));
+
+  testWidgets('互联来源、对端离线：「同时从远端删除」照样显示但禁用并写明原因，点了不弹确认', (
+    WidgetTester tester,
+  ) async {
+    final _FakeInterconnectClient client = _FakeInterconnectClient()
+      ..reachability = () async => InterconnectHostReachability.unreachable;
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+
+    await openMenu(tester);
+    expect(client.probes, 1, reason: '菜单打开即重探对端，不信缓存会话');
+    expect(find.text(t.remote_book_delete_everywhere), findsOneWidget);
+    expect(find.text(t.remote_delete_host_offline), findsOneWidget);
+
+    await tester.tap(
+      find.text(t.remote_book_delete_everywhere),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    expect(confirmDialog(), findsNothing);
+    expect(client.deleted, isEmpty);
+    expect(card, findsOneWidget);
+    // 「仅从本机移除」不依赖对端在线，照常可用。
+    expect(find.text(t.remote_book_hide_local), findsOneWidget);
+  });
+
+  testWidgets('互联来源、配对被拒：禁用并提示重新配对', (WidgetTester tester) async {
+    final _FakeInterconnectClient client = _FakeInterconnectClient()
+      ..reachability = () async =>
+          InterconnectHostReachability.credentialRejected;
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+
+    await openMenu(tester);
+    expect(find.text(t.remote_delete_host_pairing_rejected), findsOneWidget);
+    await tester.tap(
+      find.text(t.remote_book_delete_everywhere),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    expect(confirmDialog(), findsNothing);
+    expect(client.deleted, isEmpty);
+  });
+
+  testWidgets('探测进行中禁用（「正在检查」），确认在线后才可点并进入二次确认', (WidgetTester tester) async {
+    final Completer<InterconnectHostReachability> pending =
+        Completer<InterconnectHostReachability>();
+    final _FakeInterconnectClient client = _FakeInterconnectClient()
+      ..reachability = () => pending.future;
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+
+    await openMenu(tester);
+    expect(find.text(t.remote_delete_host_checking), findsOneWidget);
+    await tester.tap(
+      find.text(t.remote_book_delete_everywhere),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    expect(confirmDialog(), findsNothing, reason: '结论出来前不能放行删除');
+
+    pending.complete(InterconnectHostReachability.reachable);
+    await tester.pumpAndSettle();
+    expect(find.text(t.remote_delete_host_checking), findsNothing);
+    await tester.tap(find.text(t.remote_book_delete_everywhere));
+    await tester.pumpAndSettle();
+    expect(confirmDialog(), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: confirmDialog(),
+        matching: find.text(t.remote_book_delete_everywhere),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(client.deleted, <String>['Remote Book']);
+    expect(card, findsNothing);
+  });
+
+  testWidgets('云盘来源不探测对端（没有删除能力，不发网络请求）', (WidgetTester tester) async {
+    final _FakeCloudClient client = _FakeCloudClient();
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+    await openMenu(tester);
+    expect(find.text(t.remote_delete_host_checking), findsNothing);
+    expect(find.text(t.remote_book_delete_everywhere), findsNothing);
   });
 
   test('「仅从本机移除」清单是设备本地偏好：不随备份 / 同步带到别的设备', () {
@@ -451,6 +547,17 @@ class _FakeInterconnectClient extends InterconnectSyncBackend {
   static const String baseUrl = 'https://192.168.1.20:8766';
 
   final List<String> deleted = <String>[];
+
+  /// 菜单打开时的可达性探测结论；默认在线。
+  Future<InterconnectHostReachability> Function() reachability = () async =>
+      InterconnectHostReachability.reachable;
+  int probes = 0;
+
+  @override
+  Future<InterconnectHostReachability> probeHostReachability() {
+    probes++;
+    return reachability();
+  }
 
   @override
   String? get resolvedHostBaseUrl => baseUrl;
