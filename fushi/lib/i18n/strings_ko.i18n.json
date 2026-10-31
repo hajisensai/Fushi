@@ -9034,6 +9034,8 @@
   "video_anilist_error_unreachable": "AniList(graphql.anilist.co)에 연결할 수 없습니다. 네트워크 연결을 확인하거나 다운로드 설정에서 프록시를 설정하세요.",
   "video_audio_track": "오디오 트랙",
   "video_audio_track_empty": "전환 가능한 오디오 트랙 없음",
+  "video_audio_track_fallback_muxed": "The audio stream was refused; switched to a compatible stream with sound (lower quality)",
+  "video_audio_track_load_failed": "Couldn't load the audio stream — there is no sound. The source refused access; try again later.",
   "video_audio_track_switched": "오디오 트랙: $label",
   "video_auto_play_next_cancel": "취소",
   "video_auto_play_next_countdown": "${seconds}초 후 다음 에피소드",

@@ -9034,6 +9034,8 @@
   "video_anilist_error_unreachable": "Tidak dapat menjangkau AniList (graphql.anilist.co). Periksa koneksi jaringan Anda, atau atur proxy di pengaturan unduhan.",
   "video_audio_track": "Trek audio",
   "video_audio_track_empty": "Tidak ada trek audio yang bisa dialihkan",
+  "video_audio_track_fallback_muxed": "The audio stream was refused; switched to a compatible stream with sound (lower quality)",
+  "video_audio_track_load_failed": "Couldn't load the audio stream — there is no sound. The source refused access; try again later.",
   "video_audio_track_switched": "Trek audio: $label",
   "video_auto_play_next_cancel": "Batal",
   "video_auto_play_next_countdown": "Episode berikutnya dalam ${seconds}d",
