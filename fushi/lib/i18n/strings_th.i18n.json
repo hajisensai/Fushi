@@ -826,6 +826,7 @@
   "audio_panel_auto": "อัตโนมัติ",
   "audio_panel_pick_new_subtitle": "เลือกไฟล์ซับไตเติลใหม่",
   "audio_source_added": "เพิ่มแหล่งเสียงแล้ว",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "เชื่อมต่อแหล่งเสียงล้มเหลว: ไม่สามารถหา \"${host}\" — ตรวจสอบเครือข่ายหรือลบแหล่งนี้ในการตั้งค่า",
   "audio_source_edit_target_gone": "แหล่งเสียงนั้นไม่มีอยู่แล้ว — ยกเลิกการแก้ไข",
   "audio_source_edit_url": "แก้ไขลิงก์แหล่งเสียง",

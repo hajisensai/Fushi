@@ -71,6 +71,13 @@
 |---|:--:|:--:|---|
 | [BUG-3893](bugs/BUG-3893-youtube-separated-audio-403-silent.md) | ✅ | ✅ | YouTube 分离音频流 403 后有画面无声，无回退无提示 |
 | [BUG-3892](bugs/BUG-3892-video-keyboard-prev-cue-degrades.md) | ✅ | ✅ | 桌面键盘「上一句」几乎总退化成回退 3 秒 |
+> 共 3498 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3894](bugs/BUG-3894-audio-source-refused-reported-as-dns.md) | ✅ | ✅ | 音频源「连接被拒」被报成「无法解析 host」 |
+| [BUG-3893](bugs/BUG-3893-lookup-token-start-cjk-bracket.md) | ✅ | ✅ | 点〖tempering〗的 t，高亮却从〖开始 |
+| [BUG-3892](bugs/BUG-3892-popup-entry-nav-scroll-to-entry-start.md) | ✅ | ✅ | 查词弹窗 Alt+滚轮切词停在释义中间、切回第一条不回顶 |
 | [BUG-3891](bugs/BUG-3891-vn-sentence-mode-image-pause.md) | ✅ | ✅ | VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义 |
 | [BUG-3890](bugs/BUG-3890-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
 | [BUG-3889](bugs/BUG-3889-popup-headword-drag-copy.md) | ✅ | ✅ | 查词弹窗拖选词头后 Ctrl+C 复制不了 |

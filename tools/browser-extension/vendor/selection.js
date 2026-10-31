@@ -60,8 +60,17 @@ window.fushiSelection = {
     // 点 time 仍把 `time-blackened …` 整串交给引擎，有词条的复合词照样查得到。软连字符
     // U+00AD 不算（不可见的排版断词点）。与 reader_selection_scripts.dart 同名谓词一致。
     wordHyphenPattern: /[\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE63\uFF0D]/,
+    // 反馈 pm3A75D5xZ：回退也必须停在「另一类字符」上——点的是非日文字母，词首不可能
+    // 跨进日文（含 〖〗 这类 CJK 标点，都在 JAPANESE_RANGES 里），也不可能跨过任何开/闭
+    // 括号与引号（Unicode Ps/Pe/Pi/Pf）。旧判据只认 scanDelimiters 清单，『テンパリング
+    // 〖tempering〗』点 t 时回退吃进『〖』，引擎跳过前导标点匹配出 tempering，高亮却从
+    // 『〖』数 9 字，整体左移一格。与 reader_selection_scripts.dart 同名谓词一致。
+    tokenStartBracketPattern: /[\p{Ps}\p{Pe}\p{Pi}\p{Pf}]/u,
     isTokenStartBoundary(char) {
-        return this.isScanBoundary(char) || this.wordHyphenPattern.test(char || '');
+        if (!char) return true;
+        return this.isScanBoundary(char) || this.wordHyphenPattern.test(char) ||
+            this.tokenStartBracketPattern.test(char) ||
+            this.isCodePointJapanese(char.codePointAt(0));
     },
 
     // BUG-2056：撇号在**词内**时不是词边界。英语的缩合形与所有格（don’t / it’s /

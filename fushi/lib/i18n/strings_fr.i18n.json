@@ -826,6 +826,7 @@
   "audio_panel_auto": "Automatique",
   "audio_panel_pick_new_subtitle": "Choisir un nouveau fichier de sous-titres",
   "audio_source_added": "Source audio ajoutée",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Échec de connexion de la source audio : impossible de résoudre \"${host}\" — vérifiez votre réseau ou supprimez cette source dans les paramètres",
   "audio_source_edit_target_gone": "Cette source audio n'existe plus — modification annulée",
   "audio_source_edit_url": "Modifier le lien de la source audio",

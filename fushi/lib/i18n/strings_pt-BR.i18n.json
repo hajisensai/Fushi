@@ -826,6 +826,7 @@
   "audio_panel_auto": "Automático",
   "audio_panel_pick_new_subtitle": "Escolher novo arquivo de legendas",
   "audio_source_added": "Fonte de áudio adicionada",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Falha na conexão da fonte de áudio: não é possível resolver \"${host}\" — verifique sua rede ou remova esta fonte nas configurações",
   "audio_source_edit_target_gone": "Essa fonte de áudio não existe mais — edição descartada",
   "audio_source_edit_url": "Editar link da fonte de áudio",
