@@ -5921,6 +5921,7 @@
   "onboarding_anki_addon_installed": "已装好 AnkiConnect。启动或重启 Anki，然后测试连接。",
   "onboarding_anki_addon_no_anki": "没找到 Anki 数据目录。先安装 Anki 并打开一次，再重试。",
   "onboarding_anki_auto_reposition_hint": "制卡约 30 秒后，自动把该牌组的新卡按词频排序，常见词先学，不动复习卡。需要电脑版 Anki + AnkiConnect（手机可改连电脑上的 AnkiConnect）；AnkiDroid / AnkiMobile 无法重排。",
+  "onboarding_anki_backend_ankiconnect": "AnkiConnect（$address）",
   "onboarding_anki_backend_label": "连接方式",
   "onboarding_anki_fsrs_body": "Anki 内置了 FSRS —— 目前最好的间隔重复算法之一，但你不打开它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真实复习记录预测遗忘时点，同样的记忆效果复习量更少。这个开关只在 Anki 里开一次，Fushi 这边不用改任何设置。",
   "onboarding_anki_fsrs_srs_note": "Fushi 内置复习已默认使用 FSRS-7。只有你还要在 Anki 里复习时，才需要下面这几步。",
