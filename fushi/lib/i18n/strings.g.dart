@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179401 (10553 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -967,6 +967,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anki_dedup_section => 'Anki media storage optimization';
   String get anki_dedup_unavailable =>
       'Requires Anki running on this machine (AnkiConnect).';
+  String get anki_delivery_section => 'Sending & pending cards';
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   String get anki_desktop_auto_launch_hint =>
       'If AnkiConnect on this computer isn\'t responding when Fushi starts, open Anki desktop automatically.';
@@ -1229,6 +1230,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Failed: ${error}';
   String get anki_pending_mines_status_pending => 'Waiting to send';
   String get anki_pending_mines_status_sending => 'Sending';
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
   String get anki_pending_mines_title => 'Pending cards';
   String get anki_pending_mines_unreachable =>
       'Anki can\'t be reached right now. The remaining cards stay in the queue.';
@@ -1322,6 +1325,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} card(s) haven\'t synced yet. Sync them before switching account or signing out.';
   String get anki_sync_client_password_title => 'Password';
@@ -16513,6 +16518,8 @@ class _StringsAr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'يتطلب تشغيل Anki على هذا الجهاز (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -16958,6 +16965,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'جارٍ الإرسال';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'البطاقات المعلّقة';
   @override
   String get anki_pending_mines_unreachable =>
@@ -17104,6 +17114,9 @@ class _StringsAr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.';
@@ -42098,6 +42111,8 @@ class _StringsDe extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Erfordert Anki auf diesem Computer (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -42553,6 +42568,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Wird gesendet';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Ausstehende Karten';
   @override
   String get anki_pending_mines_unreachable =>
@@ -42703,6 +42721,9 @@ class _StringsDe extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} Karte(n) wurden noch nicht synchronisiert. Synchronisiere sie, bevor du das Konto wechselst oder dich abmeldest.';
@@ -68061,6 +68082,8 @@ class _StringsEs extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Requiere Anki ejecutándose en esta máquina (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -68520,6 +68543,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Enviando';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Tarjetas pendientes';
   @override
   String get anki_pending_mines_unreachable =>
@@ -68669,6 +68695,9 @@ class _StringsEs extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} tarjeta(s) aún no se han sincronizado. Sincronízalas antes de cambiar de cuenta o cerrar sesión.';
@@ -94079,6 +94108,8 @@ class _StringsFr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Nécessite Anki en cours d\'exécution sur cette machine (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -94539,6 +94570,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Envoi';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Cartes en attente';
   @override
   String get anki_pending_mines_unreachable =>
@@ -94692,6 +94726,9 @@ class _StringsFr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} carte(s) pas encore synchronisée(s). Synchronisez-les avant de changer de compte ou de vous déconnecter.';
@@ -120173,6 +120210,8 @@ class _StringsId extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Memerlukan Anki yang berjalan di mesin ini (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -120622,6 +120661,9 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Mengirim';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Kartu tertunda';
   @override
   String get anki_pending_mines_unreachable =>
@@ -120770,6 +120812,9 @@ class _StringsId extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kartu belum disinkronkan. Sinkronkan sebelum berganti akun atau keluar.';
@@ -145931,6 +145976,8 @@ class _StringsIt extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Richiede Anki in esecuzione su questa macchina (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -146384,6 +146431,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Invio in corso';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Carte in sospeso';
   @override
   String get anki_pending_mines_unreachable =>
@@ -146530,6 +146580,9 @@ class _StringsIt extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} carta/e non ancora sincronizzata/e. Sincronizzale prima di cambiare account o uscire.';
@@ -171796,6 +171849,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_dedup_unavailable => 'このマシンでAnkiが実行中である必要があります（AnkiConnect）。';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -172230,6 +172285,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '送信中';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => '保留カード';
   @override
   String get anki_pending_mines_unreachable =>
@@ -172370,6 +172428,9 @@ class _StringsJa extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '未同期のカードが ${count} 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。';
@@ -196673,6 +196734,8 @@ class _StringsKo extends _StringsEn {
   String get anki_dedup_unavailable =>
       '이 컴퓨터에서 Anki가 실행 중이어야 합니다 (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -197104,6 +197167,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '전송 중';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => '보류 카드';
   @override
   String get anki_pending_mines_unreachable =>
@@ -197244,6 +197310,9 @@ class _StringsKo extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '아직 동기화되지 않은 카드가 ${count}장 있습니다. 계정을 바꾸거나 로그아웃하기 전에 동기화하세요.';
@@ -221676,6 +221745,8 @@ class _StringsNl extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Vereist Anki op deze machine (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -222123,6 +222194,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Verzenden';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Openstaande kaarten';
   @override
   String get anki_pending_mines_unreachable =>
@@ -222272,6 +222346,9 @@ class _StringsNl extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.';
@@ -247541,6 +247618,8 @@ class _StringsPtBr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Requer Anki rodando nesta máquina (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -248001,6 +248080,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Enviando';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Cartões pendentes';
   @override
   String get anki_pending_mines_unreachable =>
@@ -248148,6 +248230,9 @@ class _StringsPtBr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} cartão(ões) ainda não sincronizaram. Sincronize-os antes de trocar de conta ou sair.';
@@ -273472,6 +273557,8 @@ class _StringsRu extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Требуется Anki, запущенный на этом компьютере (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -273924,6 +274011,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Отправка';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Ожидающие карточки';
   @override
   String get anki_pending_mines_unreachable =>
@@ -274073,6 +274163,9 @@ class _StringsRu extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       'Карточек ещё не синхронизировано: ${count}. Синхронизируйте их, прежде чем сменить аккаунт или выйти.';
@@ -299339,6 +299432,8 @@ class _StringsTh extends _StringsEn {
   String get anki_dedup_unavailable =>
       'ต้องการ Anki ทำงานบนเครื่องนี้ (AnkiConnect)';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -299780,6 +299875,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'กำลังส่ง';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'การ์ดที่รอส่ง';
   @override
   String get anki_pending_mines_unreachable =>
@@ -299924,6 +300022,9 @@ class _StringsTh extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       'ยังไม่ได้ซิงค์การ์ด ${count} ใบ ซิงค์ก่อนสลับบัญชีหรือออกจากระบบ';
@@ -324910,6 +325011,8 @@ class _StringsTr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Bu bilgisayarda çalışan Anki gerektirir (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -325357,6 +325460,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Gönderiliyor';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Bekleyen kartlar';
   @override
   String get anki_pending_mines_unreachable =>
@@ -325504,6 +325610,9 @@ class _StringsTr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kart henüz eşitlenmedi. Hesap değiştirmeden veya çıkış yapmadan önce bunları eşitleyin.';
@@ -350667,6 +350776,8 @@ class _StringsVi extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Yêu cầu Anki đang chạy trên máy này (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -351113,6 +351224,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Đang gửi';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Thẻ chờ';
   @override
   String get anki_pending_mines_unreachable =>
@@ -351256,6 +351370,9 @@ class _StringsVi extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} thẻ chưa được đồng bộ. Hãy đồng bộ chúng trước khi đổi tài khoản hoặc đăng xuất.';
@@ -376241,6 +376358,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_dedup_unavailable => '需要本机运行 Anki（AnkiConnect）。';
   @override
+  String get anki_delivery_section => '发送与待发卡片';
+  @override
   String get anki_desktop_auto_launch => '启动 Fushi 时自动启动 Anki';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -376657,6 +376776,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '发送中';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} 剩下的卡片继续留在队列里。';
+  @override
   String get anki_pending_mines_title => '待发卡片';
   @override
   String get anki_pending_mines_unreachable => '现在连不上 Anki，剩下的卡片继续留在队列里';
@@ -376789,6 +376911,9 @@ class _StringsZhCn extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => '我明白，仍然启用';
   @override
   String get anki_sync_client_enable_warn_title => '要启用 Anki 同步吗？';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      '服务器的回复不是 Anki 同步协议（缺少 anki-original-size 响应头）。请确认地址指向 Anki 同步服务器（官方 anki-sync-server，或 Anki 桌面版自带的同步服务），而不是网页；经反向代理时须保留这个响应头。原始信息：${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '还有 ${count} 张卡没有同步，请先同步再切换账号或退出登录。';
@@ -399769,6 +399894,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_dedup_unavailable => '需要本機運行 Anki（AnkiConnect）。';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -400189,6 +400316,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '發送中';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => '待發卡片';
   @override
   String get anki_pending_mines_unreachable => '現在連不上 Anki，剩下的卡片繼續留在隊列裡';
@@ -400322,6 +400452,9 @@ class _StringsZhHk extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '還有 ${count} 張卡沒有同步，請先同步再切換帳户或退出登入。';
@@ -423913,6 +424046,8 @@ extension on _StringsEn {
         return 'Anki media storage optimization';
       case 'anki_dedup_unavailable':
         return 'Requires Anki running on this machine (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -424286,6 +424421,9 @@ extension on _StringsEn {
         return 'Waiting to send';
       case 'anki_pending_mines_status_sending':
         return 'Sending';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Pending cards';
       case 'anki_pending_mines_unreachable':
@@ -424404,6 +424542,9 @@ extension on _StringsEn {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} card(s) haven\'t synced yet. Sync them before switching account or signing out.';
@@ -445834,6 +445975,8 @@ extension on _StringsAr {
         return 'تحسين تخزين وسائط Anki';
       case 'anki_dedup_unavailable':
         return 'يتطلب تشغيل Anki على هذا الجهاز (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -446207,6 +446350,9 @@ extension on _StringsAr {
         return 'في انتظار الإرسال';
       case 'anki_pending_mines_status_sending':
         return 'جارٍ الإرسال';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'البطاقات المعلّقة';
       case 'anki_pending_mines_unreachable':
@@ -446327,6 +446473,9 @@ extension on _StringsAr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.';
@@ -467754,6 +467903,8 @@ extension on _StringsDe {
         return 'Anki-Medienspeicher-Optimierung';
       case 'anki_dedup_unavailable':
         return 'Erfordert Anki auf diesem Computer (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -468132,6 +468283,9 @@ extension on _StringsDe {
         return 'Wartet auf Versand';
       case 'anki_pending_mines_status_sending':
         return 'Wird gesendet';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Ausstehende Karten';
       case 'anki_pending_mines_unreachable':
@@ -468253,6 +468407,9 @@ extension on _StringsDe {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} Karte(n) wurden noch nicht synchronisiert. Synchronisiere sie, bevor du das Konto wechselst oder dich abmeldest.';
@@ -489744,6 +489901,8 @@ extension on _StringsEs {
         return 'Optimización de almacenamiento de medios de Anki';
       case 'anki_dedup_unavailable':
         return 'Requiere Anki ejecutándose en esta máquina (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -490119,6 +490278,9 @@ extension on _StringsEs {
         return 'Esperando a enviarse';
       case 'anki_pending_mines_status_sending':
         return 'Enviando';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Tarjetas pendientes';
       case 'anki_pending_mines_unreachable':
@@ -490239,6 +490401,9 @@ extension on _StringsEs {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} tarjeta(s) aún no se han sincronizado. Sincronízalas antes de cambiar de cuenta o cerrar sesión.';
@@ -511721,6 +511886,8 @@ extension on _StringsFr {
         return 'Optimisation du stockage média Anki';
       case 'anki_dedup_unavailable':
         return 'Nécessite Anki en cours d\'exécution sur cette machine (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -512096,6 +512263,9 @@ extension on _StringsFr {
         return 'En attente d\'envoi';
       case 'anki_pending_mines_status_sending':
         return 'Envoi';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Cartes en attente';
       case 'anki_pending_mines_unreachable':
@@ -512218,6 +512388,9 @@ extension on _StringsFr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} carte(s) pas encore synchronisée(s). Synchronisez-les avant de changer de compte ou de vous déconnecter.';
@@ -533710,6 +533883,8 @@ extension on _StringsId {
         return 'Optimasi penyimpanan media Anki';
       case 'anki_dedup_unavailable':
         return 'Memerlukan Anki yang berjalan di mesin ini (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -534084,6 +534259,9 @@ extension on _StringsId {
         return 'Menunggu dikirim';
       case 'anki_pending_mines_status_sending':
         return 'Mengirim';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Kartu tertunda';
       case 'anki_pending_mines_unreachable':
@@ -534204,6 +534382,9 @@ extension on _StringsId {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kartu belum disinkronkan. Sinkronkan sebelum berganti akun atau keluar.';
@@ -555647,6 +555828,8 @@ extension on _StringsIt {
         return 'Ottimizzazione archiviazione media Anki';
       case 'anki_dedup_unavailable':
         return 'Richiede Anki in esecuzione su questa macchina (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -556022,6 +556205,9 @@ extension on _StringsIt {
         return 'In attesa di invio';
       case 'anki_pending_mines_status_sending':
         return 'Invio in corso';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Carte in sospeso';
       case 'anki_pending_mines_unreachable':
@@ -556142,6 +556328,9 @@ extension on _StringsIt {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} carta/e non ancora sincronizzata/e. Sincronizzale prima di cambiare account o uscire.';
@@ -577610,6 +577799,8 @@ extension on _StringsJa {
         return 'Ankiメディアストレージの最適化';
       case 'anki_dedup_unavailable':
         return 'このマシンでAnkiが実行中である必要があります（AnkiConnect）。';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -577983,6 +578174,9 @@ extension on _StringsJa {
         return '送信待ち';
       case 'anki_pending_mines_status_sending':
         return '送信中';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return '保留カード';
       case 'anki_pending_mines_unreachable':
@@ -578101,6 +578295,9 @@ extension on _StringsJa {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '未同期のカードが ${count} 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。';
@@ -599446,6 +599643,8 @@ extension on _StringsKo {
         return 'Anki 미디어 저장소 최적화';
       case 'anki_dedup_unavailable':
         return '이 컴퓨터에서 Anki가 실행 중이어야 합니다 (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -599819,6 +600018,9 @@ extension on _StringsKo {
         return '전송 대기 중';
       case 'anki_pending_mines_status_sending':
         return '전송 중';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return '보류 카드';
       case 'anki_pending_mines_unreachable':
@@ -599937,6 +600139,9 @@ extension on _StringsKo {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '아직 동기화되지 않은 카드가 ${count}장 있습니다. 계정을 바꾸거나 로그아웃하기 전에 동기화하세요.';
@@ -621310,6 +621515,8 @@ extension on _StringsNl {
         return 'Anki media-opslagoptimalisatie';
       case 'anki_dedup_unavailable':
         return 'Vereist Anki op deze machine (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -621685,6 +621892,9 @@ extension on _StringsNl {
         return 'Wacht op verzending';
       case 'anki_pending_mines_status_sending':
         return 'Verzenden';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Openstaande kaarten';
       case 'anki_pending_mines_unreachable':
@@ -621805,6 +622015,9 @@ extension on _StringsNl {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.';
@@ -643276,6 +643489,8 @@ extension on _StringsPtBr {
         return 'Otimização de mídia do Anki';
       case 'anki_dedup_unavailable':
         return 'Requer Anki rodando nesta máquina (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -643651,6 +643866,9 @@ extension on _StringsPtBr {
         return 'Aguardando envio';
       case 'anki_pending_mines_status_sending':
         return 'Enviando';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Cartões pendentes';
       case 'anki_pending_mines_unreachable':
@@ -643771,6 +643989,9 @@ extension on _StringsPtBr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} cartão(ões) ainda não sincronizaram. Sincronize-os antes de trocar de conta ou sair.';
@@ -665234,6 +665455,8 @@ extension on _StringsRu {
         return 'Оптимизация хранилища медиа Anki';
       case 'anki_dedup_unavailable':
         return 'Требуется Anki, запущенный на этом компьютере (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -665610,6 +665833,9 @@ extension on _StringsRu {
         return 'Ожидает отправки';
       case 'anki_pending_mines_status_sending':
         return 'Отправка';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Ожидающие карточки';
       case 'anki_pending_mines_unreachable':
@@ -665731,6 +665957,9 @@ extension on _StringsRu {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             'Карточек ещё не синхронизировано: ${count}. Синхронизируйте их, прежде чем сменить аккаунт или выйти.';
@@ -687195,6 +687424,8 @@ extension on _StringsTh {
         return 'การจัดเก็บสื่อ Anki ที่เหมาะสม';
       case 'anki_dedup_unavailable':
         return 'ต้องการ Anki ทำงานบนเครื่องนี้ (AnkiConnect)';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -687568,6 +687799,9 @@ extension on _StringsTh {
         return 'รอส่ง';
       case 'anki_pending_mines_status_sending':
         return 'กำลังส่ง';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'การ์ดที่รอส่ง';
       case 'anki_pending_mines_unreachable':
@@ -687688,6 +687922,9 @@ extension on _StringsTh {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             'ยังไม่ได้ซิงค์การ์ด ${count} ใบ ซิงค์ก่อนสลับบัญชีหรือออกจากระบบ';
@@ -709119,6 +709356,8 @@ extension on _StringsTr {
         return 'Anki medya depolama optimizasyonu';
       case 'anki_dedup_unavailable':
         return 'Bu bilgisayarda çalışan Anki gerektirir (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -709493,6 +709732,9 @@ extension on _StringsTr {
         return 'Gönderilmeyi bekliyor';
       case 'anki_pending_mines_status_sending':
         return 'Gönderiliyor';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Bekleyen kartlar';
       case 'anki_pending_mines_unreachable':
@@ -709614,6 +709856,9 @@ extension on _StringsTr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kart henüz eşitlenmedi. Hesap değiştirmeden veya çıkış yapmadan önce bunları eşitleyin.';
@@ -731069,6 +731314,8 @@ extension on _StringsVi {
         return 'Tối ưu lưu trữ media Anki';
       case 'anki_dedup_unavailable':
         return 'Yêu cầu Anki đang chạy trên máy này (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -731442,6 +731689,9 @@ extension on _StringsVi {
         return 'Đang chờ gửi';
       case 'anki_pending_mines_status_sending':
         return 'Đang gửi';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Thẻ chờ';
       case 'anki_pending_mines_unreachable':
@@ -731562,6 +731812,9 @@ extension on _StringsVi {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} thẻ chưa được đồng bộ. Hãy đồng bộ chúng trước khi đổi tài khoản hoặc đăng xuất.';
@@ -752974,6 +753227,8 @@ extension on _StringsZhCn {
         return 'Anki 媒体存储优化';
       case 'anki_dedup_unavailable':
         return '需要本机运行 Anki（AnkiConnect）。';
+      case 'anki_delivery_section':
+        return '发送与待发卡片';
       case 'anki_desktop_auto_launch':
         return '启动 Fushi 时自动启动 Anki';
       case 'anki_desktop_auto_launch_hint':
@@ -753347,6 +753602,8 @@ extension on _StringsZhCn {
         return '等待发送';
       case 'anki_pending_mines_status_sending':
         return '发送中';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) => '${reason} 剩下的卡片继续留在队列里。';
       case 'anki_pending_mines_title':
         return '待发卡片';
       case 'anki_pending_mines_unreachable':
@@ -753464,6 +753721,9 @@ extension on _StringsZhCn {
         return '我明白，仍然启用';
       case 'anki_sync_client_enable_warn_title':
         return '要启用 Anki 同步吗？';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            '服务器的回复不是 Anki 同步协议（缺少 anki-original-size 响应头）。请确认地址指向 Anki 同步服务器（官方 anki-sync-server，或 Anki 桌面版自带的同步服务），而不是网页；经反向代理时须保留这个响应头。原始信息：${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '还有 ${count} 张卡没有同步，请先同步再切换账号或退出登录。';
@@ -774637,6 +774897,8 @@ extension on _StringsZhHk {
         return 'Anki 媒體存儲優化';
       case 'anki_dedup_unavailable':
         return '需要本機運行 Anki（AnkiConnect）。';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -775010,6 +775272,9 @@ extension on _StringsZhHk {
         return '等待發送';
       case 'anki_pending_mines_status_sending':
         return '發送中';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return '待發卡片';
       case 'anki_pending_mines_unreachable':
@@ -775127,6 +775392,9 @@ extension on _StringsZhHk {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '還有 ${count} 張卡沒有同步，請先同步再切換帳户或退出登入。';
