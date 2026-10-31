@@ -473,10 +473,10 @@ void main() {
         reason: '书封面只能经 _bookCoverImage 淡入（eink 下它换成直出的 Image）',
       );
       // 封面进度条的 eink 实心轨道收进共享的 CoverProgressStrip（书架 / 视频库
-      // 同用）：首页「继续」封面卡（2026-10 精简后在展示件文件里）必须走它，组件
-      // 里轨道在 eink 下换成页面底色。
+      // 同用）：首页「继续」剧照卡（2026-10-31 起在共享「继续」组件里）必须走它，
+      // 组件里轨道在 eink 下换成页面底色。
       expect(
-        read('lib/src/pages/implementations/home_dashboard_widgets.dart'),
+        read('lib/src/utils/components/fushi_continue_hero.dart'),
         contains('CoverProgressStrip('),
       );
       expect(

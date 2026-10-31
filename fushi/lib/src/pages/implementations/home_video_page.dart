@@ -52,7 +52,6 @@ import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
-import 'package:fushi/src/media/video/video_continue_spotlight.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/video_online_services_banner.dart';
@@ -171,6 +170,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
@@ -5443,9 +5443,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 视频首页概览（2026-10 重设计，设计稿 `fushi/build/video_home_design/`）：
   ///
-  /// - **首屏**：[VideoContinueSpotlight]（2026-10-28 用户选定方案 F，设计稿
-  ///   `fushi/build/video_home_redesign/v2.html`）——最近在看的那部是剧照主卡，
-  ///   其后几部是旁边（宽屏两行网格）/ 下面（窄屏横滑）的 16:9 小卡。
+  /// - **首屏**：[FushiContinueSpotlight]（与各库页同一个「继续」组件，
+  ///   2026-10-31 合一）——最近在看的那部是主卡（有剧照 = 剧照叠层，只有竖海报 =
+  ///   封面 + 信息列），其后几部是旁边（宽屏）/ 下面（窄屏横滑）的封面行。
   /// - 其下横滚行：「已更新未看 → 最近添加」。继续观看全在首屏，不再另起一行。
   /// - 「下一集」不再单独成行：[continueWatchingSeriesIndex] 本身就是 Next-Up 口径
   ///   （最近那集没看完停它、看完取下一集），每部作品在继续观看里只出现一次。
@@ -5473,15 +5473,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       filtered,
       remoteVideos,
     );
-    // 首屏就是全部的「继续观看」（[VideoContinueSpotlight]，最多 15 部，与原
-    // 继续观看行同一上限），下面不再另起一行。
-    final Widget? hero = continueItems.isEmpty
+    // 首屏就是全部的「继续观看」（[FushiContinueSpotlight]，与书架 / 游戏 /
+    // 音乐 / 首页同一个组件；最多 15 部，与原继续观看行同一上限），下面不再
+    // 另起一行。
+    final List<FushiContinueEntry> spotlight = <FushiContinueEntry>[
+      for (final _HomeContinueItem item in continueItems.take(15))
+        _spotlightEntry(item.hero()),
+    ];
+    final Widget? hero = spotlight.isEmpty
         ? null
-        : VideoContinueSpotlight(
-            entries: <VideoContinueSpotlightEntry>[
-              for (final _HomeContinueItem item in continueItems.take(15))
-                _spotlightEntry(item.hero()),
-            ],
+        : FushiContinueSpotlight(
+            main: spotlight.first,
+            side: spotlight.sublist(1),
+            showSideWhenNarrow: true,
           );
     final Widget? subscriptionRow = _buildSubscriptionUpdatesRow(
       updates,
@@ -5533,29 +5537,58 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           MediaImageKind.backdrop,
         ];
 
-  /// 首屏「继续观看」区的一张卡（[VideoContinueSpotlight]，2026-10-28 方案 F）：
-  /// 剧照（无字背景优先）铺满卡面，副标题（「看到第 N 集 · 剩余 M 分钟 · 已看
-  /// N 集」）+ 片名 + 进度。卡上不放按钮：点按 = 续播，长按 / 右键 = 条目菜单
-  /// （合集菜单里有「打开详情」）。
-  VideoContinueSpotlightEntry _spotlightEntry(_HomeHeroData hero) {
+  /// 首屏「继续观看」区的一个条目（[FushiContinueSpotlight]）：有横版剧照
+  /// （无字背景优先）就是剧照卡——副标题（「看到第 N 集 · 剩余 M 分钟 · 已看
+  /// N 集」）+ 片名 + 进度压在图上；只有竖版海报时按 2:3 封面走封面皮（主卡是
+  /// 封面 + 信息列，封面行里是竖封面），不再把竖海报塞进 16:9 卡里垫模糊底
+  /// （用户 2026-10-31「那要视频只有竖着的剧照呢」）。卡上不放按钮：点按 =
+  /// 续播，长按 / 右键 = 条目菜单（合集菜单里有「打开详情」）。
+  FushiContinueEntry _spotlightEntry(_HomeHeroData hero) {
     final String subtitle = <String>[
       if (hero.subtitle.isNotEmpty) hero.subtitle,
       if (hero.detailLine != null) hero.detailLine!,
     ].join(' · ');
-    return VideoContinueSpotlightEntry(
-      cardKey: hero.cardKey,
+    final ImageProvider? still = hero.image(overlay: true);
+    final VoidCallback? onOpen = _selectionMode ? null : hero.onPlay;
+    final VoidCallback? onLongPress = _selectionMode ? null : hero.onLongPress;
+    if (still == null && hero.poster != null) {
+      return FushiContinueEntry(
+        key: hero.cardKey,
+        focusId: hero.focusId,
+        cover: _buildHomePosterImage(hero.poster!),
+        material: ShelfCoverMaterial.glossyPoster,
+        title: hero.title,
+        eyebrow: hero.subtitle,
+        metaLines: <String>[if (hero.detailLine != null) hero.detailLine!],
+        metaIcon: hero.cloud ? FushiIcons.cloud : null,
+        subtitle: hero.subtitle,
+        progress: hero.progress,
+        onOpen: onOpen,
+        onLongPress: onLongPress,
+      );
+    }
+    return FushiContinueEntry(
+      key: hero.cardKey,
       focusId: hero.focusId,
+      cover: _buildHomeHeroImage(still),
+      coverAspectRatio: 16 / 9,
       title: hero.title,
-      subtitle: subtitle,
-      shortSubtitle: hero.subtitle,
-      // 没有横版剧照时退回竖版海报（LandscapeCoverImage 垫模糊底）。
-      image: _buildHomeHeroImage(hero.image(overlay: true) ?? hero.poster),
+      eyebrow: subtitle,
+      metaIcon: hero.cloud ? FushiIcons.cloud : null,
+      subtitle: hero.subtitle,
       progress: hero.progress,
-      cloud: hero.cloud,
-      onOpen: _selectionMode ? null : hero.onPlay,
-      onLongPress: _selectionMode ? null : hero.onLongPress,
+      onOpen: onOpen,
+      onLongPress: onLongPress,
     );
   }
+
+  /// 竖版海报封面（只有海报、没有横版剧照的作品）：按封面框裁满，失败画占位。
+  Widget _buildHomePosterImage(ImageProvider poster) => Image(
+    image: poster,
+    fit: BoxFit.cover,
+    errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+        ShelfCoverPlaceholder(icon: FushiIcons.video),
+  );
 
   /// 主卡大图：有图走 [LandscapeCoverImage]（竖图回落时自动垫模糊底，不硬裁）；
   /// 无图 / 解码失败画占位。
@@ -6649,7 +6682,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 首页分区的首屏骨架：与 [_buildOverviewSection] 同外边距、同几何——主卡位
-  /// （[VideoContinueSpotlight.placeholderMainSize]）+ 两条竖版 2:3 卡的横滚行
+  /// （[FushiContinueSpotlight.placeholderStillSize]）+ 两条竖版 2:3 卡的横滚行
   /// （[videoHomePosterCardWidth]）。标题位是一条文字条，高度由同样式的单行文本
   /// 撑出，与真实行标题逐像素同高。真实版面随数据变（有无主卡 / 面板、0–3 条
   /// 行），骨架取最常见的「主卡 + 两条行」；[withHero] 为 false（库里没有任何播放
@@ -6691,13 +6724,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ],
       ),
     );
-    // 主卡位与真主卡（[VideoContinueSpotlight]）同一套几何：量的是同一个可用宽
-    // （LayoutBuilder），贴起始侧，骨架换真卡不跳。
+    // 主卡位与真剧照主卡（[FushiContinueSpotlight]）同一套几何：量的是同一个
+    // 可用宽（LayoutBuilder），贴起始侧，骨架换真卡不跳。
     final Widget hero = LayoutBuilder(
       builder: (BuildContext _, BoxConstraints c) {
-        final Size main = VideoContinueSpotlight.placeholderMainSize(
+        final Size main = FushiContinueSpotlight.placeholderStillSize(
           c.maxWidth,
-          tokens.spacing.gap,
         );
         return Align(
           alignment: AlignmentDirectional.centerStart,
@@ -10636,7 +10668,7 @@ Widget _videoCardSkeleton(VideoCardOrientation orientation) => Column(
   ],
 );
 
-/// 首页「继续观看」的一项：首屏 [VideoContinueSpotlight] 的一张卡（[hero]，
+/// 首页「继续观看」的一项：首屏 [FushiContinueSpotlight] 的一张卡（[hero]，
 /// 惰性构造）+ 排序键。
 class _HomeContinueItem {
   const _HomeContinueItem({required this.recentMs, required this.hero});
@@ -10646,7 +10678,7 @@ class _HomeContinueItem {
   final _HomeHeroData Function() hero;
 }
 
-/// 首屏继续观看卡的数据（主卡 / 小卡共用，见 [VideoContinueSpotlight]）。
+/// 首屏继续观看卡的数据（主卡 / 封面行共用，见 [FushiContinueSpotlight]）。
 class _HomeHeroData {
   const _HomeHeroData({
     required this.cardKey,

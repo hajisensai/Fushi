@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_continue_spotlight.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -366,7 +366,7 @@ void main() {
     expect(
       find.ancestor(
         of: realHero,
-        matching: find.byType(VideoContinueSpotlight),
+        matching: find.byType(FushiContinueSpotlight),
       ),
       findsOneWidget,
       reason: '前提：在看那部是首屏继续观看区的主卡',

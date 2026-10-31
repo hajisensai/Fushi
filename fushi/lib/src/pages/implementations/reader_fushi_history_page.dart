@@ -1771,52 +1771,69 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 继续阅读 hero：书架 / 漫画书架 / 游戏首页共用的满宽「继续」大卡
-  /// [FushiContinueHero]（2026-10-28 统一）。封面走同一个光面书皮材质，信息列
-  /// 「继续阅读」眉标 + 书名 + 进度「已读 x%」，行尾「继续」主按钮；整卡点按开书。
+  /// 继续阅读区：所有库页共用的「继续」组件 [FushiContinueSpotlight]
+  /// （2026-10-31 方案 A + 合一）。主卡是最近读的那本（光面书皮封面，「继续阅读」
+  /// 眉标 + 书名 + 进度「已读 x%」，整卡点按开书）；宽屏时其余在读的书按最近
+  /// 阅读排成旁边的封面行，不再是一张卡贴左、右边一片空。
   Widget _buildContinueReadingHero(
     MediaItem hero,
     FushiDesignTokens tokens,
     List<MediaItem> others, {
     double? widthCap,
   }) {
-    final double fraction = hero.duration > 0
-        ? (hero.position / hero.duration).clamp(0.0, 1.0)
+    double fractionOf(MediaItem item) => item.duration > 0
+        ? (item.position / item.duration).clamp(0.0, 1.0)
         : 0.0;
-    final int percent = (fraction * 100).round();
-    final ImageProvider coverImage = mediaSource
-        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: hero);
-    Future<void> openHero() async {
-      final MediaSource source = hero.getMediaSource(appModel: appModel);
-      await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
-    }
+    Widget coverOf(MediaItem item) => FadeInImage(
+      imageErrorBuilder: (_, __, ___) =>
+          _coverPlaceholderIcon(Icons.menu_book_outlined),
+      placeholder: MemoryImage(kTransparentImage),
+      image: mediaSource.getDisplayThumbnailFromMediaItem(
+        appModel: appModel,
+        item: item,
+      ),
+      fit: BoxFit.cover,
+    );
+    VoidCallback openerOf(MediaItem item) => () async {
+      final MediaSource source = item.getMediaSource(appModel: appModel);
+      await appModel.openMedia(ref: ref, mediaSource: source, item: item);
+    };
 
+    final double fraction = fractionOf(hero);
     // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，经
     // getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override 书名；直读 DB
     // 原始列 hero.title 会在改名后仍显示旧名。
-    return FushiContinueHero(
-      widthCap: widthCap,
-      cardKey: const ValueKey<String>('reader_shelf_continue_hero'),
-      focusId: const FushiFocusId('reader-shelf-continue-hero'),
-      progressKey: const ValueKey<String>(
-        'reader_shelf_continue_hero_progress',
-      ),
-      // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
-      cover: ShelfCoverMaterialScope(
-        material: ShelfCoverMaterial.glossyBook,
-        child: FadeInImage(
-          imageErrorBuilder: (_, __, ___) =>
-              _coverPlaceholderIcon(Icons.menu_book_outlined),
-          placeholder: MemoryImage(kTransparentImage),
-          image: coverImage,
-          fit: BoxFit.cover,
+    return FushiContinueSpotlight(
+      soloWidthCap: widthCap,
+      sideRowKey: const ValueKey<String>('reader_shelf_continue_side_row'),
+      main: FushiContinueEntry(
+        key: const ValueKey<String>('reader_shelf_continue_hero'),
+        focusId: const FushiFocusId('reader-shelf-continue-hero'),
+        progressKey: const ValueKey<String>(
+          'reader_shelf_continue_hero_progress',
         ),
+        // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
+        material: ShelfCoverMaterial.glossyBook,
+        cover: coverOf(hero),
+        eyebrow: t.book_continue_reading,
+        title: mediaSource.getDisplayTitleFromMediaItem(hero),
+        progress: fraction,
+        progressLabel: t.book_read_progress(percent: (fraction * 100).round()),
+        onOpen: openerOf(hero),
       ),
-      eyebrow: t.book_continue_reading,
-      title: mediaSource.getDisplayTitleFromMediaItem(hero),
-      progress: fraction,
-      progressLabel: t.book_read_progress(percent: percent),
-      onOpen: openHero,
+      side: <FushiContinueEntry>[
+        for (final MediaItem item in others.take(12))
+          FushiContinueEntry(
+            key: ValueKey<String>(
+              'reader_shelf_continue_side/${item.mediaIdentifier}',
+            ),
+            material: ShelfCoverMaterial.glossyBook,
+            cover: coverOf(item),
+            title: mediaSource.getDisplayTitleFromMediaItem(item),
+            progress: fractionOf(item),
+            onOpen: openerOf(item),
+          ),
+      ],
     );
   }
 
