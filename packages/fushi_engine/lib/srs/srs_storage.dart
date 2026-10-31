@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_legacy_store_migration.dart';
 
@@ -49,7 +50,7 @@ class SrsStorage {
           : SrsDatabase(srsDatabaseConnection(core));
       return SrsStorage._(core, db, path);
     } on Object {
-      core.close();
+      _closeCore(core);
       rethrow;
     }
   }
@@ -59,7 +60,16 @@ class SrsStorage {
     if (_closed) return;
     _closed = true;
     await db.close();
+    _closeCore(core);
+  }
+
+  /// 关 Rust 连接，并让内核命令 worker 丢掉为这个句柄包的 [SrsCore]（srs_core_workers.dart：换 profile / 覆盖恢复
+  /// 反复开关库时不越攒越多）。
+  static void _closeCore(SrsCore core) {
+    final int address = core.address;
+    final String? libraryPath = core.libraryPath;
     core.close();
+    SrsCoreWorkers.of(libraryPath).forget(address);
   }
 
   bool get isClosed => _closed;

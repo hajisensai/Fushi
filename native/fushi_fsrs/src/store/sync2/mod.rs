@@ -10,7 +10,10 @@
 //! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
 
 pub mod config;
+pub mod digest;
 pub mod media;
+pub(crate) mod mvr;
+pub mod relay;
 pub mod schema;
 pub(crate) mod semantics;
 pub mod timeline;
@@ -41,10 +44,15 @@ pub(crate) fn sql<E: std::fmt::Display>(e: E) -> String {
 pub(crate) fn in_savepoint<T>(conn: &Connection, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
     conn.execute_batch("SAVEPOINT sync2").map_err(sql)?;
     match f(conn) {
-        Ok(v) => {
-            conn.execute_batch("RELEASE sync2").map_err(sql)?;
-            Ok(v)
-        }
+        Ok(v) => match conn.execute_batch("RELEASE sync2") {
+            Ok(()) => Ok(v),
+            // 没有外层事务时 RELEASE 就是 COMMIT：提交失败不能把事务挂在写连接上（之后的写入都会落进这笔、
+            // 读路径也会误以为有跨命令事务），撤销后报错，调用方按失败处理（收段会话随之作废）。
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK TO sync2; RELEASE sync2");
+                Err(sql(e))
+            }
+        },
         Err(e) => {
             let _ = conn.execute_batch("ROLLBACK TO sync2; RELEASE sync2");
             Err(e)
@@ -569,23 +577,10 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
             .execute(params![profile, op.id.device.0.to_vec(), op.id.seq as i64, op.hlc.wall, name, reason])
             .map_err(sql)?;
         }
-        Body::Media { name, sha256, size } => {
-            // 文件名 → 内容：HLC 大者胜（同一文件名并发绑了两份内容 = 低价值标量，设计 §5.2）。
-            let cur: Option<(i64, i64, Vec<u8>)> = conn
-                .prepare_cached("SELECT wall, logical, device FROM sync2_media WHERE profile_uid = ?1 AND name = ?2")
-                .map_err(sql)?
-                .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-                .optional()
-                .map_err(sql)?;
-            let newer = cur.is_none_or(|(w, l, d)| (op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec()) > (w, l, d));
-            if newer {
-                conn.prepare_cached(
-                    "INSERT OR REPLACE INTO sync2_media (profile_uid, name, sha256, size, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                )
-                .map_err(sql)?
-                .execute(params![profile, name, sha256.to_vec(), size as i64, op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec()])
-                .map_err(sql)?;
-            }
+        Body::Media { name, .. } => {
+            // 文件名 → 内容：因果优先，真并发才 HLC 大者胜（同一文件名并发绑了两份内容 = 低价值标量，设计 §5.2）。
+            let win = mvr::write(conn, profile, &mvr::reg("m", &[&name]), op)?;
+            land_media_binding(conn, profile, &name, &win)?;
         }
         Body::MediaAt { location, flags, names } => media::project_media_at(conn, profile, op, &location, flags, &names)?,
         Body::LegacyUnknown { json } => {
@@ -600,6 +595,63 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
         }
         // 不认识的种类 / 已清除的骨架 / 牌组别名：只保存事实，不投影。
         Body::Unknown | Body::Purged | Body::DeckAlias { .. } => {}
+    }
+    Ok(())
+}
+
+/// 媒体绑定投影 `sync2_media` 落到寄存器的当前值 [win]（与投影已有的相同就不写）。
+pub(crate) fn land_media_binding(conn: &Connection, profile: &str, name: &str, win: &mvr::Write) -> Result<(), String> {
+    let cur: Option<(i64, i64, Vec<u8>)> = conn
+        .prepare_cached("SELECT wall, logical, device FROM sync2_media WHERE profile_uid = ?1 AND name = ?2")
+        .map_err(sql)?
+        .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()
+        .map_err(sql)?;
+    if cur.as_ref().is_some_and(|(w, l, d)| (*w, *l, d.as_slice()) == (win.wall, win.logical, &win.id.device.0[..])) {
+        return Ok(());
+    }
+    let Some(Body::Media { sha256, size, .. }) = load_op(conn, profile, &win.id)?.and_then(|o| o.body().ok()) else {
+        return Ok(());
+    };
+    conn.prepare_cached(
+        "INSERT OR REPLACE INTO sync2_media (profile_uid, name, sha256, size, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )
+    .map_err(sql)?
+    .execute(params![profile, name, sha256.to_vec(), size as i64, win.wall, win.logical, win.id.device.0.to_vec()])
+    .map_err(sql)?;
+    Ok(())
+}
+
+/// 收到（已应用的）远端操作后推进本机 HLC 并持久化（设计 §3.2：`hlc = max(local, remote) + 1`，+1 在下一次发出时）。[seen] = 这批
+/// 远端操作里不超前的最大 HLC；超前（远端 wall 超出本机墙钟 [crate::sync2::hlc::MAX_AHEAD_MS]）的作者在
+/// [ahead] 里：照收，`sync2_devices.warning` 打 `clock_ahead`（已有分叉告警的不覆盖），不把本机时钟拽过去。
+pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>, ahead: &BTreeSet<Id>, now: i64) -> Result<(), String> {
+    for d in ahead {
+        conn.prepare_cached(
+            "UPDATE sync2_devices SET warning = 'clock_ahead' WHERE profile_uid = ?1 AND device = ?2 AND warning IS NULL",
+        )
+        .map_err(sql)?
+        .execute(params![profile, d.0.to_vec()])
+        .map_err(sql)?;
+    }
+    let Some(remote) = seen else { return Ok(()) };
+    let row: Option<(Vec<u8>, i64, i64)> = conn
+        .prepare_cached("SELECT device, hlc_wall, hlc_logical FROM sync2_self WHERE profile_uid = ?1")
+        .map_err(sql)?
+        .query_row([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()
+        .map_err(sql)?;
+    let Some((d, w, l)) = row else { return Ok(()) };
+    let device = id_of(d)?;
+    let mut clock = Clock::new(device);
+    clock.last = Hlc { wall: w, logical: l as u32, device };
+    // 吸收（取最大）而不是 `observe` 的 +1：收段按任意边界切批时结果相同（下一次 tick 自然更大）。
+    clock.absorb(remote, now);
+    if (clock.last.wall, i64::from(clock.last.logical)) != (w, l) {
+        conn.prepare_cached("UPDATE sync2_self SET hlc_wall = ?2, hlc_logical = ?3 WHERE profile_uid = ?1")
+            .map_err(sql)?
+            .execute(params![profile, clock.last.wall, i64::from(clock.last.logical)])
+            .map_err(sql)?;
     }
     Ok(())
 }
@@ -1167,23 +1219,35 @@ pub(crate) fn append_local(conn: &Connection, local: &mut Local, applied: &mut V
     Ok(op)
 }
 
+/// [SrsCore::sync2_identity] 的结果。
+fn identity_json(l: &Local) -> Value {
+    json!({
+        "device": l.device.text(),
+        "collection": l.collection.text(),
+        "nextSeq": l.next_seq,
+        "migrated": l.migrated,
+        "name": l.name,
+        "public": l.key.public().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+    })
+}
+
 impl SrsCore {
     /// 本机身份（没有就建）。返回 `{device, collection, nextSeq, migrated, name}`。
+    ///
+    /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
+    /// （[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上读）。只有还没有身份时才进写连接，
+    /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
+        if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
+            return Ok(identity_json(&l));
+        }
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let l = match Local::load(c, profile)? {
                 Some(l) => l,
                 None => Local::create(c, profile, now)?,
             };
-            Ok(json!({
-                "device": l.device.text(),
-                "collection": l.collection.text(),
-                "nextSeq": l.next_seq,
-                "migrated": l.migrated,
-                "name": l.name,
-                "public": l.key.public().iter().map(|b| format!("{b:02x}")).collect::<String>(),
-            }))
+            Ok(identity_json(&l))
         })
     }
 
@@ -1486,27 +1550,52 @@ pub fn parse_device(s: &str) -> Result<Id, String> {
 mod mem_bench;
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod tests_causal;
+#[cfg(test)]
+mod tests_perf;
+#[cfg(test)]
+mod tests_break;
+#[cfg(test)]
+mod tests_digest;
+#[cfg(test)]
+mod tests_replay_pending;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
     /// 确定性 FSRS 算四个按钮的结果。[note] = 卡所属笔记（新卡没有日志时据它找牌组）。日界用调用方此刻的口径
     /// （与写进日志的 utcOff / rollover 相同）。
+    ///
+    /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
+    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上）。
     pub fn sync2_preview(&self, profile: &str, card: &str, note: Option<&str>, now: i64, utc_off: i64, rollover: i64) -> Result<Value, String> {
-        let w = self.writer()?;
-        in_savepoint(&w, |c| {
+        self.read_visible(|c| {
             let tree = config::DeckTree::load(c, profile)?;
+            // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
+            let looked_up: Option<String> = match note {
+                Some(_) => None,
+                None => c
+                    .prepare_cached("SELECT note_id FROM srs_cards_cache WHERE id = ?1")
+                    .map_err(sql)?
+                    .query_row([card], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?,
+            };
+            let note = note.or(looked_up.as_deref());
             let Group { rows, note: group_note } = group_of(c, card, note)?;
             // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
-            let cfg = if rows.is_empty() && note.is_none() {
-                crate::sync2::sched::Config::default()
-            } else {
-                tree.config(&config::card_deck(c, &tree, card, group_note.as_deref())?)
+            let deck = if rows.is_empty() && note.is_none() { None } else { Some(config::card_deck(c, &tree, card, group_note.as_deref())?) };
+            let cfg = match &deck {
+                None => crate::sync2::sched::Config::default(),
+                Some(d) => tree.config(d),
             };
             let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
             let day = crate::projection::Day { utc_offset_min: utc_off, rollover_hour: rollover };
             let (cur, mem, plan) = replay::preview(&input, &cfg, card, now, &day)?;
             let f = crate::sync2::sched::f32_json;
             Ok(json!({
+                "note": note,
+                "deck": deck,
                 "current": cur.to_json(),
                 "memoryBefore": mem.map(|m| json!({"s": f(m.s), "d": f(m.d), "sf": f(m.sf)})),
                 "plan": plan.iter().map(|s| s.to_json()).collect::<Vec<_>>(),

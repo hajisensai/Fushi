@@ -217,7 +217,7 @@ Widget _helpBody(
 }
 
 /// 一张卡的状态文字（暂停 / 搁置 / 新卡 / 学习中 / 今天到期 / N 天后）。
-String srsBrowseCardStatus(SrsCardSearchSubject c) {
+String srsBrowseCardStatus(SrsBrowseRow c) {
   if (c.isSuspended) return t.srs_status_suspended;
   if (c.isBuried) return t.srs_browse_status_buried;
   if (c.isNew) return t.srs_status_new;
@@ -230,7 +230,7 @@ String srsBrowseCardStatus(SrsCardSearchSubject c) {
 }
 
 /// 卡片状态的标签色调：浏览页手机行把状态画成行首小标签（不再拼进副标题末尾被省略号吃掉）。
-FushiTagTone srsBrowseCardStatusTone(SrsCardSearchSubject c) {
+FushiTagTone srsBrowseCardStatusTone(SrsBrowseRow c) {
   if (c.isSuspended || c.isBuried) return FushiTagTone.neutral;
   if (c.isNew) return FushiTagTone.accent;
   if (c.queue == SrsQueue.learning || c.queue == SrsQueue.relearning) {

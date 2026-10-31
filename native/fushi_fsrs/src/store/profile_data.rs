@@ -318,7 +318,7 @@ mod tests {
         seed(&core, P, 1, 0);
         core.sync2_ingest_begin(P).unwrap();
         core.profile_purge(P).unwrap();
-        let err = core.sync2_ingest_batch(P, &[], None, 9).unwrap_err();
+        let err = core.sync2_ingest_batch(P, Vec::new(), None, 9).unwrap_err();
         assert!(err.contains("no ingest session"), "{err}");
     }
 }
