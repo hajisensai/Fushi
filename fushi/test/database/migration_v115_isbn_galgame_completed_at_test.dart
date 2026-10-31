@@ -78,7 +78,7 @@ void main() {
     final QueryRow version = await migrated
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 140);
+    expect(version.read<int>('user_version'), 142);
 
     Future<Set<String>> columnsOf(String table) async => <String>{
       for (final QueryRow row

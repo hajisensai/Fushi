@@ -94,7 +94,7 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 140);
+    expect(version.read<int>('user_version'), 142);
     expect(db.schemaVersion, 142);
 
     final List<VideoBookRow> rows = await db.select(db.videoBooks).get();

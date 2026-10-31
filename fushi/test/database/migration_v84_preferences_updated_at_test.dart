@@ -53,7 +53,7 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 140);
+    expect(version.read<int>('user_version'), 142);
     expect(db.schemaVersion, 142);
 
     // 存量行零丢失——改名是用户数据，迁移丢一行就是丢一个书名。
