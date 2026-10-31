@@ -403,6 +403,17 @@ gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefi
   `tool/vendored_binaries.ps1`）：已对上的文件只算一遍 sha256；缺的 / 不一致的先查本机缓存
   （`FUSHI_VENDORED_CACHE`，默认 `%LOCALAPPDATA%\fushi\vendored-binaries` / `~/.cache/fushi/vendored-binaries`，
   所有 worktree 共用），再经 `HTTPS_PROXY` 下载；大小或 sha256 不符直接失败，不落盘。只校验不写用 `check`。
+  - **网络重试（外部 CDN，允许的有界例外）**：只重试传输层失败——连不上 / 超时 / body 比自己的
+    `Content-Length` 短（断流）/ HTTP 5xx，共 `DOWNLOAD_ATTEMPTS = 3` 次、退避 2 s × 次数，**每次失败都打一行**
+    `<path>: download attempt N/3 failed (...); retrying in Ns`，用完报错退出。HTTP 4xx 与「完整收到但 size /
+    sha256 不符」**一次都不重试**：那是错的资产或错的清单，立刻红。
+  - **共享缓存并发**：缓存在同一台机器的所有进程间共享（并行 worktree bootstrap、dist_test 的多个 slot），
+    每个缓存项 `<sha256>` 由同目录 `<sha256>.lock` 上的 OS 文件锁（`fcntl.flock` / `msvcrt.locking`，持有者
+    进程退出即由 OS 释放，不会留下死锁）保护：持锁者下载到唯一临时名再 `os.replace` 进位，读者也在锁内把缓存
+    复制成目标旁的唯一临时名，再原子 `os.replace` 到目标——Windows 上不会再有「一边 replace 一边 copy」的
+    共享冲突。等锁超过 `LOCK_TIMEOUT_SECONDS`（30 min）直接报错并点名锁文件，不无限等。`.lock` 文件留在缓存里，
+    别删（删掉正被等待的锁文件会让两个进程各锁一个文件）。回归：`tool/vendored_binaries_test.py`（由
+    `vendored_binaries_manifest_guard_test.dart` 调起：identity 只出 LF、重试策略、多进程同取只下载一次、等锁超时）。
 - **谁会调它**：`tool/bootstrap.ps1` / `tool/bootstrap.sh`（`setup_worktree.ps1 -SkipBootstrap` 不取，
   之后要构建 / 测试先跑 bootstrap 或 `tool/vendored_binaries.ps1`）；dist_test worker 的
   `fushi/tool/dist_test/worker_prepare.sh`；CI 用 composite action `.github/actions/fetch-vendored-binaries`

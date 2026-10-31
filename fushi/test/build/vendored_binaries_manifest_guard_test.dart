@@ -453,6 +453,42 @@ void main() {
       expect(fetching, greaterThanOrEqualTo(6), reason: 'enumeration collapsed');
     });
 
+    test(
+      'tool/vendored_binaries_test.py passes (identity LF, retry policy, cache lock)',
+      () {
+        // Python 3.8+ is a hard dependency of tool/vendored_binaries.py (it is
+        // what restores the binaries), so a missing interpreter is red, not skip.
+        String? python;
+        for (final String candidate in <String>['python3', 'python']) {
+          try {
+            final ProcessResult probe = Process.runSync(candidate, <String>[
+              '-c',
+              'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)',
+            ]);
+            if (probe.exitCode == 0) {
+              python = candidate;
+              break;
+            }
+          } on ProcessException {
+            continue;
+          }
+        }
+        expect(python, isNotNull, reason: 'no Python 3.8+ (python3 / python)');
+        final ProcessResult result = Process.runSync(python!, <String>[
+          'tool/vendored_binaries_test.py',
+        ], workingDirectory: repo);
+        final String out = '${result.stdout}\n${result.stderr}';
+        expect(result.exitCode, 0, reason: out);
+        final RegExpMatch? ran = RegExp(
+          r'^ran (\d+) test\(s\)$',
+          multiLine: true,
+        ).firstMatch(result.stdout as String);
+        expect(ran, isNotNull, reason: out);
+        expect(int.parse(ran!.group(1)!), greaterThanOrEqualTo(8), reason: out);
+      },
+      timeout: const Timeout(Duration(minutes: 3)),
+    );
+
     test('composite action runs the single fetch implementation', () {
       final String action = File(
         '$repo/.github/actions/fetch-vendored-binaries/action.yml',

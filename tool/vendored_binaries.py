@@ -37,13 +37,29 @@ macOS), the dist_test workers and a dev box before Flutter is installed.
 Cache: downloads are kept content-addressed in $FUSHI_VENDORED_CACHE (default
 ~/.cache/fushi/vendored-binaries, %LOCALAPPDATA%\\fushi\\vendored-binaries on
 Windows), so every worktree / CI cache restore reuses them.
+
+The cache is shared by every process on the machine (parallel worktree
+bootstraps, the dist_test worker slots), so each cached file <sha256> is
+guarded by an OS file lock on <sha256>.lock (fcntl.flock / msvcrt.locking,
+released by the OS if the holder dies, so a crash never leaves a stale lock).
+Under that lock a writer downloads to a unique temp file and os.replace()s it
+into place, and a reader copies it out; nobody reads a file another process is
+replacing (on Windows that os.replace / copy pair fails with a sharing
+violation). A waiter gives up loudly after LOCK_TIMEOUT_SECONDS.
+
+Network: only transport failures (connection errors, timeouts, truncated
+bodies, HTTP 5xx) of the external CDN are retried, DOWNLOAD_ATTEMPTS times in
+all, and each retry is logged. Bytes that arrive but do not match the manifest
+(size / sha256) and HTTP 4xx are never retried: a wrong asset fails at once.
 """
 
 from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import hashlib
+import http.client
 import json
 import os
 import shutil
@@ -54,7 +70,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import BinaryIO, Iterable, Iterator, Optional
 
 ROOT: Path = Path(__file__).resolve().parent.parent
 MANIFEST: Path = ROOT / "tool" / "vendored_binaries.json"
@@ -63,10 +79,22 @@ CHUNK: int = 1 << 20
 # whose bytes do not match the manifest is never retried: that is a wrong or
 # corrupted asset and must fail loudly.
 DOWNLOAD_ATTEMPTS: int = 3
+# Backoff before retry N is RETRY_BACKOFF_SECONDS * N.
+RETRY_BACKOFF_SECONDS: float = 2.0
+# How long a process waits for another one holding a cache entry's lock (that
+# one is downloading or copying the same file). Long enough for a slow proxy to
+# finish a 40 MB asset with all its retries; past it the run fails, naming the
+# lock file, instead of waiting forever.
+LOCK_TIMEOUT_SECONDS: float = 1800.0
+LOCK_POLL_SECONDS: float = 0.2
 
 
 class VendoredError(Exception):
     pass
+
+
+class _TransportError(Exception):
+    """A retryable network failure (never a content mismatch)."""
 
 
 def log(message: str) -> None:
@@ -164,44 +192,154 @@ def select(manifest: dict, groups: Optional[list[str]]) -> list[dict]:
     return [entry for entry in manifest["files"] if entry["group"] in groups]
 
 
+def _transfer(url: str, handle: BinaryIO) -> tuple[int, str]:
+    """One GET of url into handle; returns (bytes, sha256).
+
+    Raises _TransportError for what a retry can fix (connection / timeout /
+    truncated body / HTTP 5xx) and VendoredError for HTTP 4xx. A failure to
+    write the local file is an OSError from handle.write and propagates as is:
+    retrying cannot fix a full disk.
+    """
+    digest = hashlib.sha256()
+    written = 0
+    request = urllib.request.Request(url, headers={"User-Agent": "fushi-vendored-binaries"})
+    try:
+        # urllib's default opener honours HTTPS_PROXY / HTTP_PROXY / NO_PROXY.
+        response = urllib.request.urlopen(request, timeout=120)
+    except urllib.error.HTTPError as error:
+        if error.code < 500:
+            raise VendoredError(f"{url}: HTTP {error.code} {error.reason}") from error
+        raise _TransportError(f"HTTP {error.code} {error.reason}") from error
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
+        raise _TransportError(str(error)) from error
+    declared = response.headers.get("Content-Length")
+    with response:
+        while True:
+            try:
+                chunk = response.read(CHUNK)
+            except (http.client.HTTPException, OSError) as error:
+                # IncompleteRead (HTTPException), reset / timeout (OSError).
+                raise _TransportError(f"after {written} bytes: {error!r}") from error
+            if not chunk:
+                break
+            handle.write(chunk)
+            digest.update(chunk)
+            written += len(chunk)
+    # read(amt) does not raise IncompleteRead when the peer closes early: it
+    # just returns b"". A body shorter than its own Content-Length is a dropped
+    # connection (retry), not a wrong asset.
+    if declared is not None and declared.isdigit() and written < int(declared):
+        raise _TransportError(f"connection closed after {written} of {declared} bytes")
+    return written, digest.hexdigest()
+
+
 def download(url: str, destination: Path, entry: dict) -> None:
-    """Download url to destination, verifying size and sha256 on the fly."""
-    last_error: Optional[BaseException] = None
+    """Download url to destination, verifying size and sha256 on the fly.
+
+    Retries transport failures only (see _transfer), logging each one; a body
+    that arrives complete but differs from the manifest fails immediately.
+    """
+    last_error: Optional[_TransportError] = None
     for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
-        digest = hashlib.sha256()
-        written = 0
-        try:
-            request = urllib.request.Request(
-                url, headers={"User-Agent": "fushi-vendored-binaries"}
-            )
-            # urllib's default opener honours HTTPS_PROXY / HTTP_PROXY / NO_PROXY.
-            with urllib.request.urlopen(request, timeout=120) as response:
-                with destination.open("wb") as handle:
-                    while True:
-                        chunk = response.read(CHUNK)
-                        if not chunk:
-                            break
-                        handle.write(chunk)
-                        digest.update(chunk)
-                        written += len(chunk)
-        except urllib.error.HTTPError as error:
-            if error.code < 500:
-                raise VendoredError(f"{url}: HTTP {error.code} {error.reason}") from error
-            last_error = error
-        except (urllib.error.URLError, OSError, TimeoutError) as error:
-            last_error = error
-        else:
-            if written != entry["size"] or digest.hexdigest() != entry["sha256"]:
-                raise VendoredError(
-                    f"{url} does not match the manifest for {entry['path']}: "
-                    f"got {written} bytes sha256={digest.hexdigest()}, "
-                    f"expected {entry['size']} bytes sha256={entry['sha256']}"
-                )
-            return
-        log(f"    download attempt {attempt}/{DOWNLOAD_ATTEMPTS} failed: {last_error}")
+        with destination.open("wb") as handle:
+            try:
+                written, sha256 = _transfer(url, handle)
+            except _TransportError as error:
+                last_error = error
+            else:
+                if written != entry["size"] or sha256 != entry["sha256"]:
+                    raise VendoredError(
+                        f"{url} does not match the manifest for {entry['path']}: "
+                        f"got {written} bytes sha256={sha256}, "
+                        f"expected {entry['size']} bytes sha256={entry['sha256']} "
+                        "(not retried: a wrong or corrupted asset)"
+                    )
+                return
         if attempt < DOWNLOAD_ATTEMPTS:
-            time.sleep(2 * attempt)
-    raise VendoredError(f"{url}: download failed: {last_error}")
+            delay = RETRY_BACKOFF_SECONDS * attempt
+            log(
+                f"    {entry['path']}: download attempt {attempt}/{DOWNLOAD_ATTEMPTS} "
+                f"failed ({last_error}); retrying in {delay:.0f}s"
+            )
+            time.sleep(delay)
+        else:
+            log(
+                f"    {entry['path']}: download attempt {attempt}/{DOWNLOAD_ATTEMPTS} "
+                f"failed ({last_error}); giving up"
+            )
+    raise VendoredError(f"{url}: download failed after {DOWNLOAD_ATTEMPTS} attempts: {last_error}")
+
+
+def _try_lock(fd: int) -> bool:
+    """Non-blocking exclusive lock on byte 0 of fd; False when another holder has it."""
+    if os.name == "nt":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+    import fcntl
+
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
+def _unlock(fd: int) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def cache_lock(cache: Path, sha256: str, timeout: Optional[float] = None) -> Iterator[None]:
+    """Hold the cross-process lock of cache entry <sha256> (see the module doc).
+
+    The lock file itself is never deleted: removing it while another process
+    waits on it would let two holders lock two different files.
+    """
+    limit = LOCK_TIMEOUT_SECONDS if timeout is None else timeout
+    cache.mkdir(parents=True, exist_ok=True)
+    lock_path = cache / f"{sha256}.lock"
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        deadline = time.monotonic() + limit
+        waited = False
+        while not _try_lock(fd):
+            if not waited:
+                log(f"  waiting for {lock_path} (another process is fetching the same file)")
+                waited = True
+            if time.monotonic() >= deadline:
+                raise VendoredError(
+                    f"timed out after {limit:.0f}s waiting for the cache lock {lock_path}; "
+                    "another fetch holds it (stuck download?). Stop that process and re-run; "
+                    "the OS releases the lock when its holder exits."
+                )
+            time.sleep(LOCK_POLL_SECONDS)
+        try:
+            yield
+        finally:
+            _unlock(fd)
+    finally:
+        os.close(fd)
+
+
+def _unique_sibling(path: Path, suffix: str) -> Path:
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, prefix=path.name + ".", suffix=suffix, delete=False
+    ) as handle:
+        return Path(handle.name)
 
 
 def materialize(entry: dict, cache: Path) -> str:
@@ -212,28 +350,32 @@ def materialize(entry: dict, cache: Path) -> str:
     if target.exists():
         log(f"  {entry['path']}: local file differs from the manifest; replacing it")
     cached = cache / entry["sha256"]
-    if not matches(cached, entry):
-        cache.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            dir=cache, prefix=entry["sha256"][:16] + ".", suffix=".part", delete=False
-        ) as part:
-            part_path = Path(part.name)
-        try:
-            log(f"  downloading {entry['path']} ({entry['size'] / 1048576:.1f} MiB)")
-            download(entry["url"], part_path, entry)
-            os.replace(part_path, cached)
-        finally:
-            if part_path.exists():
-                part_path.unlink()
-    else:
-        action += " from cache"
     target.parent.mkdir(parents=True, exist_ok=True)
-    staging = target.with_name(target.name + ".vendored-part")
-    shutil.copyfile(cached, staging)
-    if not matches(staging, entry):
-        staging.unlink()
-        raise VendoredError(f"{entry['path']}: copy from {cached} does not match the manifest")
-    os.replace(staging, target)
+    # Unique per process / thread: two fetches into the same checkout (bootstrap
+    # + melos post hook) must not share a staging file either.
+    staging = _unique_sibling(target, ".vendored-part")
+    try:
+        with cache_lock(cache, entry["sha256"]):
+            if matches(cached, entry):
+                action += " from cache"
+            else:
+                part_path = _unique_sibling(cached, ".part")
+                try:
+                    log(f"  downloading {entry['path']} ({entry['size'] / 1048576:.1f} MiB)")
+                    download(entry["url"], part_path, entry)
+                    os.replace(part_path, cached)
+                finally:
+                    if part_path.exists():
+                        part_path.unlink()
+            # Still under the lock: no other process can os.replace `cached`
+            # while it is being read.
+            shutil.copyfile(cached, staging)
+        if not matches(staging, entry):
+            raise VendoredError(f"{entry['path']}: copy from {cached} does not match the manifest")
+        os.replace(staging, target)
+    finally:
+        if staging.exists():
+            staging.unlink()
     return action
 
 
@@ -370,9 +512,17 @@ def command_publish(args: argparse.Namespace) -> int:
 def command_identity(args: argparse.Namespace) -> int:
     manifest = load_manifest()
     prefixes = [prefix.rstrip("/") + "/" for prefix in args.prefixes]
-    for entry in manifest["files"]:
-        if any(entry["path"].startswith(prefix) for prefix in prefixes):
-            print(f"{entry['path']} {entry['sha256']}")
+    lines = [
+        f"{entry['path']} {entry['sha256']}\n"
+        for entry in manifest["files"]
+        if any(entry["path"].startswith(prefix) for prefix in prefixes)
+    ]
+    # Bytes, not print(): text-mode stdout on Windows writes CRLF, and names.sh
+    # hashes this listing into native artifact store names, which must be the
+    # same on every runner OS.
+    sys.stdout.flush()
+    sys.stdout.buffer.write("".join(lines).encode("utf-8"))
+    sys.stdout.buffer.flush()
     return 0
 
 
