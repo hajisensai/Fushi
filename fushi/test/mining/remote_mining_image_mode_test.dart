@@ -200,10 +200,28 @@ void main() {
           reason: 'YouTube 段与 Netflix 段的分界锚点失效，请同步更新守卫。');
       final String youtube = body.substring(0, netflix);
 
-      expect(youtube, contains('imageMode: _appModel.videoMiningImageMode'),
+      expect(youtube, contains('imageMode: _videoMiningImageMode'),
           reason: 'YouTube 的 ImmersionMiningRequest 必须收 imageMode，否则值对象默认 '
               'gif → 用户选的「字幕开头截图 / 制卡时截图」在扩展这条链路上恒被吞成'
               '动图。TODO-2519(2a)。');
+
+      // 反馈 biLEesNqWb：私有 getter 有扩展所选配置的只读视图时读视图，否则读 AppModel。
+      expect(
+        RegExp(r'get _videoMiningImageMode =>\s*_view\?\.prefs\.videoMiningImageMode\s*\?\?\s*'
+                r'_appModel\.videoMiningImageMode;')
+            .hasMatch(src),
+        isTrue,
+        reason: '_videoMiningImageMode 必须读用户偏好（视图或 AppModel），不能写死',
+      );
+
+      // 反馈 biLEesNqWb：私有 getter 有扩展所选配置的只读视图时读视图，否则读 AppModel。
+      expect(
+        RegExp(r'get _videoMiningStillFormat =>\s*_view\?\.prefs\.videoMiningStillFormat\s*\?\?\s*'
+                r'_appModel\.videoMiningStillFormat;')
+            .hasMatch(src),
+        isTrue,
+        reason: '_videoMiningStillFormat 必须读用户偏好（视图或 AppModel），不能写死',
+      );
     });
   });
 }

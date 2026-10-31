@@ -840,11 +840,44 @@ class ThemeNotifier extends ChangeNotifier {
     this._textThemeBuilder, {
     String Function()? customThemeIdGenerator,
   }) : _customThemeIdGenerator =
-           customThemeIdGenerator ?? _defaultCustomThemeIdGenerator {
+           customThemeIdGenerator ?? _defaultCustomThemeIdGenerator,
+       _readOnlyView = false {
     // 系统「降低透明度」切换时玻璃要立刻回退 / 恢复：重建主题即可。
     SystemTransparency.reduceTransparency.addListener(notifyListeners);
     // 换图标（预设 ↔ 自定义、换自定义图）后「主题色跟随图标」要即时重取色。
     currentAppIconSelection.addListener(_onAppIconSelectionChanged);
+  }
+
+  /// 反馈 biLEesNqWb：某个**非激活配置**的只读主题视图（浏览器扩展所选配置的查词弹窗
+  /// 配色用）。[prefs] 是该配置合成后的整份偏好（`ProfileSettingsView.prefsMap`）。
+  ///
+  /// 设备侧的取色输入从 [live] 拷过来——系统调色板 / 系统强调色、自定义图标与页面背景图
+  /// 取出的种子都来自这台设备（图标选择与背景图路径本就是设备本地、不随配置走），而
+  /// 「用不用它们」的开关仍按 [prefs] 判。视图不订阅任何全局通知、不跑载入期迁移；任何
+  /// 写入（`_set` / 自定义主题迁移回写）都不落库：设置器抛 [UnsupportedError]，读路径上
+  /// 的旧自定义主题迁移只改本视图的内存副本。
+  ThemeNotifier.profileView(ThemeNotifier live, Map<String, String> prefs)
+    : _db = live._db,
+      _textThemeBuilder = live._textThemeBuilder,
+      _customThemeIdGenerator = live._customThemeIdGenerator,
+      _readOnlyView = true {
+    _prefs.addAll(prefs);
+    _systemPalette = live._systemPalette;
+    _systemPaletteIdentity = live._systemPaletteIdentity;
+    _systemAccentColor = live._systemAccentColor;
+    _appIconSeed = live._appIconSeed;
+    _pageBackdropSeeds = live._pageBackdropSeeds;
+  }
+
+  /// true = [ThemeNotifier.profileView] 建的只读视图。
+  final bool _readOnlyView;
+
+  void _ensureWritable(String operation) {
+    if (_readOnlyView) {
+      throw UnsupportedError(
+        'ThemeNotifier.$operation on a read-only profile view',
+      );
+    }
   }
 
   @override
@@ -1387,6 +1420,7 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   void loadFromPrefsSnapshot(Map<String, String> snapshot) {
+    _ensureWritable('loadFromPrefsSnapshot');
     _prefs
       ..clear()
       ..addAll(snapshot);
@@ -1406,6 +1440,7 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   Future<void> refreshFromDb() async {
+    _ensureWritable('refreshFromDb');
     final all = await _db.getAllPrefs();
     _prefs
       ..clear()
@@ -1498,6 +1533,7 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   Future<void> _set(String key, dynamic value) async {
+    _ensureWritable('_set');
     final String strVal = PrefCodec.encode(value);
     _publishPreferenceWrite(key, strVal, ++_preferenceWriteRevision);
     if (key == 'design_system') {
@@ -1926,6 +1962,7 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   Future<void> _seedAppUiScale(double value) async {
+    _ensureWritable('_seedAppUiScale');
     final double normalized = FushiAppUiScale.normalize(value);
     // 立刻更新内存值，使同帧 _isAppUiScaleSeeded / appUiScale 反映已种子（_db 写是
     // async，先同步置内存避免本帧/下一帧重复种子）。
@@ -2449,6 +2486,8 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs[selectedCustomThemeIdPrefKey] = PrefCodec.encode(
       result.selectedId ?? '',
     );
+    // 只读配置视图：迁移结果只留在本视图内存里，绝不写进 live 偏好（那是别的配置的值）。
+    if (_readOnlyView) return;
     unawaited(_db.setPref(customThemesPrefKey, PrefCodec.encode(encoded)));
     unawaited(
       _db.setPref(
@@ -2483,6 +2522,7 @@ class ThemeNotifier extends ChangeNotifier {
       writes['pure_black_dark'] = PrefCodec.encode(pureBlackDark);
     }
     writes['app_theme_key'] = PrefCodec.encode(key);
+    _ensureWritable('setAppThemeKey');
     final int revision = ++_preferenceWriteRevision;
     await _db.setPrefs(writes);
     for (final MapEntry<String, String> write in writes.entries) {

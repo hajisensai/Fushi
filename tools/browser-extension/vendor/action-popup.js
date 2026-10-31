@@ -253,6 +253,93 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       }
     });
   } catch (_) {}
+  // 反馈 biLEesNqWb：「Fushi 配置」下拉。列表经 background `fushiProfiles`（同时按最新列表校正
+  // 保存的选择：被删 → 回退跟随 Fushi，改名 → 更新名字，两者都写 fushiProfileNotice）；选中经
+  // `fushiSelectProfile` 持久化。纯逻辑在 ../profile-selection.js（FUSHI_PROFILE）。
+  const profileApi = (typeof window !== 'undefined' && window.FUSHI_PROFILE) || null;
+  const profileSelectEl = document.getElementById('hp-profile-select');
+  const profileStatusEl = document.getElementById('hp-profile-status');
+  const profileNoticeEl = document.getElementById('hp-profile-notice');
+  const profileNoticeTextEl = document.getElementById('hp-profile-notice-text');
+  const profileNoticeCloseEl = document.getElementById('hp-profile-notice-close');
+  let profileList = null;
+  let profileSelection = null;
+  function renderProfileSelect() {
+    if (!profileApi || !profileSelectEl) return;
+    const view = profileApi.fushiProfileOptions(profileList, profileSelection);
+    profileSelectEl.textContent = '';
+    for (const o of view.options) {
+      const opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      profileSelectEl.appendChild(opt);
+    }
+    profileSelectEl.value = view.value;
+  }
+  function renderProfileNotice(notice) {
+    if (!profileApi || !profileNoticeEl) return;
+    const text = profileApi.fushiProfileNoticeText(notice);
+    profileNoticeEl.hidden = !text;
+    if (profileNoticeTextEl) profileNoticeTextEl.textContent = text;
+  }
+  function loadProfiles() {
+    if (!profileApi || !profileSelectEl) return;
+    try {
+      chrome.runtime.sendMessage({ type: 'fushiProfiles' }, (resp) => {
+        try { void chrome.runtime.lastError; } catch (_) {}
+        profileSelection = profileApi.fushiNormalizeProfileSelection(resp && resp.selection);
+        profileList = resp && resp.ok
+          ? { profiles: resp.profiles || [], activeProfileId: resp.activeProfileId }
+          : null;
+        if (profileStatusEl) {
+          profileStatusEl.hidden = !!profileList;
+          profileStatusEl.textContent = profileList ? '' : fushiApT('ap_profile_unavailable');
+        }
+        renderProfileSelect();
+      });
+    } catch (_) {}
+  }
+  if (profileApi && profileSelectEl) {
+    const selKey = profileApi.FUSHI_PROFILE_SELECTION_KEY;
+    const noticeKey = profileApi.FUSHI_PROFILE_NOTICE_KEY;
+    try {
+      chrome.storage.local.get([selKey, noticeKey], (r) => {
+        profileSelection = profileApi.fushiNormalizeProfileSelection(r && r[selKey]);
+        renderProfileSelect();
+        renderProfileNotice(r && r[noticeKey]);
+        loadProfiles();
+      });
+    } catch (_) {}
+    profileSelectEl.addEventListener('change', () => {
+      const id = Number(profileSelectEl.value);
+      const hit = profileList && profileList.profiles.find((p) => p.id === id);
+      const profile = hit ? { id: hit.id, name: hit.name }
+        : (profileSelection && profileSelection.id === id ? profileSelection : null);
+      profileSelection = profile;
+      try {
+        chrome.runtime.sendMessage({ type: 'fushiSelectProfile', profile }, () => {
+          try { void chrome.runtime.lastError; } catch (_) {}
+        });
+      } catch (_) {}
+    });
+    if (profileNoticeCloseEl) {
+      profileNoticeCloseEl.addEventListener('click', () => {
+        renderProfileNotice(null);
+        try { chrome.storage.local.remove(noticeKey); } catch (_) {}
+      });
+    }
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        if (changes[selKey]) {
+          profileSelection = profileApi.fushiNormalizeProfileSelection(changes[selKey].newValue);
+          renderProfileSelect();
+        }
+        if (changes[noticeKey]) renderProfileNotice(changes[noticeKey].newValue);
+      });
+    } catch (_) {}
+  }
+
   // 「⚙ 扩展设置」按钮已从连接行内移到页脚独立成行（见 action-popup.html 的注释），
   // 不再嵌在可点的连接行里，故不需要 stopPropagation 去防误判成「重新检测」。
   const optionsEl = document.getElementById('hp-open-options');

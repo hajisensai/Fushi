@@ -162,7 +162,7 @@ void main() {
               '多一份同名字面量会稀释 remote_mining_animated_format_test.dart 的判据。');
       // 反面：真正生效的那个必须留着 —— providedCoverBytes 短路会按它归一化编码
       // （immersion_mining_engine.dart 的 cardScreenshotEncodingFor）。
-      expect(segment, contains('stillFormat: _appModel.videoMiningStillFormat'),
+      expect(segment, contains('stillFormat: _videoMiningStillFormat'),
           reason: '静图格式在这条路上是**真生效**的（provided 字节按它重编码），'
               '不能连它一起删掉。');
     });

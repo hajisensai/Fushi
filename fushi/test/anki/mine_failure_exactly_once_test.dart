@@ -175,6 +175,8 @@ _startMine(DictionaryPopupWebViewState state) {
 // ---------------------------------------------------------------------------
 
 class _FailingAnkiRepo extends BaseAnkiRepository {
+  _FailingAnkiRepo({super.settingsStore});
+
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,

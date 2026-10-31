@@ -318,15 +318,20 @@ Set<String> configuredDictionaryFontPaths(AppModel appModel) {
     // 与「没有配置任何字体」同义（那时也不会有字体 URL 请求）。
     return const <String>{};
   }
-  final List<Map<String, dynamic>> fonts =
-      settings?.dictionaryFonts ?? const <Map<String, dynamic>>[];
-  return fonts
-      .where(DictionaryFontCss.isEntryEnabled)
-      .map((Map<String, dynamic> e) => e['path'] as String?)
-      .whereType<String>()
-      .map(p.canonicalize)
-      .toSet();
+  return enabledDictionaryFontPaths(
+    settings?.dictionaryFonts ?? const <Map<String, dynamic>>[],
+  );
 }
+
+/// 词典字体列表里**启用中**条目的规范化路径（[configuredDictionaryFontPaths] 与浏览器
+/// 扩展所选配置的视图共用这一份判据）。
+Set<String> enabledDictionaryFontPaths(List<Map<String, dynamic>> fonts) =>
+    fonts
+        .where(DictionaryFontCss.isEntryEnabled)
+        .map((Map<String, dynamic> e) => e['path'] as String?)
+        .whereType<String>()
+        .map(p.canonicalize)
+        .toSet();
 
 /// 词条「高级制卡」按钮的宿主回调。
 ///

@@ -27,6 +27,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi/src/srs/srs_app_host.dart' show srsInheritProviderScope;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
@@ -473,7 +474,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
             () => Navigator.of(context).push<void>(
               adaptivePageRoute<void>(
                 context: context,
-                builder: (_) => SrsEditHistoryPage(noteId: _note!.id),
+                builder: (_) => srsInheritProviderScope(
+                  context,
+                  SrsEditHistoryPage(noteId: _note!.id),
+                ),
               ),
             ),
           ),

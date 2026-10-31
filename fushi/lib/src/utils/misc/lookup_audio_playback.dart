@@ -8,6 +8,8 @@ import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/utils/misc/audio_mime.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
@@ -17,7 +19,8 @@ import 'package:fushi/src/utils/misc/system_tts.dart'
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/word_audio_cache.dart';
 import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show Dictionary, FushiDicts;
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show normalizeDictionaryMediaPath;
 import 'package:path_provider/path_provider.dart';
@@ -75,22 +78,38 @@ Future<void> playLookupAudio(
 /// 点 + 制出的卡带 TTS 发音，查词页却显示「暂无发音」。兜底现在就在这一个解析点上。
 /// 制卡链（[LocalAudioEnhancement]）自己的第 3 步就是 TTS 兜底，所以它传
 /// `ttsFallback: false`，避免一个词合成两次。
+///
+/// [profileView]（反馈 biLEesNqWb）：浏览器扩展所选的非激活配置——音频源配置、TTS 兜底
+/// 声音与系统语音的语言判据都取它；null = App 当前生效的设置。
 Future<String?> resolveLookupAudioUrl(
   AppModel appModel,
   String expression,
   String reading, {
   bool ttsFallback = true,
+  ProfileSettingsView? profileView,
 }) async {
   final String? configured = await _buildLookupAudioResolver(appModel)
       .resolveConfigured(
         expression: expression,
         reading: reading,
-        sources: appModel.audioSourceConfigs,
+        sources: _lookupAudioSourceConfigs(appModel, profileView),
       );
   if (configured != null && configured.isNotEmpty) return configured;
   if (!ttsFallback) return configured;
-  return _synthesizeLookupTtsFallback(appModel, expression, reading);
+  return _synthesizeLookupTtsFallback(
+    appModel,
+    expression,
+    reading,
+    profileView: profileView,
+  );
 }
+
+List<AudioSourceConfig> _lookupAudioSourceConfigs(
+  AppModel appModel,
+  ProfileSettingsView? profileView,
+) => profileView == null
+    ? appModel.audioSourceConfigs
+    : appModel.audioSourceConfigsFrom(profileView.prefs.audioSourceConfigs);
 
 /// 查词 TTS 兜底：用户显式选过的兜底声音合成 [reading]（空则 [expression]，与制卡
 /// 兜底同一取词口径），返回本地文件路径。没选过 / 选了「不使用」返回 null；合成
@@ -98,15 +117,15 @@ Future<String?> resolveLookupAudioUrl(
 Future<String?> _synthesizeLookupTtsFallback(
   AppModel appModel,
   String expression,
-  String reading,
-) async {
+  String reading, {
+  ProfileSettingsView? profileView,
+}) async {
   // 兜底只认用户显式选过的声音，而那个选择存在偏好里：偏好还没装载（AppModel
   // 尚未 initialise，或只装了数据库的轻量进程）时不知道用户选了什么，按「没选」
   // 处理——与 [lookupTtsFallbackVoiceOf] 对空串的口径一致，不去读空的 prefsRepo。
   if (!appModel.isPreferencesReady) return null;
-  final MiningTtsFallbackVoice? choice = lookupTtsFallbackVoiceOf(
-    appModel.prefsRepo,
-  );
+  final PreferencesRepository prefs = profileView?.prefs ?? appModel.prefsRepo;
+  final MiningTtsFallbackVoice? choice = lookupTtsFallbackVoiceOf(prefs);
   if (choice == null) return null;
   final String text = reading.isNotEmpty ? reading : expression;
   try {
@@ -118,8 +137,12 @@ Future<String?> _synthesizeLookupTtsFallback(
       // 假名在读音里）与已装词典声明的词头语言。
       languageTag: resolveSystemTtsLanguageTag(
         text: '$expression $reading',
-        installedDictionaryLanguages:
-            appModel.installedDictionarySourceLanguages,
+        installedDictionaryLanguages: profileView == null
+            ? appModel.installedDictionarySourceLanguages
+            : <String?>[
+                for (final Dictionary d in profileView.dictionaries)
+                  d.effectiveSourceLanguage,
+              ],
       ),
       outputDir: Directory(
         '${(await getTemporaryDirectory()).path}/fushi_lookup_tts',
@@ -130,7 +153,7 @@ Future<String?> _synthesizeLookupTtsFallback(
             outputPath,
             languageTag: languageTag,
           ),
-      voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
+      voices: () => miningTtsVoiceSourceOf(TtsServices.of(prefs)),
     );
     return file?.path;
   } on WordAudioUnavailable catch (e, stack) {
@@ -143,15 +166,18 @@ Future<String?> _synthesizeLookupTtsFallback(
 /// 远端列表型源展开成多个变体）。与 [resolveLookupAudioUrl] 共用同一个装配好的
 /// [WordAudioResolver]（同样的本地库预算、远端冷却、互联查询），所以首项就是
 /// 单击 ♪ 会播的那条。
+///
+/// [profileView]：同 [resolveLookupAudioUrl]。
 Future<List<WordAudioCandidate>> listLookupAudioCandidates(
   AppModel appModel,
   String expression,
-  String reading,
-) {
+  String reading, {
+  ProfileSettingsView? profileView,
+}) {
   return _buildLookupAudioResolver(appModel).listConfigured(
     expression: expression,
     reading: reading,
-    sources: appModel.audioSourceConfigs,
+    sources: _lookupAudioSourceConfigs(appModel, profileView),
   );
 }
 

@@ -174,6 +174,20 @@ abstract class MediaSource {
     return value is T ? value : null;
   }
 
+  /// [readStoredPreference] 的「按给定偏好快照读」版本：从整份偏好原始编码值 [prefs]
+  /// （键同 `preferences` 表）里取本来源命名空间下的 [key]；没有 / 类型不符返回 null。
+  ///
+  /// 反馈 biLEesNqWb：浏览器扩展所选的配置不是激活配置时，按它的只读设置视图
+  /// （`ProfileSettingsView.prefsMap`）读来源偏好，不碰本实例按激活配置装好的缓存。
+  T? storedPreferenceIn<T>(Map<String, String> prefs, String key) {
+    final String? raw = prefs[_dbPrefKey(key)];
+    if (raw == null) return null;
+    final Object? value = PrefCodec.decodeUntyped(raw);
+    if (value is T) return value;
+    if (T == double && value is int) return value.toDouble() as T;
+    return null;
+  }
+
   /// Set the preference [value] for a certain parameter [key] for this source.
   Future<void> setPreference<T>({required String key, required T value}) async {
     _preferences[key] = value;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1354,6 +1355,21 @@ List<String> buildFfmpegClipAnimatedArgs({
 /// 只有 IO 层（真正跑 ffmpeg 的函数）读它，参数构建函数保持纯函数。
 bool Function() miningAnimatedPlayOnceReader = () => false;
 
+/// 请求级覆盖 [miningAnimatedPlayOnceReader] 的 zone 键（值为 bool）。
+///
+/// 反馈 biLEesNqWb：浏览器扩展可以按一个**非激活**配置制卡，那次制卡的「动图只播一次」
+/// 必须取那个配置的偏好，而进程级读取器接的是 App 当前生效的偏好。调用方把整次制卡跑在
+/// `runZoned(zoneValues: {kMiningAnimatedPlayOnceZoneKey: v})` 里，IO 层经
+/// [resolveMiningAnimatedPlayOnce] 优先读 zone 值；不在这种 zone 里时行为不变。
+const Object kMiningAnimatedPlayOnceZoneKey = #fushiMiningAnimatedPlayOnce;
+
+/// 当前这次 IO 该用的「动图只播一次」：zone 覆盖（[kMiningAnimatedPlayOnceZoneKey]）
+/// 优先，否则进程级 [miningAnimatedPlayOnceReader]。
+bool resolveMiningAnimatedPlayOnce() {
+  final Object? scoped = Zone.current[kMiningAnimatedPlayOnceZoneKey];
+  return scoped is bool ? scoped : miningAnimatedPlayOnceReader();
+}
+
 /// 动图循环次数参数。**视频 cue 动图与 galgame 窗口动图共用这一处**。
 ///
 /// 三个 muxer 的 `-loop` 口径不同（Windows 随包 ffmpeg 实测，按字节核对产物）：
@@ -1470,7 +1486,7 @@ Future<String?> extractClipGifViaFfmpeg({
         tlsPinSha256: tlsPinSha256,
         httpHeaders: httpHeaders,
         cropFilter: cropFilter,
-        playOnce: playOnce ?? miningAnimatedPlayOnceReader(),
+        playOnce: playOnce ?? resolveMiningAnimatedPlayOnce(),
       ),
       const Duration(seconds: 120),
     );

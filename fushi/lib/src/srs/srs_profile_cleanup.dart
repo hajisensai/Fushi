@@ -44,8 +44,11 @@ class SrsProfileCleanupDeps {
     required this.deviceId,
     required this.supportRoot,
     required this.backupRoot,
+    this.releaseForeign = _noForeignStores,
     this.clock = DateTime.now,
   });
+
+  static Future<void> _noForeignStores(String profileUid) async {}
 
   /// 本机 srs.db；没有（从没用过复习）为 null，不凭空建库。
   final Future<SrsStorage?> Function() storage;
@@ -60,6 +63,10 @@ class SrsProfileCleanupDeps {
 
   /// 删除前备份的落点。
   final Future<Directory> Function() backupRoot;
+
+  /// 作废浏览器扩展为这个 uid 开着的复习副本（`SrsProfileStores.release`）：本清理要为它另开一份
+  /// 副本，同一个 uid 不能同时有两份活副本。
+  final Future<void> Function(String profileUid) releaseForeign;
 
   final DateTime Function() clock;
 }
@@ -173,7 +180,9 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
     final File backup;
     try {
       final SrsDbStore? active = await _deps.activeStore();
-      store = active != null && active.profileUid == uid
+      final bool isActive = active != null && active.profileUid == uid;
+      if (!isActive) await _deps.releaseForeign(uid);
+      store = isActive
           ? active
           : await _serialized(
               null,
@@ -311,5 +320,7 @@ SrsProfileCleanup srsProfileCleanupFor(Ref ref) => SrsProfileCleanup(
         SyncRepository(ref.read(appProvider).database).getOrCreateDeviceId(),
     supportRoot: () => ref.read(srsSupportRootProvider)(),
     backupRoot: AppPaths.srsProfileBackupsDirectory,
+    releaseForeign: (String uid) =>
+        ref.read(srsProfileStoresProvider).release(uid),
   ),
 );

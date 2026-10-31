@@ -1495,8 +1495,18 @@ class ReaderFushiSource extends ReaderMediaSource {
   // value — subtitle lookups auto-read even after the user turned the setting
   // off. The DB row (`src:reader_fushi:auto_read_on_lookup`) is identical for
   // both code paths, so there is a single source of truth and no migration.
-  bool get autoReadOnLookup =>
-      getPreference<bool>(key: 'auto_read_on_lookup', defaultValue: true);
+  bool get autoReadOnLookup => getPreference<bool>(
+    key: 'auto_read_on_lookup',
+    defaultValue: _kAutoReadOnLookupDefault,
+  );
+
+  static const bool _kAutoReadOnLookupDefault = true;
+
+  /// [autoReadOnLookup] 按给定偏好快照读（反馈 biLEesNqWb：浏览器扩展所选配置的只读
+  /// 视图），默认值同一个常量。
+  bool autoReadOnLookupIn(Map<String, String> prefs) =>
+      storedPreferenceIn<bool>(prefs, 'auto_read_on_lookup') ??
+      _kAutoReadOnLookupDefault;
 
   // Single source of truth: write through this source's profile-aware cache +
   // DB row. No other reader reads ReaderSettings.autoReadOnLookup directly
@@ -1605,6 +1615,11 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// false 回填进缓存，[enableTouchSwipeToClose] 随后就把它误当成「用户显式关闭」。
   bool get enableSwipeToClose =>
       readStoredPreference<bool>('enable_swipe_to_close') ??
+      ReaderSettings.defaultSwipeToClose(defaultTargetPlatform);
+
+  /// [enableSwipeToClose] 按给定偏好快照读（同 [autoReadOnLookupIn]）。
+  bool enableSwipeToCloseIn(Map<String, String> prefs) =>
+      storedPreferenceIn<bool>(prefs, 'enable_swipe_to_close') ??
       ReaderSettings.defaultSwipeToClose(defaultTargetPlatform);
 
   Future<void> setEnableSwipeToClose(bool value) async {

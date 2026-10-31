@@ -296,14 +296,17 @@ void main() {
 
     // 正向断言必须是**调用点**。原来写的是 `contains('RemoteLookupRoutes')`，而两个
     // 文件的注释里就写着这个类名——把六条分发全删光、只留注释，那条照样绿。
+    // 反馈 biLEesNqWb：fushi_api_server 的按配置生效端点经 `_routesFor(services)` 取同一个
+    // 共享壳（按这次扩展请求解析出的配置服务组），也算调用点。
     const List<String> callSites = <String>[
-      '_lookupRoutes.handleMine(',
-      '_lookupRoutes.handleMineForward(',
-      '_lookupRoutes.handleAnkiNoteType(',
-      '_lookupRoutes.handleDuplicate(',
-      '_lookupRoutes.handleAudioLookup(',
-      '_lookupRoutes.handleAudioFile(',
+      'handleMine(',
+      'handleMineForward(',
+      'handleAnkiNoteType(',
+      'handleDuplicate(',
+      'handleAudioLookup(',
+      'handleAudioFile(',
     ];
+    final RegExp routesReceiver = RegExp(r'(_lookupRoutes|_routesFor\(services\))\.');
 
     banned.forEach((String path, List<String> needles) {
       test(path, () {
@@ -311,7 +314,9 @@ void main() {
             reason: '$path 不存在（请从 fushi/ 包根跑测试）');
         final String src = sources[path]!();
         for (final String site in callSites) {
-          expect(src, contains(site),
+          expect(
+              RegExp(routesReceiver.pattern + RegExp.escape(site)).hasMatch(src),
+              isTrue,
               reason: '$path 少了 `$site`——这条端点没走共享壳，'
                   '要么被删了要么又被抄回本地一份');
         }

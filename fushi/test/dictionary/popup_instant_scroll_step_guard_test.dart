@@ -133,8 +133,18 @@ void main() {
       expect(
         appModel,
         matches(RegExp(r"'--fushi-instant-scroll-wheel-step':\s*"
-            r'popupInstantScrollWheelStep\s*\.toStringAsFixed\(3\),')),
+            r'inputs\.instantScrollWheelStep\s*\.toStringAsFixed\(3\),')),
         reason: '扩展弹窗只有 theme 这一条下发通道（与 --fushi-instant-scroll 同法）',
+      );
+      // 反馈 biLEesNqWb：theme 表由 App 当前设置与扩展所选配置的只读视图共用，输入
+      // 两路都必须接到同一项偏好上。
+      expect(
+        appModel,
+        contains('instantScrollWheelStep: popupInstantScrollWheelStep,'),
+      );
+      expect(
+        appModel,
+        contains('instantScrollWheelStep: p.popupInstantScrollWheelStep,'),
       );
       for (final String path in <String>[
         '../tools/browser-extension/content.js',

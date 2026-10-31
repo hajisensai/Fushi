@@ -201,7 +201,31 @@ enum FloatingLyricColorRole {
 
 class PreferencesRepository extends ChangeNotifier
     implements PrefStore, AiSettingsSource {
-  PreferencesRepository(this._db);
+  PreferencesRepository(this._db) : _readOnly = false;
+
+  /// 反馈 biLEesNqWb：某个配置（Profile）的**只读**偏好视图——浏览器扩展选了一个不是
+  /// App 当前激活的配置时，按它处理请求用。[prefs] 是「切到这个配置后会生效」的整份
+  /// 偏好（由 `ProfileRepository.loadSettingsView` 从 `profile_settings` 快照合成），
+  /// 全部 getter 照常可用；任何写入（[setPref] / [setPrefs] / 迁移 / 重载）一律抛
+  /// [UnsupportedError]——视图绝不能改动 App 当前生效的偏好。
+  PreferencesRepository.readOnlySnapshot(this._db, Map<String, String> prefs)
+    : _readOnly = true {
+    _prefCache.addAll(prefs);
+  }
+
+  /// true = [PreferencesRepository.readOnlySnapshot] 建的只读视图。
+  final bool _readOnly;
+
+  /// 是否只读视图（见 [PreferencesRepository.readOnlySnapshot]）。
+  bool get isReadOnlySnapshot => _readOnly;
+
+  void _ensureWritable(String operation) {
+    if (_readOnly) {
+      throw UnsupportedError(
+        'PreferencesRepository.$operation on a read-only profile view',
+      );
+    }
+  }
 
   static const String videoOnlineServicesSetupDismissedKey =
       'video_online_services_setup_dismissed';
@@ -232,6 +256,7 @@ class PreferencesRepository extends ChangeNotifier
   final Map<String, String> _prefCache = {};
 
   Future<void> loadFromDb() async {
+    _ensureWritable('loadFromDb');
     final all = await _db.getAllPrefs();
     _prefCache
       ..clear()
@@ -340,6 +365,7 @@ class PreferencesRepository extends ChangeNotifier
 
   @override
   Future<void> setPref(String key, dynamic value) async {
+    _ensureWritable('setPref');
     final String strVal = PrefCodec.encode(value);
     _prefCache[key] = strVal;
     // [FushiDatabase.setPref] also bumps the persisted prefs-version (TODO-855)
@@ -358,6 +384,7 @@ class PreferencesRepository extends ChangeNotifier
   /// 的中间态。同样重要的是**同步段**：返回的 Future 之前，缓存里所有 key 已是新值，故
   /// 调用方可以先刷 UI 再落盘，getter 立即返回一致的完整设置。
   Future<void> setPrefs(Map<String, dynamic> values) async {
+    _ensureWritable('setPrefs');
     final Map<String, String> encoded = <String, String>{
       for (final MapEntry<String, dynamic> e in values.entries)
         e.key: PrefCodec.encode(e.value),
@@ -373,6 +400,7 @@ class PreferencesRepository extends ChangeNotifier
     required Map<String, String?> expectedRaw,
     required Map<String, dynamic> updates,
   }) async {
+    _ensureWritable('compareAndSetPrefs');
     final Map<String, String> encoded = <String, String>{
       for (final MapEntry<String, dynamic> entry in updates.entries)
         entry.key: PrefCodec.encode(entry.value),
@@ -801,6 +829,7 @@ class PreferencesRepository extends ChangeNotifier
     String fingerprint,
     AiKeyHealthUpdate update,
   ) async {
+    _ensureWritable('updateAiKeyHealth');
     final Map<String, AiKeyHealth> cached = aiKeyHealth;
     if (_applyAiKeyHealthUpdate(cached, fingerprint, update)) {
       _prefCache[aiKeyHealthPrefKey] =
@@ -2707,6 +2736,7 @@ class PreferencesRepository extends ChangeNotifier
   /// 再手动选贴边，标记已在，不会被改回。快照先改、标记后写：中途中断下次重跑
   /// 也只是把同一个值再写一遍。
   Future<void> settleReaderToolbarStyleFloating() async {
+    _ensureWritable('settleReaderToolbarStyleFloating');
     if (getPref(readerToolbarStyleFloatingMigratedKey, defaultValue: false) ==
         true) {
       return;

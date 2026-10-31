@@ -12,14 +12,17 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('browserExtensionThemeColors 的 --fushi-glass 只看墨水屏，不再跟随设计系统', () {
     final String src = File('lib/src/models/app_model.dart').readAsStringSync();
+    // 反馈 biLEesNqWb：theme 表由 App 当前设置与扩展所选配置的只读视图共用一个构建函数。
     final int start = src.indexOf(
-      'browserExtensionThemeColors(String? colorScheme)',
+      'Map<String, String> _browserExtensionThemeColorsFrom(',
     );
     expect(start, greaterThanOrEqualTo(0));
     final String body = src.substring(start, src.indexOf('\n  }\n', start));
+    expect(src, contains('einkMode: einkMode,'),
+        reason: 'App 当前设置那一路的墨水屏输入必须是 einkMode');
     expect(
       RegExp(
-        r"'--fushi-glass':\s*einkMode\s*\?\s*'0'\s*:\s*'1'",
+        r"'--fushi-glass':\s*inputs\.einkMode\s*\?\s*'0'\s*:\s*'1'",
       ).hasMatch(body),
       isTrue,
       reason: '--fushi-glass 只表达墨水屏（墨水屏 0，否则 1）',
