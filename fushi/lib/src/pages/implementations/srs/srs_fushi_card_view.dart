@@ -429,9 +429,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SelectionArea(
         focusNode: _selectionFocus,
         // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
-        child: SrsBlankTapRegion(
-          onTapEmpty: widget.face.onTapEmpty,
+        child: SrsCardGestureRegion(
+          onGesture: widget.face.onCardGesture,
+          arming: widget.face.gestureArming,
           tapTookLookup: () => _tapTookLookup,
+          scrollController: _scroll,
           child: SrsNativeLookupRegion(
             key: _lookupRegion,
             child: ColoredBox(
@@ -1123,8 +1125,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     autoplayMedia: widget.face.autoplayMedia,
     // 释义里的发音按钮同样交给复习页的序列（同一时刻只出一路声音）。
     onPlayAudio: widget.face.onPlayAudio,
-    // 释义区的空白点按由页内取词脚本回报（原生区那一层见 [SrsBlankTapRegion]）。
-    onTapEmpty: widget.face.onTapEmpty,
+    // 释义区的卡面手势由页内指针脚本回报（原生区那一层见 [SrsCardGestureRegion]）。
+    onCardGesture: widget.face.onCardGesture,
+    gestureArming: widget.face.gestureArming,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
@@ -1140,8 +1143,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       key: _defsKey,
       child: KeyedSubtree(
         key: const ValueKey<String>('srs-fushi-definitions'),
-        // 释义 WebView 上的点按归页内脚本判空白，原生区的空白判定跳过这块。
-        child: SrsBlankTapRegion.excluded(
+        // 释义 WebView 上的手势归页内脚本判定，原生区的识别跳过这块。
+        child: SrsCardGestureRegion.excluded(
           child: builder(context, _defsFace(wide: wide)),
         ),
       ),

@@ -231,7 +231,8 @@ class PreferencesRepository extends ChangeNotifier
       'video_online_services_setup_dismissed';
 
   bool get videoOnlineServicesSetupDismissed =>
-      getPref(videoOnlineServicesSetupDismissedKey, defaultValue: false) as bool;
+      getPref(videoOnlineServicesSetupDismissedKey, defaultValue: false)
+          as bool;
 
   Future<void> dismissVideoOnlineServicesSetup() async {
     await setPref(videoOnlineServicesSetupDismissedKey, true);
@@ -270,8 +271,9 @@ class PreferencesRepository extends ChangeNotifier
     // 上面那次修复写会经 setPref 抬高持久化版本号，而缓存是**在它之前**读的。
     // 不把版本重读回来，loadFromDb 一结束进程内值就比 DB 少一个，
     // 「版本不同 = 别的进程改过」于是每次启动误报一次、白重载一次。
-    _prefCache[prefsVersionKey] =
-        PrefCodec.encode(await readPrefsVersionFromDb());
+    _prefCache[prefsVersionKey] = PrefCodec.encode(
+      await readPrefsVersionFromDb(),
+    );
     _installAppProxyReaders();
     // 媒体服务器多版本选择的记忆落偏好表（进程级装配点，取流时由 client 读）；
     // 理由同上：挂在偏好变得可读的那一刻，所有入口都拿到同一份。
@@ -299,30 +301,32 @@ class PreferencesRepository extends ChangeNotifier
     if (getPref(openSubtitlesEnabledRepairedKey, defaultValue: false) as bool) {
       return;
     }
-    final String raw = getPref(
-      'video_subtitle_opensubtitles_config',
-      defaultValue: '',
-    ) as String;
+    final String raw =
+        getPref('video_subtitle_opensubtitles_config', defaultValue: '')
+            as String;
     // 没写过配置的用户没有需要修的东西，但同样打标记：这条修复只针对存量脏数据，
     // 不该在此后每次启动都重新解析一遍。
     if (raw.trim().isNotEmpty) {
       final OpenSubtitlesConfig config = videoSubtitleOpenSubtitlesConfig;
-      final bool hasOwnCredentials = config.apiKey.trim().isNotEmpty ||
+      final bool hasOwnCredentials =
+          config.apiKey.trim().isNotEmpty ||
           (config.username?.trim().isNotEmpty ?? false) ||
           (config.password?.isNotEmpty ?? false);
       if (!config.enabled && !hasOwnCredentials) {
         await setPref(
           'video_subtitle_opensubtitles_config',
-          jsonEncode(OpenSubtitlesConfig(
-            apiKey: config.apiKey,
-            username: config.username,
-            password: config.password,
-            userAgent: config.userAgent,
-            baseUrl: config.baseUrl,
-            enabled: true,
-            priority: config.priority,
-            allowInsecureHttp: config.allowInsecureHttp,
-          ).toJson()),
+          jsonEncode(
+            OpenSubtitlesConfig(
+              apiKey: config.apiKey,
+              username: config.username,
+              password: config.password,
+              userAgent: config.userAgent,
+              baseUrl: config.baseUrl,
+              enabled: true,
+              priority: config.priority,
+              allowInsecureHttp: config.allowInsecureHttp,
+            ).toJson(),
+          ),
         );
       }
     }
@@ -695,8 +699,8 @@ class PreferencesRepository extends ChangeNotifier
   /// host / 云盘上不受牵连。找回列表在 设置 › 同步 › 已从本机移除的远端书。
   /// 设备本地（`SyncRepository.deviceLocalPrefKeys`），不随备份 / 同步带到别的设备。
   List<HiddenRemoteBook> get hiddenRemoteBooks => decodeHiddenRemoteBooks(
-        getPref('hidden_remote_books', defaultValue: null) as String?,
-      );
+    getPref('hidden_remote_books', defaultValue: null) as String?,
+  );
 
   Future<void> setHiddenRemoteBooks(List<HiddenRemoteBook> books) async {
     await setPref('hidden_remote_books', encodeHiddenRemoteBooks(books));
@@ -768,8 +772,9 @@ class PreferencesRepository extends ChangeNotifier
   /// 媒体服务器多版本条目「选哪个版本」的记忆（见 [MediaServerVersionMemory]）。
   /// 单一 JSON map 落 KV 表；解析失败回退空 map。
   Map<String, String> get mediaServerVersionChoices {
-    final String raw = getPref('video_media_server_version_choices',
-        defaultValue: '') as String;
+    final String raw =
+        getPref('video_media_server_version_choices', defaultValue: '')
+            as String;
     if (raw.isEmpty) return <String, String>{};
     try {
       final Object? decoded = jsonDecode(raw);
@@ -781,7 +786,10 @@ class PreferencesRepository extends ChangeNotifier
       }
     } catch (e, stack) {
       ErrorLogService.instance.log(
-          'PreferencesRepository.mediaServerVersionChoices.decode', e, stack);
+        'PreferencesRepository.mediaServerVersionChoices.decode',
+        e,
+        stack,
+      );
     }
     return <String, String>{};
   }
@@ -832,8 +840,9 @@ class PreferencesRepository extends ChangeNotifier
     _ensureWritable('updateAiKeyHealth');
     final Map<String, AiKeyHealth> cached = aiKeyHealth;
     if (_applyAiKeyHealthUpdate(cached, fingerprint, update)) {
-      _prefCache[aiKeyHealthPrefKey] =
-          PrefCodec.encode(_encodeAiKeyHealth(cached));
+      _prefCache[aiKeyHealthPrefKey] = PrefCodec.encode(
+        _encodeAiKeyHealth(cached),
+      );
     }
     // 缓存里没变也照样去持久值上算一遍：别的进程可能刚写过这一条（例如缓存里
     // 没有、持久值里有），只看缓存就跳过会漏掉该做的清除 / 合并。没变时事务里
@@ -849,8 +858,7 @@ class PreferencesRepository extends ChangeNotifier
         if (!_applyAiKeyHealthUpdate(persisted, fingerprint, update)) {
           return raw;
         }
-        final String encoded =
-            PrefCodec.encode(_encodeAiKeyHealth(persisted));
+        final String encoded = PrefCodec.encode(_encodeAiKeyHealth(persisted));
         await _db.setPref(aiKeyHealthPrefKey, encoded);
         return encoded;
       });
@@ -895,19 +903,21 @@ class PreferencesRepository extends ChangeNotifier
         };
       }
     } on FormatException catch (e, stack) {
-      ErrorLogService.instance
-          .log('PreferencesRepository.aiKeyHealth.decode', e, stack);
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiKeyHealth.decode',
+        e,
+        stack,
+      );
     }
     return <String, AiKeyHealth>{};
   }
 
-  static String _encodeAiKeyHealth(Map<String, AiKeyHealth> map) =>
-      map.isEmpty
-          ? ''
-          : jsonEncode(<String, Object?>{
-              for (final MapEntry<String, AiKeyHealth> e in map.entries)
-                e.key: e.value.toJson(),
-            });
+  static String _encodeAiKeyHealth(Map<String, AiKeyHealth> map) => map.isEmpty
+      ? ''
+      : jsonEncode(<String, Object?>{
+          for (final MapEntry<String, AiKeyHealth> e in map.entries)
+            e.key: e.value.toJson(),
+        });
 
   /// 本机当 host 时是否允许为对端实时转码（弱网降码率播放）。默认开。
   ///
@@ -1006,10 +1016,9 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   List<String> get texthookerUrls {
-    final String raw = getPref(
-      'texthooker_urls',
-      defaultValue: _texthookerDefaultUrls,
-    ) as String;
+    final String raw =
+        getPref('texthooker_urls', defaultValue: _texthookerDefaultUrls)
+            as String;
     return raw
         .split('\n')
         .map((String s) => s.trim())
@@ -1029,7 +1038,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 真相源自 v55 起是 Drift 表 `galgames`（迁移已一次性回填，见契约 §1.7），app 侧
   /// 读写走 `GalgameRepository`。这两个访问器**只**留作回滚兜底/诊断，新代码别再用。
   List<GalgameEntry> get legacyGalgames => decodeGalgameLibrary(
-      getPref('galgame_library', defaultValue: '') as String);
+    getPref('galgame_library', defaultValue: '') as String,
+  );
 
   /// 见 [legacyGalgames]。
   Future<void> setLegacyGalgames(List<GalgameEntry> games) async {
@@ -1195,7 +1205,9 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   Future<void> setFloatingBallButtons(
-      FloatingBallScope scope, Iterable<String> ids) async {
+    FloatingBallScope scope,
+    Iterable<String> ids,
+  ) async {
     await setPref(_floatingBallButtonsKey(scope), scope.encodeButtons(ids));
     notifyListeners();
   }
@@ -1217,8 +1229,7 @@ class PreferencesRepository extends ChangeNotifier
   double get floatingBallSystemVerticalFraction =>
       (getPref('floating_ball.system_y', defaultValue: 0.35) as num).toDouble();
 
-  Future<void> setFloatingBallSystemPosition(
-      String dock, double fraction) =>
+  Future<void> setFloatingBallSystemPosition(String dock, double fraction) =>
       // 一个逻辑位置、两个键：同一事务落盘，不会只写进一半。
       setPrefs(<String, dynamic>{
         'floating_ball.system_dock': dock,
@@ -1254,8 +1265,12 @@ class PreferencesRepository extends ChangeNotifier
 
   final int defaultSearchDebounceDelay = 100;
 
-  int get searchDebounceDelay => getPref('auto_search_debounce_delay',
-      defaultValue: defaultSearchDebounceDelay) as int;
+  int get searchDebounceDelay =>
+      getPref(
+            'auto_search_debounce_delay',
+            defaultValue: defaultSearchDebounceDelay,
+          )
+          as int;
 
   void setSearchDebounceDelay(int debounceDelay) async {
     await setPref('auto_search_debounce_delay', debounceDelay);
@@ -1264,8 +1279,12 @@ class PreferencesRepository extends ChangeNotifier
 
   final double defaultDictionaryFontSize = 16;
 
-  double get dictionaryFontSize => getPref('dictionary_entry_font_size',
-      defaultValue: defaultDictionaryFontSize) as double;
+  double get dictionaryFontSize =>
+      getPref(
+            'dictionary_entry_font_size',
+            defaultValue: defaultDictionaryFontSize,
+          )
+          as double;
 
   void setDictionaryFontSize(double fontSize) async {
     await setPref('dictionary_entry_font_size', fontSize);
@@ -1411,8 +1430,10 @@ class PreferencesRepository extends ChangeNotifier
   // absurd expand threshold; the clamp range is identical to the lookup settings
   // slider min/max.
   int get popupAutoExpandDictionaries =>
-      (getPref('popup_auto_expand_dictionaries', defaultValue: 1) as int)
-          .clamp(0, 6);
+      (getPref('popup_auto_expand_dictionaries', defaultValue: 1) as int).clamp(
+        0,
+        6,
+      );
 
   /// TODO-1357: 用户是否显式设过自动展开词典数（三态，同 [hasExplicitPopupDictionaryColumns]）。
   bool get hasExplicitPopupAutoExpandDictionaries =>
@@ -1457,10 +1478,12 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get popupInstantScrollWheelStep => _clampInstantScrollStep(
-        getPref('popup_instant_scroll_wheel_step',
-            defaultValue: kPopupInstantScrollWheelStepDefault),
-        kPopupInstantScrollWheelStepDefault,
-      );
+    getPref(
+      'popup_instant_scroll_wheel_step',
+      defaultValue: kPopupInstantScrollWheelStepDefault,
+    ),
+    kPopupInstantScrollWheelStepDefault,
+  );
 
   Future<void> setPopupInstantScrollWheelStep(double value) async {
     await setPref(
@@ -1471,10 +1494,12 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get popupInstantScrollTouchStep => _clampInstantScrollStep(
-        getPref('popup_instant_scroll_touch_step',
-            defaultValue: kPopupInstantScrollTouchStepDefault),
-        kPopupInstantScrollTouchStepDefault,
-      );
+    getPref(
+      'popup_instant_scroll_touch_step',
+      defaultValue: kPopupInstantScrollTouchStepDefault,
+    ),
+    kPopupInstantScrollTouchStepDefault,
+  );
 
   Future<void> setPopupInstantScrollTouchStep(double value) async {
     await setPref(
@@ -1490,8 +1515,8 @@ class PreferencesRepository extends ChangeNotifier
   // 一处存储驱动全部弹窗：in-app 三种弹窗经 popup_settings_injection 注入
   // window.__fushiPopupWheelSpeed；浏览器扩展弹窗经查词响应 theme 的 --fushi-wheel-speed 下发。
   double get popupWheelSpeed {
-    final double v =
-        (getPref('popup_wheel_speed', defaultValue: 1.0) as num).toDouble();
+    final double v = (getPref('popup_wheel_speed', defaultValue: 1.0) as num)
+        .toDouble();
     return v.isFinite ? v.clamp(0.5, 5.0) : 1.0;
   }
 
@@ -1526,12 +1551,12 @@ class PreferencesRepository extends ChangeNotifier
   /// 的纪律：键永不随枚举改名漂移）；不在 [kPopupBottomDockedModules] 里的模块
   /// 返回 `null`，只听总开关。
   static String? popupBottomDockedKeyFor(ModuleId module) => switch (module) {
-        ModuleId.books => 'popup_bottom_docked_books',
-        ModuleId.manga => 'popup_bottom_docked_manga',
-        ModuleId.video => 'popup_bottom_docked_video',
-        ModuleId.games => 'popup_bottom_docked_games',
-        _ => null,
-      };
+    ModuleId.books => 'popup_bottom_docked_books',
+    ModuleId.manga => 'popup_bottom_docked_manga',
+    ModuleId.video => 'popup_bottom_docked_video',
+    ModuleId.games => 'popup_bottom_docked_games',
+    _ => null,
+  };
 
   /// 默认 ON：升级上来的用户打开总开关时行为与旧版（全局停靠）一致。
   bool popupBottomDockedIn(ModuleId module) {
@@ -1608,12 +1633,10 @@ class PreferencesRepository extends ChangeNotifier
   bool moduleEnabled(ModuleId module) {
     if (module == ModuleId.srs &&
         getPref(module.prefKey, defaultValue: null) == null &&
-        getPref(srsMiningTargetInstallDefaultKey, defaultValue: null) ==
-            null) {
+        getPref(srsMiningTargetInstallDefaultKey, defaultValue: null) == null) {
       return false;
     }
-    return getPref(module.prefKey, defaultValue: module.defaultEnabled)
-        as bool;
+    return getPref(module.prefKey, defaultValue: module.defaultEnabled) as bool;
   }
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
@@ -1624,13 +1647,13 @@ class PreferencesRepository extends ChangeNotifier
   /// 「功能模块」的用户排序（底栏 / 侧栏 tab 顺序）。与开关同为设备本地键
   /// （[ModuleId.devicePrefKeys]）；缺省空 = 枚举顺序。
   List<ModuleId> get moduleOrder => ModuleId.parseOrder(
-        getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
-      );
+    getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
+  );
 
   /// 「设置」tab 在用户排序里的位置（[ModuleId.parseSettingsSlot]）；null = 最后。
   int? get moduleSettingsSlot => ModuleId.parseSettingsSlot(
-        getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
-      );
+    getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
+  );
 
   /// 写模块顺序。[settingsSlot] 必须显式给（保留现状就传 [moduleSettingsSlot]）：
   /// 顺序与设置位置存在同一个键里，漏传就会把用户排好的设置位置悄悄抹掉。
@@ -1678,8 +1701,12 @@ class PreferencesRepository extends ChangeNotifier
 
   final int defaultMaximumDictionaryTermsInResult = 10;
 
-  int get maximumTerms => getPref('maximum_terms',
-      defaultValue: defaultMaximumDictionaryTermsInResult) as int;
+  int get maximumTerms =>
+      getPref(
+            'maximum_terms',
+            defaultValue: defaultMaximumDictionaryTermsInResult,
+          )
+          as int;
 
   void setMaximumTerms(int value) async {
     await setPref('maximum_terms', value);
@@ -1786,8 +1813,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 探到的结果缓存，存 [MpvLuaCapability.name]）。全局设置页没有播放器，靠这份
   /// 缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
   MpvLuaCapability get videoMpvLuaCapability => MpvLuaCapability.fromName(
-        getPref('video_mpv_lua_capability', defaultValue: 'unknown') as String,
-      );
+    getPref('video_mpv_lua_capability', defaultValue: 'unknown') as String,
+  );
 
   Future<void> setVideoMpvLuaCapability(MpvLuaCapability value) async {
     if (videoMpvLuaCapability == value) return;
@@ -1861,10 +1888,15 @@ class PreferencesRepository extends ChangeNotifier
   /// 默认 none：副字幕历史行为=正常显示、不遮蔽。
   VideoSubtitleObscureMode get videoSecondarySubtitleObscureMode =>
       VideoSubtitleObscureMode.fromFlags(
-        blurFlag: getPref('video_secondary_subtitle_blur', defaultValue: false)
-            as bool,
-        hideFlag: getPref('video_secondary_subtitle_obscure_hide',
-            defaultValue: false) as bool,
+        blurFlag:
+            getPref('video_secondary_subtitle_blur', defaultValue: false)
+                as bool,
+        hideFlag:
+            getPref(
+                  'video_secondary_subtitle_obscure_hide',
+                  defaultValue: false,
+                )
+                as bool,
       );
 
   /// 单事务落盘 + 刻意不广播，理由与主字幕 [setVideoSubtitleObscureMode] 完全同构
@@ -1897,8 +1929,11 @@ class PreferencesRepository extends ChangeNotifier
   /// 副字幕的「临时显形」开关（用户要求主 / 副分开配置）。**未写过时继承主字幕的
   /// 值**：拆分前这是主副共用的一个总闸，关过它的老用户副字幕也得继续保持遮蔽。
   bool get videoSecondarySubtitleObscureReveal =>
-      getPref('video_secondary_subtitle_obscure_reveal',
-          defaultValue: videoSubtitleObscureReveal) as bool;
+      getPref(
+            'video_secondary_subtitle_obscure_reveal',
+            defaultValue: videoSubtitleObscureReveal,
+          )
+          as bool;
 
   Future<void> setVideoSecondarySubtitleObscureReveal(bool value) async {
     await setPref('video_secondary_subtitle_obscure_reveal', value);
@@ -2030,10 +2065,12 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 「返回跳转前位置」胶囊自动隐藏秒数（0 = 不自动隐藏，只随控制条显隐）。
   /// 超时后控制条再出现也不画胶囊，下一次跳转再亮；默认 10 秒。
-  int get videoJumpPillAutoHideSeconds => getPref(
-        'video_jump_pill_auto_hide_seconds',
-        defaultValue: kVideoJumpPillAutoHideDefaultSeconds,
-      ) as int;
+  int get videoJumpPillAutoHideSeconds =>
+      getPref(
+            'video_jump_pill_auto_hide_seconds',
+            defaultValue: kVideoJumpPillAutoHideDefaultSeconds,
+          )
+          as int;
 
   Future<void> setVideoJumpPillAutoHideSeconds(int value) async {
     await setPref('video_jump_pill_auto_hide_seconds', value);
@@ -2119,11 +2156,12 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int get videoDanmakuMaxActive => normalizeVideoDanmakuMaxActive(
-        getPref(
+    getPref(
           'video_danmaku_max_active',
           defaultValue: kDefaultVideoDanmakuMaxActive,
-        ) as int,
-      );
+        )
+        as int,
+  );
 
   Future<void> setVideoDanmakuMaxActive(int value) async {
     await setPref(
@@ -2153,8 +2191,8 @@ class PreferencesRepository extends ChangeNotifier
   /// qBittorrent WebUI 连接配置（地址/账密/分类，JSON；见 [QbConnectionConfig]）。
   /// 番剧下载走外部 qb 实例，本配置为空视为功能未启用。
   QbConnectionConfig? get qbConnectionConfig => decodeQbConnectionConfig(
-        getPref('qb_connection_config', defaultValue: '') as String,
-      );
+    getPref('qb_connection_config', defaultValue: '') as String,
+  );
 
   Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
     await setPref(
@@ -2171,10 +2209,10 @@ class PreferencesRepository extends ChangeNotifier
         this,
         onDecodeError: (Object error, StackTrace stack) =>
             ErrorLogService.instance.log(
-          'PreferencesRepository.videoResourceTorznabConfigs.decode',
-          error,
-          stack,
-        ),
+              'PreferencesRepository.videoResourceTorznabConfigs.decode',
+              error,
+              stack,
+            ),
       );
 
   Future<void> setVideoResourceTorznabConfigs(
@@ -2263,8 +2301,7 @@ class PreferencesRepository extends ChangeNotifier
   /// 逐条容错同 [discoveryOpdsServers]。
   List<AudiobookshelfServerConfig> get discoveryAudiobookshelfServers {
     final String raw =
-        getPref('discovery_audiobookshelf_servers', defaultValue: '')
-            as String;
+        getPref('discovery_audiobookshelf_servers', defaultValue: '') as String;
     if (raw.trim().isEmpty) return const <AudiobookshelfServerConfig>[];
     try {
       return decodeAudiobookshelfServerConfigs(raw);
@@ -2340,10 +2377,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 用户真实存的「哪个功能用哪家 AI」映射（设备本地），不看 AI 模块开关。
   /// 只给设置 › AI 编辑用；运行时解析走 [aiFeatureAssignments]。
   AiFeatureAssignments get storedAiFeatureAssignments {
-    final String raw = getPref(
-      'ai_feature_providers',
-      defaultValue: '',
-    ) as String;
+    final String raw =
+        getPref('ai_feature_providers', defaultValue: '') as String;
     return AiFeatureAssignments.fromJson(raw);
   }
 
@@ -2358,7 +2393,8 @@ class PreferencesRepository extends ChangeNotifier
     String? assignmentsRaw,
     List<AiProviderConfig> providers,
     AiFeatureAssignments assignments,
-  })? _aiResolveCache;
+  })?
+  _aiResolveCache;
 
   /// 「[feature] 当前该用哪家 AI」，与
   /// `aiFeatureAssignments.resolve(feature, aiProviders)` 同义。
@@ -2394,10 +2430,9 @@ class PreferencesRepository extends ChangeNotifier
   /// 设置页列表当它「已内置」（谎报可用），详情页草稿当它「开关关闭」（用户一碰字段
   /// 就把 enabled=false 落盘）。默认值收敛到一处，特殊情况随之消失。
   OpenSubtitlesConfig get videoSubtitleOpenSubtitlesConfig {
-    final String raw = getPref(
-      'video_subtitle_opensubtitles_config',
-      defaultValue: '',
-    ) as String;
+    final String raw =
+        getPref('video_subtitle_opensubtitles_config', defaultValue: '')
+            as String;
     if (raw.trim().isEmpty) return OpenSubtitlesConfig.unconfigured();
     try {
       final Object? decoded = jsonDecode(raw);
@@ -2430,13 +2465,11 @@ class PreferencesRepository extends ChangeNotifier
 
   /// qB remote path -> 本机可访问路径映射，按 backend profile id 隔离。
   List<VideoDownloadBackendPathMappingConfig>
-      get videoDownloadBackendPathMappings =>
-          decodeVideoDownloadBackendPathMappings(
-            getPref(
-              'video_download_backend_path_mappings',
-              defaultValue: '',
-            ) as String,
-          );
+  get videoDownloadBackendPathMappings =>
+      decodeVideoDownloadBackendPathMappings(
+        getPref('video_download_backend_path_mappings', defaultValue: '')
+            as String,
+      );
 
   Future<void> setVideoDownloadBackendPathMappings(
     Iterable<VideoDownloadBackendPathMappingConfig> mappings,
@@ -2450,10 +2483,8 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 新任务默认使用的本机受管视频来源；0 表示尚未选择。
   int? get videoDownloadTargetSourceId {
-    final int value = getPref(
-      'video_download_target_source_id',
-      defaultValue: 0,
-    ) as int;
+    final int value =
+        getPref('video_download_target_source_id', defaultValue: 0) as int;
     return value > 0 ? value : null;
   }
 
@@ -2465,10 +2496,9 @@ class PreferencesRepository extends ChangeNotifier
   /// 内置下载器的本机安装身份。第一次读取时生成并持久化，之后只读复用；旧任务据此
   /// 判断是否仍由同一个内置实例管理，不能被另一台机器的引擎隐式接管。
   Future<String> ensureVideoDownloadEmbeddedInstallationId() async {
-    final String existing = getPref(
-      'video_download_embedded_installation_id',
-      defaultValue: '',
-    ) as String;
+    final String existing =
+        getPref('video_download_embedded_installation_id', defaultValue: '')
+            as String;
     if (existing.trim().isNotEmpty) return existing.trim();
     final String created = generateVideoDownloadInstallationId();
     await setPref('video_download_embedded_installation_id', created);
@@ -2491,10 +2521,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 第一次读取时生成并持久化。设备本地：不进备份 / 同步 / Profile 快照，恢复备份到另一台
   /// 设备不会克隆它（两台设备被算成一个安装）。持久化键名沿用 `usage_stats_install_id`（冻结）。
   Future<String> ensureUsageStatsInstallId() async {
-    final String existing = getPref(
-      'usage_stats_install_id',
-      defaultValue: '',
-    ) as String;
+    final String existing =
+        getPref('usage_stats_install_id', defaultValue: '') as String;
     if (existing.trim().isNotEmpty) return existing.trim();
     final String created = generateVideoDownloadInstallationId();
     await setPref('usage_stats_install_id', created);
@@ -2562,8 +2590,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
   /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
   VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(
-        getPref('video_danmaku_style', defaultValue: '') as String,
-      );
+    getPref('video_danmaku_style', defaultValue: '') as String,
+  );
 
   Future<void> setVideoDanmakuStyle(VideoDanmakuStyle style) async {
     await setPref(
@@ -2584,10 +2612,8 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int? getVideoDanmakuEpisodeId(String bookUid) {
-    final int value = getPref(
-      'video_danmaku_episode/$bookUid',
-      defaultValue: 0,
-    ) as int;
+    final int value =
+        getPref('video_danmaku_episode/$bookUid', defaultValue: 0) as int;
     return value > 0 ? value : null;
   }
 
@@ -2620,9 +2646,9 @@ class PreferencesRepository extends ChangeNotifier
   /// 视频画面缩放/比例模式（窗口模式 + 全屏的 [Video] fit；默认 [VideoFitMode.contain]
   /// = 保持比例完整适应媒体框；已有 cover/fill 持久化值仍按原值恢复）。
   VideoFitMode get videoFitMode => VideoFitMode.fromStorage(
-        getPref('video_fit_mode',
-            defaultValue: VideoFitMode.contain.storageValue) as String,
-      );
+    getPref('video_fit_mode', defaultValue: VideoFitMode.contain.storageValue)
+        as String,
+  );
 
   Future<void> setVideoFitMode(VideoFitMode mode) async {
     await setPref('video_fit_mode', mode.storageValue);
@@ -2631,9 +2657,12 @@ class PreferencesRepository extends ChangeNotifier
 
   /// Windows HDR 直通 / 10-bit 输出模式（默认 auto：显示器 HDR 开着且片源 HDR 时直通）。
   VideoHdrOutputMode get videoHdrOutputMode => VideoHdrOutputMode.fromStorage(
-        getPref(kVideoHdrOutputPref,
-            defaultValue: VideoHdrOutputMode.auto.storageValue) as String,
-      );
+    getPref(
+          kVideoHdrOutputPref,
+          defaultValue: VideoHdrOutputMode.auto.storageValue,
+        )
+        as String,
+  );
 
   Future<void> setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
     await setPref(kVideoHdrOutputPref, mode.storageValue);
@@ -2653,8 +2682,8 @@ class PreferencesRepository extends ChangeNotifier
   /// [VideoControlLayout.decode] 自动识别 v1（旧三档 placements）并迁移成 v2 槽位，
   /// 故老用户配置无损升级、不需要新 schema。新写入一律是 v2/v3 JSON。
   VideoControlLayout get videoControlLayout => VideoControlLayout.decode(
-        getPref('video_control_customization', defaultValue: '') as String,
-      );
+    getPref('video_control_customization', defaultValue: '') as String,
+  );
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) async {
     await setPref('video_control_customization', layout.encode());
@@ -2669,7 +2698,8 @@ class PreferencesRepository extends ChangeNotifier
       );
 
   Future<void> setVideoRemoteControlLayout(
-      VideoRemoteControlLayout layout) async {
+    VideoRemoteControlLayout layout,
+  ) async {
     await setPref('video_remote_control_layout', layout.encode());
     notifyListeners();
   }
@@ -2677,8 +2707,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 阅读器顶栏 / 底栏按钮布局（与视频页同一套泛型模型，2026-09-13）。持久化键
   /// `reader_control_layout`，空 / 坏值回出厂布局。
   ReaderControlLayout get readerControlLayout => ReaderControlLayout.decode(
-        getPref('reader_control_layout', defaultValue: '') as String,
-      );
+    getPref('reader_control_layout', defaultValue: '') as String,
+  );
 
   Future<void> setReaderControlLayout(ReaderControlLayout layout) async {
     await setPref('reader_control_layout', layout.encode());
@@ -2719,7 +2749,10 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   Future<void> setReaderToolbarStyle(String style) async {
-    await setPref('reader_toolbar_style', style == 'docked' ? 'docked' : 'floating');
+    await setPref(
+      'reader_toolbar_style',
+      style == 'docked' ? 'docked' : 'floating',
+    );
     notifyListeners();
   }
 
@@ -2804,11 +2837,12 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 侧边锁进入后的沉浸交互级别。旧库没有该 key 时默认仅查词，不需要迁移。
   VideoImmersiveMode get videoImmersiveMode => VideoImmersiveMode.fromStorage(
-        getPref(
+    getPref(
           'video_immersive_mode',
           defaultValue: VideoImmersiveMode.fallback.storageValue,
-        ) as String,
-      );
+        )
+        as String,
+  );
 
   Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) async {
     await setPref('video_immersive_mode', mode.storageValue);
@@ -2840,13 +2874,15 @@ class PreferencesRepository extends ChangeNotifier
   VideoScreenshotDestination get videoScreenshotDestination =>
       VideoScreenshotDestination.fromStorage(
         getPref(
-          kVideoScreenshotDestinationPref,
-          defaultValue: VideoScreenshotDestination.ask.storageValue,
-        ) as String,
+              kVideoScreenshotDestinationPref,
+              defaultValue: VideoScreenshotDestination.ask.storageValue,
+            )
+            as String,
       );
 
   Future<void> setVideoScreenshotDestination(
-      VideoScreenshotDestination destination) async {
+    VideoScreenshotDestination destination,
+  ) async {
     await setPref(kVideoScreenshotDestinationPref, destination.storageValue);
     notifyListeners();
   }
@@ -2862,10 +2898,12 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 片段导出的视频目标码率（kbps）；0 = 跟随源（默认，旧库没有该 key 时的行为，
   /// 不需要迁移）。写入前夹到 `[0, kVideoClipExportVideoBitrateMaxKbps]`。
-  int get videoClipExportVideoBitrateKbps => getPref(
-        kVideoClipExportVideoBitrateKbpsPref,
-        defaultValue: kVideoClipExportVideoBitrateFollowSource,
-      ) as int;
+  int get videoClipExportVideoBitrateKbps =>
+      getPref(
+            kVideoClipExportVideoBitrateKbpsPref,
+            defaultValue: kVideoClipExportVideoBitrateFollowSource,
+          )
+          as int;
 
   Future<void> setVideoClipExportVideoBitrateKbps(int kbps) async {
     await setPref(
@@ -2932,19 +2970,26 @@ class PreferencesRepository extends ChangeNotifier
     try {
       final dynamic decoded = jsonDecode(raw);
       if (decoded is Map) {
-        return decoded.map((dynamic k, dynamic v) =>
-            MapEntry<String, String>(k.toString(), v.toString()));
+        return decoded.map(
+          (dynamic k, dynamic v) =>
+              MapEntry<String, String>(k.toString(), v.toString()),
+        );
       }
     } catch (e, stack) {
       ErrorLogService.instance.log(
-          'PreferencesRepository.jimakuPreferredLanguages.decode', e, stack);
+        'PreferencesRepository.jimakuPreferredLanguages.decode',
+        e,
+        stack,
+      );
     }
     return <String, String>{};
   }
 
   /// 记住某系列（[seriesKey]）选的字幕语言（[langCode]，读改写整 map）。
   Future<void> setJimakuPreferredLanguage(
-      String seriesKey, String langCode) async {
+    String seriesKey,
+    String langCode,
+  ) async {
     final Map<String, String> map = jimakuPreferredLanguages;
     map[seriesKey] = langCode;
     await setPref('jimaku_pref_langs', jsonEncode(map));
@@ -3002,8 +3047,7 @@ class PreferencesRepository extends ChangeNotifier
   /// `none` 不配字幕。与 [jimakuDefaultLanguage] 分开：那是字幕面板的全局默认，
   /// 这是 AI 对话流程自己的默认。类型化读法见 `ai_video_acquisition_preferences.dart`。
   String get aiVideoDownloadSubtitleLanguage =>
-      getPref(kAiVideoDownloadSubtitleLanguagePref, defaultValue: '')
-          as String;
+      getPref(kAiVideoDownloadSubtitleLanguagePref, defaultValue: '') as String;
 
   Future<void> setAiVideoDownloadSubtitleLanguage(String value) async {
     await setPref(kAiVideoDownloadSubtitleLanguagePref, value);
@@ -3041,17 +3085,14 @@ class PreferencesRepository extends ChangeNotifier
       for (final WebKnowledgeSite site in aiWebKnowledgeCustomSites) site.id,
     };
     final Set<String>? disabled = parseWebKnowledgeEnabledIds(
-      getPref('ai_web_knowledge_disabled_sites', defaultValue: null)
-          as String?,
+      getPref('ai_web_knowledge_disabled_sites', defaultValue: null) as String?,
     );
     if (disabled != null) return all.difference(disabled);
     final Set<String>? legacyEnabled = parseWebKnowledgeEnabledIds(
       getPref('ai_web_knowledge_sources', defaultValue: null) as String?,
     );
     if (legacyEnabled == null) return all;
-    return all.difference(
-      kLegacyWebKnowledgeSiteIds.difference(legacyEnabled),
-    );
+    return all.difference(kLegacyWebKnowledgeSiteIds.difference(legacyEnabled));
   }
 
   Future<void> setAiWebKnowledgeEnabledSiteIds(Set<String> ids) async {
@@ -3174,8 +3215,7 @@ class PreferencesRepository extends ChangeNotifier
   /// PR #1688 按此默认上传后合入；开关是 2026-09-27 所有者追加的「加开关」，没有
   /// 要求改默认。默认开让已在用的行为不因升级而静默变化。
   bool get videoSubtitleAutoUploadToHost =>
-      getPref('video_subtitle_auto_upload_to_host', defaultValue: true)
-          as bool;
+      getPref('video_subtitle_auto_upload_to_host', defaultValue: true) as bool;
 
   Future<void> setVideoSubtitleAutoUploadToHost(bool enabled) async {
     await setPref('video_subtitle_auto_upload_to_host', enabled);
@@ -3231,12 +3271,17 @@ class PreferencesRepository extends ChangeNotifier
     try {
       final dynamic decoded = jsonDecode(raw);
       if (decoded is Map) {
-        return decoded.map((dynamic k, dynamic v) =>
-            MapEntry<String, String>(k.toString(), v.toString()));
+        return decoded.map(
+          (dynamic k, dynamic v) =>
+              MapEntry<String, String>(k.toString(), v.toString()),
+        );
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('PreferencesRepository.remoteSubtitleSources.decode', e, stack);
+      ErrorLogService.instance.log(
+        'PreferencesRepository.remoteSubtitleSources.decode',
+        e,
+        stack,
+      );
     }
     return <String, String>{};
   }
@@ -3314,8 +3359,10 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   void setMiningImageQuality(int tier) async {
-    await setPref('mining_image_quality',
-        tier.clamp(0, MiningMediaCompression.imageTierCount - 1));
+    await setPref(
+      'mining_image_quality',
+      tier.clamp(0, MiningMediaCompression.imageTierCount - 1),
+    );
     notifyListeners();
   }
 
@@ -3336,8 +3383,10 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   void setMiningAudioQuality(int tier) async {
-    await setPref('mining_audio_quality',
-        tier.clamp(0, MiningMediaCompression.audioTierCount - 1));
+    await setPref(
+      'mining_audio_quality',
+      tier.clamp(0, MiningMediaCompression.audioTierCount - 1),
+    );
     notifyListeners();
   }
 
@@ -3391,6 +3440,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setSrsReviewHideHardEasy(bool value) async {
     await setPref('srs_review_hide_hard_easy', value);
+    notifyListeners();
+  }
+
+  // 复习页卡面手势映射（SrsReviewGestureMap.encode() 的 JSON）。默认 '' = 默认映射
+  // （点空白切换顶栏，其余不绑）。
+  String get srsReviewGestures =>
+      getPref('srs_review_gestures', defaultValue: '') as String;
+
+  Future<void> setSrsReviewGestures(String json) async {
+    await setPref('srs_review_gestures', json);
     notifyListeners();
   }
 
@@ -3460,9 +3519,12 @@ class PreferencesRepository extends ChangeNotifier
       final Object? j = jsonDecode(raw);
       if (j is! List) return const <SrsFolderLocation>[];
       return <SrsFolderLocation>[
-        for (final Object? e in j)
-          if (e is Map) SrsFolderLocation.fromJson(e.cast<String, Object?>()),
-      ].where((SrsFolderLocation l) => l.id.isNotEmpty && l.path.isNotEmpty).toList();
+            for (final Object? e in j)
+              if (e is Map)
+                SrsFolderLocation.fromJson(e.cast<String, Object?>()),
+          ]
+          .where((SrsFolderLocation l) => l.id.isNotEmpty && l.path.isNotEmpty)
+          .toList();
     } on FormatException {
       return const <SrsFolderLocation>[];
     }
@@ -3471,7 +3533,9 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) async {
     await setPref(
       srsFolderLocationsKey,
-      jsonEncode(<Object?>[for (final SrsFolderLocation l in value) l.toJson()]),
+      jsonEncode(<Object?>[
+        for (final SrsFolderLocation l in value) l.toJson(),
+      ]),
     );
     notifyListeners();
   }
@@ -3578,11 +3642,13 @@ class PreferencesRepository extends ChangeNotifier
       return;
     }
     bool stored(String key) => getPref(key, defaultValue: null) != null;
-    final bool prefSignal = stored('first_time_setup') ||
+    final bool prefSignal =
+        stored('first_time_setup') ||
         stored('onboarding_completed') ||
         stored('last_selected_deck') ||
         stored('last_selected_model');
-    final bool existingUser = (!freshOnboardingPackImport && prefSignal) ||
+    final bool existingUser =
+        (!freshOnboardingPackImport && prefSignal) ||
         await _hasAnkiMiningData();
     // 模块开关经与 [setModuleEnabled] 同一组按 [ModuleId] 的存储原语写入：这里是存储层
     // 的一次性落盘，只问「落没落过盘」、不读用户意愿；门控一律问模块可见性。
@@ -3618,7 +3684,6 @@ class PreferencesRepository extends ChangeNotifier
             .getSingle())
         .read<bool>('used');
   }
-
 
   // 首页 dashboard 面板显示档（JSON map，见 models/home_dashboard_panel.dart）。
   // 空串 = 全部面板按各自的默认判据（auto）。
@@ -3697,14 +3762,18 @@ class PreferencesRepository extends ChangeNotifier
 
   void setVideoMiningImageMode(VideoMiningImageMode mode) async {
     await _setImageModePinningClipFormat(
-        'video_mining_clip_format', 'video_mining_image_mode', mode);
+      'video_mining_clip_format',
+      'video_mining_image_mode',
+      mode,
+    );
     notifyListeners();
   }
 
   // 在线视频点制卡后弹窗等不等（见 [VideoOnlineMiningMode]）。默认 background。
   VideoOnlineMiningMode get videoOnlineMiningMode =>
       VideoOnlineMiningMode.fromWireName(
-          getPref('video_online_mining_mode', defaultValue: null) as String?);
+        getPref('video_online_mining_mode', defaultValue: null) as String?,
+      );
 
   Future<void> setVideoOnlineMiningMode(VideoOnlineMiningMode mode) async {
     await setPref('video_online_mining_mode', mode.wireName);
@@ -3714,7 +3783,8 @@ class PreferencesRepository extends ChangeNotifier
   // 暂停时识别画面文字的范围（见 [VideoPauseOcrScope]）。默认 off（BUG-3342：用户
   // 手动开启；存过 all / graphic_subtitles 的用户照旧）。
   VideoPauseOcrScope get videoPauseOcrScope => VideoPauseOcrScope.fromWireName(
-      getPref('video_pause_ocr_scope', defaultValue: null) as String?);
+    getPref('video_pause_ocr_scope', defaultValue: null) as String?,
+  );
 
   Future<void> setVideoPauseOcrScope(VideoPauseOcrScope scope) async {
     await setPref('video_pause_ocr_scope', scope.wireName);
@@ -3764,8 +3834,10 @@ class PreferencesRepository extends ChangeNotifier
   /// 片段）一律不碰。标记缺失（全新安装，或从 09-28 之前的版本直接升上来）只写标记：没设过
   /// 的模式键按各自来源的默认取（视频 videoClip，galgame gif，见 [galMiningImageMode]）。与标记同一次 [setPrefs] 落盘，此后用户再选 gif 不会被改回。
   Future<void> settleMiningImageModeInstallDefault() {
-    final Object? marker =
-        getPref(miningImageModeInstallDefaultKey, defaultValue: null);
+    final Object? marker = getPref(
+      miningImageModeInstallDefaultKey,
+      defaultValue: null,
+    );
     if (marker == VideoMiningImageMode.videoClip.wireName) {
       return Future<void>.value();
     }
@@ -3786,7 +3858,10 @@ class PreferencesRepository extends ChangeNotifier
 
   void setGalMiningImageMode(VideoMiningImageMode mode) async {
     await _setImageModePinningClipFormat(
-        'gal_mining_clip_format', 'gal_mining_image_mode', mode);
+      'gal_mining_clip_format',
+      'gal_mining_image_mode',
+      mode,
+    );
     notifyListeners();
   }
 
@@ -3798,8 +3873,8 @@ class PreferencesRepository extends ChangeNotifier
   // 保证解析未知历史值与「从没设过」走同一条路径。
   MiningAnimatedFormat get videoMiningAnimatedFormat =>
       MiningAnimatedFormat.fromWireName(
-          getPref('video_mining_animated_format', defaultValue: null)
-              as String?);
+        getPref('video_mining_animated_format', defaultValue: null) as String?,
+      );
 
   void setVideoMiningAnimatedFormat(MiningAnimatedFormat format) async {
     await setPref('video_mining_animated_format', format.wireName);
@@ -3813,7 +3888,8 @@ class PreferencesRepository extends ChangeNotifier
   // galgame 侧不取本项：那条链的静图来自窗口抓图（本就是 PNG），不经本格式轴。
   MiningStillFormat get videoMiningStillFormat =>
       MiningStillFormat.fromWireName(
-          getPref('video_mining_still_format', defaultValue: null) as String?);
+        getPref('video_mining_still_format', defaultValue: null) as String?,
+      );
 
   void setVideoMiningStillFormat(MiningStillFormat format) async {
     await setPref('video_mining_still_format', format.wireName);
@@ -3825,7 +3901,8 @@ class PreferencesRepository extends ChangeNotifier
   // 默认同样是 jpg：BUG-1473 已把 gal 截图接进降采样（原本 1.5~4 MB 的无压缩 PNG），
   // “小图原样返回 PNG”只是不值得重编码的捐径，不是意图。
   MiningStillFormat get galMiningStillFormat => MiningStillFormat.fromWireName(
-      getPref('gal_mining_still_format', defaultValue: null) as String?);
+    getPref('gal_mining_still_format', defaultValue: null) as String?,
+  );
 
   void setGalMiningStillFormat(MiningStillFormat format) async {
     await setPref('gal_mining_still_format', format.wireName);
@@ -3844,7 +3921,8 @@ class PreferencesRepository extends ChangeNotifier
 
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       MiningAnimatedFormat.fromWireName(
-          getPref('gal_mining_animated_format', defaultValue: null) as String?);
+        getPref('gal_mining_animated_format', defaultValue: null) as String?,
+      );
 
   void setGalMiningAnimatedFormat(MiningAnimatedFormat format) async {
     await setPref('gal_mining_animated_format', format.wireName);
@@ -3933,8 +4011,7 @@ class PreferencesRepository extends ChangeNotifier
   /// 1.5× 听书，卡片里的句子音频就是 1.5× 的，与阅读时听到的一致；关掉则一律裁原速。
   /// 只对小说有声书制卡链生效（视频链没有「播放倍速」这个制卡语境，不读它）。
   bool get miningAudioFollowPlaybackSpeed =>
-      getPref('mining_audio_follow_playback_speed', defaultValue: true)
-          as bool;
+      getPref('mining_audio_follow_playback_speed', defaultValue: true) as bool;
 
   void toggleMiningAudioFollowPlaybackSpeed() async {
     await setPref(
@@ -3997,10 +4074,10 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 按上面两个开关判断这条制卡结果 toast 该不该弹。
   bool mineNoticeShown(MineToastStatus status) => mineToastShown(
-        status,
-        showSuccess: mineNoticeSuccess,
-        showDuplicate: mineNoticeDuplicate,
-      );
+    status,
+    showSuccess: mineNoticeSuccess,
+    showDuplicate: mineNoticeDuplicate,
+  );
 
   // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：释义列表由每条一行改成
   // inline + ` | ` 分隔的紧凑排版（popup.js createDictionaryBlock 的 compactCss）。
@@ -4037,8 +4114,11 @@ class PreferencesRepository extends ChangeNotifier
         return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('PreferencesRepository.customDictCSS.decode', e, stack);
+      ErrorLogService.instance.log(
+        'PreferencesRepository.customDictCSS.decode',
+        e,
+        stack,
+      );
     }
     return {};
   }
@@ -4104,12 +4184,15 @@ class PreferencesRepository extends ChangeNotifier
     if (result is List) {
       final configs = result
           .whereType<Map>()
-          .map((Map json) => AudioSourceConfig.fromJson(
-                Map<String, dynamic>.from(json),
-              ))
-          .where((AudioSourceConfig source) =>
-              source.kind != AudioSourceKind.remoteAudio ||
-              (source.url?.isNotEmpty ?? false))
+          .map(
+            (Map json) =>
+                AudioSourceConfig.fromJson(Map<String, dynamic>.from(json)),
+          )
+          .where(
+            (AudioSourceConfig source) =>
+                source.kind != AudioSourceKind.remoteAudio ||
+                (source.url?.isNotEmpty ?? false),
+          )
           .toList();
       if (configs.isNotEmpty) return _withDefaultAudioSources(configs);
     }
@@ -4142,15 +4225,19 @@ class PreferencesRepository extends ChangeNotifier
     // Anki 本地音频服务器（5050）内置预设：对所有用户「缺则补」为一条 disabled 源，
     // 追加在列尾。用户装了服务器打开开关即用；删掉后下次读取会 disabled 重生，与
     // fushiRemote 恒补策略一致（TODO-083 范式）。
-    final bool hasAnki = result.any((AudioSourceConfig source) =>
-        source.kind == AudioSourceKind.remoteAudio &&
-        source.url == ankiLocalAudioUrl);
+    final bool hasAnki = result.any(
+      (AudioSourceConfig source) =>
+          source.kind == AudioSourceKind.remoteAudio &&
+          source.url == ankiLocalAudioUrl,
+    );
     if (!hasAnki) {
-      result.add(AudioSourceConfig.remoteAudio(
-        url: ankiLocalAudioUrl,
-        label: 'Anki',
-        enabled: false,
-      ));
+      result.add(
+        AudioSourceConfig.remoteAudio(
+          url: ankiLocalAudioUrl,
+          label: 'Anki',
+          enabled: false,
+        ),
+      );
     }
 
     return result;
@@ -4169,8 +4256,10 @@ class PreferencesRepository extends ChangeNotifier
     await setPref(
       'audio_sources',
       sources
-          .where((AudioSourceConfig source) =>
-              source.kind == AudioSourceKind.remoteAudio && source.enabled)
+          .where(
+            (AudioSourceConfig source) =>
+                source.kind == AudioSourceKind.remoteAudio && source.enabled,
+          )
           .map((AudioSourceConfig source) => source.url ?? '')
           .where((String url) => url.isNotEmpty)
           .toList(),
@@ -4257,8 +4346,9 @@ class PreferencesRepository extends ChangeNotifier
       'gal_hook_text_font_size',
       defaultValue: galHookTextFontSizeDefault,
     );
-    final double value =
-        stored is num ? stored.toDouble() : galHookTextFontSizeDefault;
+    final double value = stored is num
+        ? stored.toDouble()
+        : galHookTextFontSizeDefault;
     return value.clamp(galHookTextFontSizeMin, galHookTextFontSizeMax);
   }
 
@@ -4271,11 +4361,11 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get galHookTextLetterSpacing => _galHookDouble(
-        'gal_hook_text_letter_spacing',
-        fallback: galHookTextLetterSpacingDefault,
-        min: galHookTextLetterSpacingMin,
-        max: galHookTextLetterSpacingMax,
-      );
+    'gal_hook_text_letter_spacing',
+    fallback: galHookTextLetterSpacingDefault,
+    min: galHookTextLetterSpacingMin,
+    max: galHookTextLetterSpacingMax,
+  );
 
   Future<void> setGalHookTextLetterSpacing(double value) async {
     await setPref(
@@ -4288,11 +4378,11 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get galHookTextLineHeight => _galHookDouble(
-        'gal_hook_text_line_height',
-        fallback: galHookTextLineHeightDefault,
-        min: galHookTextLineHeightMin,
-        max: galHookTextLineHeightMax,
-      );
+    'gal_hook_text_line_height',
+    fallback: galHookTextLineHeightDefault,
+    min: galHookTextLineHeightMin,
+    max: galHookTextLineHeightMax,
+  );
 
   Future<void> setGalHookTextLineHeight(double value) async {
     await setPref(
@@ -4313,14 +4403,18 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   String get galHookTextAlignment {
-    final Object? value =
-        getPref('gal_hook_text_alignment', defaultValue: 'center');
+    final Object? value = getPref(
+      'gal_hook_text_alignment',
+      defaultValue: 'center',
+    );
     return value == 'left' ? 'left' : 'center';
   }
 
   Future<void> setGalHookTextAlignment(String value) async {
     await setPref(
-        'gal_hook_text_alignment', value == 'left' ? 'left' : 'center');
+      'gal_hook_text_alignment',
+      value == 'left' ? 'left' : 'center',
+    );
     notifyListeners();
   }
 
@@ -4332,14 +4426,18 @@ class PreferencesRepository extends ChangeNotifier
   /// 窗口时才走，放得下就强制居中。长短句交替时台词会上下跳，这个偏好让用户把它钉死
   /// 在顶部。
   String get galHookTextVerticalAlignment {
-    final Object? value =
-        getPref('gal_hook_text_vertical_alignment', defaultValue: 'center');
+    final Object? value = getPref(
+      'gal_hook_text_vertical_alignment',
+      defaultValue: 'center',
+    );
     return value == 'top' ? 'top' : 'center';
   }
 
   Future<void> setGalHookTextVerticalAlignment(String value) async {
     await setPref(
-        'gal_hook_text_vertical_alignment', value == 'top' ? 'top' : 'center');
+      'gal_hook_text_vertical_alignment',
+      value == 'top' ? 'top' : 'center',
+    );
     notifyListeners();
   }
 
@@ -4352,9 +4450,9 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int get galHookTextBackgroundColor => _galHookColor(
-        'gal_hook_text_background_color',
-        galHookTextBackgroundColorDefault,
-      );
+    'gal_hook_text_background_color',
+    galHookTextBackgroundColorDefault,
+  );
 
   Future<void> setGalHookTextBackgroundColor(int value) async {
     await setPref('gal_hook_text_background_color', value & 0xFFFFFFFF);
@@ -4362,11 +4460,11 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get galHookTextBackgroundOpacity => _galHookDouble(
-        'gal_hook_text_window_bg_opacity',
-        fallback: galHookTextBackgroundOpacityDefault,
-        min: 0.0,
-        max: 1.0,
-      );
+    'gal_hook_text_window_bg_opacity',
+    fallback: galHookTextBackgroundOpacityDefault,
+    min: 0.0,
+    max: 1.0,
+  );
 
   Future<void> setGalHookTextBackgroundOpacity(double value) async {
     await setPref(
@@ -4377,9 +4475,9 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int get galHookTextOutlineColor => _galHookColor(
-        'gal_hook_text_outline_color',
-        galHookTextOutlineColorDefault,
-      );
+    'gal_hook_text_outline_color',
+    galHookTextOutlineColorDefault,
+  );
 
   Future<void> setGalHookTextOutlineColor(int value) async {
     await setPref('gal_hook_text_outline_color', value & 0xFFFFFFFF);
@@ -4387,11 +4485,11 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get galHookTextOutlineWidth => _galHookDouble(
-        'gal_hook_text_outline_width',
-        fallback: galHookTextOutlineWidthDefault,
-        min: galHookTextOutlineWidthMin,
-        max: galHookTextOutlineWidthMax,
-      );
+    'gal_hook_text_outline_width',
+    fallback: galHookTextOutlineWidthDefault,
+    min: galHookTextOutlineWidthMin,
+    max: galHookTextOutlineWidthMax,
+  );
 
   Future<void> setGalHookTextOutlineWidth(double value) async {
     await setPref(
@@ -4404,11 +4502,11 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get galHookTextPadding => _galHookDouble(
-        'gal_hook_text_padding',
-        fallback: galHookTextPaddingDefault,
-        min: galHookTextPaddingMin,
-        max: galHookTextPaddingMax,
-      );
+    'gal_hook_text_padding',
+    fallback: galHookTextPaddingDefault,
+    min: galHookTextPaddingMin,
+    max: galHookTextPaddingMax,
+  );
 
   Future<void> setGalHookTextPadding(double value) async {
     await setPref(
@@ -4419,11 +4517,11 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   double get galHookTextCornerRadius => _galHookDouble(
-        'gal_hook_text_corner_radius',
-        fallback: galHookTextCornerRadiusDefault,
-        min: galHookTextCornerRadiusMin,
-        max: galHookTextCornerRadiusMax,
-      );
+    'gal_hook_text_corner_radius',
+    fallback: galHookTextCornerRadiusDefault,
+    min: galHookTextCornerRadiusMin,
+    max: galHookTextCornerRadiusMax,
+  );
 
   Future<void> setGalHookTextCornerRadius(double value) async {
     await setPref(
@@ -4450,8 +4548,10 @@ class PreferencesRepository extends ChangeNotifier
   static const bool galHookClickLookupDefault = true;
 
   bool get galHookClickLookup =>
-      getPref('gal_hook_click_lookup',
-          defaultValue: galHookClickLookupDefault) ==
+      getPref(
+        'gal_hook_click_lookup',
+        defaultValue: galHookClickLookupDefault,
+      ) ==
       true;
 
   Future<void> setGalHookClickLookup(bool value) async {
@@ -4466,10 +4566,13 @@ class PreferencesRepository extends ChangeNotifier
   static const int galHookLookupTriggerDefault = 0;
 
   int get galHookLookupTrigger {
-    final Object? stored = getPref('gal_hook_lookup_trigger',
-        defaultValue: galHookLookupTriggerDefault);
-    final int value =
-        stored is num ? stored.toInt() : galHookLookupTriggerDefault;
+    final Object? stored = getPref(
+      'gal_hook_lookup_trigger',
+      defaultValue: galHookLookupTriggerDefault,
+    );
+    final int value = stored is num
+        ? stored.toInt()
+        : galHookLookupTriggerDefault;
     // 值域收在读这一层：越界值直接退回默认，别让一个坏值把 native 的分派打成
     // 「哪个键都不触发」。
     return value >= 0 && value <= 2 ? value : galHookLookupTriggerDefault;
@@ -4484,8 +4587,10 @@ class PreferencesRepository extends ChangeNotifier
   static const bool galHookToolbarAutoHideDefault = true;
 
   bool get galHookToolbarAutoHide =>
-      getPref('gal_hook_toolbar_auto_hide',
-          defaultValue: galHookToolbarAutoHideDefault) ==
+      getPref(
+        'gal_hook_toolbar_auto_hide',
+        defaultValue: galHookToolbarAutoHideDefault,
+      ) ==
       true;
 
   Future<void> setGalHookToolbarAutoHide(bool value) async {
@@ -4498,8 +4603,10 @@ class PreferencesRepository extends ChangeNotifier
   static const bool galHookToolbarLabelsDefault = true;
 
   bool get galHookToolbarLabels =>
-      getPref('gal_hook_toolbar_labels',
-          defaultValue: galHookToolbarLabelsDefault) ==
+      getPref(
+        'gal_hook_toolbar_labels',
+        defaultValue: galHookToolbarLabelsDefault,
+      ) ==
       true;
 
   Future<void> setGalHookToolbarLabels(bool value) async {
@@ -4512,8 +4619,10 @@ class PreferencesRepository extends ChangeNotifier
   static const bool galHookPassThroughBlocksMouseDefault = true;
 
   bool get galHookPassThroughBlocksMouse =>
-      getPref('gal_hook_passthrough_blocks_mouse',
-          defaultValue: galHookPassThroughBlocksMouseDefault) ==
+      getPref(
+        'gal_hook_passthrough_blocks_mouse',
+        defaultValue: galHookPassThroughBlocksMouseDefault,
+      ) ==
       true;
 
   Future<void> setGalHookPassThroughBlocksMouse(bool value) async {
@@ -4552,8 +4661,7 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 音乐无缝播放（mpv `gapless-audio=weak` + 预取下一首，设计 §7.2）。默认开。
-  bool get musicGapless =>
-      getPref('music_gapless', defaultValue: true) == true;
+  bool get musicGapless => getPref('music_gapless', defaultValue: true) == true;
 
   Future<void> setMusicGapless(bool value) async {
     await setPref('music_gapless', value);
@@ -4626,7 +4734,10 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setMusicSubsonicServers(
     Iterable<SubsonicServerConfig> servers,
   ) async {
-    await setPref('music_subsonic_servers', encodeSubsonicServerConfigs(servers));
+    await setPref(
+      'music_subsonic_servers',
+      encodeSubsonicServerConfigs(servers),
+    );
     notifyListeners();
   }
 
@@ -4862,8 +4973,8 @@ class PreferencesRepository extends ChangeNotifier
       value.round().clamp(0, 100).toInt();
 
   int get floatingLyricButtonBgOpacity => normalizeFloatingLyricOpacity(
-        getPref('floating_lyric_button_bg_opacity', defaultValue: 100) as int,
-      );
+    getPref('floating_lyric_button_bg_opacity', defaultValue: 100) as int,
+  );
 
   Future<void> setFloatingLyricButtonBgOpacity(int value) async {
     await setPref(
@@ -4874,8 +4985,8 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int get floatingLyricTextOpacity => normalizeFloatingLyricOpacity(
-        getPref('floating_lyric_text_opacity', defaultValue: 100) as int,
-      );
+    getPref('floating_lyric_text_opacity', defaultValue: 100) as int,
+  );
 
   Future<void> setFloatingLyricTextOpacity(int value) async {
     await setPref(
@@ -4889,8 +5000,8 @@ class PreferencesRepository extends ChangeNotifier
   // 背景 ARGB alpha 通道。用户反馈默认背景太不透明、挡视野，故默认下调到 70（≈背景
   // 230/220 alpha ×0.7），既明显更透又保持可读；调小更透，调大更实。
   int get floatingLyricBgOpacity => normalizeFloatingLyricOpacity(
-        getPref('floating_lyric_bg_opacity', defaultValue: 70) as int,
-      );
+    getPref('floating_lyric_bg_opacity', defaultValue: 70) as int,
+  );
 
   Future<void> setFloatingLyricBgOpacity(int value) async {
     await setPref(
@@ -4910,11 +5021,12 @@ class PreferencesRepository extends ChangeNotifier
       value.round().clamp(0, floatingLyricCornerRadiusMax).toInt();
 
   int get floatingLyricCornerRadius => normalizeFloatingLyricCornerRadius(
-        getPref(
+    getPref(
           'floating_lyric_corner_radius',
           defaultValue: floatingLyricCornerRadiusDefault,
-        ) as int,
-      );
+        )
+        as int,
+  );
 
   Future<void> setFloatingLyricCornerRadius(int value) async {
     await setPref(
@@ -4940,17 +5052,12 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int get floatingLyricWidth => normalizeFloatingLyricWidth(
-        getPref(
-          'floating_lyric_width',
-          defaultValue: floatingLyricWidthDefault,
-        ) as int,
-      );
+    getPref('floating_lyric_width', defaultValue: floatingLyricWidthDefault)
+        as int,
+  );
 
   Future<void> setFloatingLyricWidth(int value) async {
-    await setPref(
-      'floating_lyric_width',
-      normalizeFloatingLyricWidth(value),
-    );
+    await setPref('floating_lyric_width', normalizeFloatingLyricWidth(value));
     notifyListeners();
   }
 
@@ -4965,11 +5072,12 @@ class PreferencesRepository extends ChangeNotifier
       value.round().clamp(0, floatingLyricContextLinesMax).toInt();
 
   int get floatingLyricContextLines => normalizeFloatingLyricContextLines(
-        getPref(
+    getPref(
           'floating_lyric_context_lines',
           defaultValue: floatingLyricContextLinesDefault,
-        ) as int,
-      );
+        )
+        as int,
+  );
 
   Future<void> setFloatingLyricContextLines(int value) async {
     await setPref(
@@ -4999,14 +5107,17 @@ class PreferencesRepository extends ChangeNotifier
     final Object? legacy = getPref('floating_lyric_context_lines');
     if (legacy is num) {
       return normalizeFloatingLyricVisibleLines(
-          normalizeFloatingLyricContextLines(legacy) * 2 + 1);
+        normalizeFloatingLyricContextLines(legacy) * 2 + 1,
+      );
     }
     return floatingLyricVisibleLinesDefault;
   }
 
   Future<void> setFloatingLyricVisibleLines(int value) async {
-    await setPref('floating_lyric_visible_lines',
-        normalizeFloatingLyricVisibleLines(value));
+    await setPref(
+      'floating_lyric_visible_lines',
+      normalizeFloatingLyricVisibleLines(value),
+    );
     notifyListeners();
   }
 
@@ -5045,14 +5156,17 @@ class PreferencesRepository extends ChangeNotifier
 
   double get floatingLyricLineHeight {
     final Object? stored = getPref('floating_lyric_line_height');
-    final double value =
-        stored is num ? stored.toDouble() : floatingLyricLineHeightDefault;
+    final double value = stored is num
+        ? stored.toDouble()
+        : floatingLyricLineHeightDefault;
     return value.clamp(floatingLyricLineHeightMin, floatingLyricLineHeightMax);
   }
 
   Future<void> setFloatingLyricLineHeight(double value) async {
-    await setPref('floating_lyric_line_height',
-        value.clamp(floatingLyricLineHeightMin, floatingLyricLineHeightMax));
+    await setPref(
+      'floating_lyric_line_height',
+      value.clamp(floatingLyricLineHeightMin, floatingLyricLineHeightMax),
+    );
     notifyListeners();
   }
 
@@ -5060,14 +5174,16 @@ class PreferencesRepository extends ChangeNotifier
     final Object? stored = getPref('floating_lyric_letter_spacing');
     final double value = stored is num ? stored.toDouble() : 0.0;
     return value.clamp(
-        floatingLyricLetterSpacingMin, floatingLyricLetterSpacingMax);
+      floatingLyricLetterSpacingMin,
+      floatingLyricLetterSpacingMax,
+    );
   }
 
   Future<void> setFloatingLyricLetterSpacing(double value) async {
     await setPref(
-        'floating_lyric_letter_spacing',
-        value.clamp(
-            floatingLyricLetterSpacingMin, floatingLyricLetterSpacingMax));
+      'floating_lyric_letter_spacing',
+      value.clamp(floatingLyricLetterSpacingMin, floatingLyricLetterSpacingMax),
+    );
     notifyListeners();
   }
 
@@ -5080,8 +5196,10 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   Future<void> setFloatingLyricOutlineWidth(double value) async {
-    await setPref('floating_lyric_outline_width',
-        value.clamp(0.0, floatingLyricOutlineWidthMax));
+    await setPref(
+      'floating_lyric_outline_width',
+      value.clamp(0.0, floatingLyricOutlineWidthMax),
+    );
     notifyListeners();
   }
 
@@ -5098,14 +5216,17 @@ class PreferencesRepository extends ChangeNotifier
 
   int get floatingLyricTextPadding {
     final Object? stored = getPref('floating_lyric_text_padding');
-    final int value =
-        stored is num ? stored.round() : floatingLyricTextPaddingDefault;
+    final int value = stored is num
+        ? stored.round()
+        : floatingLyricTextPaddingDefault;
     return value.clamp(0, floatingLyricTextPaddingMax);
   }
 
   Future<void> setFloatingLyricTextPadding(int value) async {
-    await setPref('floating_lyric_text_padding',
-        value.clamp(0, floatingLyricTextPaddingMax));
+    await setPref(
+      'floating_lyric_text_padding',
+      value.clamp(0, floatingLyricTextPaddingMax),
+    );
     notifyListeners();
   }
 
@@ -5113,12 +5234,15 @@ class PreferencesRepository extends ChangeNotifier
   int get floatingLyricContextOpacity {
     final Object? stored = getPref('floating_lyric_context_opacity');
     return normalizeFloatingLyricOpacity(
-        stored is num ? stored : floatingLyricContextOpacityDefault);
+      stored is num ? stored : floatingLyricContextOpacityDefault,
+    );
   }
 
   Future<void> setFloatingLyricContextOpacity(int value) async {
     await setPref(
-        'floating_lyric_context_opacity', normalizeFloatingLyricOpacity(value));
+      'floating_lyric_context_opacity',
+      normalizeFloatingLyricOpacity(value),
+    );
     notifyListeners();
   }
 
@@ -5136,7 +5260,9 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   Future<void> setFloatingLyricColor(
-      FloatingLyricColorRole role, int argb) async {
+    FloatingLyricColorRole role,
+    int argb,
+  ) async {
     await setPref(role.prefKey, argb);
     notifyListeners();
   }
@@ -5201,8 +5327,8 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setNetworkProxyMode(String value) async {
     final String normalized =
         value == kProxyModeDirect || value == kProxyModeManual
-            ? value
-            : kProxyModeAuto;
+        ? value
+        : kProxyModeAuto;
     await setPref('network_proxy_mode', normalized);
     notifyListeners();
   }
@@ -5291,8 +5417,10 @@ class PreferencesRepository extends ChangeNotifier
   /// （按核数推导）由 `resolveMangaOcrJobConcurrency` 在排队时再收——偏好会随
   /// 备份 / 同步到核数更少的机器上，不能在这里按本机核数截掉。
   int get mangaOcrParallelTasks =>
-      (getPref('manga_ocr_parallel_tasks', defaultValue: 0) as int)
-          .clamp(0, kMangaOcrMaxSelectableTasks);
+      (getPref('manga_ocr_parallel_tasks', defaultValue: 0) as int).clamp(
+        0,
+        kMangaOcrMaxSelectableTasks,
+      );
 
   Future<void> setMangaOcrParallelTasks(int value) async {
     await setPref(
@@ -5349,10 +5477,12 @@ class PreferencesRepository extends ChangeNotifier
   /// 出厂默认是 `local_onnx`（本机逐列 CTC 模型，2026-10-21 用户拍板从
   /// `google_lens` 改回）：离线、不上传页图；模型未下载时走「没有引擎」提示与
   /// 下载入口。选 Lens 的用户仍过 [ensureGoogleLensDisclosure] 的逐设备同意弹窗。
-  String get mangaOcrEnginePreference => getPref(
-        'manga_ocr_engine_preference',
-        defaultValue: kDefaultMangaOcrEnginePreference.key,
-      ) as String;
+  String get mangaOcrEnginePreference =>
+      getPref(
+            'manga_ocr_engine_preference',
+            defaultValue: kDefaultMangaOcrEnginePreference.key,
+          )
+          as String;
 
   Future<void> setMangaOcrEnginePreference(String value) async {
     await setPref('manga_ocr_engine_preference', value);
@@ -5407,10 +5537,12 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 在线漫画封面磁盘缓存的保留天数（BUG-2450，默认 180）。
   int get mangaCoverCacheMaxAgeDays {
-    final int days = getPref(
-      'manga_cover_cache_max_age_days',
-      defaultValue: kMangaCoverCacheDefaultMaxAgeDays,
-    ) as int;
+    final int days =
+        getPref(
+              'manga_cover_cache_max_age_days',
+              defaultValue: kMangaCoverCacheDefaultMaxAgeDays,
+            )
+            as int;
     return days.clamp(kMangaCoverCacheMinDays, kMangaCoverCacheMaxDays);
   }
 
@@ -5423,7 +5555,8 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int get mangaZoomPercent => normalizeStoredMangaZoomPercent(
-      getPref('manga_zoom_percent', defaultValue: 100) as int);
+    getPref('manga_zoom_percent', defaultValue: 100) as int,
+  );
 
   Future<void> setMangaZoomPercent(int value) async {
     await setPref(
@@ -5434,8 +5567,12 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 滚轮/捏合缩放灵敏度倍率（百分比，100 = 基准）。
-  int get mangaZoomSensitivity => getPref('manga_zoom_sensitivity',
-      defaultValue: kMangaZoomSensitivityDefault) as int;
+  int get mangaZoomSensitivity =>
+      getPref(
+            'manga_zoom_sensitivity',
+            defaultValue: kMangaZoomSensitivityDefault,
+          )
+          as int;
 
   Future<void> setMangaZoomSensitivity(int value) async {
     await setPref(
@@ -5484,8 +5621,8 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 翻页动画速度（[PageTurnAnimationSpeed.key]，默认 `normal`）。
   String get mangaPageAnimationSpeed => PageTurnAnimationSpeed.fromKey(
-        getPref('manga_page_animation_speed') as String?,
-      ).key;
+    getPref('manga_page_animation_speed') as String?,
+  ).key;
 
   Future<void> setMangaPageAnimationSpeed(String value) async {
     await setPref(
@@ -5496,8 +5633,12 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 单 / 双页模式滑动翻页「拖动跟手」（默认开）。
-  bool get mangaPageTurnFollowDrag => getPref('manga_page_turn_follow_drag',
-      defaultValue: kMangaPageTurnFollowDragDefault) as bool;
+  bool get mangaPageTurnFollowDrag =>
+      getPref(
+            'manga_page_turn_follow_drag',
+            defaultValue: kMangaPageTurnFollowDragDefault,
+          )
+          as bool;
 
   Future<void> setMangaPageTurnFollowDrag(bool value) async {
     await setPref('manga_page_turn_follow_drag', value);
@@ -5549,8 +5690,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 漫画阅读器工具栏按钮布局（宽窗）。持久化键 `manga_control_layout`，空 / 坏值
   /// 回出厂布局（与布局化之前的固定排布视觉等价）。
   MangaControlLayout get mangaControlLayout => MangaControlLayout.decode(
-        getPref('manga_control_layout', defaultValue: '') as String,
-      );
+    getPref('manga_control_layout', defaultValue: '') as String,
+  );
 
   Future<void> setMangaControlLayout(MangaControlLayout layout) async {
     await setPref('manga_control_layout', layout.encode());
@@ -5593,10 +5734,12 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  bool get mangaPanelNavigation => getPref(
-        'manga_panel_navigation',
-        defaultValue: kMangaPanelNavigationDefault,
-      ) as bool;
+  bool get mangaPanelNavigation =>
+      getPref(
+            'manga_panel_navigation',
+            defaultValue: kMangaPanelNavigationDefault,
+          )
+          as bool;
 
   Future<void> setMangaPanelNavigation(bool value) async {
     await setPref('manga_panel_navigation', value);
@@ -5606,10 +5749,12 @@ class PreferencesRepository extends ChangeNotifier
   bool get mangaPanelNavigationEnabled => mangaPanelNavigation;
 
   /// 一键制卡的卡图默认裁到所在分镜（只在分镜模型可用且非条漫时生效）。
-  bool get mangaMiningCropToPanel => getPref(
-        'manga_mining_crop_to_panel',
-        defaultValue: kMangaMiningCropToPanelDefault,
-      ) as bool;
+  bool get mangaMiningCropToPanel =>
+      getPref(
+            'manga_mining_crop_to_panel',
+            defaultValue: kMangaMiningCropToPanelDefault,
+          )
+          as bool;
 
   Future<void> setMangaMiningCropToPanel(bool value) async {
     await setPref('manga_mining_crop_to_panel', value);
@@ -5622,10 +5767,7 @@ class PreferencesRepository extends ChangeNotifier
   /// 点击翻页的热区布局（[MangaTapZoneLayout] 的字符串键）。默认 `left_right`
   /// = 旧行为（左右各一条 25% 竖条）。只在 [mangaTapZonePaging] 开启时有意义。
   String get mangaTapZoneLayout =>
-      getPref(
-            'manga_tap_zone_layout',
-            defaultValue: kMangaTapZoneLayoutDefault,
-          )
+      getPref('manga_tap_zone_layout', defaultValue: kMangaTapZoneLayoutDefault)
           as String;
 
   Future<void> setMangaTapZoneLayout(String value) async {
@@ -5756,8 +5898,11 @@ class PreferencesRepository extends ChangeNotifier
   /// 漫画「在线目录」站点根 URL（O1：mokuro.moe 目录源；`MokuroMoeClient` 消费，
   /// 空串/尾斜杠由 client 侧 `normalizeMokuroMoeBaseUrl` 归一回默认站点）。
   String get mangaOnlineCatalogBaseUrl =>
-      getPref('manga_online_catalog_base_url',
-          defaultValue: 'https://mokuro.moe') as String;
+      getPref(
+            'manga_online_catalog_base_url',
+            defaultValue: 'https://mokuro.moe',
+          )
+          as String;
 
   Future<void> setMangaOnlineCatalogBaseUrl(String value) async {
     await setPref('manga_online_catalog_base_url', value);
@@ -5852,9 +5997,10 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   Future<void> addLibraryOrganizeAllowedKey(String key) async {
-    final List<String> next = <String>{...libraryOrganizeAllowedKeys, key}
-        .toList()
-      ..sort();
+    final List<String> next = <String>{
+      ...libraryOrganizeAllowedKeys,
+      key,
+    }.toList()..sort();
     await setPref('library_organize_allowed_keys', jsonEncode(next));
     notifyListeners();
   }
@@ -5943,14 +6089,10 @@ class PreferencesRepository extends ChangeNotifier
   /// 地址可能带站点 passkey 故按凭据处理）。编码在引擎 `bt_site_config.dart`，
   /// 与无头服务端同一份。坏 JSON 记错误日志、按空表处理。
   List<BtSiteConfig> get btSites => readBtSiteConfigs(
-        this,
-        onDecodeError: (Object error, StackTrace stack) =>
-            ErrorLogService.instance.log(
-          'PreferencesRepository.btSites.decode',
-          error,
-          stack,
-        ),
-      );
+    this,
+    onDecodeError: (Object error, StackTrace stack) => ErrorLogService.instance
+        .log('PreferencesRepository.btSites.decode', error, stack),
+  );
 
   Future<void> setBtSites(Iterable<BtSiteConfig> sites) async {
     await writeBtSiteConfigs(this, sites);
@@ -5989,9 +6131,7 @@ class PreferencesRepository extends ChangeNotifier
     }
   }
 
-  Future<void> setGameStreamVideoSettings(
-    GameStreamVideoSettings value,
-  ) async {
+  Future<void> setGameStreamVideoSettings(GameStreamVideoSettings value) async {
     await setPref(
       kGameStreamVideoSettingsPrefKey,
       jsonEncode(value.toOverridesJson()),
@@ -6048,8 +6188,8 @@ class PreferencesRepository extends ChangeNotifier
   /// TODO-1024 / BUG-479：上次更新检查结果缓存（解码后；无/畸形 → null）。检查时先读它
   /// 乐观即时反馈，网络刷新在后台跑完再写回——不再每次冷查 GitHub 才知道结果（恒快）。
   UpdateCheckCacheEntry? get updateCheckCache => UpdateCheckCacheEntry.decode(
-        getPref(updateCheckCachePrefKey, defaultValue: '') as String,
-      );
+    getPref(updateCheckCachePrefKey, defaultValue: '') as String,
+  );
 
   /// 写回更新检查结果缓存（落 `preferences` 表单 key）。不 `notifyListeners`——缓存是
   /// 后台静默刷新的产物，不驱动 UI 重建，避免无谓 rebuild。
@@ -6090,9 +6230,13 @@ class PreferencesRepository extends ChangeNotifier
   static const int readingIdleTimeoutMinutesMin = 1;
   static const int readingIdleTimeoutMinutesMax = 120;
 
-  int get readingIdleTimeoutMinutes => (getPref(kStudyIdleTimeoutPrefKey,
-          defaultValue: kDefaultReadingIdleTimeout.inMinutes) as int)
-      .clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax);
+  int get readingIdleTimeoutMinutes =>
+      (getPref(
+                kStudyIdleTimeoutPrefKey,
+                defaultValue: kDefaultReadingIdleTimeout.inMinutes,
+              )
+              as int)
+          .clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax);
 
   Future<void> setReadingIdleTimeoutMinutes(int value) async {
     await setPref(
@@ -6106,10 +6250,12 @@ class PreferencesRepository extends ChangeNotifier
   /// 开始。普通偏好（随 Profile 快照）；下次打开书生效。
   ReaderStudyClockStartMode get readerStudyClockStartMode =>
       ReaderStudyClockStartMode.parse(
-          getPref(kReaderStudyClockStartModePrefKey) as String?);
+        getPref(kReaderStudyClockStartModePrefKey) as String?,
+      );
 
   Future<void> setReaderStudyClockStartMode(
-      ReaderStudyClockStartMode mode) async {
+    ReaderStudyClockStartMode mode,
+  ) async {
     await setPref(kReaderStudyClockStartModePrefKey, mode.storageValue);
     notifyListeners();
   }
@@ -6136,8 +6282,10 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   int get readingGoalDailyChars =>
-      (getPref('reading_goal_daily_chars', defaultValue: 0) as int)
-          .clamp(0, 1000000);
+      (getPref('reading_goal_daily_chars', defaultValue: 0) as int).clamp(
+        0,
+        1000000,
+      );
 
   Future<void> setReadingGoalDailyChars(int value) async {
     await setPref('reading_goal_daily_chars', value.clamp(0, 1000000));
@@ -6159,9 +6307,14 @@ class _PrefsAiKeyHealthStore implements AiKeyHealthStore {
 
   @override
   void update(String fingerprint, AiKeyHealthUpdate update) {
-    _prefs.updateAiKeyHealth(fingerprint, update).catchError(
-          (Object e, StackTrace stack) => ErrorLogService.instance
-              .log('PreferencesRepository.updateAiKeyHealth', e, stack),
+    _prefs
+        .updateAiKeyHealth(fingerprint, update)
+        .catchError(
+          (Object e, StackTrace stack) => ErrorLogService.instance.log(
+            'PreferencesRepository.updateAiKeyHealth',
+            e,
+            stack,
+          ),
         );
   }
 }
@@ -6179,9 +6332,14 @@ class _PrefsMediaServerVersionMemory implements MediaServerVersionMemory {
 
   @override
   void write(String key, String value) {
-    _prefs.setMediaServerVersionChoice(key, value).catchError(
-      (Object e, StackTrace stack) => ErrorLogService.instance
-          .log('PreferencesRepository.setMediaServerVersionChoice', e, stack),
-    );
+    _prefs
+        .setMediaServerVersionChoice(key, value)
+        .catchError(
+          (Object e, StackTrace stack) => ErrorLogService.instance.log(
+            'PreferencesRepository.setMediaServerVersionChoice',
+            e,
+            stack,
+          ),
+        );
   }
 }
