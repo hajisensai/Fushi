@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179384 (10552 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3194,12 +3194,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'These items were deleted on another device. Delete them here too?';
   String get delete_prompt_select_all => 'Select all';
   String get delete_prompt_title => 'Deleted on another device';
-  String get delete_scope_keep_local_desc => 'Other devices keep their copy';
   String get delete_scope_no_channel =>
       'No sync configured - this deletion only affects this device';
   String get delete_scope_sync_everywhere => 'Delete from all devices';
   String get delete_scope_sync_everywhere_desc =>
-      'Other devices confirm the deletion on next sync';
+      'If checked, other devices confirm the deletion on their next sync; if not, they keep their copy';
   String get delete_statistics => 'Also delete statistics';
   String get delete_statistics_book_desc =>
       'Reading time, characters read and lookup/mining counts for this book are removed from statistics on every device';
@@ -9677,7 +9676,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Re-download audiobook from peer';
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   String remote_book_delete_everywhere_confirm({
     required Object name,
     required Object host,
@@ -9729,6 +9728,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get remote_delete_audiobook_partial =>
       'Book deleted, but its audiobook could not be removed on the paired device';
   String get remote_delete_failed => 'Could not delete it on the paired device';
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   String get remote_delete_unsupported =>
       'The paired device is too old to support remote deletion. Update Fushi there first.';
   String get remote_dict_lookup => 'Remote dictionary lookup';
@@ -20229,15 +20234,13 @@ class _StringsAr extends _StringsEn {
   @override
   String get delete_prompt_title => 'محذوف على جهاز آخر';
   @override
-  String get delete_scope_keep_local_desc => 'الأجهزة الأخرى تحتفظ بنسختها';
-  @override
   String get delete_scope_no_channel =>
       'لا توجد مزامنة مكوّنة - هذا الحذف يؤثر على هذا الجهاز فقط';
   @override
   String get delete_scope_sync_everywhere => 'حذف من جميع الأجهزة';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'الأجهزة الأخرى تؤكد الحذف عند المزامنة التالية';
+      'عند التحديد، تؤكد الأجهزة الأخرى الحذف عند المزامنة التالية؛ وإلا فتحتفظ بنسختها';
   @override
   String get delete_statistics => 'حذف الإحصاءات أيضًا';
   @override
@@ -31324,7 +31327,7 @@ class _StringsAr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -31406,6 +31409,15 @@ class _StringsAr extends _StringsEn {
       'تم حذف الكتاب، لكن تعذّرت إزالة الكتاب الصوتي على الجهاز المقترن';
   @override
   String get remote_delete_failed => 'تعذر الحذف على الجهاز المقترن';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'الجهاز المقترن قديم جدًا لدعم الحذف عن بُعد. حدّث Fushi هناك أولًا.';
@@ -45863,16 +45875,13 @@ class _StringsDe extends _StringsEn {
   @override
   String get delete_prompt_title => 'Auf anderem Gerät gelöscht';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Andere Geräte behalten ihre Kopie';
-  @override
   String get delete_scope_no_channel =>
       'Keine Synchronisierung konfiguriert – diese Löschung betrifft nur dieses Gerät';
   @override
   String get delete_scope_sync_everywhere => 'Von allen Geräten löschen';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Andere Geräte bestätigen die Löschung bei der nächsten Synchronisierung';
+      'Wenn aktiviert, bestätigen andere Geräte die Löschung bei der nächsten Synchronisierung; sonst behalten sie ihre Kopie';
   @override
   String get delete_statistics => 'Auch Statistiken löschen';
   @override
@@ -57172,7 +57181,7 @@ class _StringsDe extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -57256,6 +57265,15 @@ class _StringsDe extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'Konnte auf dem gekoppelten Gerät nicht gelöscht werden';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Das gekoppelte Gerät ist zu alt, um Remote-Löschung zu unterstützen. Aktualisieren Sie dort zuerst Fushi.';
@@ -71836,9 +71854,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get delete_prompt_title => 'Eliminados en otro dispositivo';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Otros dispositivos conservan su copia';
-  @override
   String get delete_scope_no_channel =>
       'Sin sincronización configurada — esta eliminación solo afecta este dispositivo';
   @override
@@ -71846,7 +71861,7 @@ class _StringsEs extends _StringsEn {
       'Eliminar de todos los dispositivos';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Otros dispositivos confirman la eliminación en la próxima sincronización';
+      'Si está marcado, los demás dispositivos confirman la eliminación en la próxima sincronización; si no, conservan su copia';
   @override
   String get delete_statistics => 'Eliminar también las estadísticas';
   @override
@@ -83151,7 +83166,7 @@ class _StringsEs extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -83236,6 +83251,15 @@ class _StringsEs extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'No se pudo eliminar en el dispositivo emparejado';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'El dispositivo emparejado es demasiado antiguo para soportar eliminación remota. Actualice Fushi allí primero.';
@@ -97877,16 +97901,13 @@ class _StringsFr extends _StringsEn {
   @override
   String get delete_prompt_title => 'Supprimé sur un autre appareil';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Les autres appareils conservent leur copie';
-  @override
   String get delete_scope_no_channel =>
       'Pas de synchronisation configurée — cette suppression n\'affecte que cet appareil';
   @override
   String get delete_scope_sync_everywhere => 'Supprimer de tous les appareils';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Les autres appareils confirment la suppression lors de la prochaine synchronisation';
+      'Si coché, les autres appareils confirment la suppression lors de la prochaine synchronisation ; sinon, ils conservent leur copie';
   @override
   String get delete_statistics => 'Supprimer aussi les statistiques';
   @override
@@ -109230,7 +109251,7 @@ class _StringsFr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -109316,6 +109337,15 @@ class _StringsFr extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'Impossible de supprimer sur l\'appareil apparié';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'L\'appareil apparié est trop ancien pour prendre en charge la suppression à distance. Mettez d\'abord Fushi à jour dessus.';
@@ -123906,16 +123936,13 @@ class _StringsId extends _StringsEn {
   @override
   String get delete_prompt_title => 'Dihapus di perangkat lain';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Perangkat lain menyimpan salinannya';
-  @override
   String get delete_scope_no_channel =>
       'Tidak ada sinkronisasi yang dikonfigurasi - penghapusan ini hanya memengaruhi perangkat ini';
   @override
   String get delete_scope_sync_everywhere => 'Hapus dari semua perangkat';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya';
+      'Jika dicentang, perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya; jika tidak, perangkat lain menyimpan salinannya';
   @override
   String get delete_statistics => 'Hapus juga statistik';
   @override
@@ -135100,7 +135127,7 @@ class _StringsId extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -135183,6 +135210,15 @@ class _StringsId extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'Tidak bisa menghapus di perangkat pasangan';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Perangkat pasangan terlalu lama untuk mendukung penghapusan jarak jauh. Perbarui Fushi di sana terlebih dahulu.';
@@ -149688,16 +149724,13 @@ class _StringsIt extends _StringsEn {
   @override
   String get delete_prompt_title => 'Eliminati su un altro dispositivo';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Gli altri dispositivi mantengono la loro copia';
-  @override
   String get delete_scope_no_channel =>
       'Nessuna sincronizzazione configurata — questa eliminazione riguarda solo questo dispositivo';
   @override
   String get delete_scope_sync_everywhere => 'Elimina da tutti i dispositivi';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione';
+      'Se selezionato, gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione; altrimenti mantengono la loro copia';
   @override
   String get delete_statistics => 'Elimina anche le statistiche';
   @override
@@ -160960,7 +160993,7 @@ class _StringsIt extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -161044,6 +161077,15 @@ class _StringsIt extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'Impossibile eliminarlo sul dispositivo accoppiato';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Il dispositivo accoppiato è troppo vecchio per supportare l\'eliminazione remota. Aggiorna prima Fushi lì.';
@@ -175415,13 +175457,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get delete_prompt_title => '別のデバイスで削除済み';
   @override
-  String get delete_scope_keep_local_desc => '他のデバイスはそのコピーを保持します';
-  @override
   String get delete_scope_no_channel => '同期が設定されていません - この削除はこのデバイスにのみ影響します';
   @override
   String get delete_scope_sync_everywhere => 'すべてのデバイスから削除';
   @override
-  String get delete_scope_sync_everywhere_desc => '他のデバイスは次回の同期で削除を確認します';
+  String get delete_scope_sync_everywhere_desc =>
+      'オンにすると、他のデバイスは次回の同期で削除を確認します。オフなら他のデバイスはコピーを保持します';
   @override
   String get delete_statistics => '統計データも削除';
   @override
@@ -186209,7 +186250,7 @@ class _StringsJa extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -186285,6 +186326,15 @@ class _StringsJa extends _StringsEn {
       '書籍は削除されましたが、ペアリングされたデバイス上のオーディオブックを削除できませんでした';
   @override
   String get remote_delete_failed => 'ペアリングされたデバイスで削除できませんでした';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'ペアリングされたデバイスが古すぎてリモート削除に対応していません。先にそちらのFushiを更新してください。';
@@ -200298,13 +200348,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get delete_prompt_title => '다른 기기에서 삭제됨';
   @override
-  String get delete_scope_keep_local_desc => '다른 기기에는 사본이 유지됩니다';
-  @override
   String get delete_scope_no_channel => '동기화가 설정되지 않았습니다 - 이 삭제는 이 기기에만 적용됩니다';
   @override
   String get delete_scope_sync_everywhere => '모든 기기에서 삭제';
   @override
-  String get delete_scope_sync_everywhere_desc => '다음 동기화 시 다른 기기에서 삭제가 확인됩니다';
+  String get delete_scope_sync_everywhere_desc =>
+      '체크하면 다음 동기화 때 다른 기기에서 삭제를 확인합니다. 체크하지 않으면 다른 기기에는 사본이 유지됩니다';
   @override
   String get delete_statistics => '통계도 함께 삭제';
   @override
@@ -211116,7 +211165,7 @@ class _StringsKo extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -211192,6 +211241,15 @@ class _StringsKo extends _StringsEn {
       '책은 삭제되었으나, 페어링된 기기에서 오디오북을 제거할 수 없습니다';
   @override
   String get remote_delete_failed => '페어링된 기기에서 삭제할 수 없습니다';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       '페어링된 기기가 원격 삭제를 지원하기에 너무 오래된 버전입니다. 먼저 해당 기기의 Fushi를 업데이트하세요.';
@@ -225426,16 +225484,13 @@ class _StringsNl extends _StringsEn {
   @override
   String get delete_prompt_title => 'Verwijderd op een ander apparaat';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Andere apparaten behouden hun kopie';
-  @override
   String get delete_scope_no_channel =>
       'Geen sync geconfigureerd — deze verwijdering betreft alleen dit apparaat';
   @override
   String get delete_scope_sync_everywhere => 'Overal verwijderen';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Andere apparaten bevestigen de verwijdering bij de volgende sync';
+      'Indien aangevinkt, bevestigen andere apparaten de verwijdering bij de volgende sync; anders behouden ze hun kopie';
   @override
   String get delete_statistics => 'Ook statistieken verwijderen';
   @override
@@ -236671,7 +236726,7 @@ class _StringsNl extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -236754,6 +236809,15 @@ class _StringsNl extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'Kon het niet verwijderen op het gekoppelde apparaat';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Het gekoppelde apparaat draait een te oude versie om externe verwijdering te ondersteunen. Werk Fushi daar eerst bij.';
@@ -251305,16 +251369,13 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get delete_prompt_title => 'Excluído em outro dispositivo';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Outros dispositivos mantêm sua cópia';
-  @override
   String get delete_scope_no_channel =>
       'Nenhuma sincronização configurada - esta exclusão afeta apenas este dispositivo';
   @override
   String get delete_scope_sync_everywhere => 'Excluir de todos os dispositivos';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Outros dispositivos confirmam a exclusão na próxima sincronização';
+      'Se marcado, os outros dispositivos confirmam a exclusão na próxima sincronização; se não, mantêm sua cópia';
   @override
   String get delete_statistics => 'Excluir também as estatísticas';
   @override
@@ -262584,7 +262645,7 @@ class _StringsPtBr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -262667,6 +262728,15 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'Não foi possível excluir no dispositivo pareado';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'O dispositivo pareado é muito antigo para suportar exclusão remota. Atualize o Fushi lá primeiro.';
@@ -277227,16 +277297,13 @@ class _StringsRu extends _StringsEn {
   @override
   String get delete_prompt_title => 'Удалено на другом устройстве';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Другие устройства сохранят свою копию';
-  @override
   String get delete_scope_no_channel =>
       'Синхронизация не настроена — удаление затронет только это устройство';
   @override
   String get delete_scope_sync_everywhere => 'Удалить со всех устройств';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Другие устройства подтвердят удаление при следующей синхронизации';
+      'Если отмечено, другие устройства подтвердят удаление при следующей синхронизации; иначе они сохранят свою копию';
   @override
   String get delete_statistics => 'Также удалить статистику';
   @override
@@ -288475,7 +288542,7 @@ class _StringsRu extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -288559,6 +288626,15 @@ class _StringsRu extends _StringsEn {
   @override
   String get remote_delete_failed =>
       'Не удалось удалить на сопряжённом устройстве';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Сопряжённое устройство слишком старой версии для удалённого удаления. Сначала обновите Fushi на нём.';
@@ -303042,15 +303118,13 @@ class _StringsTh extends _StringsEn {
   @override
   String get delete_prompt_title => 'ถูกลบบนอุปกรณ์อื่น';
   @override
-  String get delete_scope_keep_local_desc => 'อุปกรณ์อื่นยังเก็บสำเนาไว้';
-  @override
   String get delete_scope_no_channel =>
       'ไม่ได้ตั้งค่าซิงค์ — การลบนี้มีผลเฉพาะอุปกรณ์นี้';
   @override
   String get delete_scope_sync_everywhere => 'ลบจากทุกอุปกรณ์';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'อุปกรณ์อื่นยืนยันการลบเมื่อซิงค์ครั้งถัดไป';
+      'หากเลือก อุปกรณ์อื่นจะยืนยันการลบเมื่อซิงค์ครั้งถัดไป หากไม่เลือก อุปกรณ์อื่นยังเก็บสำเนาไว้';
   @override
   String get delete_statistics => 'ลบสถิติด้วย';
   @override
@@ -314144,7 +314218,7 @@ class _StringsTh extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -314225,6 +314299,15 @@ class _StringsTh extends _StringsEn {
       'ลบหนังสือแล้ว แต่ไม่สามารถลบหนังสือเสียงบนอุปกรณ์ที่จับคู่ได้';
   @override
   String get remote_delete_failed => 'ไม่สามารถลบบนอุปกรณ์ที่จับคู่ได้';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'อุปกรณ์ที่จับคู่เป็นเวอร์ชันเก่าเกินไปที่จะรองรับการลบระยะไกล อัปเดต Fushi ที่นั่นก่อน';
@@ -328644,16 +328727,13 @@ class _StringsTr extends _StringsEn {
   @override
   String get delete_prompt_title => 'Başka bir cihazda silindi';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Diğer cihazlar kendi kopyalarını tutar';
-  @override
   String get delete_scope_no_channel =>
       'Senkronizasyon yapılandırılmamış - bu silme yalnızca bu cihazı etkiler';
   @override
   String get delete_scope_sync_everywhere => 'Tüm cihazlardan sil';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar';
+      'İşaretlenirse diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar; işaretlenmezse kendi kopyalarını tutar';
   @override
   String get delete_statistics => 'İstatistikleri de sil';
   @override
@@ -339847,7 +339927,7 @@ class _StringsTr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -339928,6 +340008,15 @@ class _StringsTr extends _StringsEn {
       'Kitap silindi, ancak sesli kitabı eşleştirilmiş cihazdan kaldırılamadı';
   @override
   String get remote_delete_failed => 'Eşleştirilmiş cihazda silinemedi';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Eşleştirilmiş cihaz uzaktan silmeyi destekleyemeyecek kadar eski. Önce oradaki Fushi\'yi güncelleyin.';
@@ -354393,16 +354482,13 @@ class _StringsVi extends _StringsEn {
   @override
   String get delete_prompt_title => 'Đã xóa trên thiết bị khác';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Các thiết bị khác giữ bản sao của chúng';
-  @override
   String get delete_scope_no_channel =>
       'Chưa cấu hình đồng bộ - việc xóa này chỉ ảnh hưởng đến thiết bị này';
   @override
   String get delete_scope_sync_everywhere => 'Xóa khỏi tất cả thiết bị';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Các thiết bị khác xác nhận xóa khi đồng bộ tiếp theo';
+      'Nếu chọn, các thiết bị khác sẽ xác nhận xóa khi đồng bộ tiếp theo; nếu không, chúng giữ bản sao của mình';
   @override
   String get delete_statistics => 'Xóa cả thống kê';
   @override
@@ -365554,7 +365640,7 @@ class _StringsVi extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -365636,6 +365722,15 @@ class _StringsVi extends _StringsEn {
       'Đã xóa sách, nhưng sách nói không thể được gỡ trên thiết bị đã ghép nối';
   @override
   String get remote_delete_failed => 'Không thể xóa trên thiết bị đã ghép nối';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Thiết bị đã ghép nối quá cũ để hỗ trợ xóa từ xa. Hãy cập nhật Fushi trên thiết bị đó trước.';
@@ -379644,13 +379739,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get delete_prompt_title => '其他设备已删除';
   @override
-  String get delete_scope_keep_local_desc => '其他设备保留';
-  @override
   String get delete_scope_no_channel => '未配置同步，本次删除只影响这台设备';
   @override
   String get delete_scope_sync_everywhere => '从所有设备删除';
   @override
-  String get delete_scope_sync_everywhere_desc => '其他设备下次同步时会确认删除';
+  String get delete_scope_sync_everywhere_desc =>
+      '勾选后，其他设备下次同步时会确认删除；不勾选则其他设备保留';
   @override
   String get delete_statistics => '同时删除统计数据';
   @override
@@ -389892,7 +389986,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get remote_book_audiobook_redownloaded => '已从互联对端重新下载有声书';
   @override
-  String get remote_book_delete_everywhere => '彻底删除';
+  String get remote_book_delete_everywhere => '同时从远端删除';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object host,
@@ -389964,6 +390058,12 @@ class _StringsZhCn extends _StringsEn {
   String get remote_delete_audiobook_partial => '书已在对端删除，但它的有声书没能删掉';
   @override
   String get remote_delete_failed => '无法在对端设备上删除';
+  @override
+  String get remote_delete_host_checking => '正在检查对端是否在线…';
+  @override
+  String get remote_delete_host_offline => '对端离线或连不上，连上后才能从远端删除';
+  @override
+  String get remote_delete_host_pairing_rejected => '对端拒绝了本机的配对凭据，重新配对后才能从远端删除';
   @override
   String get remote_delete_unsupported => '对端设备版本过旧，不支持远端删除，请先升级对端 Fushi';
   @override
@@ -403310,13 +403410,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get delete_prompt_title => '其他設備已刪除';
   @override
-  String get delete_scope_keep_local_desc => '其他設備保留';
-  @override
   String get delete_scope_no_channel => '未配置同步，本次刪除只影響這台設備';
   @override
   String get delete_scope_sync_everywhere => '從所有設備刪除';
   @override
-  String get delete_scope_sync_everywhere_desc => '其他設備下次同步時會確認刪除';
+  String get delete_scope_sync_everywhere_desc =>
+      '勾選後，其他設備下次同步時會確認刪除；不勾選則其他設備保留';
   @override
   String get delete_statistics => '同時刪除統計數據';
   @override
@@ -413807,7 +413906,7 @@ class _StringsZhHk extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => '徹底刪除';
+  String get remote_book_delete_everywhere => '同時從遠端刪除';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object host,
@@ -413879,6 +413978,12 @@ class _StringsZhHk extends _StringsEn {
   String get remote_delete_audiobook_partial => '書已在對端刪除，但它的有聲書沒能刪掉';
   @override
   String get remote_delete_failed => '無法在對端設備上刪除';
+  @override
+  String get remote_delete_host_checking => '正在檢查對端是否在線…';
+  @override
+  String get remote_delete_host_offline => '對端離線或連不上，連上後才能從遠端刪除';
+  @override
+  String get remote_delete_host_pairing_rejected => '對端拒絕了本機的配對憑據，重新配對後才能從遠端刪除';
   @override
   String get remote_delete_unsupported => '對端設備版本過舊，不支持遠端刪除，請先升級對端 Fushi';
   @override
@@ -427029,14 +427134,12 @@ extension on _StringsEn {
         return 'Select all';
       case 'delete_prompt_title':
         return 'Deleted on another device';
-      case 'delete_scope_keep_local_desc':
-        return 'Other devices keep their copy';
       case 'delete_scope_no_channel':
         return 'No sync configured - this deletion only affects this device';
       case 'delete_scope_sync_everywhere':
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Other devices confirm the deletion on next sync';
+        return 'If checked, other devices confirm the deletion on their next sync; if not, they keep their copy';
       case 'delete_statistics':
         return 'Also delete statistics';
       case 'delete_statistics_book_desc':
@@ -436620,7 +436723,7 @@ extension on _StringsEn {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -436683,6 +436786,12 @@ extension on _StringsEn {
         return 'Book deleted, but its audiobook could not be removed on the paired device';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'The paired device is too old to support remote deletion. Update Fushi there first.';
       case 'remote_dict_lookup':
@@ -448952,14 +449061,12 @@ extension on _StringsAr {
         return 'تحديد الكل';
       case 'delete_prompt_title':
         return 'محذوف على جهاز آخر';
-      case 'delete_scope_keep_local_desc':
-        return 'الأجهزة الأخرى تحتفظ بنسختها';
       case 'delete_scope_no_channel':
         return 'لا توجد مزامنة مكوّنة - هذا الحذف يؤثر على هذا الجهاز فقط';
       case 'delete_scope_sync_everywhere':
         return 'حذف من جميع الأجهزة';
       case 'delete_scope_sync_everywhere_desc':
-        return 'الأجهزة الأخرى تؤكد الحذف عند المزامنة التالية';
+        return 'عند التحديد، تؤكد الأجهزة الأخرى الحذف عند المزامنة التالية؛ وإلا فتحتفظ بنسختها';
       case 'delete_statistics':
         return 'حذف الإحصاءات أيضًا';
       case 'delete_statistics_book_desc':
@@ -458538,7 +458645,7 @@ extension on _StringsAr {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -458601,6 +458708,12 @@ extension on _StringsAr {
         return 'تم حذف الكتاب، لكن تعذّرت إزالة الكتاب الصوتي على الجهاز المقترن';
       case 'remote_delete_failed':
         return 'تعذر الحذف على الجهاز المقترن';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'الجهاز المقترن قديم جدًا لدعم الحذف عن بُعد. حدّث Fushi هناك أولًا.';
       case 'remote_dict_lookup':
@@ -470890,14 +471003,12 @@ extension on _StringsDe {
         return 'Alle auswählen';
       case 'delete_prompt_title':
         return 'Auf anderem Gerät gelöscht';
-      case 'delete_scope_keep_local_desc':
-        return 'Andere Geräte behalten ihre Kopie';
       case 'delete_scope_no_channel':
         return 'Keine Synchronisierung konfiguriert – diese Löschung betrifft nur dieses Gerät';
       case 'delete_scope_sync_everywhere':
         return 'Von allen Geräten löschen';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Andere Geräte bestätigen die Löschung bei der nächsten Synchronisierung';
+        return 'Wenn aktiviert, bestätigen andere Geräte die Löschung bei der nächsten Synchronisierung; sonst behalten sie ihre Kopie';
       case 'delete_statistics':
         return 'Auch Statistiken löschen';
       case 'delete_statistics_book_desc':
@@ -480512,7 +480623,7 @@ extension on _StringsDe {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -480575,6 +480686,12 @@ extension on _StringsDe {
         return 'Buch gelöscht, aber das Hörbuch konnte auf dem gekoppelten Gerät nicht entfernt werden';
       case 'remote_delete_failed':
         return 'Konnte auf dem gekoppelten Gerät nicht gelöscht werden';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Das gekoppelte Gerät ist zu alt, um Remote-Löschung zu unterstützen. Aktualisieren Sie dort zuerst Fushi.';
       case 'remote_dict_lookup':
@@ -492877,14 +492994,12 @@ extension on _StringsEs {
         return 'Seleccionar todos';
       case 'delete_prompt_title':
         return 'Eliminados en otro dispositivo';
-      case 'delete_scope_keep_local_desc':
-        return 'Otros dispositivos conservan su copia';
       case 'delete_scope_no_channel':
         return 'Sin sincronización configurada — esta eliminación solo afecta este dispositivo';
       case 'delete_scope_sync_everywhere':
         return 'Eliminar de todos los dispositivos';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Otros dispositivos confirman la eliminación en la próxima sincronización';
+        return 'Si está marcado, los demás dispositivos confirman la eliminación en la próxima sincronización; si no, conservan su copia';
       case 'delete_statistics':
         return 'Eliminar también las estadísticas';
       case 'delete_statistics_book_desc':
@@ -502490,7 +502605,7 @@ extension on _StringsEs {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -502553,6 +502668,12 @@ extension on _StringsEs {
         return 'Libro eliminado, pero su audiolibro no pudo eliminarse en el dispositivo emparejado';
       case 'remote_delete_failed':
         return 'No se pudo eliminar en el dispositivo emparejado';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'El dispositivo emparejado es demasiado antiguo para soportar eliminación remota. Actualice Fushi allí primero.';
       case 'remote_dict_lookup':
@@ -514856,14 +514977,12 @@ extension on _StringsFr {
         return 'Tout sélectionner';
       case 'delete_prompt_title':
         return 'Supprimé sur un autre appareil';
-      case 'delete_scope_keep_local_desc':
-        return 'Les autres appareils conservent leur copie';
       case 'delete_scope_no_channel':
         return 'Pas de synchronisation configurée — cette suppression n\'affecte que cet appareil';
       case 'delete_scope_sync_everywhere':
         return 'Supprimer de tous les appareils';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Les autres appareils confirment la suppression lors de la prochaine synchronisation';
+        return 'Si coché, les autres appareils confirment la suppression lors de la prochaine synchronisation ; sinon, ils conservent leur copie';
       case 'delete_statistics':
         return 'Supprimer aussi les statistiques';
       case 'delete_statistics_book_desc':
@@ -524479,7 +524598,7 @@ extension on _StringsFr {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -524542,6 +524661,12 @@ extension on _StringsFr {
         return 'Livre supprimé, mais son livre audio n\'a pas pu être retiré sur l\'appareil apparié';
       case 'remote_delete_failed':
         return 'Impossible de supprimer sur l\'appareil apparié';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'L\'appareil apparié est trop ancien pour prendre en charge la suppression à distance. Mettez d\'abord Fushi à jour dessus.';
       case 'remote_dict_lookup':
@@ -536834,14 +536959,12 @@ extension on _StringsId {
         return 'Pilih semua';
       case 'delete_prompt_title':
         return 'Dihapus di perangkat lain';
-      case 'delete_scope_keep_local_desc':
-        return 'Perangkat lain menyimpan salinannya';
       case 'delete_scope_no_channel':
         return 'Tidak ada sinkronisasi yang dikonfigurasi - penghapusan ini hanya memengaruhi perangkat ini';
       case 'delete_scope_sync_everywhere':
         return 'Hapus dari semua perangkat';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya';
+        return 'Jika dicentang, perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya; jika tidak, perangkat lain menyimpan salinannya';
       case 'delete_statistics':
         return 'Hapus juga statistik';
       case 'delete_statistics_book_desc':
@@ -546428,7 +546551,7 @@ extension on _StringsId {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -546491,6 +546614,12 @@ extension on _StringsId {
         return 'Buku dihapus, tetapi buku audionya tidak bisa dihapus di perangkat pasangan';
       case 'remote_delete_failed':
         return 'Tidak bisa menghapus di perangkat pasangan';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Perangkat pasangan terlalu lama untuk mendukung penghapusan jarak jauh. Perbarui Fushi di sana terlebih dahulu.';
       case 'remote_dict_lookup':
@@ -558776,14 +558905,12 @@ extension on _StringsIt {
         return 'Seleziona tutto';
       case 'delete_prompt_title':
         return 'Eliminati su un altro dispositivo';
-      case 'delete_scope_keep_local_desc':
-        return 'Gli altri dispositivi mantengono la loro copia';
       case 'delete_scope_no_channel':
         return 'Nessuna sincronizzazione configurata — questa eliminazione riguarda solo questo dispositivo';
       case 'delete_scope_sync_everywhere':
         return 'Elimina da tutti i dispositivi';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione';
+        return 'Se selezionato, gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione; altrimenti mantengono la loro copia';
       case 'delete_statistics':
         return 'Elimina anche le statistiche';
       case 'delete_statistics_book_desc':
@@ -568386,7 +568513,7 @@ extension on _StringsIt {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -568449,6 +568576,12 @@ extension on _StringsIt {
         return 'Libro eliminato, ma il suo audiolibro non è stato rimosso sul dispositivo accoppiato';
       case 'remote_delete_failed':
         return 'Impossibile eliminarlo sul dispositivo accoppiato';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Il dispositivo accoppiato è troppo vecchio per supportare l\'eliminazione remota. Aggiorna prima Fushi lì.';
       case 'remote_dict_lookup':
@@ -580716,14 +580849,12 @@ extension on _StringsJa {
         return 'すべて選択';
       case 'delete_prompt_title':
         return '別のデバイスで削除済み';
-      case 'delete_scope_keep_local_desc':
-        return '他のデバイスはそのコピーを保持します';
       case 'delete_scope_no_channel':
         return '同期が設定されていません - この削除はこのデバイスにのみ影響します';
       case 'delete_scope_sync_everywhere':
         return 'すべてのデバイスから削除';
       case 'delete_scope_sync_everywhere_desc':
-        return '他のデバイスは次回の同期で削除を確認します';
+        return 'オンにすると、他のデバイスは次回の同期で削除を確認します。オフなら他のデバイスはコピーを保持します';
       case 'delete_statistics':
         return '統計データも削除';
       case 'delete_statistics_book_desc':
@@ -590279,7 +590410,7 @@ extension on _StringsJa {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -590342,6 +590473,12 @@ extension on _StringsJa {
         return '書籍は削除されましたが、ペアリングされたデバイス上のオーディオブックを削除できませんでした';
       case 'remote_delete_failed':
         return 'ペアリングされたデバイスで削除できませんでした';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'ペアリングされたデバイスが古すぎてリモート削除に対応していません。先にそちらのFushiを更新してください。';
       case 'remote_dict_lookup':
@@ -602554,14 +602691,12 @@ extension on _StringsKo {
         return '모두 선택';
       case 'delete_prompt_title':
         return '다른 기기에서 삭제됨';
-      case 'delete_scope_keep_local_desc':
-        return '다른 기기에는 사본이 유지됩니다';
       case 'delete_scope_no_channel':
         return '동기화가 설정되지 않았습니다 - 이 삭제는 이 기기에만 적용됩니다';
       case 'delete_scope_sync_everywhere':
         return '모든 기기에서 삭제';
       case 'delete_scope_sync_everywhere_desc':
-        return '다음 동기화 시 다른 기기에서 삭제가 확인됩니다';
+        return '체크하면 다음 동기화 때 다른 기기에서 삭제를 확인합니다. 체크하지 않으면 다른 기기에는 사본이 유지됩니다';
       case 'delete_statistics':
         return '통계도 함께 삭제';
       case 'delete_statistics_book_desc':
@@ -612119,7 +612254,7 @@ extension on _StringsKo {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -612182,6 +612317,12 @@ extension on _StringsKo {
         return '책은 삭제되었으나, 페어링된 기기에서 오디오북을 제거할 수 없습니다';
       case 'remote_delete_failed':
         return '페어링된 기기에서 삭제할 수 없습니다';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return '페어링된 기기가 원격 삭제를 지원하기에 너무 오래된 버전입니다. 먼저 해당 기기의 Fushi를 업데이트하세요.';
       case 'remote_dict_lookup':
@@ -624437,14 +624578,12 @@ extension on _StringsNl {
         return 'Alles selecteren';
       case 'delete_prompt_title':
         return 'Verwijderd op een ander apparaat';
-      case 'delete_scope_keep_local_desc':
-        return 'Andere apparaten behouden hun kopie';
       case 'delete_scope_no_channel':
         return 'Geen sync geconfigureerd — deze verwijdering betreft alleen dit apparaat';
       case 'delete_scope_sync_everywhere':
         return 'Overal verwijderen';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Andere apparaten bevestigen de verwijdering bij de volgende sync';
+        return 'Indien aangevinkt, bevestigen andere apparaten de verwijdering bij de volgende sync; anders behouden ze hun kopie';
       case 'delete_statistics':
         return 'Ook statistieken verwijderen';
       case 'delete_statistics_book_desc':
@@ -634050,7 +634189,7 @@ extension on _StringsNl {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -634113,6 +634252,12 @@ extension on _StringsNl {
         return 'Boek verwijderd, maar het luisterboek kon niet worden verwijderd op het gekoppelde apparaat';
       case 'remote_delete_failed':
         return 'Kon het niet verwijderen op het gekoppelde apparaat';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Het gekoppelde apparaat draait een te oude versie om externe verwijdering te ondersteunen. Werk Fushi daar eerst bij.';
       case 'remote_dict_lookup':
@@ -646405,14 +646550,12 @@ extension on _StringsPtBr {
         return 'Selecionar tudo';
       case 'delete_prompt_title':
         return 'Excluído em outro dispositivo';
-      case 'delete_scope_keep_local_desc':
-        return 'Outros dispositivos mantêm sua cópia';
       case 'delete_scope_no_channel':
         return 'Nenhuma sincronização configurada - esta exclusão afeta apenas este dispositivo';
       case 'delete_scope_sync_everywhere':
         return 'Excluir de todos os dispositivos';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Outros dispositivos confirmam a exclusão na próxima sincronização';
+        return 'Se marcado, os outros dispositivos confirmam a exclusão na próxima sincronização; se não, mantêm sua cópia';
       case 'delete_statistics':
         return 'Excluir também as estatísticas';
       case 'delete_statistics_book_desc':
@@ -656012,7 +656155,7 @@ extension on _StringsPtBr {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -656075,6 +656218,12 @@ extension on _StringsPtBr {
         return 'Livro excluído, mas seu audiobook não pôde ser removido no dispositivo pareado';
       case 'remote_delete_failed':
         return 'Não foi possível excluir no dispositivo pareado';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'O dispositivo pareado é muito antigo para suportar exclusão remota. Atualize o Fushi lá primeiro.';
       case 'remote_dict_lookup':
@@ -668368,14 +668517,12 @@ extension on _StringsRu {
         return 'Выбрать все';
       case 'delete_prompt_title':
         return 'Удалено на другом устройстве';
-      case 'delete_scope_keep_local_desc':
-        return 'Другие устройства сохранят свою копию';
       case 'delete_scope_no_channel':
         return 'Синхронизация не настроена — удаление затронет только это устройство';
       case 'delete_scope_sync_everywhere':
         return 'Удалить со всех устройств';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Другие устройства подтвердят удаление при следующей синхронизации';
+        return 'Если отмечено, другие устройства подтвердят удаление при следующей синхронизации; иначе они сохранят свою копию';
       case 'delete_statistics':
         return 'Также удалить статистику';
       case 'delete_statistics_book_desc':
@@ -677978,7 +678125,7 @@ extension on _StringsRu {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -678041,6 +678188,12 @@ extension on _StringsRu {
         return 'Книга удалена, но аудиокнигу не удалось удалить на сопряжённом устройстве';
       case 'remote_delete_failed':
         return 'Не удалось удалить на сопряжённом устройстве';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Сопряжённое устройство слишком старой версии для удалённого удаления. Сначала обновите Fushi на нём.';
       case 'remote_dict_lookup':
@@ -690313,14 +690466,12 @@ extension on _StringsTh {
         return 'เลือกทั้งหมด';
       case 'delete_prompt_title':
         return 'ถูกลบบนอุปกรณ์อื่น';
-      case 'delete_scope_keep_local_desc':
-        return 'อุปกรณ์อื่นยังเก็บสำเนาไว้';
       case 'delete_scope_no_channel':
         return 'ไม่ได้ตั้งค่าซิงค์ — การลบนี้มีผลเฉพาะอุปกรณ์นี้';
       case 'delete_scope_sync_everywhere':
         return 'ลบจากทุกอุปกรณ์';
       case 'delete_scope_sync_everywhere_desc':
-        return 'อุปกรณ์อื่นยืนยันการลบเมื่อซิงค์ครั้งถัดไป';
+        return 'หากเลือก อุปกรณ์อื่นจะยืนยันการลบเมื่อซิงค์ครั้งถัดไป หากไม่เลือก อุปกรณ์อื่นยังเก็บสำเนาไว้';
       case 'delete_statistics':
         return 'ลบสถิติด้วย';
       case 'delete_statistics_book_desc':
@@ -699904,7 +700055,7 @@ extension on _StringsTh {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -699967,6 +700118,12 @@ extension on _StringsTh {
         return 'ลบหนังสือแล้ว แต่ไม่สามารถลบหนังสือเสียงบนอุปกรณ์ที่จับคู่ได้';
       case 'remote_delete_failed':
         return 'ไม่สามารถลบบนอุปกรณ์ที่จับคู่ได้';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'อุปกรณ์ที่จับคู่เป็นเวอร์ชันเก่าเกินไปที่จะรองรับการลบระยะไกล อัปเดต Fushi ที่นั่นก่อน';
       case 'remote_dict_lookup':
@@ -712249,14 +712406,12 @@ extension on _StringsTr {
         return 'Tümünü seç';
       case 'delete_prompt_title':
         return 'Başka bir cihazda silindi';
-      case 'delete_scope_keep_local_desc':
-        return 'Diğer cihazlar kendi kopyalarını tutar';
       case 'delete_scope_no_channel':
         return 'Senkronizasyon yapılandırılmamış - bu silme yalnızca bu cihazı etkiler';
       case 'delete_scope_sync_everywhere':
         return 'Tüm cihazlardan sil';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar';
+        return 'İşaretlenirse diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar; işaretlenmezse kendi kopyalarını tutar';
       case 'delete_statistics':
         return 'İstatistikleri de sil';
       case 'delete_statistics_book_desc':
@@ -721848,7 +722003,7 @@ extension on _StringsTr {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -721911,6 +722066,12 @@ extension on _StringsTr {
         return 'Kitap silindi, ancak sesli kitabı eşleştirilmiş cihazdan kaldırılamadı';
       case 'remote_delete_failed':
         return 'Eşleştirilmiş cihazda silinemedi';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Eşleştirilmiş cihaz uzaktan silmeyi destekleyemeyecek kadar eski. Önce oradaki Fushi\'yi güncelleyin.';
       case 'remote_dict_lookup':
@@ -734191,14 +734352,12 @@ extension on _StringsVi {
         return 'Chọn tất cả';
       case 'delete_prompt_title':
         return 'Đã xóa trên thiết bị khác';
-      case 'delete_scope_keep_local_desc':
-        return 'Các thiết bị khác giữ bản sao của chúng';
       case 'delete_scope_no_channel':
         return 'Chưa cấu hình đồng bộ - việc xóa này chỉ ảnh hưởng đến thiết bị này';
       case 'delete_scope_sync_everywhere':
         return 'Xóa khỏi tất cả thiết bị';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Các thiết bị khác xác nhận xóa khi đồng bộ tiếp theo';
+        return 'Nếu chọn, các thiết bị khác sẽ xác nhận xóa khi đồng bộ tiếp theo; nếu không, chúng giữ bản sao của mình';
       case 'delete_statistics':
         return 'Xóa cả thống kê';
       case 'delete_statistics_book_desc':
@@ -743787,7 +743946,7 @@ extension on _StringsVi {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -743850,6 +744009,12 @@ extension on _StringsVi {
         return 'Đã xóa sách, nhưng sách nói không thể được gỡ trên thiết bị đã ghép nối';
       case 'remote_delete_failed':
         return 'Không thể xóa trên thiết bị đã ghép nối';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Thiết bị đã ghép nối quá cũ để hỗ trợ xóa từ xa. Hãy cập nhật Fushi trên thiết bị đó trước.';
       case 'remote_dict_lookup':
@@ -756055,14 +756220,12 @@ extension on _StringsZhCn {
         return '全选';
       case 'delete_prompt_title':
         return '其他设备已删除';
-      case 'delete_scope_keep_local_desc':
-        return '其他设备保留';
       case 'delete_scope_no_channel':
         return '未配置同步，本次删除只影响这台设备';
       case 'delete_scope_sync_everywhere':
         return '从所有设备删除';
       case 'delete_scope_sync_everywhere_desc':
-        return '其他设备下次同步时会确认删除';
+        return '勾选后，其他设备下次同步时会确认删除；不勾选则其他设备保留';
       case 'delete_statistics':
         return '同时删除统计数据';
       case 'delete_statistics_book_desc':
@@ -765553,7 +765716,7 @@ extension on _StringsZhCn {
       case 'remote_book_audiobook_redownloaded':
         return '已从互联对端重新下载有声书';
       case 'remote_book_delete_everywhere':
-        return '彻底删除';
+        return '同时从远端删除';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object host, required Object name}) =>
             '确定在 host「${host}」上删除「${name}」吗？那台设备上的文件、阅读进度、书签和有声书会被永久删除，本机没有副本，此操作不可撤销。';
@@ -765615,6 +765778,12 @@ extension on _StringsZhCn {
         return '书已在对端删除，但它的有声书没能删掉';
       case 'remote_delete_failed':
         return '无法在对端设备上删除';
+      case 'remote_delete_host_checking':
+        return '正在检查对端是否在线…';
+      case 'remote_delete_host_offline':
+        return '对端离线或连不上，连上后才能从远端删除';
+      case 'remote_delete_host_pairing_rejected':
+        return '对端拒绝了本机的配对凭据，重新配对后才能从远端删除';
       case 'remote_delete_unsupported':
         return '对端设备版本过旧，不支持远端删除，请先升级对端 Fushi';
       case 'remote_dict_lookup':
@@ -777734,14 +777903,12 @@ extension on _StringsZhHk {
         return '全選';
       case 'delete_prompt_title':
         return '其他設備已刪除';
-      case 'delete_scope_keep_local_desc':
-        return '其他設備保留';
       case 'delete_scope_no_channel':
         return '未配置同步，本次刪除只影響這台設備';
       case 'delete_scope_sync_everywhere':
         return '從所有設備刪除';
       case 'delete_scope_sync_everywhere_desc':
-        return '其他設備下次同步時會確認刪除';
+        return '勾選後，其他設備下次同步時會確認刪除；不勾選則其他設備保留';
       case 'delete_statistics':
         return '同時刪除統計數據';
       case 'delete_statistics_book_desc':
@@ -787279,7 +787446,7 @@ extension on _StringsZhHk {
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
       case 'remote_book_delete_everywhere':
-        return '徹底刪除';
+        return '同時從遠端刪除';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object host, required Object name}) =>
             '確定在 host「${host}」上刪除「${name}」嗎？那台裝置上的檔案、閱讀進度、書籤和有聲書會被永久刪除，本機沒有副本，此操作不可撤銷。';
@@ -787341,6 +787508,12 @@ extension on _StringsZhHk {
         return '書已在對端刪除，但它的有聲書沒能刪掉';
       case 'remote_delete_failed':
         return '無法在對端設備上刪除';
+      case 'remote_delete_host_checking':
+        return '正在檢查對端是否在線…';
+      case 'remote_delete_host_offline':
+        return '對端離線或連不上，連上後才能從遠端刪除';
+      case 'remote_delete_host_pairing_rejected':
+        return '對端拒絕了本機的配對憑據，重新配對後才能從遠端刪除';
       case 'remote_delete_unsupported':
         return '對端設備版本過舊，不支持遠端刪除，請先升級對端 Fushi';
       case 'remote_dict_lookup':

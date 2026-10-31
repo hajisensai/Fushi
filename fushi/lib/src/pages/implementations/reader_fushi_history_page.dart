@@ -135,6 +135,7 @@ import 'package:fushi/src/sync/remote_download_temp_file.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_deletion_filter.dart';
+import 'package:fushi/src/sync/remote_delete_availability.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
