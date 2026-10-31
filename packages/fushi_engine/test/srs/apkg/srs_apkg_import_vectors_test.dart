@@ -1,15 +1,15 @@
-// Anki 包导入的结果向量：笔记 / 卡片缓存行 / 复习日志 / 牌组 / 笔记类型 / 导入报告逐项比对固定的向量文件。
+// Anki 包导入的运行时等价断言：同一个来源包，原样导入与「来源库补上 ix_cards_nid / ix_revlog_cid、
+// notes / cards / revlog 按固定种子打乱后重插」的变体导入，笔记 / 卡片缓存行 / 复习日志 / 牌组 /
+// 笔记类型 / 导入报告必须逐项相等。
 //
-// 向量由按笔记逐条查卡、逐卡查 revlog 的旧读法生成（改成三条游标归并之前）；新读法必须逐项一致。来源库
-// 都不带 ix_cards_nid / ix_revlog_cid，卡片 id 与 ord 反序、revlog 跨卡交错、有孤儿卡与孤儿 revlog，
-// 归并的每条分支都走得到。
-//
-// 重新生成（只在有意改变导入结果时）：
-//   FUSHI_APKG_VECTORS_WRITE=1 dart test test/srs/apkg/srs_apkg_import_vectors_test.dart
+// 来源库原样不带这两个索引：卡片 id 与 ord 反序、revlog 跨卡交错、有孤儿卡与孤儿 revlog，三条游标归并的
+// 每条分支都走得到；补上索引后查询计划改走索引，结果必须不变（导入结果不能依赖来源库的物理形态）。
+// 另有 fixture 场景的少量手写锚点，防止两边一起错。
 import 'dart:convert';
-import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -32,8 +32,6 @@ import 'srs_apkg_import_test.dart'
         legacyDecks,
         legacyModels,
         ms;
-
-const String _vectorsPath = 'test/srs/fixtures/apkg_import_vectors.json';
 
 final int _nowMs = ms(2026, 6, 1);
 
@@ -173,6 +171,47 @@ Uint8List _interleavedApkg() {
   return zipOf(<String, List<int>>{'collection.anki21': col});
 }
 
+/// 来源包的变体：集合库补上 Anki 自带的 ix_cards_nid / ix_revlog_cid，notes / cards / revlog 全部删掉后
+/// 按 [seed] 固定打乱的顺序重插；其余条目（media 清单、媒体文件）原样保留。
+Uint8List _indexedShuffledApkg(Uint8List apkg, int seed) {
+  final Random rng = Random(seed);
+  final Archive src = ZipDecoder().decodeBytes(apkg);
+  final Map<String, List<int>> entries = <String, List<int>>{};
+  for (final ArchiveFile f in src.files) {
+    final List<int> content = f.content as List<int>;
+    entries[f.name] =
+        f.name == 'collection.anki21' || f.name == 'collection.anki2'
+        ? patchSqlite(Uint8List.fromList(content), (Database db) {
+            db.execute('CREATE INDEX ix_cards_nid ON cards (nid)');
+            db.execute('CREATE INDEX ix_revlog_cid ON revlog (cid)');
+            for (final String table in <String>['notes', 'cards', 'revlog']) {
+              final ResultSet rows = db.select('SELECT * FROM $table');
+              final List<List<Object?>> shuffled = <List<Object?>>[
+                for (final Row r in rows) r.values,
+              ]..shuffle(rng);
+              final String cols = rows.columnNames.join(', ');
+              final String marks = List<String>.filled(
+                rows.columnNames.length,
+                '?',
+              ).join(', ');
+              db.execute('DELETE FROM $table');
+              final PreparedStatement insert = db.prepare(
+                'INSERT INTO $table ($cols) VALUES ($marks)',
+              );
+              try {
+                for (final List<Object?> row in shuffled) {
+                  insert.execute(row);
+                }
+              } finally {
+                insert.dispose();
+              }
+            }
+          })
+        : content;
+  }
+  return zipOf(entries);
+}
+
 /// 一次导入后的库内容。
 Future<Map<String, Object?>> _dump(
   SrsDbStore store,
@@ -294,28 +333,72 @@ void main() {
         ],
       };
 
-  test('导入结果与向量逐项一致（卡 / 笔记 / 日志 / 牌组 / 笔记类型 / 报告）', () async {
-    final Map<String, Object?> got = <String, Object?>{
-      for (final MapEntry<String, List<(Uint8List, SrsAnkiImportOptions)>> s
-          in scenarios.entries)
-        s.key: await _scenario(s.value),
-    };
-    // 经一次编解码：比较的是 JSON 值，不是 Dart 对象类型。
-    final Object? actual = jsonDecode(jsonEncode(got));
-    final File file = File(_vectorsPath);
-    if (Platform.environment['FUSHI_APKG_VECTORS_WRITE'] == '1') {
-      file.writeAsStringSync(
-        '${const JsonEncoder.withIndent(' ').convert(actual)}\n',
+  for (final MapEntry<String, List<(Uint8List, SrsAnkiImportOptions)>> s
+      in scenarios.entries) {
+    test('${s.key}：来源库加索引并打乱行序后导入结果逐项相等', () async {
+      // 经一次编解码：比较的是 JSON 值，不是 Dart 对象类型。
+      final Object? asIs = jsonDecode(jsonEncode(await _scenario(s.value)));
+      final List<(Uint8List, SrsAnkiImportOptions)> variant =
+          <(Uint8List, SrsAnkiImportOptions)>[
+            for (final (int i, (Uint8List, SrsAnkiImportOptions) imp)
+                in s.value.indexed)
+              (_indexedShuffledApkg(imp.$1, 0x5eed + i), imp.$2),
+          ];
+      // 变体确实改了来源库形态，否则下面的相等是空断言。
+      for (final (Uint8List bytes, _) in variant) {
+        expect(
+          _collectionIndexes(bytes),
+          containsAll(<String>['ix_cards_nid', 'ix_revlog_cid']),
+        );
+      }
+      for (final (Uint8List bytes, _) in s.value) {
+        expect(_collectionIndexes(bytes), isNot(contains('ix_cards_nid')));
+        expect(_collectionIndexes(bytes), isNot(contains('ix_revlog_cid')));
+      }
+      final Object? reshaped = jsonDecode(jsonEncode(await _scenario(variant)));
+      expect(reshaped, asIs);
+    });
+  }
+
+  test('fixture 锚点：导入计数与报告关键项', () async {
+    final List<Object?> dumps = await _scenario(scenarios['fixture']!);
+    final Map<String, Object?> dump = dumps.single! as Map<String, Object?>;
+    final Map<String, Object?> report = dump['report']! as Map<String, Object?>;
+    expect(report['notesAdded'], 3);
+    expect(report['cardsAdded'], 5);
+    expect(report['reviewLogsImported'], 6);
+    expect(report['anchorsWritten'], 2);
+    expect(report['mediaStored'], 2);
+    expect(report['futureCards'], <int>[31]);
+    expect(report['fsrsPresets'], <String, String>{'JP preset': 'fsrs6'});
+    expect((dump['notes']! as List<Object?>).length, 3);
+    // 复习日志 = 导入的 6 条 revlog + 2 条锚点。
+    expect(
+      (dump['logs']! as Map<String, Object?>).values.fold<int>(
+        0,
+        (int n, Object? l) => n + (l! as List<Object?>).length,
+      ),
+      8,
+    );
+  });
+}
+
+/// 包内集合库里的索引名。
+Set<String> _collectionIndexes(Uint8List apkg) {
+  final ArchiveFile col = ZipDecoder()
+      .decodeBytes(apkg)
+      .files
+      .firstWhere(
+        (ArchiveFile f) =>
+            f.name == 'collection.anki21' || f.name == 'collection.anki2',
       );
-      return;
-    }
-    final Object? expected = jsonDecode(file.readAsStringSync());
-    for (final String name in scenarios.keys) {
-      expect(
-        (actual! as Map<String, Object?>)[name],
-        (expected! as Map<String, Object?>)[name],
-        reason: name,
-      );
+  final Set<String> names = <String>{};
+  patchSqlite(Uint8List.fromList(col.content as List<int>), (Database db) {
+    for (final Row r in db.select(
+      "SELECT name FROM sqlite_master WHERE type = 'index'",
+    )) {
+      names.add(r['name'] as String);
     }
   });
+  return names;
 }
