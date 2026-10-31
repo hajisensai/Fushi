@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
 
@@ -250,6 +251,12 @@ class _Bindings {
       restore = lib.lookupFunction<_RestoreC, _RestoreDart>(
         'frwkv_runtime_restore',
       ),
+      snapshotToFile = lib.lookupFunction<_RestoreC, _RestoreDart>(
+        'frwkv_runtime_snapshot_to_file',
+      ),
+      restoreFromFile = lib.lookupFunction<_RestoreC, _RestoreDart>(
+        'frwkv_runtime_restore_from_file',
+      ),
       reset = lib.lookupFunction<_PtrToI32C, _PtrToI32Dart>(
         'frwkv_runtime_reset',
       ),
@@ -298,6 +305,8 @@ class _Bindings {
   final _IntervalsDart nextIntervals;
   final _SnapshotDart snapshot;
   final _RestoreDart restore;
+  final _RestoreDart snapshotToFile;
+  final _RestoreDart restoreFromFile;
   final _PtrToI32Dart reset;
   final _StatsDart stats;
   final _AppendDart append;
@@ -641,6 +650,26 @@ class RwkvNativeRuntime implements Finalizable {
     try {
       input.asTypedListOutOfLine(snapshot.length).setAll(0, snapshot);
       _b.check(_b.restore(_handle, input, snapshot.length));
+    } finally {
+      malloc.free(input);
+    }
+  }
+
+  /// 原生流式写入无损快照并 flush；不把完整状态复制到 Dart。
+  /// 同步文件 IO，只在后台 isolate 或无 UI 的工具里调用。
+  void snapshotToFile(String path) => _fileOperation(_b.snapshotToFile, path);
+
+  /// 原生流式读取快照；与 [restore] 格式相同，失败时状态不变。
+  /// 同步文件 IO，只在后台 isolate 或无 UI 的工具里调用。
+  void restoreFromFile(String path) => _fileOperation(_b.restoreFromFile, path);
+
+  void _fileOperation(_RestoreDart operation, String path) {
+    _alive();
+    final List<int> encoded = utf8.encode(path);
+    final Pointer<Uint8> input = malloc<Uint8>(encoded.length + 1);
+    try {
+      input.asTypedListOutOfLine(encoded.length).setAll(0, encoded);
+      _b.check(operation(_handle, input, encoded.length));
     } finally {
       malloc.free(input);
     }

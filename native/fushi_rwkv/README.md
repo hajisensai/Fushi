@@ -42,7 +42,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 | 符号 | 作用 |
 |---|---|
-| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 3）；Dart 侧不一致即判不可用 |
+| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 5）；Dart 侧不一致即判不可用 |
 | `size_t frwkv_review_struct_size(void)` | `sizeof(FrwkvReview)`（80），核对结构体布局 |
 | `FrwkvModel* frwkv_model_load(const uint8_t* bytes, size_t len)` | 从内存里的权重文件建模型，按内容识别大 / 小模型（`ARWKVWEIGHTS1` f32 两者皆可，`ARWKVWEIGHTS8PC1` int8 逐行仅小模型）；失败 NULL |
 | `int32_t frwkv_model_kind(const FrwkvModel*)` | 1 = 大模型，2 = 小模型；空指针 `-1` |
@@ -65,6 +65,8 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 | `int32_t frwkv_runtime_next_intervals(FrwkvRuntime*, const FrwkvReview* answer, float target_retention, uint32_t max_interval_days, uint32_t* out_days, float* out_r)` | 作答时排程（见下）：写 4 个天数（Again / Hard / Good / Easy），`out_r` 可空；什么都不保存 |
 | `int32_t frwkv_runtime_snapshot(const FrwkvRuntime*, uint8_t** out_bytes, size_t* out_len)` | 导出无损快照（用 `frwkv_free_bytes` 释放） |
 | `int32_t frwkv_runtime_restore(FrwkvRuntime*, const uint8_t* bytes, size_t len)` | 用快照替换状态；precision 必须一致；失败时状态不变 |
+| `int32_t frwkv_runtime_snapshot_to_file(const FrwkvRuntime*, const uint8_t* path, size_t path_len)` | 将无损快照直接写文件并 flush / sync_all；路径为无 NUL 结尾的 UTF-8 字节；调用者负责临时文件成功后提升 |
+| `int32_t frwkv_runtime_restore_from_file(FrwkvRuntime*, const uint8_t* path, size_t path_len)` | 直接从文件有界读取；校验全部成功后替换状态并清空撤销日志与分数；失败时状态、poison 标记、日志与分数均不变 |
 | `int32_t frwkv_runtime_reset(FrwkvRuntime*)` | 清空到新建状态 |
 | `int32_t frwkv_runtime_stats(const FrwkvRuntime*, FrwkvStats* out)` | 已回放复习数、卡 / 笔记 / 牌组 / 预设数、各层状态字节数 |
 | `char* frwkv_last_error(void)` | 本线程最近一次失败的可读错误（UTF-8，新分配）；无则 NULL |
