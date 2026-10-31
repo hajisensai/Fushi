@@ -14,6 +14,10 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const String genScript = 'fushi/tool/gen_i18n.dart';
   const String genAction = 'uses: ./.github/actions/gen-i18n';
+  final RegExp genActionLine = RegExp(
+    r'^\s*uses: \./\.github/actions/gen-i18n\s*$',
+    multiLine: true,
+  );
 
   /// 在 fushi/ 解析 workspace（后面才有东西可编）。
   final RegExp flutterPubGet = RegExp(r'flutter (?:-\S+ +)*pub get\b');
@@ -190,7 +194,7 @@ void main() {
         if (pub == null && run == null) continue;
         final String where = '$name: ${job.key}';
         covered.add(where);
-        final int gen = body.indexOf(genAction);
+        final int gen = body.indexOf(genActionLine);
         if (gen < 0) {
           problems.add('$where 没有 $genAction');
           continue;
