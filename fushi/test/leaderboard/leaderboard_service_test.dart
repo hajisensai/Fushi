@@ -1022,15 +1022,20 @@ void main() {
         jsonDecode(utf8.decode(server.at('/v1/shelf').last.bodyBytes))
             as Map<Object?, Object?>;
 
-    Future<SourceLibraryPrivacyResult> toggle(
+    /// 与隐私对话框同一流程：先落库，打开时再撤下（对话框里撤下在后台跑）。
+    /// 关掉时不撤下，返回 null。
+    Future<SourceLibraryWithdrawResult?> toggle(
       LeaderboardService s,
       bool isPrivate,
-    ) => setSourceLibraryPrivate(
-      db: db,
-      sourceId: secretSource,
-      isPrivate: isPrivate,
-      withdrawFromLeaderboard: s.syncAfterPrivacyChange,
-    );
+    ) async {
+      await setSourceLibraryPrivate(
+        db: db,
+        sourceId: secretSource,
+        isPrivate: isPrivate,
+      );
+      if (!isPrivate) return null;
+      return withdrawSourceLibraryFromLeaderboard(s.syncAfterPrivacyChange);
+    }
 
     test('已上报的隐私来源条目被 remove，公开条目保留；开关已落库', () async {
       final LeaderboardService s = realShelfService();
@@ -1039,8 +1044,8 @@ void main() {
       expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
 
       server.requests.clear();
-      final SourceLibraryPrivacyResult result = await toggle(s, true);
-      expect(result.outcome, SourceLibraryPrivacyOutcome.privateWithdrawn);
+      final SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.withdrawn);
       expect((await db.getMediaSourceById(secretSource))!.isPrivate, isTrue);
       expect(server.at('/v1/shelf'), hasLength(1));
       final Map<Object?, Object?> body = lastShelfBody();
@@ -1054,8 +1059,7 @@ void main() {
 
       // 关掉：开关落库、不立即同步；下一次同步照常重新上传。
       server.requests.clear();
-      final SourceLibraryPrivacyResult cleared = await toggle(s, false);
-      expect(cleared.outcome, SourceLibraryPrivacyOutcome.cleared);
+      expect(await toggle(s, false), isNull);
       expect(server.requests, isEmpty);
       await s.syncNow();
       expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
@@ -1079,26 +1083,26 @@ void main() {
       server.shelfArrived = Completer<void>();
       final Future<void> inFlight = s.syncNow();
       await server.shelfArrived.future;
-      final Future<SourceLibraryPrivacyResult> toggling = toggle(s, true);
+      final Future<SourceLibraryWithdrawResult?> toggling = toggle(s, true);
       server.shelfGate!.complete();
       await inFlight;
       server.shelfGate = null;
-      final SourceLibraryPrivacyResult result = await toggling;
-      expect(result.outcome, SourceLibraryPrivacyOutcome.privateWithdrawn);
+      final SourceLibraryWithdrawResult? result = await toggling;
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.withdrawn);
       expect(server.shelfWorks, <String>{'W_Open'});
     });
 
     test('没开排行榜 / 上传关着：不发书架请求，结果为「仅本地」', () async {
       final LeaderboardService s = realShelfService();
-      SourceLibraryPrivacyResult result = await toggle(s, true);
-      expect(result.outcome, SourceLibraryPrivacyOutcome.privateLocalOnly);
+      SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.notUploading);
       expect(server.requests, isEmpty);
 
       await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
       await s.setUploadEnabled(false);
       server.requests.clear();
       result = await toggle(s, true);
-      expect(result.outcome, SourceLibraryPrivacyOutcome.privateLocalOnly);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.notUploading);
       expect(server.at('/v1/shelf'), isEmpty);
     });
 
@@ -1107,8 +1111,8 @@ void main() {
       await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
       await s.syncNow();
       server.failShelf = true;
-      final SourceLibraryPrivacyResult result = await toggle(s, true);
-      expect(result.outcome, SourceLibraryPrivacyOutcome.privateWithdrawFailed);
+      final SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.failed);
       expect(result.error, isA<LeaderboardApiException>());
       expect((await db.getMediaSourceById(secretSource))!.isPrivate, isTrue);
       expect(server.shelfWorks, contains('W_Nsfw'));
