@@ -593,19 +593,29 @@ void main() {
 
     test('删过日志（指纹的行数对不上）：全量重建，期间「准备中」', () async {
       final _Fixture f = await _Fixture.create();
-      final List<String> cards = await f.cards(3);
-      await f.graduate(cards);
+      final List<String> cards = await f.cards(4);
+      await f.graduate(cards.sublist(0, 3));
       final _FakeBackend backend = _FakeBackend();
       final SrsRwkvService service = f.service(backend);
       f.store.rwkv = service;
       await service.start();
       await _settled(service);
-      final String noteId = (await f.store.cardRow(cards[0]))!.noteId;
-      await f.store.deleteNote(noteId);
-      await srsPurgeNotesNow(f.store, <String>[noteId]);
+      expect(backend.resets, 1);
+      // 删掉最早的一条评分日志（如恢复备份改写了历史），再答一题：新行数与行数差对不上。
+      await f.store.db.customStatement(
+        'DELETE FROM srs_review_logs WHERE rowid = '
+        '(SELECT MIN(rowid) FROM srs_review_logs)',
+      );
+      await f.store.reloadLocal();
+      final List<SrsRwkvPhase> phases = <SrsRwkvPhase>[];
+      final StreamSubscription<SrsRwkvStatus> sub = service.statusChanges
+          .listen((SrsRwkvStatus s) => phases.add(s.phase));
+      await f.graduate(<String>[cards[3]]);
       await service.refresh();
       await _settled(service);
+      await sub.cancel();
       expect(backend.resets, 2);
+      expect(phases, contains(SrsRwkvPhase.preparing));
       expect(backend.replayedCards, await _fullReplayOrder(f));
       await service.close();
     });
