@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # BUG-3887：iOS 词典包后台下载的宿主侧验证（Mac 上、在 fushi/ 目录下跑）。
 #
-#   bash tool/ios_background_download_host.sh <模拟器 udid> <native|dio>
+#   bash tool/ios_background_download_host.sh <模拟器 udid> <native|dio|restart>
 #
 # 1. 起一个限速 HTTP 服务器（/small.bin、/big.bin 限速、其余 404），逐秒记录发出的字节；
 # 2. 跑 integration_test/ios_background_download_itest.dart；
@@ -69,6 +69,46 @@ PY
 python3 "$OUT/server.py" "$PORT" "$RATE" "$BIG" "$OUT/server.log" &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null' EXIT
+
+if [ "$KIND" = restart ]; then
+  # BUG-3887 续：进程被系统回收后新进程接着下。第一段下到一段后 kill -9 app（等同内存
+  # 回收；不是 simctl terminate——那接近用户划掉，系统会取消后台任务），死亡窗口里服务器
+  # 应仍在发字节；第二段重新拉起，必须接回同一个任务并完整落盘。
+  DEAD_SECONDS=${DEAD_SECONDS:-15}
+  flutter test integration_test/ios_background_download_itest.dart -d "$UDID" \
+    --dart-define=BG_DL_BASE=http://127.0.0.1:$PORT \
+    --dart-define=BG_DL_PHASE=restart-start \
+    --dart-define=BG_DL_BIG_BYTES=$BIG > "$OUT/flutter-start.log" 2>&1 &
+  TEST=$!
+  DEAD_START=""
+  while kill -0 $TEST 2>/dev/null; do
+    if grep -q BG_DL_KILL_ME "$OUT/flutter-start.log"; then
+      APP_PID=$(xcrun simctl spawn "$UDID" launchctl list | awk '/UIKitApplication:app\.fushi\.reader/ {print $1; exit}')
+      echo "kill -9 app pid=$APP_PID"
+      kill -9 "$APP_PID"
+      DEAD_START=$(date +%s)
+      break
+    fi
+    sleep 1
+  done
+  wait $TEST 2>/dev/null
+  [ -n "$DEAD_START" ] || { echo "RUN_END kind=restart never reached BG_DL_KILL_ME"; exit 1; }
+  sleep "$DEAD_SECONDS"
+  DEAD_END=$(date +%s)
+  flutter test integration_test/ios_background_download_itest.dart -d "$UDID" \
+    --dart-define=BG_DL_BASE=http://127.0.0.1:$PORT \
+    --dart-define=BG_DL_PHASE=restart-resume \
+    --dart-define=BG_DL_BIG_BYTES=$BIG > "$OUT/flutter-resume.log" 2>&1
+  STATUS=$?
+  sleep 2
+  grep -h "BG_DL_RECOVERED\|BG_DL_RESUMED" "$OUT/flutter-resume.log"
+  tail -5 "$OUT/flutter-resume.log"
+  awk -v a="$DEAD_START" -v b="$DEAD_END" '$1>=a && $1<b {s+=$2; n++} END {printf "DEAD_WINDOW bytes=%d seconds_with_data=%d window=%d\n", s, n, b-a}' "$OUT/server.log"
+  # 从头再下会让服务器总发送量接近 2×BIG；接管应只略多于 1×BIG。
+  awk '{s+=$2} END {printf "SERVER_TOTAL bytes=%d\n", s}' "$OUT/server.log"
+  echo "RUN_END kind=restart exit=$STATUS"
+  exit $STATUS
+fi
 
 flutter test integration_test/ios_background_download_itest.dart -d "$UDID" \
   --dart-define=BG_DL_BASE=http://127.0.0.1:$PORT \

@@ -4,6 +4,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 
 /// 推荐词典目录条目的安装判据：已装词典里有同 [RecommendedDictionary.matchPrefix] 的
@@ -70,6 +71,11 @@ Future<void> downloadAndImportRecommendedDictionary({
     progressNotifier: job.progress,
     cancelToken: job.cancelToken,
     onBytes: onBytes ?? (int received, int total) {},
+    // BUG-3887 续：iOS 进程被回收后新进程据此接着下、按同一配方导入。
+    handoffPayload: DictionaryImportRecipe.install(
+      name: rec.name,
+      sourceOverride: recommendedDictionarySourceOverride(rec),
+    ).toPayload(),
   );
   onDownloaded?.call();
   await appModel.importDictionary(

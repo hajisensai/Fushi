@@ -2063,6 +2063,7 @@
   "dict_download_learning_language": "ภาษาที่กำลังเรียน",
   "dict_download_partial": "$success / $total สำเร็จ ล้มเหลว: $error",
   "dict_download_progress_show": "ดูความคืบหน้า",
+  "dict_download_resuming": "Resuming download: $name",
   "dict_download_select_title": "เลือกพจนานุกรม",
   "dict_downloading": "กำลังดาวน์โหลด $name…",
   "dict_downloading_size": "กำลังดาวน์โหลด $name ($done / $total)",

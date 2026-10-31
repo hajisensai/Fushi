@@ -2063,6 +2063,7 @@
   "dict_download_learning_language": "Öğrenilen dil",
   "dict_download_partial": "$success / $total tamam. Başarısız: $error",
   "dict_download_progress_show": "İlerlemeyi görüntüle",
+  "dict_download_resuming": "Resuming download: $name",
   "dict_download_select_title": "Sözlükleri Seçin",
   "dict_downloading": "$name indiriliyor…",
   "dict_downloading_size": "$name indiriliyor ($done / $total)",

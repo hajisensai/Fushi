@@ -2063,6 +2063,7 @@
   "dict_download_learning_language": "Изучаемый язык",
   "dict_download_partial": "$success / $total успешно. Ошибок: $error",
   "dict_download_progress_show": "Показать прогресс",
+  "dict_download_resuming": "Resuming download: $name",
   "dict_download_select_title": "Выбрать словари",
   "dict_downloading": "Загрузка $name…",
   "dict_downloading_size": "Загрузка $name ($done / $total)",

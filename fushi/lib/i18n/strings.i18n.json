@@ -2063,6 +2063,7 @@
   "dict_download_learning_language": "Learning language",
   "dict_download_partial": "$success / $total OK. Failed: $error",
   "dict_download_progress_show": "View progress",
+  "dict_download_resuming": "Resuming download: $name",
   "dict_download_select_title": "Select dictionaries",
   "dict_downloading": "Downloading $name…",
   "dict_downloading_size": "Downloading $name ($done / $total)",

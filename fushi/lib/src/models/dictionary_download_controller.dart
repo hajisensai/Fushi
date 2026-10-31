@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
@@ -92,6 +94,26 @@ class DictionaryDownloadJob {
   /// 切到导入阶段（取消按钮禁用）。
   void markImportPhase() =>
       _controller._setPhase(DictionaryDownloadPhase.importing);
+}
+
+/// 接手上一进程的下载后「下完怎么导入」（见
+/// [DictionaryDownloadController.resumeAdoptedDownloads]）。
+@immutable
+class ResumableDictionaryImport {
+  const ResumableDictionaryImport({
+    required this.name,
+    required this.importFile,
+  });
+
+  /// 进度 / 结果文案里的词典名。
+  final String name;
+
+  /// 导入下好的 [File]，返回结果提示。失败原样抛出。
+  final Future<DictionaryDownloadOutcome?> Function(
+    DictionaryDownloadJob job,
+    File file,
+  )
+  importFile;
 }
 
 /// 词典下载/更新任务的**所有权持有者**。
@@ -226,6 +248,93 @@ class DictionaryDownloadController {
     }
     if (outcome != null) _showOutcome(outcome);
     return true;
+  }
+
+  /// 接手上一个进程留下的在途词典下载（BUG-3887 续，iOS 系统后台会话）。
+  ///
+  /// iOS 进程被系统回收后，后台会话的传输照常在守护进程里跑，下完的文件也照样落盘；
+  /// 等它的那个 [run] 却已经跟着进程没了。这里在新进程里把它们接回来：[resolve]
+  /// 按持久化的导入配方给出「下完怎么导入」，null = 真没人要了（配方坏了 / 要替换
+  /// 的词典已被删掉）→ 取消任务、删已交付文件。其余的在 [run] 的互斥里逐本
+  /// 「接上下载（在途的接进度，已交付的直接拿文件，失败的按候选回退续下一个镜像）→
+  /// 走原导入流程」，取消 / 失败归因 / 镜像回退与 [run] 下的新下载同一套语义。
+  ///
+  /// 已有任务在跑（[run] 返回 false）时什么都不放弃：原生记录原样留着，下次启动再接。
+  Future<void> resumeAdoptedDownloads({
+    required List<AdoptedDictionaryDownload> adopted,
+    required ResumableDictionaryImport? Function(
+      DictionaryDownloadHandoff handoff,
+    )
+    resolve,
+  }) async {
+    final List<(AdoptedDictionaryDownload, ResumableDictionaryImport)> wanted =
+        <(AdoptedDictionaryDownload, ResumableDictionaryImport)>[];
+    for (final AdoptedDictionaryDownload download in adopted) {
+      final ResumableDictionaryImport? importer = resolve(download.handoff);
+      if (importer == null) {
+        await download.discard();
+      } else {
+        wanted.add((download, importer));
+      }
+    }
+    if (wanted.isEmpty) return;
+
+    await run(
+      initialMessage: t.dict_download_resuming(name: wanted.first.$2.name),
+      body: (DictionaryDownloadJob job) async {
+        DictionaryDownloadOutcome? outcome;
+        for (final (
+              AdoptedDictionaryDownload download,
+              ResumableDictionaryImport importer,
+            )
+            in wanted) {
+          // 用户已取消：剩下的同样没人要了。
+          if (job.isCancelled) {
+            await download.discard();
+            continue;
+          }
+          job.markDownloadPhase();
+          job.progress.value = 0;
+          job.message.value = t.dict_download_resuming(name: importer.name);
+          final File partial = File(download.handoff.destPath);
+          try {
+            final File file = await DictionaryDownloader.resume(
+              adopted: download,
+              progressNotifier: job.progress,
+              cancelToken: job.cancelToken,
+            );
+            job.markImportPhase();
+            job.progress.value = 0;
+            outcome = await importer.importFile(job, file);
+          } catch (e, stack) {
+            if (isCancellation(e)) {
+              outcome = DictionaryDownloadOutcome(
+                message: t.dict_download_cancelled,
+              );
+              continue;
+            }
+            debugPrint(
+              '[DictionaryDownload] resume ${importer.name} failed: $e',
+            );
+            debugPrintStack(stackTrace: stack);
+            outcome = DictionaryDownloadOutcome(
+              message: t.dict_download_failed(error: importer.name),
+              severity: ToastSeverity.error,
+              toastLength: Toast.LENGTH_LONG,
+              details: '$e',
+            );
+          } finally {
+            // 与原流程「finally 删暂存」对齐；只删这一个文件，不按持久化路径删目录。
+            try {
+              if (partial.existsSync()) partial.deleteSync();
+            } on FileSystemException catch (e) {
+              debugPrint('[DictionaryDownload] cleanup ${partial.path}: $e');
+            }
+          }
+        }
+        return outcome;
+      },
+    );
   }
 
   /// [CancelToken] 取消导致的失败**不是错误**，调用方据此把它与真失败分开计数、
