@@ -808,16 +808,28 @@ class SrsRwkvService implements SrsRwkvScheduling {
         await _deleteCheckpoint(c);
         continue;
       }
-      final Uint8List bytes = await c.snap.readAsBytes();
-      await _serial(() async {
-        await backend.restore(bytes);
+      final bool restored = await _serial(() async {
+        try {
+          await backend.restore(await c.snap.readAsBytes());
+        } catch (error) {
+          // 检查点坏了（截断 / 写坏 / 属于别的模型或精度）：与主快照（[_restoreSnapshot]）同一处置——不用它，
+          // 删掉、试下一份，都不行就全量重建。backend 里半恢复的状态由下一份检查点的 restore 或重建的 reset
+          // 整体覆盖。只兜 restore：回放出错是另一回事，照旧转「出错」。
+          _log('RWKV checkpoint ignored: $error');
+          return false;
+        }
         _journalFloor = at;
         await _replayRows(backend, replay, _preparingProgress);
         _replayed = (count: replay.count, maxRowId: replay.maxRowId);
         _lastAt = replay.lastAt ?? at;
         _forgetScores();
         _appendsSinceSnapshot += replay.rows.length;
+        return true;
       });
+      if (!restored) {
+        await _deleteCheckpoint(c);
+        continue;
+      }
       _scheduleSnapshot(backend);
       return true;
     }
@@ -1107,10 +1119,35 @@ class SrsRwkvService implements SrsRwkvScheduling {
       if (requeryAfterThis) _requeryInBackground(backend, today, nowMs);
       return <double>[for (final double v in scores) v];
     } catch (error, stack) {
-      // 例如 worker 已关：这一次 RWKV 牌组的复习卡先不出，下次排队再来。
-      _log('RWKV instant retrievability unavailable: $error\n$stack');
+      _log('RWKV instant retrievability failed: $error\n$stack');
+      _scoringFailed(backend, error);
       return null;
     }
+  }
+
+  /// 已就绪时打分失败（例如 worker 崩了 / 已关）。这不是「还没准备好」：留在「就绪」的话调用方（复习页、
+  /// 牌组列表）等的「就绪」永远不会再来，RWKV 牌组的复习卡就一直静默不出。所以转「出错」（界面给错误与
+  /// 「重试」），并丢掉这个后端——它的状态已不可信；重试（[start]）重新打开 worker、从快照恢复再按日志对齐。
+  /// 正在准备（[_recover] 已接手）或已关闭时不动，由那边决定状态。
+  void _scoringFailed(SrsRwkvBackend backend, Object error) {
+    if (_closed || _preparing != null || _current.phase != SrsRwkvPhase.ready) {
+      return;
+    }
+    if (identical(_backend, backend)) {
+      _backend = null;
+      _replayed = null;
+      _countedAt = null;
+      _appendsSinceSnapshot = 0;
+      _snapshotTimer?.cancel();
+      _snapshotTimer = null;
+      _forgetScores();
+      unawaited(
+        backend.close().catchError((Object e) {
+          _log('RWKV backend close after scoring failure failed: $e');
+        }),
+      );
+    }
+    _fail(error);
   }
 
   /// 分数表的全量刷新时机（见文件头）：日界设置 / 本机状态纪元变了 → 清空（之后按历史重算）；
