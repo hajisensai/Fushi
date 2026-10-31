@@ -470,20 +470,20 @@ Future<void> showSrsNotePreviewSheet(
   builder: (BuildContext sheetContext) => UncontrolledProviderScope(
     container: ProviderScope.containerOf(context, listen: false),
     child: FushiModalSheetFrame(
-    key: const ValueKey<String>('srs-note-preview-sheet'),
-    title: t.srs_note_types_preview,
-    leadingIcon: FushiIcons.visibility,
-    body: SrsNotePreview(
-      type: type,
-      fields: fields,
-      expand: expand,
-      tags: tags,
-      showTitle: false,
-      height: (MediaQuery.sizeOf(sheetContext).height * 0.55).clamp(
-        240.0,
-        640.0,
+      key: const ValueKey<String>('srs-note-preview-sheet'),
+      title: t.srs_note_types_preview,
+      leadingIcon: FushiIcons.visibility,
+      body: SrsNotePreview(
+        type: type,
+        fields: fields,
+        expand: expand,
+        tags: tags,
+        showTitle: false,
+        height: (MediaQuery.sizeOf(sheetContext).height * 0.55).clamp(
+          240.0,
+          640.0,
+        ),
       ),
     ),
-  ),
   ),
 );

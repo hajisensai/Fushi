@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:fushi/src/sync/extension_profile_api.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
@@ -73,9 +74,40 @@ class _TaggedServices
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// 某份配置的复习标记端点（[tag] 标明是哪一组）。
+class _TaggedSrs implements SrsExtensionApi {
+  _TaggedSrs(this.tag);
+
+  final String tag;
+
+  @override
+  Future<Map<String, Object?>?> termStatus(
+    String expression,
+    String reading,
+  ) async {
+    _served.add('$tag:srsTermStatus');
+    return null;
+  }
+
+  @override
+  Future<List<Map<String, Object?>?>> termStatuses(
+    List<SrsTermQuery> terms,
+  ) async {
+    _served.add('$tag:srsTermStatuses');
+    return <Map<String, Object?>?>[for (final SrsTermQuery _ in terms) null];
+  }
+
+  @override
+  Future<bool> openCard({required String cardId, String? noteId}) async {
+    _served.add('$tag:srsOpen');
+    return true;
+  }
+}
+
 /// app 侧解析的替身：1 = 激活配置（默认组），2 = 另一份配置（B 组），其余 = 已删。
 class _FakeProfileApi implements ExtensionProfileApi {
   final _TaggedServices profileB = _TaggedServices('B');
+  final _TaggedSrs srsB = _TaggedSrs('B');
   final List<int?> resolved = <int?>[];
 
   @override
@@ -98,6 +130,7 @@ class _FakeProfileApi implements ExtensionProfileApi {
           lookup: profileB,
           mining: profileB,
           autoReadOnLookupProvider: () => true,
+          srsApiProvider: () => srsB,
         ),
       );
     }
@@ -128,6 +161,7 @@ void main() {
       miningService: defaults,
       tokenizer: _noopTokenize,
       autoReadOnLookupProvider: () => false,
+      srsApiProvider: () => _TaggedSrs('default'),
       profileApi: withProfileApi ? profiles : null,
     );
     await server.start();
@@ -223,6 +257,35 @@ void main() {
     }, profileHeader: '2');
     expect(_served, <String>['B:mine', 'B:duplicate']);
     expect(profiles.resolved, <int?>[2, 2]);
+  });
+
+  test('review marks (/api/srs/*) follow the selected profile', () async {
+    await startServer();
+    await post('/api/srs/term-status', <String, dynamic>{
+      'expression': '猫',
+      'reading': 'ねこ',
+    }, profileHeader: '2');
+    await post('/api/srs/term-status-batch', <String, dynamic>{
+      'terms': <Map<String, String>>[
+        <String, String>{'expression': '猫', 'reading': 'ねこ'},
+      ],
+    }, profileHeader: '2');
+    final r = await post('/api/srs/open', <String, dynamic>{
+      'cardId': 'c1',
+      'noteId': 'n1',
+    }, profileHeader: '2');
+    expect(r.active, '2');
+    // 不带头：App 激活配置的复习（与本功能引入前一致）。
+    await post('/api/srs/term-status', <String, dynamic>{
+      'expression': '猫',
+      'reading': 'ねこ',
+    });
+    expect(_served, <String>[
+      'B:srsTermStatus',
+      'B:srsTermStatuses',
+      'B:srsOpen',
+      'default:srsTermStatus',
+    ]);
   });
 
   test(

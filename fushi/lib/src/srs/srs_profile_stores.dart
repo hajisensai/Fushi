@@ -64,7 +64,8 @@ class SrsProfileStores {
   ({String uid, Future<SrsDbStore> store})? _activating;
 
   /// 扩展副本（uid → 打开中 / 已打开）。
-  final Map<String, Future<SrsDbStore>> _foreign = <String, Future<SrsDbStore>>{};
+  final Map<String, Future<SrsDbStore>> _foreign =
+      <String, Future<SrsDbStore>>{};
 
   /// 扩展副本的回退日界（每次取副本时按那份配置的设置更新）。
   final Map<String, int Function()> _rollover = <String, int Function()>{};
@@ -177,8 +178,10 @@ class SrsProfileStores {
     if (nowActive != null && nowActive.profileUid == profileUid) {
       return nowActive;
     }
-    final Future<SrsDbStore> opening =
-        _foreign[profileUid] ??= _openForeign(storage, profileUid);
+    final Future<SrsDbStore> opening = _foreign[profileUid] ??= _openForeign(
+      storage,
+      profileUid,
+    );
     try {
       return await opening;
     } on Object {
