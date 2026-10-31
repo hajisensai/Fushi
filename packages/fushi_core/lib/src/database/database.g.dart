@@ -73624,6 +73624,18 @@ class $AiAgentSessionsTable extends AiAgentSessions
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -73633,6 +73645,7 @@ class $AiAgentSessionsTable extends AiAgentSessions
     totalTokens,
     createdAt,
     updatedAt,
+    profileUid,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -73703,6 +73716,12 @@ class $AiAgentSessionsTable extends AiAgentSessions
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    }
     return context;
   }
 
@@ -73740,6 +73759,10 @@ class $AiAgentSessionsTable extends AiAgentSessions
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
       )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
     );
   }
 
@@ -73754,7 +73777,8 @@ class AiAgentSessionRow extends DataClass
   /// 会话 id（调用方生成）。
   final String id;
 
-  /// 首句用户话截断，调用方给。
+  /// 会话标题。首次落库时取首条用户消息摘要（`aiAgentSessionAutoTitle`），之后整场
+  /// 重存**不再改写**；只有用户重命名（`renameAiAgentSession`）会改它。
   final String title;
 
   /// `general` | `reader` | `manga` | `video` | `system`。
@@ -73765,6 +73789,12 @@ class AiAgentSessionRow extends DataClass
   final int totalTokens;
   final int createdAt;
   final int updatedAt;
+
+  /// v141：会话所属 Profile 的全局身份（`profiles.uid`），首次落库时按当前激活
+  /// Profile 盖戳，之后不改。用 uid 而不是本机自增 `profiles.id`：本表设备本地、覆盖
+  /// 恢复后原样回灌，而 `profiles` 随备份恢复，自增 id 会对不上。空串 = 归属不明
+  /// （v141 前的存档且迁移时解析不出激活 Profile 的 uid），对所有 Profile 可见。
+  final String profileUid;
   const AiAgentSessionRow({
     required this.id,
     required this.title,
@@ -73773,6 +73803,7 @@ class AiAgentSessionRow extends DataClass
     required this.totalTokens,
     required this.createdAt,
     required this.updatedAt,
+    required this.profileUid,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -73784,6 +73815,7 @@ class AiAgentSessionRow extends DataClass
     map['total_tokens'] = Variable<int>(totalTokens);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
+    map['profile_uid'] = Variable<String>(profileUid);
     return map;
   }
 
@@ -73796,6 +73828,7 @@ class AiAgentSessionRow extends DataClass
       totalTokens: Value(totalTokens),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      profileUid: Value(profileUid),
     );
   }
 
@@ -73812,6 +73845,7 @@ class AiAgentSessionRow extends DataClass
       totalTokens: serializer.fromJson<int>(json['totalTokens']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
     );
   }
   @override
@@ -73825,6 +73859,7 @@ class AiAgentSessionRow extends DataClass
       'totalTokens': serializer.toJson<int>(totalTokens),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
+      'profileUid': serializer.toJson<String>(profileUid),
     };
   }
 
@@ -73836,6 +73871,7 @@ class AiAgentSessionRow extends DataClass
     int? totalTokens,
     int? createdAt,
     int? updatedAt,
+    String? profileUid,
   }) => AiAgentSessionRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -73844,6 +73880,7 @@ class AiAgentSessionRow extends DataClass
     totalTokens: totalTokens ?? this.totalTokens,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    profileUid: profileUid ?? this.profileUid,
   );
   AiAgentSessionRow copyWithCompanion(AiAgentSessionsCompanion data) {
     return AiAgentSessionRow(
@@ -73858,6 +73895,9 @@ class AiAgentSessionRow extends DataClass
           : this.totalTokens,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
     );
   }
 
@@ -73870,7 +73910,8 @@ class AiAgentSessionRow extends DataClass
           ..write('payloadJson: $payloadJson, ')
           ..write('totalTokens: $totalTokens, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('profileUid: $profileUid')
           ..write(')'))
         .toString();
   }
@@ -73884,6 +73925,7 @@ class AiAgentSessionRow extends DataClass
     totalTokens,
     createdAt,
     updatedAt,
+    profileUid,
   );
   @override
   bool operator ==(Object other) =>
@@ -73895,7 +73937,8 @@ class AiAgentSessionRow extends DataClass
           other.payloadJson == this.payloadJson &&
           other.totalTokens == this.totalTokens &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.profileUid == this.profileUid);
 }
 
 class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
@@ -73906,6 +73949,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
   final Value<int> totalTokens;
   final Value<int> createdAt;
   final Value<int> updatedAt;
+  final Value<String> profileUid;
   final Value<int> rowid;
   const AiAgentSessionsCompanion({
     this.id = const Value.absent(),
@@ -73915,6 +73959,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     this.totalTokens = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.profileUid = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   AiAgentSessionsCompanion.insert({
@@ -73925,6 +73970,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     this.totalTokens = const Value.absent(),
     required int createdAt,
     required int updatedAt,
+    this.profileUid = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -73940,6 +73986,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     Expression<int>? totalTokens,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
+    Expression<String>? profileUid,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -73950,6 +73997,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
       if (totalTokens != null) 'total_tokens': totalTokens,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (profileUid != null) 'profile_uid': profileUid,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -73962,6 +74010,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     Value<int>? totalTokens,
     Value<int>? createdAt,
     Value<int>? updatedAt,
+    Value<String>? profileUid,
     Value<int>? rowid,
   }) {
     return AiAgentSessionsCompanion(
@@ -73972,6 +74021,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
       totalTokens: totalTokens ?? this.totalTokens,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      profileUid: profileUid ?? this.profileUid,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -74000,6 +74050,9 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -74016,6 +74069,7 @@ class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
           ..write('totalTokens: $totalTokens, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('profileUid: $profileUid, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -125806,6 +125860,7 @@ typedef $$AiAgentSessionsTableCreateCompanionBuilder =
       Value<int> totalTokens,
       required int createdAt,
       required int updatedAt,
+      Value<String> profileUid,
       Value<int> rowid,
     });
 typedef $$AiAgentSessionsTableUpdateCompanionBuilder =
@@ -125817,6 +125872,7 @@ typedef $$AiAgentSessionsTableUpdateCompanionBuilder =
       Value<int> totalTokens,
       Value<int> createdAt,
       Value<int> updatedAt,
+      Value<String> profileUid,
       Value<int> rowid,
     });
 
@@ -125861,6 +125917,11 @@ class $$AiAgentSessionsTableFilterComposer
 
   ColumnFilters<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -125908,6 +125969,11 @@ class $$AiAgentSessionsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$AiAgentSessionsTableAnnotationComposer
@@ -125943,6 +126009,11 @@ class $$AiAgentSessionsTableAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
 }
 
 class $$AiAgentSessionsTableTableManager
@@ -125989,6 +126060,7 @@ class $$AiAgentSessionsTableTableManager
                 Value<int> totalTokens = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AiAgentSessionsCompanion(
                 id: id,
@@ -125998,6 +126070,7 @@ class $$AiAgentSessionsTableTableManager
                 totalTokens: totalTokens,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                profileUid: profileUid,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -126009,6 +126082,7 @@ class $$AiAgentSessionsTableTableManager
                 Value<int> totalTokens = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
+                Value<String> profileUid = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AiAgentSessionsCompanion.insert(
                 id: id,
@@ -126018,6 +126092,7 @@ class $$AiAgentSessionsTableTableManager
                 totalTokens: totalTokens,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                profileUid: profileUid,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
