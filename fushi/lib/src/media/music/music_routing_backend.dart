@@ -133,6 +133,11 @@ class MusicRoutingBackend implements MusicOutputBackend {
 
   /// 当前后端播完、下一首在另一后端：在那边打开它，成功补发 Advanced，失败按「预排的下一首
   /// 失败」上报（引擎据此推进并按失败处理）。
+  ///
+  /// 接力由 [_onChildEvent] 以 `unawaited` 发起、吞掉了旧后端的 Completed，所以这里的
+  /// **任何**失败（旧后端 stop 抛错、新后端建不起来、openPair 抛出非
+  /// [MusicTrackOpenException] 的异常）都必须落成一条带 trackUid 的 [MusicBackendFailed]：
+  /// 否则异常成了未处理的异步错误，引擎既收不到 Completed 也收不到失败，一直以为在播。
   Future<void> _handOff() async {
     final MusicPlayItem? item = _crossNext;
     final String? from = _active;
@@ -150,10 +155,13 @@ class MusicRoutingBackend implements MusicOutputBackend {
       _handingOff = false;
       _emit(MusicBackendAdvanced(item.trackUid));
       _emit(const MusicBackendPlaying(true));
-    } on MusicTrackOpenException catch (e) {
+    } on Object catch (error) {
+      // 被更新的 openPair / stop 取代了：这次接力的结果（含失败）作废。
       if (gen != _gen) return;
       _handingOff = false;
-      final MusicBackendFailed f = e.failure;
+      final MusicBackendFailed f = error is MusicTrackOpenException
+          ? error.failure
+          : MusicBackendFailed('$error');
       _emit(
         MusicBackendFailed(
           f.message,
