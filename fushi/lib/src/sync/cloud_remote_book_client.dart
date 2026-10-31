@@ -16,9 +16,8 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart'
-    show isReservedSyncFolderName;
+    show deleteCloudBookFolder, isReservedSyncFolderName;
 import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
-import 'package:fushi/src/sync/sync_repository.dart';
 
 /// 把任意云盘备份后端（Google Drive / WebDAV / OneDrive / Dropbox / FTP / SFTP）
 /// 的远端书库适配成书架页的 [RemoteBookClient] 契约（TODO-665 阶段1）。
@@ -260,12 +259,11 @@ class CloudRemoteBookClient implements RemoteBookClient {
     await db.writeSyncDeletionTombstone(mediaType, itemKey, deletedAt);
     await db.markSyncDeletionPublished(mediaType, itemKey, deletedAt);
 
-    final String folderId = book.downloadId;
-    await backend.deleteAsset(folderId, isFolder: true);
-    backend.evictFolderId(folderId);
-    await SyncRepository(
-      db,
-    ).setFolderCache(syncChannelScopeOf(backend), backend.cachedFolderIds);
+    await deleteCloudBookFolder(
+      backend: backend,
+      db: db,
+      folderId: book.downloadId,
+    );
   }
 
   /// 云后端无 live 进度上报通道：no-op（进度由 SyncManager 的文件箱路径处理）。

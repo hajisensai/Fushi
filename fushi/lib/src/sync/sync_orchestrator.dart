@@ -205,6 +205,24 @@ typedef CloudDeletionTombstoneScan = ({
   int nextBaseline,
 });
 
+/// 递归删掉云盘上一本书的文件夹（[folderId] = 书文件夹定位符），再逐出书名→folderId
+/// 缓存并写回持久层（BUG-202：陈旧映射会让下次上传打向已删的文件夹）。
+///
+/// 两个调用点：书架「同时从远端删除」（`CloudRemoteBookClient.deleteRemoteBook`）与
+/// 云通道发布「从所有设备删除」墓碑（[SyncOrchestrator] 墓碑扫描）。两处都**先**写
+/// 墓碑、**再**调本函数：墓碑没写成就什么都不删；本函数失败时墓碑已在，可重试。
+Future<void> deleteCloudBookFolder({
+  required SyncBackend backend,
+  required FushiDatabase db,
+  required String folderId,
+}) async {
+  await backend.deleteAsset(folderId, isFolder: true);
+  backend.evictFolderId(folderId);
+  await SyncRepository(
+    db,
+  ).setFolderCache(syncChannelScopeOf(backend), backend.cachedFolderIds);
+}
+
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
 /// a later resolution prompt needs, including both versions so [fingerprint] can
@@ -1345,6 +1363,8 @@ class SyncOrchestrator {
           .getSyncDeletionTombstones();
       final List<SyncDeletionTombstoneRow> ownRows =
           <SyncDeletionTombstoneRow>[];
+      // 云盘书文件夹清单，有书墓碑要发布时才列一次。
+      List<SyncFileRef>? cloudBookFolders;
       for (final SyncDeletionTombstoneRow row in localRows) {
         // v128：浏览器历史 / 书签的墓碑只随聚合快照走，不发布逐条标记（一次「清除浏览
         // 数据」可能上千条，且没有逐条确认语义），也不进清单。
@@ -1361,6 +1381,33 @@ class SyncOrchestrator {
           deletionTombstoneAssetName(row.mediaType, row.itemKey),
           deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
         );
+        // 「从所有设备删除」一本书：墓碑写上之后，把云盘上它的书文件夹也删掉（所有者
+        // 2026-10-31 拍板，不再只写墓碑留残留；顺序与失败语义同「同时从远端删除」）。
+        // 书文件夹名 = sanitizeTtuFilename(书名) = 墓碑键（本机 bookKey / 对端键）。
+        // 删失败就不标「已发布」：下一轮重写同一条墓碑（幂等）并重试删文件夹；在那
+        // 之前书架照旧藏着这份残留（`loadPendingRemoteDeletionKeys`）。
+        if (row.mediaType == SyncTombstoneKind.book.dbValue) {
+          try {
+            cloudBookFolders ??= await _backend.listBooks(
+              await _backend.findOrCreateRootFolder(),
+            );
+            for (final SyncFileRef f in cloudBookFolders) {
+              if (f.name != row.itemKey) continue;
+              await deleteCloudBookFolder(
+                backend: _backend,
+                db: _db,
+                folderId: f.id,
+              );
+            }
+          } catch (err) {
+            report.noteError(
+              'deletion tombstone: cloud book folder "${row.itemKey}" '
+              'not deleted, retried next sync',
+              err,
+            );
+            continue;
+          }
+        }
         await _db.markSyncDeletionPublished(
           row.mediaType,
           row.itemKey,
