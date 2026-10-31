@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
 import { FEEDBACK_LIMITS } from '../src/feedback.js';
 import {
-  existingIdsSql, fixedSql, formatShow, gzipPayload, inlineSql, listSql, missingIds, parseArgs,
-  parseWranglerJson, r2WhereArgs, showSql, sqlText, summarizeBatchSql, summarizeSql,
+  devAccountSql, existingIdsSql, fixedSql, formatShow, gzipPayload, inlineSql, listSql, missingIds, parseArgs,
+  parseWranglerJson, pickDevAccount, r2WhereArgs, replySql, showSql, sqlText, statusesSql, summarizeBatchSql,
+  summarizeSql,
 } from '../scripts/feedback.mjs';
 
 const NOW = Date.UTC(2026, 9, 10, 4);
@@ -78,6 +79,33 @@ describe('scripts/feedback.mjs', () => {
     // 联系方式不进 CLI 输出。
     expect(text).not.toContain('me@example.com');
     expect(text).not.toContain('★');
+  });
+
+  it('reply：以开发者身份回复，与处理台同一份 SQL（进时间线、刷新 dev_reply_at、不改状态）', async () => {
+    const env = makeEnv();
+    const a = await seed(env, '甲');
+    const b = await seed(env, '乙');
+    env.DB.raw.exec("INSERT INTO accounts (id, email_hash, nickname, discriminator, role, created_at) VALUES ('devacct00000001', 'h', '哈吉', 1, 'dev', 0)");
+    env.DB.raw.exec("INSERT INTO accounts (id, email_hash, nickname, discriminator, role, created_at) VALUES ('useracct0000001', 'u', '路人', 2, 'user', 0)");
+    env.DB.raw.prepare("UPDATE feedback SET status = 'in_progress' WHERE id = ?").run(b);
+
+    expect(() => pickDevAccount('路人', env.DB.raw.prepare(devAccountSql('路人')).all())).toThrow(/没有这个开发者账户/);
+    const dev = pickDevAccount('哈吉', env.DB.raw.prepare(devAccountSql('哈吉')).all());
+    expect(dev.id).toBe('devacct00000001');
+    expect(env.DB.raw.prepare(devAccountSql('devacct00000001')).all()).toHaveLength(1);
+    expect(() => devAccountSql('')).toThrow(/--as/);
+
+    const statuses = Object.fromEntries(env.DB.raw.prepare(statusesSql([a, b])).all().map((r) => [r.id, r.status]));
+    env.DB.raw.exec(replySql({ [a]: "请补充版本号'); DROP TABLE feedback; --‮", [b]: '第二条' }, dev.id, statuses, NOW + 9));
+    for (const [id, status, body] of [[a, 'open', "请补充版本号'); DROP TABLE feedback; --"], [b, 'in_progress', '第二条']]) {
+      const row = env.DB.raw.prepare('SELECT status, dev_reply_at, updated_at FROM feedback WHERE id = ?').get(id);
+      expect(row).toEqual({ status, dev_reply_at: NOW + 9, updated_at: NOW + 9 });
+      const msg = env.DB.raw.prepare('SELECT author, account_id, body, status FROM feedback_messages WHERE feedback_id = ? ORDER BY id DESC').get(id);
+      expect(msg).toEqual({ author: 'dev', account_id: dev.id, body, status: null });
+    }
+    expect(() => replySql({ [a]: '   ' }, dev.id, statuses, NOW)).toThrow(/空的/);
+    expect(() => replySql({ 'bad id!': 'x' }, dev.id, statuses, NOW)).toThrow(/编号不合法/);
+    expect(() => replySql({ nothere123: 'x' }, dev.id, statuses, NOW)).toThrow(/状态未知/);
   });
 
   it('list / show 标出开发者账户自己提的反馈', async () => {
