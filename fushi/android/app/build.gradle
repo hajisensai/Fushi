@@ -297,6 +297,9 @@ android {
             // minSdk 24 时 AGP 默认只签 v2（3.0.0 的 APK 实测 v1=false）。华为 HarmonyOS 4.x
             // 安装器 / 安全检测会因没有 JAR（v1）签名报「无证书」并拒装或标可疑（反馈 j3ChbSpKgJ），
             // 显式补上 v1，并同时签 v3 便于日后密钥轮换。
+            // 注意：AGP 在 minSdk ≥ 24 时**无视** enableV1Signing（tools/base 84863c5
+            // 「Disable v1 signing for minSdk 24+」；develop CI apksigner 实测 v1=false），
+            // 真正补 v1 的是下面 packageRelease 之后的 apksigner 重签。
             enableV1Signing true
             enableV2Signing true
             enableV3Signing true
@@ -519,7 +522,50 @@ def checkFushiCorpusNative = tasks.register("checkFushiCorpusNative") {
     }
 }
 
+// AGP 对 minSdk ≥ 24 的包不签 v1（见 signingConfigs.release 注释），而 HarmonyOS 4.x 安装器
+// 要 JAR 签名。packageRelease 产出已签 v2+v3 的 APK 后，用 build-tools 的 apksigner 显式
+// `--v1-signing-enabled true` 原地重签（apksigner 显式开关不按 minSdk 推断），Flutter 随后才把
+// 它拷到 flutter-apk/。口令走环境变量，不进进程参数。CI 的 apksigner v1/v2/v3 门禁验结果。
+def resignReleaseApksWithV1 = { File apkDir ->
+    requireReleaseKeystore()
+    String apksignerName = System.getProperty('os.name').toLowerCase().contains('windows') ? 'apksigner.bat' : 'apksigner'
+    File apksigner = new File(android.sdkDirectory, "build-tools/${android.buildToolsVersion}/${apksignerName}")
+    if (!apksigner.isFile()) {
+        throw new GradleException("apksigner not found at ${apksigner}; cannot add the v1 (JAR) signature to release APKs.")
+    }
+    File storeFile = file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
+    List<File> apks = (apkDir.listFiles() ?: new File[0]).findAll { it.name.endsWith('.apk') }
+    if (apks.isEmpty()) {
+        throw new GradleException("No APK under ${apkDir} to re-sign with v1.")
+    }
+    apks.each { File apk ->
+        ProcessBuilder pb = new ProcessBuilder(
+            apksigner.absolutePath, 'sign',
+            '--ks', storeFile.absolutePath,
+            '--ks-key-alias', keystoreProperties['keyAlias'].toString(),
+            '--ks-pass', 'env:FUSHI_APK_KS_PASS',
+            '--key-pass', 'env:FUSHI_APK_KEY_PASS',
+            '--v1-signing-enabled', 'true',
+            '--v2-signing-enabled', 'true',
+            '--v3-signing-enabled', 'true',
+            apk.absolutePath)
+        pb.environment().put('FUSHI_APK_KS_PASS', keystoreProperties['storePassword'].toString())
+        pb.environment().put('FUSHI_APK_KEY_PASS', keystoreProperties['keyPassword'].toString())
+        pb.redirectErrorStream(true)
+        Process p = pb.start()
+        String out = p.inputStream.getText('UTF-8')
+        if (p.waitFor() != 0) {
+            throw new GradleException("apksigner failed to re-sign ${apk.name} with v1+v2+v3:\n${out}")
+        }
+    }
+}
+
 tasks.configureEach { task ->
+    if (task.name == "packageRelease") {
+        task.doLast {
+            resignReleaseApksWithV1(task.outputDirectory.get().asFile)
+        }
+    }
     if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
         task.dependsOn(prepareMihonSourceApi)
         task.dependsOn(prepareAniyomiSourceApi)
