@@ -1077,6 +1077,13 @@ class _EffectiveAudio {
 /// 非递归、只收 [AudiobookStorage.isAudioFile]、按 [compareAudioFilePath] 排序）。
 ///
 /// 排序必须与播放端一致：cue 的 `audioFileIndex` 是位置索引，两端顺序不同就整本错位。
+Future<List<String>> resolvePlayableAudiobookAudioPaths(
+  String? audioPathsJson,
+  String? audioRoot,
+) async =>
+    (await _resolveEffectiveAudio(audioPathsJson, audioRoot)).paths;
+
+/// [resolvePlayableAudiobookAudioPaths] 的完整结果（多带 folder 模式解析失败的目录）。
 Future<_EffectiveAudio> _resolveEffectiveAudio(
   String? audioPathsJson,
   String? audioRoot,

@@ -1924,8 +1924,15 @@ window.fushiSelection = {
   // [spaceDelimitedWordBounds]（只回退空格分词字母）同一口径。软连字符 U+00AD 不在其列
   // （它不可见，是排版断词点而不是词间连接符）。
   wordHyphenPattern: /[\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE63\uFF0D]/,
+  // 反馈 pm3A75D5xZ：点的是非日文字母时，词首回退不可能跨进日文（含 〖〗 等 CJK 标点）
+  // 或任何开/闭括号与引号（Unicode Ps/Pe/Pi/Pf）——旧判据只认 scanDelimiters 清单，
+  // 『〖tempering』点 t 回退吃进『〖』，高亮整体左移一格。与 popup selection.js 一致。
+  tokenStartBracketPattern: /[\p{Ps}\p{Pe}\p{Pi}\p{Pf}]/u,
   isTokenStartBoundary: function(char) {
-    return this.isScanBoundary(char) || this.wordHyphenPattern.test(char || '');
+    if (!char) return true;
+    return this.isScanBoundary(char) || this.wordHyphenPattern.test(char) ||
+      this.tokenStartBracketPattern.test(char) ||
+      this.isCodePointJapanese(char.codePointAt(0));
   },
 
   // BUG-2056：撇号在**词内**时不是词边界。英语的缩合形与所有格（don’t / it’s /

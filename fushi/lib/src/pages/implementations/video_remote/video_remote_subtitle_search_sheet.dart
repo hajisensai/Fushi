@@ -15,6 +15,11 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
+/// 字幕检索弹层正文可用高度不低于它时，搜索行固定在结果列表上方、只有结果滚动；
+/// 更矮（横屏手机弹出软键盘后只剩 ~110dp）时搜索行并进滚动视口一起滚，
+/// 否则固定的搜索行（~56dp）会把结果区挤到放不下一行。
+const double kVideoRemoteSubtitleSearchPinMinHeight = 200;
+
 /// 电脑在线字幕检索的一条候选（`subtitleSearch` 的一项）。[id] 对手机不透明，
 /// 只用来让电脑下载这一条。
 @immutable
@@ -147,6 +152,12 @@ class _VideoRemoteSubtitleSearchSheetState
   /// 只认最近一次检索的结果（改词连点时丢弃旧回包）。
   int _serial = 0;
 
+  /// 搜索行在「固定在结果上方」与「并进滚动视口」两种排法间搬家时保留同一棵
+  /// 子树（输入焦点、光标不丢）。
+  final GlobalKey _headerKey = GlobalKey(
+    debugLabel: 'video-remote-subtitle-search-header',
+  );
+
   @override
   void initState() {
     super.initState();
@@ -219,99 +230,151 @@ class _VideoRemoteSubtitleSearchSheetState
       title: t.video_subtitle_search_open,
       leadingIcon: FushiIcons.subtitles,
       maxHeightFactor: 0.86,
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
+      // 搜索行在高度够时固定在结果列表之上（结果自己在下面滚、懒构建）；横屏手机
+      // 弹出软键盘后弹层只剩 ~110dp，固定的搜索行会把结果区挤没，这时搜索行并进
+      // 同一个滚动视口当第一个 sliver，一起滚而不溢出。两种排法共用
+      // [_headerKey]，切换时搜索行整棵子树（含输入焦点）原样搬过去——键盘弹起
+      // 正是触发切换的那一刻，换成新元素会丢焦点、收键盘。
+      //
+      // 不用 PinnedHeaderSliver 叠在结果上面：那要给搜索行垫一层与弹层同色的
+      // 不透明底（MD3 / Apple 玻璃 / 墨水屏三种底各不相同，玻璃还是半透明），
+      // 结果滚到底下会透出来；放在视口外面则天然不重叠。
+      body: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool pinHeader =
+              constraints.maxHeight >= kVideoRemoteSubtitleSearchPinMinHeight;
+          final Widget header = KeyedSubtree(
+            key: _headerKey,
+            child: _header(context),
+          );
+          final Widget results = _results(
+            context,
+            leading: pinHeader ? null : header,
+          );
+          if (!pinHeader) return results;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Expanded(
-                child: FushiSearchField(
-                  fieldKey: const ValueKey<String>(
-                    'video-remote-subtitle-search-query',
-                  ),
-                  controller: _query,
-                  focusNode: _queryFocus,
-                  hintText: t.video_jimaku_query,
-                  onChanged: (_) {},
-                  onSubmitted: (_) => unawaited(_run()),
-                  onClear: _query.clear,
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 96,
-                child: FushiTextField(
-                  key: const ValueKey<String>(
-                    'video-remote-subtitle-search-episode',
-                  ),
-                  controller: _episode,
-                  labelText: t.video_jimaku_episode,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: <TextInputFormatter>[
-                    FilteringTextInputFormatter.digitsOnly,
-                  ],
-                  onSubmitted: (_) => unawaited(_run()),
-                ),
-              ),
-              const SizedBox(width: 4),
-              FushiIconButton(
-                key: const ValueKey<String>('video-remote-subtitle-search-go'),
-                icon: FushiIcons.search,
-                tooltip: t.video_jimaku_search,
-                enabled: !_searching,
-                onTap: () => unawaited(_run()),
-              ),
+              header,
+              Flexible(child: results),
             ],
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
-              child: Text(
-                _error!,
-                key: const ValueKey<String>(
-                  'video-remote-subtitle-search-error',
+          );
+        },
+      ),
+    );
+  }
+
+  /// 搜索行 + 错误提示 + 与结果的间距。
+  Widget _header(BuildContext context) {
+    return Column(
+      key: const ValueKey<String>('video-remote-subtitle-search-header'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: FushiSearchField(
+                fieldKey: const ValueKey<String>(
+                  'video-remote-subtitle-search-query',
                 ),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                controller: _query,
+                focusNode: _queryFocus,
+                hintText: t.video_jimaku_query,
+                onChanged: (_) {},
+                onSubmitted: (_) => unawaited(_run()),
+                onClear: _query.clear,
               ),
             ),
-          const SizedBox(height: 8),
-          Flexible(child: _list(context)),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 96,
+              child: FushiTextField(
+                key: const ValueKey<String>(
+                  'video-remote-subtitle-search-episode',
+                ),
+                controller: _episode,
+                labelText: t.video_jimaku_episode,
+                keyboardType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                onSubmitted: (_) => unawaited(_run()),
+              ),
+            ),
+            const SizedBox(width: 4),
+            FushiIconButton(
+              key: const ValueKey<String>('video-remote-subtitle-search-go'),
+              icon: FushiIcons.search,
+              tooltip: t.video_jimaku_search,
+              enabled: !_searching,
+              onTap: () => unawaited(_run()),
+            ),
+          ],
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+            child: Text(
+              _error!,
+              key: const ValueKey<String>('video-remote-subtitle-search-error'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  /// 结果视口：[leading] 非空时（矮弹层）搜索行作为第一个 sliver 一起滚。结果
+  /// 行是懒构建的 [SliverList]，只建视口（加缓存区）内的行。
+  Widget _results(BuildContext context, {Widget? leading}) {
+    return FushiEntranceScope(
+      replayKey: _serial,
+      child: CustomScrollView(
+        key: const ValueKey<String>('video-remote-subtitle-search-scroll'),
+        shrinkWrap: true,
+        slivers: <Widget>[
+          if (leading != null) SliverToBoxAdapter(child: leading),
+          _resultsSliver(context),
         ],
       ),
     );
   }
 
-  Widget _list(BuildContext context) {
+  Widget _resultsSliver(BuildContext context) {
     if (_searching) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: FushiCircularProgressIndicator()),
+      return const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: FushiCircularProgressIndicator()),
+        ),
       );
     }
     if (_candidates.isEmpty) {
-      if (!_searched || _error != null) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          t.video_jimaku_no_results,
-          key: const ValueKey<String>('video-remote-subtitle-search-empty'),
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
+      if (!_searched || _error != null) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            t.video_jimaku_no_results,
+            key: const ValueKey<String>('video-remote-subtitle-search-empty'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ),
       );
     }
-    return FushiEntranceScope(
-      replayKey: _serial,
-      child: ListView.builder(
-        key: const ValueKey<String>('video-remote-subtitle-search-list'),
-        shrinkWrap: true,
-        itemCount: _candidates.length,
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext context, int i) => _tile(_candidates[i]),
-        ),
+    return SliverList.builder(
+      key: const ValueKey<String>('video-remote-subtitle-search-list'),
+      itemCount: _candidates.length,
+      itemBuilder: fushiStaggeredItemBuilder(
+        (BuildContext context, int i) => _tile(_candidates[i]),
       ),
     );
   }

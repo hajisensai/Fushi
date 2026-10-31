@@ -20,6 +20,7 @@ const SourceLibraryRow _source = SourceLibraryRow(
   rootPath: '/videos',
   recursive: true,
   videoGroupingMode: 'series',
+  isPrivate: false,
   mediaCount: 1500,
   sortOrder: 0,
   createdAt: 1,

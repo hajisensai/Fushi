@@ -20,6 +20,9 @@ part of '../video_fushi_page.dart';
 /// (`_videoChromeColorScheme` / `_osdSurfaceColor` / `_osdTextColor` /
 /// `_videoUiScale`) stay in the main shell; the extension reads/calls them
 /// through the shared private scope.
+/// 突出 OSD（制卡结果）的停留时长；结果卡的倒计时条按它耗尽。
+const Duration _kProminentOsdDuration = Duration(milliseconds: 3600);
+
 extension _VideoVolumeOsd on _VideoFushiPageState {
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
@@ -29,6 +32,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     double? progress,
     bool prominent = false,
     ToastSeverity severity = ToastSeverity.neutral,
+    MineToastStatus? mineStatus,
   }) {
     if (!mounted) return;
     _osdNotifier.value = _VideoOsdMessage(
@@ -37,11 +41,12 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       progress: progress?.clamp(0.0, 1.0).toDouble(),
       prominent: prominent,
       severity: severity,
+      mineStatus: mineStatus,
     );
     _osdTimer?.cancel();
-    // TODO-971：突出 OSD（制卡成功）停留更久（3.6s），普通通知仍 2.6s。
+    // TODO-971：突出 OSD（制卡成功）停留更久，普通通知仍 2.6s。
     _osdTimer = Timer(
-      Duration(milliseconds: prominent ? 3600 : 2600),
+      prominent ? _kProminentOsdDuration : const Duration(milliseconds: 2600),
       () {
         _osdNotifier.value = null;
       },
@@ -55,7 +60,12 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   /// `test/anki/mine_notice_single_exit_guard_test.dart`）。
   void _showMineOsd(String message, MineToastStatus status) {
     if (!MineNotices.shown(status)) return;
-    _showOsd(message, prominent: true, severity: mineToastSeverity(status));
+    _showOsd(
+      message,
+      prominent: true,
+      severity: mineToastSeverity(status),
+      mineStatus: status,
+    );
   }
 
   /// 音量上限（百分比）：随 controller 的 [VideoPlayerController.maxVolume]（mpv 配置
@@ -139,22 +149,16 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final double next = await controller.toggleMute();
-    await _applyUserVideoVolume(
-      next,
-      persist: false,
-      applyToController: false,
-    );
+    await _applyUserVideoVolume(next, persist: false, applyToController: false);
   }
 
   void _showLevelHud(_VideoLevelHudKind kind, double value) {
     if (!mounted) return;
-    final double max =
-        kind == _VideoLevelHudKind.rightVolume ? _maxVideoVolume : 100.0;
+    final double max = kind == _VideoLevelHudKind.rightVolume
+        ? _maxVideoVolume
+        : 100.0;
     final double clamped = value.clamp(0.0, max).toDouble();
-    _levelHudNotifier.value = _VideoLevelHudState(
-      kind: kind,
-      value: clamped,
-    );
+    _levelHudNotifier.value = _VideoLevelHudState(kind: kind, value: clamped);
     _levelHudTimer?.cancel();
     _levelHudTimer = Timer(const Duration(milliseconds: 1600), () {
       if (!mounted) return;
@@ -302,8 +306,9 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                   context,
                   const Duration(milliseconds: 180),
                 ),
-                child:
-                    osd == null ? const SizedBox.shrink() : _buildOsdCard(osd),
+                child: osd == null
+                    ? const SizedBox.shrink()
+                    : _buildOsdCard(osd),
               );
             },
           ),
@@ -322,24 +327,21 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       child: IgnorePointer(
         child: ValueListenableBuilder<({Offset position, double speed})?>(
           valueListenable: _longPressSpeedBadge,
-          builder: (
-            BuildContext _,
-            ({Offset position, double speed})? badge,
-            __,
-          ) {
-            if (badge == null) return const SizedBox.shrink();
-            final ColorScheme cs = _videoChromeColorScheme(context);
-            return Stack(
-              children: <Widget>[
-                VideoLongPressSpeedBadge(
-                  position: badge.position,
-                  speed: badge.speed,
-                  surfaceColor: _osdSurfaceColor(cs),
-                  textColor: _osdTextColor(cs),
-                ),
-              ],
-            );
-          },
+          builder:
+              (BuildContext _, ({Offset position, double speed})? badge, __) {
+                if (badge == null) return const SizedBox.shrink();
+                final ColorScheme cs = _videoChromeColorScheme(context);
+                return Stack(
+                  children: <Widget>[
+                    VideoLongPressSpeedBadge(
+                      position: badge.position,
+                      speed: badge.speed,
+                      surfaceColor: _osdSurfaceColor(cs),
+                      textColor: _osdTextColor(cs),
+                    ),
+                  ],
+                );
+              },
         ),
       ),
     );
@@ -349,6 +351,27 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   // 更厚卡片、勾图标醒目区别于音量/亮度被动小角标。TODO-1254：突出变体不再居中
   // （居中会遮挡画面、干扰观看），与被动 OSD 同锚点回归左上角，仅保留醒目卡片样式。
   Widget _buildOsdCard(_VideoOsdMessage osd) {
+    final MineToastStatus? mineStatus = osd.mineStatus;
+    if (mineStatus != null) {
+      // 制卡结果：与底部制卡 toast 同一张 M3E 结果卡，锚点同普通 OSD（左上角、
+      // 顶栏下方）。key 带状态，连续两次同文案不同结果也会重新进场。
+      return Align(
+        alignment: Alignment.topLeft,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            top: _videoButtonBarHeight + 8 * _videoUiScale,
+          ),
+          child: FushiMineNoticeCard(
+            key: ValueKey<(String, MineToastStatus)>((osd.message, mineStatus)),
+            status: mineStatus,
+            message: osd.message,
+            visibleFor: _kProminentOsdDuration,
+            maxWidth: math.min(440, MediaQuery.sizeOf(context).width - 32),
+          ),
+        ),
+      );
+    }
     final ColorScheme cs = _videoChromeColorScheme(context);
     final bool prominent = osd.prominent;
     // 语义配色：null（neutral）＝旧的半透明 inverseSurface。着色时保留同样的半透明
@@ -364,8 +387,9 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
         : palette == null
         ? _osdTextColor(cs)
         : palette.foreground;
-    final Color iconColor =
-        apple && palette != null ? palette.background : textColor;
+    final Color iconColor = apple && palette != null
+        ? palette.background
+        : textColor;
     final double fontSize = prominent ? 18 : 14;
     final double iconSize = prominent ? 24 : 18;
     final EdgeInsets cardPadding = prominent
@@ -391,11 +415,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
           FushiIcon(palette.icon, size: iconSize, color: iconColor),
           SizedBox(width: prominent ? 12 : 8),
         ] else if (prominent) ...<Widget>[
-          FushiIcon(
-            Icons.check_circle,
-            size: iconSize,
-            color: iconColor,
-          ),
+          FushiIcon(Icons.check_circle, size: iconSize, color: iconColor),
           const SizedBox(width: 12),
         ],
         Flexible(
@@ -408,8 +428,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                 style: TextStyle(
                   color: textColor,
                   fontSize: fontSize,
-                  fontWeight:
-                      prominent ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: prominent ? FontWeight.w600 : FontWeight.normal,
                   height: 1.2,
                 ),
               ),
@@ -420,10 +439,8 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                   child: FushiLinearProgressIndicator(
                     value: osd.progress,
                     minHeight: 3,
-                    backgroundColor:
-                        textColor.withValues(alpha: 0.25),
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(textColor),
+                    backgroundColor: textColor.withValues(alpha: 0.25),
+                    valueColor: AlwaysStoppedAnimation<Color>(textColor),
                   ),
                 ),
               ],

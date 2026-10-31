@@ -30,7 +30,31 @@ class LogUploadOutcome {
   final String? id;
 }
 
-/// 把日志正文截断到 [kMaxLogUploadBytes] 字节内（保留尾部最近内容），
+/// 组请求体：[meta] 加上截断后的 `log` 字段，整个 JSON 的 UTF-8 字节数 <= [maxBytes]。
+///
+/// 接收端限的是**整个请求体**（Cloudflare Worker 版 `MAX_BODY_BYTES` = 512 KiB），不是
+/// 日志字段。此前只把日志原文截到 512 KiB 再套 JSON：换行、Windows 路径的反斜杠、Rust
+/// 调试输出里的引号转义后各多一个字节，再加元信息，日志只要超过上限请求体就必然超限、
+/// 被 413 拒掉——截断形同虚设，用户只看到「日志过大，无法上传」（反馈 4k7x0-1MHe）。
+/// 这里按编码后的实际字节数逐步收紧日志预算。
+String encodeLogUploadBody(
+  Map<String, Object?> meta,
+  String log, {
+  int maxBytes = kMaxLogUploadBytes,
+}) {
+  int budget = maxBytes;
+  while (true) {
+    final String body = jsonEncode(<String, Object?>{
+      ...meta,
+      'log': _capLogBytes(log, budget),
+    });
+    final int excess = utf8.encode(body).length - maxBytes;
+    if (excess <= 0 || budget <= 0) return body;
+    budget = budget - excess < 0 ? 0 : budget - excess;
+  }
+}
+
+/// 把日志正文截断到 [maxBytes] 字节内（保留尾部最近内容），
 /// 截断时在头部插入标记。返回的字符串 UTF-8 字节数严格 <= 上限。
 ///
 /// 关键：尾部切点可能落在某个多字节字符（如日文/emoji）的中间。直接
@@ -38,11 +62,13 @@ class LogUploadOutcome {
 /// 反而超出预算。这里改为把切点向后推进到下一个合法 UTF-8 首字节
 /// （跳过开头的续字节 0b10xxxxxx），保证只取完整字符、不产生替换符，
 /// 从而硬兑现「字节数 <= 上限」契约。
-String _capLogBytes(String log) {
+String _capLogBytes(String log, int maxBytes) {
   final List<int> bytes = utf8.encode(log);
-  if (bytes.length <= kMaxLogUploadBytes) return log;
+  if (bytes.length <= maxBytes) return log;
   const String marker = '[truncated] 日志过大，仅上传最近部分\n';
-  final int budget = kMaxLogUploadBytes - utf8.encode(marker).length;
+  final int markerBytes = utf8.encode(marker).length;
+  if (maxBytes <= markerBytes) return '';
+  final int budget = maxBytes - markerBytes;
   int start = bytes.length - budget;
   // 续字节高 2 位是 10；向后推进到字符边界（最多跳过 3 个续字节）。
   while (start < bytes.length && (bytes[start] & 0xC0) == 0x80) {
@@ -67,14 +93,13 @@ Future<LogUploadOutcome> performLogUpload({
   List<Duration> retryBackoff = kLogUploadRetryBackoff,
 }) async {
   final http.Client c = client ?? createAppHttpIoClient();
-  final String body = jsonEncode(<String, dynamic>{
+  final String body = encodeLogUploadBody(<String, Object?>{
     'kind': kind,
     'app_version': appVersion,
     'platform': platform,
     'device': device,
     'ts': tsIso,
-    'log': _capLogBytes(log),
-  });
+  }, log);
   try {
     for (int attempt = 0; ; attempt++) {
       final LogUploadOutcome out = await _postLogOnce(

@@ -239,6 +239,39 @@ void main() {
         expect(captionOpacity(tester), 0);
       });
 
+      testWidgets('从原生最大化键移到相邻的关闭键（带子里、离顶边较远）标题行不隐去', (
+        WidgetTester tester,
+      ) async {
+        await pumpShell(tester, reader());
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 4));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        // 进入 HTMAXBUTTON：Flutter 只收到移除，悬停真值由原生回传。
+        await mouse.removePointer();
+        WindowCaptionChannel.captionMaxButtonHovered.value = true;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        // 移出最大化键、落到关闭键（y = 16 > 顶边触发带）：原生悬停撤掉，Flutter
+        // 重新收到这只指针。整条应一直显示，关闭键不能在指针下面消失。
+        await mouse.addPointer(location: const Offset(260, 16));
+        WindowCaptionChannel.captionMaxButtonHovered.value = false;
+        await mouse.moveTo(const Offset(262, 16));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        await mouse.moveTo(const Offset(262, 300));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+        await mouse.removePointer();
+      });
+
       testWidgets('从下面移进带子 / 划过顶边不浮出（顶部正文照常可点），在顶边停留才浮出', (
         WidgetTester tester,
       ) async {

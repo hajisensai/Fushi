@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -120,13 +121,21 @@ abstract final class FushiToast {
     required MineToastStatus status,
   }) {
     // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长。
+    final int durationMs = status == MineToastStatus.pending ? 4000 : 2400;
+    // 制卡结果用 M3E tonal 结果卡（与视频页制卡 OSD 同一长相），进退场仍走
+    // _FushiToastView 的同一套。
     _insertToastEntry(
       overlay: overlay,
-      durationMs: status == MineToastStatus.pending ? 4000 : 2400,
+      durationMs: durationMs,
       builder: (BuildContext context) => _FushiToastView(
         msg: msg,
         icon: mineToastPalette(status).icon,
         severity: mineToastSeverity(status),
+        body: FushiMineNoticeCard(
+          status: status,
+          message: msg,
+          visibleFor: Duration(milliseconds: durationMs),
+        ),
       ),
     );
   }
@@ -272,7 +281,11 @@ class _FushiToastView extends StatefulWidget {
     required this.severity,
     this.backgroundColor,
     this.textColor,
+    this.body,
   });
+
+  /// 非空时代替默认浮条（制卡结果卡）；进退场与定位不变。
+  final Widget? body;
 
   final String msg;
   final IconData? icon;
@@ -346,9 +359,11 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   Widget build(BuildContext context) {
-    final Widget body = isGlassDesign(context)
-        ? _buildApple(context)
-        : _buildMaterial(context);
+    final Widget body =
+        widget.body ??
+        (isGlassDesign(context)
+            ? _buildApple(context)
+            : _buildMaterial(context));
     return Positioned(
       bottom: _toastBottomOffset(context),
       left: 16,

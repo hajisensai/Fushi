@@ -19,7 +19,8 @@
 // 只有扩展级、没有源级分级）；刮削视频 = 作品 `contentRating` 成人向（AniDB restricted →
 // `R18+`、MAL `Rx - Hentai`）。拿不到信号的条目为 false。
 //
-// 用户标成私密的作品（`media_privacy_flags`，口径见 [MediaPrivacySnapshot]）一律不上报；
+// 用户标成私密的作品（`media_privacy_flags`，以及开了隐私开关的来源库
+// `media_sources.is_private` 产出的条目；口径见 [MediaPrivacySnapshot]）一律不上报；
 // 已上报过的随书架同步的「本地已消失 → remove」自动从服务端删掉。每日字数不带作品
 // 身份，私密作品的字数照常计入。
 //

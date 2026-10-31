@@ -694,6 +694,20 @@ void main() {
             .toSet(),
         <String>{peerKey, 'Kokoro', 'Neko(2)'},
       );
+      // 墓碑键是对端键 / 别名时不等于云盘书文件夹名：删除时按当时的书名把文件夹名
+      // 记下来，云通道删云盘文件夹只认它。
+      expect(
+        <String, String?>{
+          for (final SyncDeletionTombstoneRow r
+              in await db.getSyncDeletionTombstonesOfType('book'))
+            r.itemKey: r.cloudFolderName,
+        },
+        <String, String?>{
+          peerKey: sanitizeTtuFilename(localKey),
+          'Kokoro': 'Kokoro',
+          'Neko(2)': 'Neko',
+        },
+      );
     });
 
     test(

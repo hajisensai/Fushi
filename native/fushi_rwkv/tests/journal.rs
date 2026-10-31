@@ -6,6 +6,8 @@
 //! - unappend 回到 append 之前：快照逐字节相同（含首次见到的卡抽的 ID 编码与随机流位置）；
 //!   中间有查询抽了新编码时，状态流与簿记照样回去、已知卡的查询结果逐位相同；
 //! - 标签不是最近一条 / 之后有 replay：什么都不改、返回 false；
+//! - rewind_from 退到某时刻之前再按时间顺序 append（含插进来的早行）：与全量回放快照逐字节相同；
+//!   日志之前的行（调用方交代的 floor、超出容量丢掉的条目）不早于目标时刻时退不到、什么都不改；
 //! - 分数表：update 与 query 同批逐位相同；逐行 update 与整批 update 逐位相同（每行的 R 不取决于
 //!   同批别的行——增量「只重算一张」与全量刷新数值一致）；append / unappend 只作废同卡、同笔记的项；
 //! - C ABI 往返；大模型 append 返回 Unsupported。
@@ -111,6 +113,11 @@ fn bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|v| v.to_bits()).collect()
 }
 
+/// 追加用的评分时刻：从 `from` 起每条 + 1 毫秒（只要不递减）。
+fn ats(from: i64, n: usize) -> Vec<i64> {
+    (0..n as i64).map(|i| from + i).collect()
+}
+
 #[test]
 fn append_matches_replay_and_unappend_restores_exactly() {
     let model = small_model();
@@ -124,7 +131,7 @@ fn append_matches_replay_and_unappend_restores_exactly() {
         journaled.replay(&reviews, false).unwrap();
         let before = journaled.snapshot().unwrap();
         let tags: Vec<u64> = (0..appended.len() as u64).map(|t| 100 + t).collect();
-        journaled.append(&appended, &tags).unwrap();
+        journaled.append(&appended, &tags, &ats(0, appended.len())).unwrap();
         assert_eq!(journaled.journal_len(), appended.len());
         assert_eq!(
             journaled.snapshot().unwrap(),
@@ -166,7 +173,7 @@ fn unappend_after_a_query_drew_new_codes_keeps_them_but_restores_the_states() {
 
         let mut runtime = RwkvRuntime::new(&model, precision, 1).unwrap();
         runtime.replay(&reviews, false).unwrap();
-        runtime.append(&appended[2..3], &[7]).unwrap(); // 新卡 999：抽新编码
+        runtime.append(&appended[2..3], &[7], &[0]).unwrap(); // 新卡 999：抽新编码
         runtime.query(&queries(91, 5_000..5_001)).unwrap(); // 查询一张首次见到的卡：再抽
         assert!(runtime.unappend(7).unwrap());
         assert_eq!(
@@ -184,13 +191,13 @@ fn replay_restore_reset_clear_the_journal() {
     let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
     runtime.replay(&reviews, false).unwrap();
     let snapshot = runtime.snapshot().unwrap();
-    runtime.append(&appended[..1], &[1]).unwrap();
+    runtime.append(&appended[..1], &[1], &[0]).unwrap();
     runtime.replay(&appended[1..2], false).unwrap();
     assert!(!runtime.unappend(1).unwrap(), "replay cleared the journal");
-    runtime.append(&appended[2..3], &[2]).unwrap();
+    runtime.append(&appended[2..3], &[2], &[0]).unwrap();
     runtime.restore(&snapshot).unwrap();
     assert!(!runtime.unappend(2).unwrap(), "restore cleared the journal");
-    runtime.append(&appended[..1], &[3]).unwrap();
+    runtime.append(&appended[..1], &[3], &[0]).unwrap();
     runtime.reset();
     assert!(!runtime.unappend(3).unwrap(), "reset cleared the journal");
 }
@@ -205,21 +212,107 @@ fn append_rejects_unrated_rows_and_the_large_model() {
     let mut unrated = appended[0].clone();
     unrated.ease = None;
     assert!(matches!(
-        runtime.append(&[appended[1].clone(), unrated], &[1, 2]),
+        runtime.append(&[appended[1].clone(), unrated], &[1, 2], &[0, 1]),
         Err(RwkvError::Input(_))
     ));
     assert_eq!(runtime.snapshot().unwrap(), before, "nothing applied");
     assert!(matches!(
-        runtime.append(&appended[..1], &[]),
+        runtime.append(&appended[..1], &[], &[0]),
         Err(RwkvError::Input(_))
     ));
+    runtime.append(&appended[..1], &[1], &[50]).unwrap();
+    assert!(
+        matches!(
+            runtime.append(&appended[1..2], &[2], &[49]),
+            Err(RwkvError::Input(_))
+        ),
+        "an at before the journal's last is rejected (the journal stays ordered by time)"
+    );
+    assert_eq!(runtime.journal_len(), 1);
 
     let large = Model::from(model_large());
     let mut runtime = RwkvRuntime::new(&large, StatePrecision::Int8, 1).unwrap();
     assert!(matches!(
-        runtime.append(&appended[..1], &[1]),
+        runtime.append(&appended[..1], &[1], &[0]),
         Err(RwkvError::Unsupported(_))
     ));
+    assert_eq!(runtime.rewind_from(0, i64::MIN).unwrap(), None, "the large model has no journal");
+}
+
+#[test]
+fn rewind_from_then_append_in_time_order_equals_the_full_replay() {
+    let model = small_model();
+    let (reviews, _) = history();
+    // 全量序列 S，时刻 = 下标。前 k 条 replay 进来（日志之前的行，floor = 第 k - 1 条的时刻），其余逐条
+    // append 进日志，但「晚到」的那条 X（下标 p）先不追加——它代表同步晚到的、时刻落在已回放行中间的评分。
+    let k = reviews.len() - 400;
+    let p = reviews.len() - 150;
+    let at = |i: usize| i as i64;
+    let floor = at(k - 1);
+    for precision in PRECISIONS {
+        let mut reference = RwkvRuntime::new(&model, precision, 1).unwrap();
+        reference.replay(&reviews, false).unwrap();
+
+        let mut runtime = RwkvRuntime::new(&model, precision, 1).unwrap();
+        runtime.replay(&reviews[..k], false).unwrap();
+        let before_journal = runtime.snapshot().unwrap();
+        let without_x: Vec<usize> = (k..reviews.len()).filter(|&i| i != p).collect();
+        let rows: Vec<ReviewInput> = without_x.iter().map(|&i| reviews[i].clone()).collect();
+        let tags: Vec<u64> = without_x.iter().map(|&i| i as u64).collect();
+        let times: Vec<i64> = without_x.iter().map(|&i| at(i)).collect();
+        runtime.append(&rows, &tags, &times).unwrap();
+
+        // X 到了：退到它的时刻之前，再按时间顺序追加 X 及之后的全部行。
+        assert_eq!(runtime.rewind_from(at(p), i64::MAX).unwrap(), None, "unknown floor: unreachable");
+        let popped = runtime.rewind_from(at(p), floor).unwrap();
+        assert_eq!(popped, Some(reviews.len() - p - 1), "{precision:?}: pops every entry at >= X");
+        let tail: Vec<usize> = (p..reviews.len()).collect();
+        runtime
+            .append(
+                &tail.iter().map(|&i| reviews[i].clone()).collect::<Vec<_>>(),
+                &tail.iter().map(|&i| i as u64).collect::<Vec<_>>(),
+                &tail.iter().map(|&i| at(i)).collect::<Vec<_>>(),
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().unwrap(),
+            reference.snapshot().unwrap(),
+            "{precision:?}: rewind + append == full replay"
+        );
+        // 上一步之后 Ctrl+Z 照常：最后一条仍可原样撤回。
+        assert!(runtime.unappend((reviews.len() - 1) as u64).unwrap());
+
+        // 退到 replay 进来的行之中：退不到，什么都不改。
+        let now = runtime.snapshot().unwrap();
+        assert_eq!(runtime.rewind_from(floor, floor).unwrap(), None, "{precision:?}");
+        assert_eq!(runtime.snapshot().unwrap(), now, "{precision:?}: unchanged");
+        // 刚好退到日志最早一条之后：可以，等于只回放前 k + 1 条。
+        assert!(runtime.rewind_from(at(k + 1), floor).unwrap().is_some());
+        let mut prefix = RwkvRuntime::new(&model, precision, 1).unwrap();
+        prefix.replay(&reviews[..=k], false).unwrap();
+        assert_eq!(runtime.snapshot().unwrap(), prefix.snapshot().unwrap(), "{precision:?}");
+        assert_ne!(prefix.snapshot().unwrap(), before_journal);
+        // 退到日志最早一条之前、但仍晚于 floor：整段日志撤光，回到 replay 之后的状态。
+        assert_eq!(runtime.rewind_from(at(k), floor).unwrap(), Some(1));
+        assert_eq!(runtime.snapshot().unwrap(), before_journal, "{precision:?}");
+    }
+}
+
+#[test]
+fn a_journal_started_from_reset_rewinds_all_the_way_to_empty() {
+    let model = small_model();
+    let (reviews, _) = history();
+    let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
+    let empty = runtime.snapshot().unwrap();
+    let n = 200;
+    runtime
+        .append(&reviews[..n], &(0..n as u64).collect::<Vec<_>>(), &ats(10, n))
+        .unwrap();
+    assert_eq!(runtime.rewind_from(10, i64::MIN).unwrap(), Some(n));
+    assert_eq!(runtime.snapshot().unwrap(), empty);
+    assert_eq!(runtime.rewind_from(10, i64::MIN).unwrap(), Some(0), "nothing left, still reachable");
+    runtime.restore(&empty).unwrap();
+    assert_eq!(runtime.rewind_from(10, i64::MAX).unwrap(), None, "after restore the caller must say");
 }
 
 fn model_large() -> RwkvModel {
@@ -259,7 +352,7 @@ fn scores_single_and_batch_are_bit_identical_and_patching_is_scoped() {
         assert!(runtime.scores_lookup(&ids, &other).iter().all(Option::is_none));
 
         // 作答卡 1004（笔记 5002，与 1005 同笔记）：只作废 1004 / 1005。
-        runtime.append(&appended[..1], &[9]).unwrap();
+        runtime.append(&appended[..1], &[9], &[0]).unwrap();
         let hits = runtime.scores_lookup(&ids, &versions);
         for (id, hit) in ids.iter().zip(&hits) {
             assert_eq!(
@@ -303,7 +396,7 @@ fn c_abi_round_trip() {
     let rows = |inputs: &[ReviewInput]| -> Vec<FrwkvReview> {
         inputs.iter().map(FrwkvReview::from_input).collect()
     };
-    assert_eq!(frwkv_abi_version(), 3);
+    assert_eq!(frwkv_abi_version(), 4);
     unsafe {
         let model = frwkv_model_load(bytes.as_ptr(), bytes.len());
         let runtime = frwkv_runtime_new(model, FRWKV_PRECISION_INT4, 1);
@@ -314,13 +407,23 @@ fn c_abi_round_trip() {
         );
         let tail = rows(&appended[..2]);
         let tags = [41u64, 42];
+        let times = [1_000i64, 2_000];
         assert_eq!(
-            frwkv_runtime_append(runtime, tail.as_ptr(), tags.as_ptr(), 2),
+            frwkv_runtime_append(runtime, tail.as_ptr(), tags.as_ptr(), times.as_ptr(), 2),
             FRWKV_OK
         );
         assert_eq!(frwkv_runtime_unappend(runtime, 41), 0);
         assert_eq!(frwkv_runtime_unappend(runtime, 42), 1);
-        assert_eq!(frwkv_runtime_unappend(runtime, 41), 1);
+        let mut popped = 99u64;
+        assert_eq!(frwkv_runtime_rewind_from(runtime, 1_001, 999, &mut popped), 1);
+        assert_eq!(popped, 0, "nothing at >= 1001 left");
+        assert_eq!(
+            frwkv_runtime_rewind_from(runtime, 1_000, 1_000, &mut popped),
+            0,
+            "the replayed rows before the journal are out of reach"
+        );
+        assert_eq!(frwkv_runtime_rewind_from(runtime, 1_000, 999, &mut popped), 1);
+        assert_eq!(popped, 1);
 
         let q = rows(&queries(90, 0..4));
         let versions = [1u64, 2, 3, 4];

@@ -32,7 +32,7 @@ void main() {
       expect(captureStart, greaterThan(bilibiliStart));
       final String youtube = source.substring(youtubeStart, bilibiliStart);
       final String bilibili = source.substring(bilibiliStart, captureStart);
-      expect(youtube, contains('imageMode: _appModel.videoMiningImageMode'));
+      expect(youtube, contains('imageMode: _videoMiningImageMode'));
       expect(
         youtube,
         isNot(contains('VideoMiningImageMode.videoClip')),
@@ -50,7 +50,7 @@ void main() {
         bilibili,
         isNot(contains('the browser resolver currently supplies audio only')),
       );
-      expect(youtube, contains('clipFormat: _appModel.videoMiningClipFormat'));
+      expect(youtube, contains('clipFormat: _videoMiningClipFormat'));
     },
   );
 

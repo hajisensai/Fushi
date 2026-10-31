@@ -581,6 +581,68 @@ void main() {
       e.dispose();
     });
 
+    test(
+      'a failed install into a new location keeps the working one recorded',
+      () async {
+        final List<int> body = utf8.encode('PKG');
+        final VoicevoxPackage gpu = VoicevoxPackage(
+          accel: VoicevoxAccel.nvidia,
+          format: VoicevoxArchiveFormat.zip,
+          parts: <VoicevoxPackagePart>[
+            VoicevoxPackagePart('g.vvpp', body.length, _sha(body)),
+          ],
+        );
+        final VoicevoxEngineManifest manifest = testManifest(gpu);
+        int extractExit = 0;
+        final VoicevoxLocalEngine e = VoicevoxLocalEngine(
+          prefs: MemoryPrefStore(),
+          httpClientFactory: () => HttpClient(),
+          manifest: manifest,
+          platformKey: 'windows-x64',
+          supported: true,
+          installer: VoicevoxInstaller(
+            httpClientFactory: () => HttpClient(),
+            manifest: manifest,
+            os: 'windows',
+            open: (HttpClient c, Uri u, Map<String, String> h) async =>
+                ResumableDownloadResponse.bytes(
+                  statusCode: 200,
+                  body: body,
+                  headers: <String, String>{'content-length': '${body.length}'},
+                ),
+            spawn: (String exe, List<String> args) async {
+              _writeEngine(args[args.indexOf('-C') + 1]);
+              return _DoneProcess(extractExit);
+            },
+          ),
+        );
+        final String first = p.join(tmp.path, 'first');
+        final String second = p.join(tmp.path, 'second');
+        expect(await e.install(installDir: first), isTrue);
+        final String? installedDir = e.settings.dir;
+        expect(installedDir, startsWith(first));
+        expect(e.settings.installedAccel, VoicevoxAccel.cpu);
+
+        // 换到新位置但装失败：旧位置那份能用的引擎仍是记录里的安装，「删除」找得到它。
+        extractExit = 2;
+        expect(await e.install(installDir: second), isFalse);
+        expect(e.settings.dir, installedDir);
+        expect(e.settings.installedAccel, VoicevoxAccel.cpu);
+        expect(e.isInstalled, isTrue);
+        // 记录回到旧安装后，新位置下到一半的专属子目录不再有任何记录指向它：
+        // 必须当场清掉，否则就是「删除」也找不到的几个 GB 孤儿。
+        expect(
+          Directory(p.join(second, manifest.installSubdir)).existsSync(),
+          isFalse,
+        );
+        expect(Directory(second).existsSync(), isTrue);
+
+        await e.remove(deleteFiles: true);
+        expect(Directory(installedDir!).existsSync(), isFalse);
+        e.dispose();
+      },
+    );
+
     test('remove waits for the in-flight install before deleting', () async {
       final List<int> body = utf8.encode('PKG');
       final VoicevoxPackage gpu = VoicevoxPackage(

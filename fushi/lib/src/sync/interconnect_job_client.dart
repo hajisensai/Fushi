@@ -16,6 +16,12 @@ import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart'
     show mangaOcrPollDelay;
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
+import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart'
+    show HostInputWanted;
+import 'package:fushi_engine/sync/host_jobs/host_job.dart'
+    show hostJobInputName, kHostInputChangedError, kHostInputMatchAlgorithm;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -81,6 +87,11 @@ class HostJobRemoteException implements Exception {
   final String code;
   final String? detail;
 
+  /// host 本地复用的输入内容变了（见 [kHostInputChangedError]）：应改为整份上传重来。
+  bool get isHostInputChanged =>
+      code == 'remote_error' &&
+      (detail?.startsWith(kHostInputChangedError) ?? false);
+
   @override
   String toString() => detail == null
       ? 'HostJobRemoteException($code)'
@@ -96,13 +107,15 @@ class InterconnectJobClient {
     Duration requestTimeout = const Duration(seconds: 30),
     Duration uploadTimeout = const Duration(minutes: 30),
     Duration Function(int attempt)? pollDelay,
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
-        _probeTimeout = probeTimeout,
-        _requestTimeout = requestTimeout,
-        _uploadTimeout = uploadTimeout,
-        _pollDelay = pollDelay ?? mangaOcrPollDelay;
+    FileContentHashCache? hashCache,
+  }) : _repo = repo,
+       _hashCache = hashCache,
+       _httpClient = httpClient ?? http.Client(),
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _probeTimeout = probeTimeout,
+       _requestTimeout = requestTimeout,
+       _uploadTimeout = uploadTimeout,
+       _pollDelay = pollDelay ?? mangaOcrPollDelay;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -111,6 +124,9 @@ class InterconnectJobClient {
   final Duration _requestTimeout;
   final Duration _uploadTimeout;
   final Duration Function(int attempt) _pollDelay;
+
+  /// 本机输入的内容哈希（带持久缓存）；null = 不做「host 已有就不上传」。
+  final FileContentHashCache? _hashCache;
 
   static http.Client _defaultPinnedClient(String expectedFingerprint) =>
       createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
@@ -207,8 +223,13 @@ class InterconnectJobClient {
     }
   }
 
-  /// 跑一个任务：上传 [inputs]（文件名 = 上传名），轮询到终态，把产物下载到
-  /// [outputDir]。取消订阅即远端 DELETE。
+  /// 跑一个任务：上传 [inputs]（上传名见 [hostJobInputNamesFor]），轮询到终态，把
+  /// 产物下载到 [outputDir]。取消订阅即远端 DELETE。
+  ///
+  /// host 宣告了 `jobs.inputMatch`、且本客户端有哈希缓存时，先发 [inputs] 的内容
+  /// 哈希清单，host 本地已有**内容相同**文件的那几份不上传（[HostJobUploading] 把它们
+  /// 算作已完成）。host 那份文件在任务途中被改 / 删时任务以
+  /// [kHostInputChangedError] 失败，这里自动整份上传重跑一次。
   Stream<HostJobEvent> run({
     required HostJobTarget target,
     required String kind,
@@ -241,6 +262,99 @@ class InterconnectJobClient {
       }
     }
 
+    /// 一次完整的 create → (match) → upload → start → poll → result。[reuseHostFiles]
+    /// = 先发内容哈希清单，host 本地已有的那几份不上传。
+    Future<Map<String, File>> attempt(
+      http.Client c,
+      String token, {
+      required bool reuseHostFiles,
+    }) async {
+      final Map<String, dynamic> created = _json(
+        await _send(
+          c,
+          token,
+          'POST',
+          target,
+          '/api/jobs',
+          jsonBody: <String, Object?>{'kind': kind, 'params': params},
+        ),
+      );
+      final String id = created['jobId'].toString();
+      jobId = id;
+      final List<String> names = hostJobInputNamesFor(inputs);
+      controller.add(HostJobUploading(0, inputs.length));
+      final Set<String> onHost = reuseHostFiles
+          ? await _matchHostInputs(
+              c,
+              token,
+              target,
+              id,
+              inputs,
+              names,
+              isCancelled: () => cancelled,
+            )
+          : const <String>{};
+      int done = onHost.length;
+      if (done > 0) controller.add(HostJobUploading(done, inputs.length));
+      for (int i = 0; i < inputs.length; i++) {
+        if (cancelled) throw const HostJobRemoteException('cancelled');
+        if (onHost.contains(names[i])) continue;
+        await _upload(
+          c,
+          token,
+          target,
+          '/api/jobs/$id/input/${Uri.encodeComponent(names[i])}',
+          inputs[i],
+        );
+        controller.add(HostJobUploading(++done, inputs.length));
+      }
+      if (cancelled) throw const HostJobRemoteException('cancelled');
+      await _send(c, token, 'POST', target, '/api/jobs/$id/start');
+      int pollAttempt = 0;
+      while (true) {
+        if (cancelled) throw const HostJobRemoteException('cancelled');
+        await Future<void>.delayed(_pollDelay(pollAttempt++));
+        final Map<String, dynamic> status = _json(
+          await _send(c, token, 'GET', target, '/api/jobs/$id'),
+        );
+        final String state = status['state'].toString();
+        final double progress = (status['progress'] as num?)?.toDouble() ?? 0;
+        final String? message = status['message']?.toString();
+        if (state == 'done') {
+          final List<String> outputNames =
+              (status['outputs'] as List?)?.map((Object? e) => '$e').toList() ??
+              const <String>[];
+          await outputDir.create(recursive: true);
+          final Map<String, File> files = <String, File>{};
+          for (final String name in outputNames) {
+            final http.Response r = await _send(
+              c,
+              token,
+              'GET',
+              target,
+              '/api/jobs/$id/result/${Uri.encodeComponent(name)}',
+            );
+            final File out = File(p.join(outputDir.path, p.basename(name)));
+            await out.writeAsBytes(r.bodyBytes, flush: true);
+            files[name] = out;
+          }
+          jobId = null;
+          await _send(c, token, 'DELETE', target, '/api/jobs/$id');
+          return files;
+        }
+        if (state == 'error') {
+          throw HostJobRemoteException(
+            'remote_error',
+            status['error']?.toString(),
+          );
+        }
+        if (state == 'cancelled') {
+          throw const HostJobRemoteException('cancelled');
+        }
+        controller.add(HostJobRunning(progress, message));
+      }
+    }
+
     controller.onListen = () {
       unawaited(() async {
         final (http.Client c, bool close) = _clientFor(
@@ -252,79 +366,27 @@ class InterconnectJobClient {
           if (token == null || token.isEmpty) {
             throw const HostJobRemoteException('no_host');
           }
-          final Map<String, dynamic> created = _json(
-            await _send(
-              c,
-              token,
-              'POST',
-              target,
-              '/api/jobs',
-              jsonBody: <String, Object?>{'kind': kind, 'params': params},
-            ),
-          );
-          final String id = created['jobId'].toString();
-          jobId = id;
-          controller.add(HostJobUploading(0, inputs.length));
-          for (int i = 0; i < inputs.length; i++) {
-            if (cancelled) throw const HostJobRemoteException('cancelled');
-            final File f = inputs[i];
-            await _upload(
-              c,
-              token,
-              target,
-              '/api/jobs/$id/input/${Uri.encodeComponent(p.basename(f.path))}',
-              f,
-            );
-            controller.add(HostJobUploading(i + 1, inputs.length));
-          }
-          if (cancelled) throw const HostJobRemoteException('cancelled');
-          await _send(c, token, 'POST', target, '/api/jobs/$id/start');
-          int attempt = 0;
+          bool reuse =
+              _hashCache != null &&
+              inputs.isNotEmpty &&
+              target.capability['inputMatch'] == kHostInputMatchAlgorithm;
           while (true) {
-            if (cancelled) throw const HostJobRemoteException('cancelled');
-            await Future<void>.delayed(_pollDelay(attempt++));
-            final Map<String, dynamic> status = _json(
-              await _send(c, token, 'GET', target, '/api/jobs/$id'),
-            );
-            final String state = status['state'].toString();
-            final double progress =
-                (status['progress'] as num?)?.toDouble() ?? 0;
-            final String? message = status['message']?.toString();
-            if (state == 'done') {
-              final List<String> names = (status['outputs'] as List?)
-                      ?.map((Object? e) => '$e')
-                      .toList() ??
-                  const <String>[];
-              await outputDir.create(recursive: true);
-              final Map<String, File> files = <String, File>{};
-              for (final String name in names) {
-                final http.Response r = await _send(
-                  c,
-                  token,
-                  'GET',
-                  target,
-                  '/api/jobs/$id/result/${Uri.encodeComponent(name)}',
-                );
-                final File out = File(p.join(outputDir.path, p.basename(name)));
-                await out.writeAsBytes(r.bodyBytes, flush: true);
-                files[name] = out;
-              }
-              jobId = null;
-              await _send(c, token, 'DELETE', target, '/api/jobs/$id');
+            try {
+              final Map<String, File> files = await attempt(
+                c,
+                token,
+                reuseHostFiles: reuse,
+              );
               controller.add(HostJobDone(files));
               await controller.close();
               return;
+            } on HostJobRemoteException catch (e) {
+              // host 上那份文件在排队 / 转录途中被改或删：这次产物作废，整份上传重来，
+              // 不再复用 host 文件（不可能悄悄用错内容）。
+              if (!reuse || !e.isHostInputChanged || cancelled) rethrow;
+              await cleanupRemote();
+              reuse = false;
             }
-            if (state == 'error') {
-              throw HostJobRemoteException(
-                'remote_error',
-                status['error']?.toString(),
-              );
-            }
-            if (state == 'cancelled') {
-              throw const HostJobRemoteException('cancelled');
-            }
-            controller.add(HostJobRunning(progress, message));
           }
         } catch (e, stack) {
           if (!controller.isClosed) {
@@ -344,6 +406,82 @@ class InterconnectJobClient {
     return controller.stream;
   }
 
+  /// 发内容哈希清单，返回 host 本地已有的输入名。本机文件正被写（哈希期间变了）
+  /// 的那份不参与匹配、照常上传。
+  ///
+  /// 匹配是**可选优化**：host 不认这条路由（老版本）、应答出错、超时、连接断了，
+  /// 一律当「一个都没有」照旧全部上传，绝不让整个任务因此失败。host 报
+  /// `pending`（还在后台给冷文件算哈希）时按轮询节奏再问，直到它给出终局答复。
+  Future<Set<String>> _matchHostInputs(
+    http.Client c,
+    String token,
+    HostJobTarget target,
+    String id,
+    List<File> inputs,
+    List<String> names, {
+    required bool Function() isCancelled,
+  }) async {
+    final FileContentHashCache cache = _hashCache!;
+    final List<Map<String, Object?>> files = <Map<String, Object?>>[];
+    for (int i = 0; i < inputs.length; i++) {
+      final FileContentFingerprint fp;
+      try {
+        fp = await cache.fingerprint(inputs[i].path);
+      } on FileContentChangedWhileHashing {
+        continue;
+      }
+      files.add(
+        HostInputWanted(
+          name: names[i],
+          sha256: fp.sha256,
+          size: fp.size,
+        ).toJson(),
+      );
+    }
+    if (files.isEmpty) return const <String>{};
+    int attempt = 0;
+    while (true) {
+      if (isCancelled()) throw const HostJobRemoteException('cancelled');
+      final Map<String, dynamic> body;
+      try {
+        body = _json(
+          await _send(
+            c,
+            token,
+            'POST',
+            target,
+            '/api/jobs/$id/inputs/match',
+            jsonBody: <String, Object?>{'files': files},
+          ),
+        );
+      } on Object catch (e, stack) {
+        if (!_isOptionalStepFailure(e)) rethrow;
+        // 老 host（404/405）是常态，不记日志；其余是真故障，记下再退回上传。
+        if (e is! HostJobRemoteException ||
+            (e.code != 'http_404' && e.code != 'http_405')) {
+          engineLog.log('InterconnectJobClient.matchHostInputs', e, stack);
+        }
+        return const <String>{};
+      }
+      final Object? matched = body['matched'];
+      final Set<String> onHost = <String>{
+        if (matched is List)
+          for (final Object? name in matched) '$name',
+      };
+      if (body['pending'] != true) return onHost;
+      await Future<void>.delayed(_pollDelay(attempt++));
+    }
+  }
+
+  /// 可选步骤（输入匹配）里「问不到答案」的失败：host 应答错误、超时、网络 / TLS
+  /// 断开、应答不是 JSON 对象。这些都只意味着这次没法复用 host 文件。
+  static bool _isOptionalStepFailure(Object e) =>
+      e is HostJobRemoteException ||
+      e is TimeoutException ||
+      e is http.ClientException ||
+      e is IOException ||
+      e is FormatException;
+
   // ── HTTP 助手（与漫画 OCR 客户端同款） ─────────────────────────────
 
   Future<String?> _tokenForBaseUrl(String baseUrl) async {
@@ -361,12 +499,13 @@ class InterconnectJobClient {
   }
 
   Map<String, String> _headers(String token) => <String, String>{
-        'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-      };
+    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+  };
 
   (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
     final Uri? base = _parse(baseUrl);
-    final bool usePinned = base != null &&
+    final bool usePinned =
+        base != null &&
         base.isScheme('https') &&
         fingerprint != null &&
         fingerprint.isNotEmpty;
@@ -417,8 +556,9 @@ class InterconnectJobClient {
       ..headers['Content-Type'] = 'application/octet-stream'
       ..contentLength = length;
     unawaited(file.openRead().pipe(req.sink));
-    final http.StreamedResponse res =
-        await client.send(req).timeout(_uploadTimeout);
+    final http.StreamedResponse res = await client
+        .send(req)
+        .timeout(_uploadTimeout);
     if (res.statusCode >= 400) {
       throw HostJobRemoteException(
         'http_${res.statusCode}',
@@ -451,7 +591,17 @@ class InterconnectJobClient {
   }
 }
 
+/// [inputs] 在 host 上的输入名：`<定宽序号>_<文件名>`。序号保证同名文件（不同目录
+/// 下的 `01.mp3`）不互相覆盖，且按名字排序 = 提交顺序（host 的 runner 按此顺序转）。
+List<String> hostJobInputNamesFor(List<File> inputs) {
+  final int width = max(3, '${inputs.length}'.length);
+  return <String>[
+    for (int i = 0; i < inputs.length; i++)
+      '${'$i'.padLeft(width, '0')}_${hostJobInputName(p.basename(inputs[i].path))}',
+  ];
+}
+
 /// `progress` 缺省时的退避（复用漫画 OCR 的），加个上限防 int 溢出。
 Duration hostJobPollDelay(int attempt) => Duration(
-      milliseconds: min(mangaOcrPollDelay(attempt).inMilliseconds, 5000),
-    );
+  milliseconds: min(mangaOcrPollDelay(attempt).inMilliseconds, 5000),
+);

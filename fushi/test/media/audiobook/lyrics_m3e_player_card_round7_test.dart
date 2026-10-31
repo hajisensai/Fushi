@@ -57,6 +57,9 @@ Widget _app({
         statsTimerPaused: true,
         clock: _Clock(),
         illustrations: illustrations,
+        // 本文件钉的是经典播放卡（round 7）；新版布局见
+        // lyrics_modern_layout_test.dart。
+        controlsStyle: LyricsControlsStyle.classic,
       ),
       callbacks: LyricsPlayerCallbacks(
         onClose: () => onOtherAction?.call('close'),

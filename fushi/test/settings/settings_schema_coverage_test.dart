@@ -216,6 +216,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 行为由服务层用例咬住：「开 + 有未结案 → 排；关 → 撤」「关着 → 不发请求」。
   'system/Notify me of feedback replies':
       'test/feedback/feedback_reply_background_test.dart（开关 ↔ 后台排程 / tick）',
+  // 「自动发送闪退日志」：故意不进 settings DB——启动即闪退时数据库还没打开也要读得到，
+  // 存在错误日志目录的 crash_report_state.json（CrashReporter 单例），harness 的 prefs
+  // 快照观测不到（changed=false）。生效点是下次启动的闪退报告流程，由服务层用例咬住：
+  // 「默认关、改了落盘」「开着时启动即闪退直接提交、不弹提示」。
+  'system/Automatically send crash logs':
+      'test/feedback/crash_report_test.dart（开关落盘 / 开着时启动前直接提交）',
   // 「发送使用统计」：写 prefsRepo（changed=true），生效点是 UsageHeartbeat 每个 tick
   // 读开关、提交反馈时 usageStatsInstallIdForFeedback 读开关——harness 里没有心跳与
   // 反馈提交。行为由服务层用例咬住：「关掉开关不发」「关掉后反馈不带安装 id」。
@@ -407,6 +413,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 「查词触发方式」是下拉（picker）不是开关。它以前根本不在 _focusedSettingsRow 的
   // 识别名单里，所以既不在遍历中、也不在此表——现在两者都补上了（见本表末尾「下拉型
   // 设置项」那一段）。
+  // 台词朗读（Game › Line read-aloud）三项：写进 GalLineTtsSettings JSON，生效点是
+  // GalLineTtsPlayer（harness 里没有文本钩子和 TTS 引擎）。decideGalLineTts 咬住
+  // 自动朗读开关与「读哪些句子」，播放器测试咬住音量原样传给播放。
+  'game/Auto-read lines': 'test/lookup/gal_line_tts_test.dart',
+  'game/What to read': 'test/lookup/gal_line_tts_test.dart',
+  'game/TTS volume': 'test/lookup/gal_line_tts_test.dart',
   'game/Tap a word to look it up':
       'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
   'game/Auto-hide the toolbar':
@@ -1633,6 +1645,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'ai/Let paired devices use the AI assistant':
       'test/sync/app_agent_assistant_host_test.dart + '
       'test/settings/ai_agent_peer_access_setting_test.dart',
+  // 外部 AI 访问（MCP）：生效点是 MCP 服务端连上来时的令牌 / 开关门（harness 里没有
+  // MCP 客户端）。专项测试咬住默认关、AI 写不进去、令牌只在设置页生成、设备本地；
+  // 工具宿主测试咬住关着时拒绝调用。
+  'ai/External AI access (MCP)':
+      'test/settings/ai_mcp_access_setting_test.dart + '
+      'test/ai/mcp/ai_mcp_tool_host_test.dart',
   // 联网资料内置站开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
   // 站点集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
   // 测试咬住「只请求传入的站点」。
