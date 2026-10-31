@@ -247,6 +247,11 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       switch (state.phase) {
         AnkiSyncPhase.busy => t.anki_sync_client_status_busy,
         AnkiSyncPhase.blocked => t.anki_sync_client_status_blocked,
+        // 限流（HTTP 429）给人话与自动重试时刻，不给 helper 的 Rust 原文。
+        AnkiSyncPhase.failed when state.rateLimitedUntil != null =>
+          t.anki_sync_client_status_rate_limited(
+            time: _formatTime(state.rateLimitedUntil!),
+          ),
         AnkiSyncPhase.failed => t.anki_sync_client_status_failed(
           error: state.message ?? '',
         ),

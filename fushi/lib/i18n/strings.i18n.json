@@ -733,6 +733,7 @@
   "anki_sync_client_status_failed": "Last sync failed: $error",
   "anki_sync_client_status_failing": "$count card(s) couldn't be written to the collection and will be retried: $error",
   "anki_sync_client_status_last_sync": "Last synced $time",
+  "anki_sync_client_status_rate_limited": "The sync server is limiting requests (too many requests). Fushi will retry automatically after $time; your cards stay here until then.",
   "anki_sync_client_status_signed_in": "Signed in as $user on $server",
   "anki_sync_client_status_signed_out": "Not signed in",
   "anki_sync_client_status_unsynced": "$count card(s) not synced yet",

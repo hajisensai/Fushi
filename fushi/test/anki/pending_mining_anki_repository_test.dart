@@ -288,6 +288,100 @@ void main() {
     expect((await repoOver(_FakeBackend()).flush()).delivered, 1);
   });
 
+  test('反馈 NYjj59uzBY：「全部发送」连失败卡一起重试，不再报 0/0/0；自动补发仍不碰失败卡', () async {
+    final PendingMiningAnkiRepository offline = repoOver(
+      _FakeBackend(batchMining: true),
+    );
+    for (final String w in <String>['f1', 'f2', 'f3']) {
+      await mine(offline, w);
+    }
+    // 三张都被拒收，停在 failed（真实现场：AnkiDroid Unknown URL，700 张）。
+    final PendingFlushReport rejected = await repoOver(
+      _FakeBackend(
+        outcomes: <MineOutcome>[
+          MineOutcome.failure('AnkiDroid: Unknown URL'),
+          MineOutcome.failure('AnkiDroid: Unknown URL'),
+          MineOutcome.failure('AnkiDroid: Unknown URL'),
+        ],
+      ),
+    ).flush(interactive: true);
+    expect(rejected.failed, 3);
+    expect(
+      (await store.all()).every(
+        (PendingMineRow r) => r.status == PendingMineStatus.failed,
+      ),
+      isTrue,
+    );
+
+    // 自动补发不碰失败卡。
+    final _FakeBackend auto = _FakeBackend();
+    expect((await repoOver(auto).flush()).delivered, 0);
+    expect(auto.expressions, isEmpty);
+
+    // 「全部发送」：第一张又被拒、后两张送达——报告与列表一致。
+    final _FakeBackend manual = _FakeBackend(
+      outcomes: <MineOutcome>[MineOutcome.failure('still bad')],
+    );
+    final PendingFlushReport report = await repoOver(
+      manual,
+    ).flush(interactive: true);
+    expect(manual.expressions, <String>['f1', 'f2', 'f3']);
+    expect(report.delivered, 2);
+    expect(report.failed, 1);
+    final PendingMineRow left = (await store.all()).single;
+    expect(left.expression, 'f1');
+    expect(left.status, PendingMineStatus.failed);
+    expect(left.lastError, 'still bad');
+  });
+
+  test('反馈 NYjj59uzBY：后端不可达时停下，没轮到的失败卡保持 failed 与原错误', () async {
+    final PendingMiningAnkiRepository offline = repoOver(
+      _FakeBackend(batchMining: true),
+    );
+    await mine(offline, 'g1');
+    await mine(offline, 'g2');
+    await repoOver(
+      _FakeBackend(
+        outcomes: <MineOutcome>[
+          MineOutcome.failure('old-1'),
+          MineOutcome.failure('old-2'),
+        ],
+      ),
+    ).flush(interactive: true);
+
+    final _FakeBackend down = _FakeBackend(outcomes: <MineOutcome>[_refused()]);
+    final PendingFlushReport report = await repoOver(
+      down,
+    ).flush(interactive: true);
+    expect(report.unreachable, isTrue);
+    expect(down.expressions, <String>['g1']);
+    final List<PendingMineRow> rows = await store.all();
+    expect(rows.first.status, PendingMineStatus.pending);
+    expect(rows.last.status, PendingMineStatus.failed);
+    expect(rows.last.lastError, 'old-2');
+  });
+
+  test('反馈 NYjj59uzBY：AnkiMobile「全部发送」也会拉起失败卡', () async {
+    final PendingMiningAnkiRepository offline = repoOver(
+      _FakeBackend(batchMining: true, switchesApp: true),
+    );
+    await mine(offline, 'm1');
+    await repoOver(
+      _FakeBackend(
+        switchesApp: true,
+        outcomes: <MineOutcome>[MineOutcome.failure('not installed')],
+      ),
+    ).flush(interactive: true);
+    expect((await store.all()).single.status, PendingMineStatus.failed);
+
+    final _FakeBackend mobile = _FakeBackend(switchesApp: true);
+    final PendingFlushReport report = await repoOver(
+      mobile,
+    ).flush(interactive: true);
+    expect(mobile.expressions, <String>['m1']);
+    expect(report.awaitingConfirmation, isTrue);
+  });
+
   test('直接制卡成功 = 后端可达：顺带补发队列', () async {
     final PendingMiningAnkiRepository offlineRepo = repoOver(
       _FakeBackend(outcomes: <MineOutcome>[_refused()]),

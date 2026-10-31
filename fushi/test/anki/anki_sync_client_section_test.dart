@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
+import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/fake_anki_repository.dart';
@@ -25,6 +26,37 @@ class _SettingsRepository extends FakeAnkiRepository {
 
   @override
   Future<AnkiSettings> loadSettings() async => _initial;
+}
+
+/// 同步时被服务器限流（HTTP 429）的 helper，错误是 rslib 的 Debug 原文。
+class _RateLimitedHelper implements FushiAnkiSyncClient {
+  @override
+  bool get isDead => false;
+
+  @override
+  Future<bool> open(String path) async => true;
+
+  @override
+  Future<void> fullDownload({required String hkey, String? endpoint}) async {}
+
+  @override
+  Future<Set<int>> existingNotes(List<(int, String)> notes) async => <int>{};
+
+  @override
+  Future<AnkiSyncResult> sync({required String hkey, String? endpoint}) async =>
+      throw const FushiAnkiSyncException(
+        'NetworkError { source: NetworkError { info: "HTTP status client '
+        'error (429 Too Many Requests) for url ()", kind: Other } }',
+      );
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 PlatformServices _services(AnkiSyncSession session) => PlatformServices(
@@ -103,6 +135,45 @@ void main() {
     await tester.tap(find.text(t.anki_sync_client_advanced_title));
     await tester.pump();
     expect(find.text(t.anki_sync_client_status_signed_out), findsNothing);
+    await closeSession(tester);
+  });
+
+  // 反馈 PT6NCk7Pbo：限流时状态行给人话与自动重试时刻，不给 Rust 调试原文。
+  testWidgets('同步被限流（429）：状态行说明限流与自动重试，不显示 helper 原文', (
+    WidgetTester tester,
+  ) async {
+    await tester.runAsync(() async {
+      await session.close();
+      File('${root.path}/account.json').writeAsStringSync(
+        '{"server":null,"endpoint":null,"username":"u","hkey":"k"}',
+      );
+      session = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => _RateLimitedHelper(),
+        syncDelay: const Duration(days: 1),
+      );
+      await expectLater(session.syncNow(), throwsA(anything));
+    });
+    expect(session.state.rateLimitedUntil, isNotNull);
+
+    await pumpSection(tester, enabled: true);
+    // 账号读盘与状态刷新是真文件 IO，每一跳都要让出真实事件循环再泵一帧。
+    for (int i = 0; i < 10; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    final String texts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((Text w) => w.data ?? w.textSpan?.toPlainText() ?? '')
+        .join(' | ');
+    expect(
+      find.textContaining('The sync server is limiting requests'),
+      findsOneWidget,
+      reason: texts,
+    );
+    expect(find.textContaining('NetworkError'), findsNothing);
     await closeSession(tester);
   });
 
