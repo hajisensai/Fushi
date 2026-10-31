@@ -553,6 +553,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Secondary: reveal when paused or hovered':
       'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
       '（⑫ 主 / 副显形开关各管各的层）',
+  // 硬字幕暂停 OCR 制卡的默认句子音频窗口：生效点在播放页暂停 OCR 点字查词 → 制卡
+  // 区间（要真播放器与 OCR 层），harness 无适用探针。窗口怎么建、经调轴与高级制卡
+  // 偏移后落在哪一段由纯函数测试咬住，开关 / 秒数读进查词入口由源码守卫咬住。
+  'video/Sentence audio for hard subtitles':
+      'test/media/video/frame_ocr_fallback_cue_test.dart'
+      '（开关关掉 = 不建默认窗口，接线守卫读 videoPauseOcrAudioFallbackEnabled）',
+  'video/Hard-subtitle audio length (each side)':
+      'test/media/video/frame_ocr_fallback_cue_test.dart'
+      '（windowMs 决定前后各取多长；接线守卫读 videoPauseOcrAudioFallbackMs）',
   // 沉浸锁定 + 字幕遮蔽中点画面显示当前句：生效点在播放页点画面抬起（要真播放器与
   // 沉浸锁），harness 无适用探针。判据纯函数与 overlay 显形句柄由专项测试咬住，页面
   // 接线由源码守卫咬住。
