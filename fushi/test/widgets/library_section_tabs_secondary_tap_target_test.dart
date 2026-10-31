@@ -60,8 +60,10 @@ void main() {
       final ValueNotifier<int> selected = await _pump(tester);
       final Rect tab = tester.getRect(find.widgetWithText(Tab, '发现'));
       final Rect row = tester.getRect(find.byType(LibrarySectionTabs<int>));
-      // 带内、页签外：离页签边 1，且仍在 48 高的命中区内。
-      final double y = above ? tab.top - 1 : tab.bottom + 1;
+      // 离页签中线 22（48 命中区的一半是 24），落在 36 高的页签与它下面的
+      // 指示条 / 分隔线之外，只有透明命中带能接住。
+      final double y = tab.center.dy + (above ? -22 : 22);
+      expect(y < tab.top - 1 || y > tab.bottom + 1, isTrue);
       expect(y, inInclusiveRange(row.top, row.bottom));
       await tester.tapAt(Offset(tab.center.dx, y));
       await tester.pumpAndSettle();
