@@ -687,6 +687,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           plan = await _service.plan(language: language, preference: runnable);
         }
       }
+      final String? probeError = plan.probeError;
+      if (probeError != null) {
+        // 界面只显示可读的说明（[_appendProbeHint]），原文留给日志排查。
+        debugPrint(
+          '[Fushi] ASR GPU probe failed, planning for CPU: $probeError',
+        );
+      }
       final String? finished = await _service.finishedSrtPath(
         widget.audioPaths,
         language,
@@ -1654,12 +1661,15 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
 
   /// 计划阶段 EP 探测抛错过：推荐的「int8 · CPU」不是本机没有 GPU，而是探测失败——
   /// 追加一行说明，用户才知道整本按 CPU 速度跑是降级而非常态。
+  ///
+  /// 只给用户能读懂的那句话，不拼异常原文（反馈 eEnV5gBn1K：面板上直接出现了
+  /// `Invalid argument(s): Provider WEBGPU is not a valid OrtProvider.`）。原文是
+  /// 排查线索，由 [_refreshPlan] 写进日志，CLI / 控制通道的 `probeError` 字段也照旧带着。
   static void _appendProbeHint(StringBuffer sb, AsrTranscribePlan? plan) {
-    final String? reason = plan?.probeError;
-    if (reason == null) return;
+    if (plan?.probeError == null) return;
     sb
       ..writeln()
-      ..write(t.audiobook_transcribe_probe_failed(reason: reason));
+      ..write(t.audiobook_transcribe_probe_failed_hint);
   }
 
   /// 阶段轨五格（纯由弹层状态推出）。匹配正文 / 入库发生在「使用字幕」之后的
