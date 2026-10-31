@@ -649,13 +649,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：复习页顶栏悬浮——不占布局、默认收起，点卡面空白 / 右键唤出、
   // 再点收起（与小说、漫画阅读器的悬浮顶栏同一口径）；false = 固定页头常驻。非凭据、跨设备。
   'srs_review_chrome_floating',
-  // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
-  // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
-  'srs_review_hide_hard_easy',
   // String（SrsReviewGestureMap.encode() 的 JSON：{"v":1,"front":{手势:动作},"back":{…}}，
   // 默认 '' = 默认映射）：复习页卡面手势（点按分区 / 双击 / 长按 / 四向滑动）在问题面、
   // 答案面各执行什么。读不出 / 不认识的值回落默认，不认识的手势名原样保留。非凭据、跨设备。
   'srs_review_gestures',
+  // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
+  // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
+  'srs_review_hide_hard_easy',
   // String（SrsReviewImageSize.wire：'original' | 'fit_width' | 'large'，默认
   // 'original'）：复习卡面图片大小（牌组 CSS 限得太小 / 原图像素小时放大）。非凭据、跨设备。
   'srs_review_image_size',

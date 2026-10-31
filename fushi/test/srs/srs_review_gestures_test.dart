@@ -4,7 +4,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
-import 'package:material_ui/material_ui.dart';
 
 void main() {
   const SrsReviewSide front = SrsReviewSide.front;
@@ -37,7 +36,14 @@ void main() {
     });
 
     test('空串 / 坏 JSON / 非对象都回落默认', () {
-      for (final String raw in <String>['', '  ', '{', '[1,2]', '"x"', 'null']) {
+      for (final String raw in <String>[
+        '',
+        '  ',
+        '{',
+        '[1,2]',
+        '"x"',
+        'null',
+      ]) {
         expect(SrsReviewGestureMap.decode(raw), SrsReviewGestureMap.defaults);
       }
     });
@@ -178,7 +184,10 @@ void main() {
       final String raw = m.encode();
       final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
       expect(json['v'], SrsReviewGestureMap.version);
-      expect((json['front'] as Map<String, dynamic>)['double_tap'], 'show_answer');
+      expect(
+        (json['front'] as Map<String, dynamic>)['double_tap'],
+        'show_answer',
+      );
       expect((json['back'] as Map<String, dynamic>)['long_press'], 'edit_note');
       expect(SrsReviewGestureMap.decode(raw), m);
     });
@@ -240,8 +249,14 @@ void main() {
       );
       final Map<String, dynamic> json =
           jsonDecode(edited.encode()) as Map<String, dynamic>;
-      expect((json['front'] as Map<String, dynamic>)['triple_tap'], 'show_answer');
-      expect((json['back'] as Map<String, dynamic>)['two_finger_tap'], 'rate_good');
+      expect(
+        (json['front'] as Map<String, dynamic>)['triple_tap'],
+        'show_answer',
+      );
+      expect(
+        (json['back'] as Map<String, dynamic>)['two_finger_tap'],
+        'rate_good',
+      );
       expect((json['back'] as Map<String, dynamic>)['swipe_up'], 'rate_again');
     });
   });
@@ -310,11 +325,7 @@ void main() {
 
     test('只按开着的轴判', () {
       expect(
-        srsClassifySwipe(
-          const Offset(-120, 0),
-          Offset.zero,
-          horizontal: false,
-        ),
+        srsClassifySwipe(const Offset(-120, 0), Offset.zero, horizontal: false),
         isNull,
       );
       expect(
