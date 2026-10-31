@@ -31,7 +31,7 @@ import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
-    show kSrsSync2Folder, kSrsSync2Namespace;
+    show kSrsSync2Folder, kSrsSync2Namespace, kSrsSync2V1Folder;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
@@ -218,13 +218,15 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
 
     for (final AssetEntry w in await store.listChildren(p.id)) {
       if (!w.isFolder) continue;
-      if (w.name == kSrsSync2Folder) {
-        // 同步 v2：`v2/devices/<设备>/profile.json`。
+      if (w.name == kSrsSync2Folder || w.name == kSrsSync2V1Folder) {
+        // 同步 v2：`v3/devices/<设备>/profile.json`（协议 2）；还没迁移的位置在 `v2/devices/` 下（协议 1，同一台
+        // 设备两边都有时只算一次）。
         for (final AssetEntry d in await store.listChildren(w.id)) {
           if (!d.isFolder || d.name != 'devices') continue;
           for (final AssetEntry dev in await store.listChildren(d.id)) {
             if (!dev.isFolder) continue;
-            writers.add(srsV2WriterName(dev.name));
+            final String name = srsV2WriterName(dev.name);
+            if (!writers.contains(name)) writers.add(name);
             await readInfo(dev.id);
           }
         }
@@ -278,7 +280,7 @@ Future<(Map<String, Object?>?, int?)> _readInfo(
   }
 }
 
-/// 在本机的同步 v2 设备目录（`fushi-srs/<uid>/v2/devices/<设备>/`）里写（覆盖）profile 说明文件。
+/// 在本机的同步 v2 设备目录（`fushi-srs/<uid>/v3/devices/<设备>/`）里写（覆盖）profile 说明文件。
 Future<void> srsPublishProfileInfo(
   SyncAssetStore store, {
   required String profileUid,
@@ -334,7 +336,8 @@ Future<void> srsRemoveOwnProfileFolder(
   for (final AssetEntry e in await store.listChildren(profile.id)) {
     if (e.isFolder && srsWriterOfDevice(e.name, deviceId)) {
       await store.deleteAsset(e.id, isFolder: true);
-    } else if (e.isFolder && e.name == kSrsSync2Folder) {
+    } else if (e.isFolder &&
+        (e.name == kSrsSync2Folder || e.name == kSrsSync2V1Folder)) {
       if (!await _removeOwnV2Device(store, e, v2Device)) foreign = true;
     } else {
       foreign = true;

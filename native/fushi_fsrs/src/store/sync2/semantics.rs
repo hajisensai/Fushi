@@ -91,25 +91,51 @@ pub(crate) fn current_tags(conn: &Connection, profile: &str, note: &str) -> Resu
     Ok(out)
 }
 
-/// 顺序提示：HLC 大者胜。
+/// 顺序提示：因果优先，真并发才 HLC 大者胜（store/sync2/mvr.rs）。
 pub(crate) fn tag_order(conn: &Connection, profile: &str, note: &str, tags: &[String], op: &Op) -> Result<(), String> {
+    let win = super::mvr::write(conn, profile, &super::mvr::reg("t", &[note]), op)?;
+    let tags = if win.id == op.id { Some(tags.to_vec()) } else { None };
+    land_tag_order(conn, profile, note, &win, tags).map(|_| ())
+}
+
+/// 一条操作带的整列表标签（`TagOrder`，或迁移进来的 `tags` 整列表修改记录）。
+fn tags_of_op(op: &Op) -> Option<Vec<String>> {
+    match op.body().ok()? {
+        crate::sync2::op::Body::TagOrder { tags, .. } => Some(tags),
+        crate::sync2::op::Body::Edit(e) if e.key == "tags" => match serde_json::from_str::<serde_json::Value>(&e.value).ok()? {
+            serde_json::Value::Array(xs) => Some(xs.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// `sync2_tag_order` 落到寄存器的当前值 [win]（[tags] = 它带的标签，没给就从日志读）；与投影已有的相同就不写。
+/// 返回是否改了投影。
+pub(crate) fn land_tag_order(conn: &Connection, profile: &str, note: &str, win: &super::mvr::Write, tags: Option<Vec<String>>) -> Result<bool, String> {
     let cur: Option<(i64, i64, Vec<u8>)> = conn
         .prepare_cached("SELECT wall, logical, device FROM sync2_tag_order WHERE profile_uid = ?1 AND note = ?2")
         .map_err(sql)?
         .query_row(params![profile, note], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
         .map_err(sql)?;
-    let me = (op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec());
-    if cur.is_some_and(|c| c >= me) {
-        return Ok(());
+    if cur.as_ref().is_some_and(|(w, l, d)| (*w, *l, d.as_slice()) == (win.wall, win.logical, &win.id.device.0[..])) {
+        return Ok(false);
     }
+    let tags = match tags {
+        Some(t) => t,
+        None => match super::load_op(conn, profile, &win.id)?.as_ref().and_then(tags_of_op) {
+            Some(t) => t,
+            None => return Ok(false),
+        },
+    };
     conn.prepare_cached(
         "INSERT OR REPLACE INTO sync2_tag_order (profile_uid, note, tags, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )
     .map_err(sql)?
-    .execute(params![profile, note, serde_json::to_string(tags).map_err(|e| e.to_string())?, me.0, me.1, me.2])
+    .execute(params![profile, note, serde_json::to_string(&tags).map_err(|e| e.to_string())?, win.wall, win.logical, win.id.device.0.to_vec()])
     .map_err(sql)?;
-    Ok(())
+    Ok(true)
 }
 
 /// 这条笔记最近一次标签操作的 HLC（合成行的 `hlc`：笔记的「修改时间」按它算）。
@@ -202,8 +228,13 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
         t.dominated.push(o.clone());
     }
     conn.prepare_cached(
-        "INSERT OR REPLACE INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-         VALUES (?1, ?2, 'note', ?3, 'tags', ?4, 1, ?5)",
+        // 不能写 `INSERT OR REPLACE`：REPLACE 删旧行时（没开 recursive_triggers）不触发 DELETE 触发器，摘要桶
+        // （digest.rs）只加不减，同一笔记第二次改标签起桶哈希与行数就永久错了。UPSERT 走 UPDATE 触发器（先减后加）。
+        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+         VALUES (?1, ?2, 'note', ?3, 'tags', ?4, 1, ?5) \
+         ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, entity_kind = excluded.entity_kind, \
+         entity_id = excluded.entity_id, field_key = excluded.field_key, writer_id = excluded.writer_id, \
+         seq = excluded.seq, json = excluded.json",
     )
     .map_err(sql)?
     .execute(params![id, profile, note, writer, text])
