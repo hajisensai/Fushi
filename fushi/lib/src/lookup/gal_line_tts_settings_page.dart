@@ -15,6 +15,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_line_tts.dart';
 import 'package:fushi/src/lookup/gal_line_tts_player.dart';
+import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
@@ -257,9 +258,13 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
         cancel: TtsCancelToken(),
       );
       await DesktopAudioPlayback.playFile(path, volume: _settings.volume);
-    } catch (error) {
+    } catch (error, stack) {
+      if (error is TtsFailure && error.code == TtsFailureCode.cancelled) return;
+      // 按失败类型给原因（没配声音 / 鉴权 / 超时……），并留日志；以前一律报
+      // 「服务返回异常」，失败类型丢了。
+      glog('galtts: preview failed $error\n$stack');
       FushiToast.show(
-        msg: t.audiobook_tts_failure_bad_response,
+        msg: galLineTtsErrorText(error),
         severity: ToastSeverity.error,
       );
     }
