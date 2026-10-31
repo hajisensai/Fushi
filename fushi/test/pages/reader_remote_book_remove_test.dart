@@ -12,9 +12,11 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
+import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/hidden_remote_books.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -108,7 +110,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('云盘来源：只有「仅从本机移除」，点了卡片消失、对端不动，撤销能找回', (WidgetTester tester) async {
+  testWidgets('没有删除能力的来源：只有「仅从本机移除」，点了卡片消失、对端不动，撤销能找回', (
+    WidgetTester tester,
+  ) async {
     final _FakeCloudClient client = _FakeCloudClient();
     await tester.pumpWidget(buildApp(client));
     await tester.pumpAndSettle();
@@ -119,7 +123,7 @@ void main() {
     expect(
       find.text(t.remote_book_delete_everywhere),
       findsNothing,
-      reason: '云盘来源没有删除接口，不能给「同时从远端删除」',
+      reason: '这个来源没有删除接口，不能给「同时从远端删除」',
     );
 
     await tester.tap(find.text(t.remote_book_hide_local));
@@ -241,8 +245,7 @@ void main() {
 
   testWidgets('互联来源、配对被拒：禁用并提示重新配对', (WidgetTester tester) async {
     final _FakeInterconnectClient client = _FakeInterconnectClient()
-      ..reachability = () async =>
-          RemoteSourceReachability.credentialRejected;
+      ..reachability = () async => RemoteSourceReachability.credentialRejected;
     await tester.pumpWidget(buildApp(client));
     await tester.pumpAndSettle();
 
@@ -291,13 +294,105 @@ void main() {
     expect(card, findsNothing);
   });
 
-  testWidgets('云盘来源不探测对端（没有删除能力，不发网络请求）', (WidgetTester tester) async {
+  testWidgets('没有删除能力的来源不探测（不发网络请求）', (WidgetTester tester) async {
     final _FakeCloudClient client = _FakeCloudClient();
     await tester.pumpWidget(buildApp(client));
     await tester.pumpAndSettle();
     await openMenu(tester);
     expect(find.text(t.remote_delete_host_checking), findsNothing);
+    expect(find.text(t.remote_delete_cloud_checking), findsNothing);
     expect(find.text(t.remote_book_delete_everywhere), findsNothing);
+  });
+
+  // ── 云盘备份来源（R8duEiqRuy 那本书来自云盘，所有者 2026-10-31 追加）──────
+
+  testWidgets('云盘来源、连不上：「同时从远端删除」显示但禁用，写明云盘原因，点了不弹确认', (
+    WidgetTester tester,
+  ) async {
+    final _FakeCloudDeleter client = _FakeCloudDeleter()
+      ..reachability = () async => RemoteSourceReachability.unreachable;
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+
+    await openMenu(tester);
+    expect(client.probes, 1);
+    expect(find.text(t.remote_book_delete_everywhere), findsOneWidget);
+    expect(find.text(t.remote_delete_cloud_offline), findsOneWidget);
+    await tester.tap(
+      find.text(t.remote_book_delete_everywhere),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    expect(confirmDialog(), findsNothing);
+    expect(client.deleted, isEmpty);
+  });
+
+  testWidgets('云盘来源、登录失效：禁用并提示重新登录', (WidgetTester tester) async {
+    final _FakeCloudDeleter client = _FakeCloudDeleter()
+      ..reachability = () async => RemoteSourceReachability.credentialRejected;
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+    await openMenu(tester);
+    expect(find.text(t.remote_delete_cloud_signed_out), findsOneWidget);
+  });
+
+  testWidgets('云盘来源、可达：二次确认点名云盘与书名，取消不删，确认才删并刷新', (WidgetTester tester) async {
+    final _FakeCloudDeleter client = _FakeCloudDeleter();
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+
+    await openMenu(tester);
+    expect(find.text(t.remote_delete_cloud_checking), findsNothing);
+    await tester.tap(find.text(t.remote_book_delete_everywhere));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: confirmDialog(),
+        matching: find.text(
+          t.remote_book_delete_cloud_confirm(
+            name: 'Remote Book',
+            backend: 'WebDAV',
+          ),
+        ),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(client.deleted, isEmpty);
+    expect(card, findsOneWidget);
+
+    await openMenu(tester);
+    await tester.tap(find.text(t.remote_book_delete_everywhere));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: confirmDialog(),
+        matching: find.text(t.remote_book_delete_everywhere),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(client.deleted, <String>['Remote Book']);
+    expect(card, findsNothing, reason: '删完强制刷新，云盘清单里已经没有它');
+    expect(prefs.hiddenRemoteBooks, isEmpty);
+  });
+
+  testWidgets('云盘来源：删除失败如实提示，卡片留在原地', (WidgetTester tester) async {
+    final _FakeCloudDeleter client = _FakeCloudDeleter()..failDelete = true;
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+    await openMenu(tester);
+    await tester.tap(find.text(t.remote_book_delete_everywhere));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: confirmDialog(),
+        matching: find.text(t.remote_book_delete_everywhere),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.remote_delete_failed), findsOneWidget);
+    expect(card, findsOneWidget);
   });
 
   test('「仅从本机移除」清单是设备本地偏好：不随备份 / 同步带到别的设备', () {
@@ -500,6 +595,46 @@ void main() {
       reason: '旧条目不分对端，保持升级前行为',
     );
   });
+}
+
+/// 云盘备份来源（[CloudRemoteBookClient]），网络与删除都换成可控的假实现。
+class _FakeCloudDeleter extends CloudRemoteBookClient {
+  _FakeCloudDeleter()
+    : super(
+        backend: _UnusedBackend(),
+        backendType: SyncBackendType.webDav,
+        rootFolderId: 'root',
+      );
+
+  final List<String> deleted = <String>[];
+  bool failDelete = false;
+  int probes = 0;
+  Future<RemoteSourceReachability> Function() reachability = () async =>
+      RemoteSourceReachability.reachable;
+
+  @override
+  Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
+    if (!deleted.contains('Remote Book'))
+      const RemoteBookInfo(title: 'Remote Book', hasContent: true),
+  ];
+
+  @override
+  Future<RemoteSourceReachability> probeRemoteReachability() {
+    probes++;
+    return reachability();
+  }
+
+  @override
+  Future<void> deleteRemoteBook(RemoteBookInfo book) async {
+    if (failDelete) throw SyncBackendError('403');
+    deleted.add(book.title);
+  }
+}
+
+class _UnusedBackend implements SyncBackend {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('_UnusedBackend.${invocation.memberName}');
 }
 
 class _FakeCloudClient implements RemoteBookClient {
