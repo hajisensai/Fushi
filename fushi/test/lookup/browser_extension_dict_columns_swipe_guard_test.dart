@@ -27,17 +27,27 @@ void main() {
           reason:
               'app_model.dart 应存在 browserExtensionThemeColors(colorScheme)');
       // 多列：列数（popupDictionaryColumns）随 theme 下发。
-      expect(src, contains("'--dict-columns': '\$popupDictionaryColumns'"),
+      expect(src, contains("'--dict-columns': '\${inputs.dictionaryColumns}'"),
           reason: 'theme 必须下发 --dict-columns（扩展多列布局的列数来源）');
+      // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路填。
+      expect(src, contains('dictionaryColumns: popupDictionaryColumns,'));
+      expect(src, contains('dictionaryColumns: popupDictionaryColumnsIn(p),'));
       // 滑动关闭：把 enableSwipeToClose 偏好以 '1'/'0' 随 theme 下发给 content.js。
       expect(src, contains("'--fushi-swipe-close'"),
           reason: 'theme 必须下发 --fushi-swipe-close 供 content.js 决定是否启用拖关手势');
       expect(
-          RegExp(r'ReaderFushiSource\.instance\.enableSwipeToClose\s*\?\s*'
+          RegExp(r"'--fushi-swipe-close':\s*inputs\.swipeToClose\s*\?\s*"
                   "'1'\\s*:\\s*'0'")
               .hasMatch(src),
           isTrue,
-          reason: '--fushi-swipe-close 值必须取自 enableSwipeToClose 偏好（1/0）');
+          reason: '--fushi-swipe-close 值必须是 1/0');
+      expect(
+          src,
+          contains(
+              'swipeToClose: ReaderFushiSource.instance.enableSwipeToClose,'),
+          reason: '--fushi-swipe-close 值必须取自 enableSwipeToClose 偏好');
+      expect(src, contains('ReaderFushiSource.instance.enableSwipeToCloseIn('),
+          reason: '扩展所选配置的视图也必须读同一项偏好');
     });
 
     test(

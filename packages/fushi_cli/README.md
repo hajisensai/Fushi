@@ -9,7 +9,12 @@ fushi_cli start             # 确保 app 在运行并就绪
 fushi_cli open <路径|URL>   # 打开视频文件 / fushi:// 深链 / 卡片来源 URL
 fushi_cli lookup <词>       # 弹出查词
 fushi_cli quit              # 落库后退出 app（与关窗口同一条路径）
+fushi_cli mcp               # MCP server（stdio）：让外部 AI 客户端调用操作目录
 ```
+
+`fushi_cli mcp` 的配置与安全模型见 [`docs/mcp-external-ai.md`](../../docs/mcp-external-ai.md)：
+默认关，需在 app 设置里打开并生成配对令牌（环境变量 `FUSHI_MCP_TOKEN`）；消息转给控制
+通道的 `/mcp`，那里只认配对令牌、不认控制通道 token。
 
 按域的命令（`fushi_cli <域> --help` 看子命令，`fushi_cli <域> <命令> --help` 看选项）：
 

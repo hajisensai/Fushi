@@ -6,6 +6,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/ai/agent/ai_agent_entry.dart'
     show openAiAgentFromShortcut;
+import 'package:fushi/src/ai/mcp/ai_mcp_ui.dart' show buildAiMcpHttpEndpoint;
 import 'package:fushi/src/corpus/corpus_origin_navigation.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
@@ -22,6 +23,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -40,7 +42,10 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
+import 'package:fushi/src/srs/srs_mining.dart' show SrsMiner;
+import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -124,6 +129,10 @@ import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/feedback/crash_report.dart';
+import 'package:fushi/src/feedback/feedback_service.dart'
+    show feedbackServiceProvider;
+import 'package:fushi/src/startup/test_environment.dart' show fushiTestRootPath;
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
@@ -131,6 +140,7 @@ import 'package:fushi/src/feedback/feedback_reply_notifier.dart';
 import 'package:fushi/src/feedback/feedback_reply_state.dart'
     show kFeedbackReplyPollInterval;
 import 'package:fushi/src/feedback/feedback_push.dart' show RemotePushPlatform;
+import 'package:fushi/src/pages/implementations/feedback/crash_report_prompt.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
     show openFeedbackTicket, showFeedbackReplyNotice;
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
@@ -145,6 +155,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/profile/extension_profile_adapter.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
@@ -154,7 +165,6 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
-        ProfileMediaKind,
         VideoBookRow,
         VideoBooksCompanion;
 import 'package:fushi/src/media/media_item.dart';
@@ -620,6 +630,18 @@ void main([List<String> args = const <String>[]]) {
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
         PreviousExitLog.foldIntoErrorLog(),
       ]);
+      // 闪退报告（crash_report.dart）：上次是崩溃 / 异常退出就记进待报，下次问用户要不要
+      // 把日志发给开发者。debug 构建（停 `flutter run` 就是强杀）与集成测试根下不问不发——
+      // 测试绝不能往线上反馈服务交东西。
+      final Directory? crashReportDir = ErrorLogService.instance.appDirectory;
+      if (crashReportDir != null) {
+        CrashReporter.instance
+          ..attach(
+            crashReportDir,
+            enabled: !kDebugMode && fushiTestRootPath() == null,
+          )
+          ..recordVerdict(PreviousExitLog.verdict);
+      }
 
       /// Initialise local file-based logging (mobile only).
       if (Platform.isAndroid || Platform.isIOS) {
@@ -638,6 +660,10 @@ void main([List<String> args = const <String>[]]) {
         );
       }
 
+      // 上次死在初始化完成之前（启动即闪退）：这次的初始化多半还会死、首页出不来，
+      // 闪退报告的提示必须在初始化之前出现——在加载页上问、等用户选完再往下走。
+      await runCrashReportStartupGate(CrashReporter.instance);
+
       /// Run the heavy initialisation after the first frame has been scheduled.
       /// [AppModel.isInitialised] will flip to true and notify listeners when
       /// done, causing [FushiReaderApp] to navigate from [LoadingPage] to
@@ -645,15 +671,23 @@ void main([List<String> args = const <String>[]]) {
       await FushiDicts.preloadTransforms();
 
       final appModel = container.read(appProvider);
-      // TODO-2936：浏览器扩展查词命中 yomitan-api server 时应用「浏览器」媒体类型
-      // 的 Profile 绑定。必须在 initialise() 之前注入（server 在 initialise 内启动）。
-      // 查词是与正在看的条目并存的旁路活动：只应用命中的「浏览器」绑定，无绑定时
-      // 不回退、不消费回退点（否则阅读器背后的配置会被一次查词换掉）。
-      appModel.browserLookupProfileApplier = () => container
-          .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(
-            mediaType: ProfileMediaKind.browser,
-            restoreFallback: false,
+      // 反馈 biLEesNqWb（并入 TODO-2936 的「浏览器」媒体类型绑定）：扩展请求按哪份配置处理
+      // ——扩展手动所选 > 「浏览器」绑定 > 跟随 App；都只影响扩展请求、按该配置的只读设置
+      // 视图读设置，不切换 App 的激活配置。须在 initialise() 之前注入（server 在其内启动）。
+      appModel.browserExtensionProfileApi = AppExtensionProfileApi(
+        repository: () => container.read(profileRepositoryProvider),
+        database: () => appModel.database,
+        servicesForView: appModel.extensionRequestServicesForView,
+      );
+      // 扩展所选配置的挖词目标是 Fushi 复习时，卡进那份配置的复习：同一个 srs.db 句柄上按它的
+      // uid 取副本（srs_profile_stores.dart），「在复习里打开」的编辑页套那份副本。
+      appModel.srsProfileStoresReader = () =>
+          container.read(srsProfileStoresProvider);
+      appModel.srsProfileNoteOpener = (SrsMiner miner, String noteId) =>
+          srsPushProfileNoteEditor(
+            appModel.navigatorKey.currentState,
+            miner,
+            noteId,
           );
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
@@ -985,6 +1019,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    crashReportStartupPrompt.addListener(_onCrashReportStartupPrompt);
     _pendingMineArrivals = PendingMineRelay.arrivals.listen(
       (_) => _flushPendingMines(),
     );
@@ -1477,6 +1512,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   @override
   void dispose() {
+    crashReportStartupPrompt.removeListener(_onCrashReportStartupPrompt);
     _sourceUrlSubscription?.cancel();
     _pendingMineArrivals?.cancel();
     _intentsSubscription?.cancel();
@@ -1977,6 +2013,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         quitApp: _flushAndExitForWindowClose,
         routes: buildOpRoutes(appOpContext!),
       ),
+      mcp: buildAiMcpHttpEndpoint(
+        appVersion: () => ref.read(appProvider).packageInfo.version,
+      ),
     );
     if (!mounted) {
       await server?.stop();
@@ -2310,12 +2349,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
   }
 
+  /// 启动前的闪退报告提示出现 / 消失：重建加载页（见 [runCrashReportStartupGate]）。
+  void _onCrashReportStartupPrompt() {
+    if (!mounted) return;
+    if (crashReportStartupPrompt.value != null) {
+      // 等用户选的这段时间不是「初始化卡住」：停掉看门狗，提示消失后重新计时。
+      _cancelLoadingWatchdog();
+    }
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
+    final CrashReportStartupRequest? crashPrompt =
+        crashReportStartupPrompt.value;
     if (appModel.isInitialised ||
         appModel.initError != null ||
         appModel.dataRootUnavailable != null ||
-        _loadingTimedOut) {
+        _loadingTimedOut ||
+        crashPrompt != null) {
       // Release the held first frame after the home page or error UI is built.
       _scheduleStartupFrameRelease();
     }
@@ -2698,11 +2750,27 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (!appModel.isInitialised) {
       // TODO-1260：进入裸加载态即挂看门狗；超时前显示转圈，超时后显示逃生 UI。
-      _startLoadingWatchdogIfNeeded();
+      // 启动前的闪退报告提示在等用户选时不计时（初始化还没开始）。
+      if (crashPrompt == null) _startLoadingWatchdogIfNeeded();
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
       final ColorScheme cs = fallbackTheme.colorScheme;
+      if (crashPrompt != null) {
+        return TranslationProvider(
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: fallbackTheme,
+            home: Scaffold(
+              backgroundColor: _savedSplashColor ?? cs.surface,
+              body: CrashReportStartupPrompt(
+                request: crashPrompt,
+                reporter: CrashReporter.instance,
+              ),
+            ),
+          ),
+        );
+      }
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -2738,8 +2806,18 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (!_startupFeedbackChecked) {
       _startupFeedbackChecked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        // 首页出来了：之后再没了不算「启动即闪退」。
+        PreviousExitLog.markInitialised();
         _listenRemotePush();
         unawaited(_checkFeedbackReplies());
+        unawaited(
+          offerCrashReportAfterStartup(
+            context: () =>
+                ref.read(appProvider).navigatorKey.currentContext ?? context,
+            reporter: CrashReporter.instance,
+            service: ref.read(feedbackServiceProvider),
+          ),
+        );
       });
     }
 

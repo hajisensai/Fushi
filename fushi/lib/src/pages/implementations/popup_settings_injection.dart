@@ -21,6 +21,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -274,28 +275,39 @@ typedef _DictionaryFontInputs = ({
   String fingerprint,
 });
 
+/// [view] 非 null 时（反馈 biLEesNqWb：浏览器扩展所选的非激活配置）默认内容语言与词典
+/// 语言都取它，而不是 App 当前生效的设置。
 _DictionaryFontInputs _resolveDictionaryFontInputs(
   AppModel appModel,
-  ReaderSettings settings,
-) {
+  ReaderSettings settings, {
+  ProfileSettingsView? view,
+}) {
   final List<Map<String, dynamic>> fonts = settings.dictionaryFonts;
   final List<String> allowedDirectories = <String>[
     p.join(appModel.appDirectory.path, 'custom_fonts'),
   ];
   // 全局默认内容语言（设置 · 外观 · 排版）。前两档真值都缺时的兜底语言。
   // 与词典语言一样必须进 memo 键。
-  final String defaultContentLanguage =
-      appModel.isDatabaseReady ? appModel.prefsRepo.defaultContentLanguage : '';
+  final String defaultContentLanguage = view != null
+      ? view.prefs.defaultContentLanguage
+      : appModel.isDatabaseReady
+      ? appModel.prefsRepo.defaultContentLanguage
+      : '';
   // 内容语言字体链：词典名 -> 释义语言。memo 键必须带上它，否则用户在词典设置里
   // 改了语言、字体列表没变 -> 命中旧 memo -> 改了不生效。
   // `dictRepo` 是 late 字段，且 `_databaseOpened` 先于它置位，所以这里不能只看
   // settings 判空——初始化早期 / 测试 seam 会命中「DB 就绪但词典仓库还
   // 没建」的窗口，直接读会抛 LateInitializationError。
   // 未就绪时退化成空列表：只出兜底链，不做 per-dictionary 分流，不崩。
+  final List<Dictionary>? dictionaries = view != null
+      ? view.dictionaries
+      : appModel.isDictionaryRepoReady
+      ? appModel.dictionaries
+      : null;
   final List<DictionaryLanguageEntry> dictionaryLanguages =
-      appModel.isDictionaryRepoReady
+      dictionaries != null
           ? <DictionaryLanguageEntry>[
-              for (final Dictionary d in appModel.dictionaries)
+              for (final Dictionary d in dictionaries)
                 DictionaryLanguageEntry(
                   name: d.name,
                   glossaryLanguage: d.effectiveTargetLanguage,
@@ -342,8 +354,33 @@ ExtensionDictionaryFont browserExtensionDictionaryFont(AppModel appModel) {
     // 早期 / 测试 seam 里 AppModel 的 late 字段可能还没赋值：与「没配字体」同义。
   }
   if (settings == null) return _kNoExtensionDictionaryFont;
-  final _DictionaryFontInputs inputs =
-      _resolveDictionaryFontInputs(appModel, settings);
+  return _extensionDictionaryFontFrom(
+    _resolveDictionaryFontInputs(appModel, settings),
+  );
+}
+
+/// 反馈 biLEesNqWb：[browserExtensionDictionaryFont] 按浏览器扩展所选的**非激活**配置
+/// 算——词典字体列表取 [view] 合成的阅读器设置，语言分流取 [view] 的词典与默认内容
+/// 语言。该配置用到的字体路径登记进 [AppModel.extensionProfileViewDictionaryFontPaths]，
+/// 扩展随后按路径取字体字节时（`/api/extension/fonts/dictionary`）白名单认得它们。
+ExtensionDictionaryFont browserExtensionDictionaryFontForView(
+  AppModel appModel,
+  ProfileSettingsView view,
+) {
+  if (!appModel.isDatabaseReady) return _kNoExtensionDictionaryFont;
+  final ReaderSettings settings = ReaderSettings(appModel.database)
+    ..applyPrefsSnapshot(view.prefsMap);
+  appModel.extensionProfileViewDictionaryFontPaths.addAll(
+    enabledDictionaryFontPaths(settings.dictionaryFonts),
+  );
+  return _extensionDictionaryFontFrom(
+    _resolveDictionaryFontInputs(appModel, settings, view: view),
+  );
+}
+
+ExtensionDictionaryFont _extensionDictionaryFontFrom(
+  _DictionaryFontInputs inputs,
+) {
   final String cacheKey = '${inputs.fingerprint}|${defaultTargetPlatform.name}';
   final _ExtensionDictionaryFont? cached = _extensionDictionaryFontMemo;
   if (cached != null && cached.key == cacheKey) return cached.value;

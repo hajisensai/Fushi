@@ -10,6 +10,8 @@ import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_package.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi_engine/tts/local/irodori_local_package.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart'
+    show LocalInstallRemoveException;
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -24,7 +26,7 @@ import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
     show AudiobookSpeedSlider;
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart'
-    show ttsProviderLabel;
+    show localInstallRemoveFailureText, ttsProviderLabel;
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart'
     show
         deleteOrphanedTtsReferenceAudio,
@@ -293,7 +295,7 @@ class _CtlModelState {
         final IrodoriLocalEngine engine = _requireIrodoriSupported();
         final bool deleteFiles = engine.canDeleteFiles;
         final String? dir = engine.settings.dir;
-        await engine.remove(deleteFiles: deleteFiles);
+        await _removeLocalEngine(() => engine.remove(deleteFiles: deleteFiles));
         return <String, Object?>{
           ..._irodoriJson(),
           'removed': dir,
@@ -306,12 +308,22 @@ class _CtlModelState {
         // 整合包只「移除」（忘掉路径）。
         final bool deleteFiles = engine.canDeleteFiles;
         final String? dir = engine.settings.dir;
-        await engine.remove(deleteFiles: deleteFiles);
+        await _removeLocalEngine(() => engine.remove(deleteFiles: deleteFiles));
         return <String, Object?>{
           ..._gptSovitsJson(),
           'removed': dir,
           'filesDeleted': deleteFiles,
         };
+    }
+  }
+
+  /// 删本机引擎；目录删不掉（文件被占用 / 没权限）报 409 + 与设置页同一句提示，
+  /// 不当成内部错误（安装记录保留，关掉占用程序后可再删）。
+  Future<void> _removeLocalEngine(Future<void> Function() remove) async {
+    try {
+      await remove();
+    } on LocalInstallRemoveException catch (error) {
+      throw CtlFailure.conflict(localInstallRemoveFailureText(error));
     }
   }
 

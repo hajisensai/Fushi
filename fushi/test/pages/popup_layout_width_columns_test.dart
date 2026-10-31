@@ -210,7 +210,12 @@ void main() {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       // 列数 getter 必须显式把桌面 + 移动默认都抬到 3（宽屏手机也能多列，窄屏视口收敛兜底）。
-      final int colAt = src.indexOf('int get popupDictionaryColumns =>');
+      // 反馈 biLEesNqWb：getter 委托给按给定偏好算的 popupDictionaryColumnsIn（扩展所选配置
+      // 的只读视图共用），默认值写在后者里。
+      expect(src,
+          contains('int get popupDictionaryColumns => popupDictionaryColumnsIn('));
+      final int colAt =
+          src.indexOf('int popupDictionaryColumnsIn(PreferencesRepository prefs) =>');
       expect(colAt, isNonNegative);
       final int colEnd = src.indexOf(');', colAt);
       expect(colEnd, greaterThan(colAt));

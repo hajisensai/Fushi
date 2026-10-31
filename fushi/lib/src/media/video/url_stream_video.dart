@@ -133,13 +133,13 @@ class StreamVideoSpec {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        if (subtitleUrl != null && subtitleUrl!.isNotEmpty)
-          'subtitleUrl': subtitleUrl,
-        if (subtitleFileName != null && subtitleFileName!.isNotEmpty)
-          'subtitleFileName': subtitleFileName,
-        if (referer != null && referer!.isNotEmpty) 'referer': referer,
-        if (userAgent != null && userAgent!.isNotEmpty) 'userAgent': userAgent,
-      };
+    if (subtitleUrl != null && subtitleUrl!.isNotEmpty)
+      'subtitleUrl': subtitleUrl,
+    if (subtitleFileName != null && subtitleFileName!.isNotEmpty)
+      'subtitleFileName': subtitleFileName,
+    if (referer != null && referer!.isNotEmpty) 'referer': referer,
+    if (userAgent != null && userAgent!.isNotEmpty) 'userAgent': userAgent,
+  };
 
   /// 落库字符串：空 spec → null（不占列）；否则 JSON。
   String? toStorageJson() => isEmpty ? null : jsonEncode(toJson());
@@ -188,8 +188,10 @@ String streamVideoBookUid(String url) {
       return 'video/stream/yt:$videoId';
     }
   }
-  final String digest =
-      sha1.convert(utf8.encode(normalized)).toString().substring(0, 12);
+  final String digest = sha1
+      .convert(utf8.encode(normalized))
+      .toString()
+      .substring(0, 12);
   return 'video/stream/$digest';
 }
 
@@ -222,6 +224,25 @@ StreamImportCoverStrategy streamImportCoverStrategy(String url) {
   return StreamImportCoverStrategy.ffmpegFrame;
 }
 
+/// 分离音轨（video-only 主流 + audio-only 外挂）打不开时可回退的**自带音轨**流。
+///
+/// 反馈 s3sOy3sD1J：googlevideo 对无 PO token 的分离音频流 403（YouTube 侧限窗，不可控）
+/// → libmpv 丢掉外挂音轨、画面照放、完全无声。YouTube 的 muxed 流（itag 18，≤360p）不受
+/// 这道限窗（见 `kYoutubeManifestClientFallback` 注释），解析器已经把它作为制卡低清流
+/// [RemoteVideoStreamUrls.miningVideoUrl] 取好（[RemoteVideoStreamUrls.miningVideoHasAudio]
+/// 为真即 muxed），这里直接复用这条现成的流，不再另发 getManifest。
+///
+/// 只在本集确实挂了分离音轨（[RemoteVideoStreamUrls.audioStreamUrl] 非空）且有 muxed 流时
+/// 返回；否则 null（调用方改为明确提示无声）。
+String? separatedAudioFallbackStreamUrl(RemoteVideoStreamUrls urls) {
+  final String? audio = urls.audioStreamUrl;
+  final String? muxed = urls.miningVideoUrl;
+  if (audio == null || audio.isEmpty) return null;
+  if (!urls.miningVideoHasAudio || muxed == null || muxed.isEmpty) return null;
+  if (muxed == urls.streamUrl) return null;
+  return muxed;
+}
+
 /// 单 URL 流的 [RemoteVideoClient]（TODO-850 阶段①）：把「用户粘贴的一条流 URL +
 /// 可选外挂字幕 URL + 可选防盗链 header」喂进既有远端播放链
 /// （`VideoFushiPage._initRemote → _loadRemoteEpisode`），**播放内核零改**。
@@ -250,8 +271,8 @@ class UrlStreamVideoClient
     this.urlResolver,
     http.Client? httpClient,
     YoutubeStreamRelay? youtubeStreamRelay,
-  })  : _httpClient = httpClient ?? createAppHttpIoClient(),
-        _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl;
+  }) : _httpClient = httpClient ?? createAppHttpIoClient(),
+       _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl;
 
   /// 播放期直链解析器（AList 来源：条目地址 → 临期签名 `raw_url`）。null =
   /// [streamUrl] / [subtitleUrl] 本身就可播。每次起播与字幕下载前都重新解析，
@@ -401,8 +422,9 @@ class UrlStreamVideoClient
     // 比，解析后的签名直链可能落在存储后端另一台主机上，那不是跨站。
     final bool sameSite = isSameHttpOrigin(storedUrl, streamUrl);
     final String url = await _resolveUrl(storedUrl);
-    final Map<String, String>? headers =
-        (httpHeaderFields.isEmpty || !sameSite) ? null : httpHeaderFields;
+    final Map<String, String>? headers = (httpHeaderFields.isEmpty || !sameSite)
+        ? null
+        : httpHeaderFields;
     final http.Response res = await _httpClient.get(
       Uri.parse(url),
       headers: headers,
@@ -435,8 +457,7 @@ class UrlStreamVideoClient
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   /// 本地 prefs 已是断点权威：no-op（不向任何 host 上报）。
   @override

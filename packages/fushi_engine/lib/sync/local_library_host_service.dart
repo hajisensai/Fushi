@@ -56,6 +56,7 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
     show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs, effectiveSeriesSecondaryDelayMs;
 import 'package:fushi_engine/sync/online_novel_book.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
@@ -404,15 +405,20 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// host 端删除资产后记同步删除墓碑（BUG-2945），让其它已配对设备经
   /// `/api/tombstones` 拉到并删掉本地副本。best-effort：墓碑写失败不该把已
   /// 完成的删除变成 HTTP 500。
+  ///
+  /// [cloudFolderName]：书墓碑的云盘书文件夹名（`sanitizeTtuFilename(书名)`），host
+  /// 自己的云通道发布墓碑时据此删掉云盘上的书文件夹；其它资产留 null。
   Future<void> _writeHostSyncTombstone(
     SyncTombstoneKind kind,
-    String itemKey,
-  ) async {
+    String itemKey, {
+    String? cloudFolderName,
+  }) async {
     try {
       await _db.writeSyncDeletionTombstone(
         kind.dbValue,
         itemKey,
         DateTime.now().millisecondsSinceEpoch,
+        cloudFolderName: cloudFolderName,
       );
     } catch (e, stack) {
       engineLog.log('LocalLibraryHostService.writeHostSyncTombstone', e, stack);

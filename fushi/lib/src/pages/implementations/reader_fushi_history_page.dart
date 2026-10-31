@@ -19,6 +19,8 @@ import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart'
+    show collectionMemberVolumeNumber;
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
@@ -135,6 +137,8 @@ import 'package:fushi/src/sync/remote_download_temp_file.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_deletion_filter.dart';
+import 'package:fushi/src/sync/remote_delete_availability.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart' show syncBackendLabel;
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -1472,22 +1476,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// [_buildSrtBookCard] / EPUB 卡同源：读 DB 原始列会让改过名的条目按看不见的
   /// 旧名（常是导入文件名）参与「名称」排序，同系列各卷被拆散（BUG-3337）。
   ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
-    String titleOf(_ShelfBookSlot s) {
-      final SrtBook? srt = s.srt;
-      if (srt != null) {
-        return displayTitleForBook(
-          bookKey: srt.bookKey.isNotEmpty ? srt.bookKey : null,
-          srtUid: srt.uid,
-          rawTitle: srt.title,
-        );
-      }
-      final MediaItem? epub = s.epub;
-      if (epub != null) {
-        return displayTitleForBook(item: epub, rawTitle: epub.title);
-      }
-      return s.remote?.title ?? s.remoteSrt?.title ?? '';
-    }
-
     int recentOf(CollectionOrderingItem<_ShelfBookSlot> it) {
       // 远端占位卡（EPUB 或纯 SRT）没有本地阅读记录，但 host 清单**自带**它那边的
       // 「最近阅读 / 最近听」时刻——用它才能和本地条目排在同一把尺子上（视频页
@@ -1524,7 +1512,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       final CollectionOrderingItem<_ShelfBookSlot> it = group.coverItem;
       return ShelfSortKey(
         recentScore: recentOf(it),
-        title: titleOf(it.payload),
+        title: _slotDisplayTitle(it.payload),
         importedAt: it.importedAt,
         tieKey: '${it.mediaType}|${it.entryKey}',
       );
@@ -2496,7 +2484,20 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     });
     if (anyRead) {
       final int index = _collectionContinueIndex(group) ?? 0;
-      return t.shelf_card_meta_series_reading(n: count, index: index + 1);
+      // 「读到第 N 卷」的 N 是卷号（与首页续读卡同一判据），不是组内位置：合集
+      // 顺序错乱时位置会把第 3 卷说成第 13 卷。
+      final List<String> titles = <String>[
+        for (final CollectionOrderingItem<_ShelfBookSlot> it in group.items)
+          _slotDisplayTitle(it.payload),
+      ];
+      return t.shelf_card_meta_series_reading(
+        n: count,
+        index: collectionMemberVolumeNumber(
+          title: titles[index],
+          memberTitles: titles,
+          memberOrdinal: index + 1,
+        ),
+      );
     }
     if (readFraction == null) return countLabel;
     return '$countLabel · ${_readProgressLabel(readFraction)}';
@@ -3886,6 +3887,24 @@ bool _isRemoteSelectionKey(String key) =>
 /// [remote] = 多端库联合视图（spec 2026-07-12 §2.1）的「远端有、本地无」占位卡：
 /// 无本地 importedAt/lastReadAt，排序退化到目录序（注入时以 `-1-index` 编码进
 /// CollectionOrderingItem.importedAt，稳定排在本地条目之后、组内保持目录序）。
+/// 书架卡上**显示**的名字（改名覆盖层 ?? 原名），与 SRT / EPUB 卡同源：组排序
+/// （BUG-3337）与合集卡「读到第 N 卷」的卷号判据都读它。
+String _slotDisplayTitle(_ShelfBookSlot s) {
+  final SrtBook? srt = s.srt;
+  if (srt != null) {
+    return displayTitleForBook(
+      bookKey: srt.bookKey.isNotEmpty ? srt.bookKey : null,
+      srtUid: srt.uid,
+      rawTitle: srt.title,
+    );
+  }
+  final MediaItem? epub = s.epub;
+  if (epub != null) {
+    return displayTitleForBook(item: epub, rawTitle: epub.title);
+  }
+  return s.remote?.title ?? s.remoteSrt?.title ?? '';
+}
+
 class _ShelfBookSlot {
   const _ShelfBookSlot({this.srt, this.epub, this.remote, this.remoteSrt});
 

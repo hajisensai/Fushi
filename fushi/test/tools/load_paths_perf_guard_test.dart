@@ -189,7 +189,7 @@ void main() {
       );
       final String body = methodBody(
         src,
-        'Future<void> _loadDashboardDataUnsafe() async {',
+        'Future<void> _loadDashboardDataUnsafe(int generation) async {',
       );
       expect(body.contains('await Future.wait<Object?>('), isTrue);
       expect(body.contains('await db.getAllMediaImages()'), isFalse);

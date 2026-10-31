@@ -10,14 +10,51 @@ import UIKit
 /// 跑在系统守护进程里，挂起期间照常推进，下完系统把 app 唤醒到后台交付文件
 /// （`handleEventsForBackgroundURLSession`，见 AppDelegate）。
 ///
-/// 孤儿任务：会话里 taskDescription 不在 [liveIds] 里的任务是上一个进程（被系统回收）
-/// 留下的——等它的 Dart Future 已经不存在了。新进程第一次建会话时全部取消，系统唤醒
-/// 交付的孤儿文件直接丢弃，不往磁盘上留几 GB 没人要的包。
+/// 跨进程接管：带 `meta` 发起的任务登记进持久化注册表（[Record]，落在 Application
+/// Support 的 [registryFileName]）。app 进程被系统回收后传输照常在守护进程里跑；新进程
+/// 启动即重挂会话，把注册表里的任务接回 [liveTasks]（进度 / 交付照常处理，进程不在时
+/// 交付的文件照样挪到目标路径并记成 delivered），等 Dart 经 `recover` / `attach` 接手。
+/// 系统替我们取消的任务（用户划掉 app、系统资源不足）带着断点数据记下来并续上。
+/// 只有注册表里没有的任务才是真孤儿：等它的人已经不存在了，取消，交付的文件丢弃。
+/// 注册表条目由 Dart 拿到结局后 `forget`，或判定没人要时 `discard`（顺带删已交付文件）。
 final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
   static let shared = FushiBackgroundDownload()
   static let channelName = "app.fushi.reader/background_download"
   private static let identifierPrefix = "app.fushi.reader.dict-download"
   private static let progressInterval: TimeInterval = 0.25
+  private static let registryFileName = "fushi_background_downloads.json"
+
+  private enum State {
+    static let running = "running"
+    static let delivered = "delivered"
+    static let failed = "failed"
+  }
+
+  /// 一条跨进程可接管的下载。
+  private struct Record: Codable {
+    var url: String
+    var dest: String
+    /// Dart 的接管描述（不透明 JSON 字符串，原样还给 Dart）。
+    var meta: String
+    var proxyMode: String
+    var proxyHost: String?
+    var proxyPort: Int?
+    var state: String
+    var errorKind: String?
+    var errorStatus: Int?
+    var errorMessage: String?
+    /// 被系统取消时留下的断点，续传用一次即清。
+    var resumeData: Data?
+
+    var proxy: ProxyConfig { ProxyConfig(mode: proxyMode, host: proxyHost, port: proxyPort) }
+
+    var errorDictionary: [String: Any] {
+      var error: [String: Any] = ["kind": errorKind ?? "other"]
+      if let errorStatus { error["status"] = errorStatus }
+      if let errorMessage { error["message"] = errorMessage }
+      return error
+    }
+  }
 
   private var channel: FlutterMethodChannel?
 
@@ -29,26 +66,44 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
     return q
   }()
   private var sessions: [String: URLSession] = [:]
-  /// Dart id → 本进程发起的任务。
+  /// Dart id → 本进程发起或接回的任务。
   private var liveTasks: [String: URLSessionDownloadTask] = [:]
   private var destinations: [String: String] = [:]
   private var failures: [String: [String: Any]] = [:]
   private var lastProgressAt: [String: TimeInterval] = [:]
+  /// 持久化注册表（Dart id → 记录）。
+  private var records: [String: Record] = [:]
+  /// 本进程发起的 id：`recover` 只交出上一个进程留下的，正在本进程里等着的不算。
+  private var startedHere: Set<String> = []
+  /// 各会话 `getAllTasks` 的接回扫描；`recover` / `attach` 等它们全部完成再答。
+  private let scanGroup = DispatchGroup()
 
   /// 系统唤醒交付时给的完成回调（会话 identifier → 回调），只在主线程读写。
   private var completionHandlers: [String: () -> Void] = [:]
 
+  override private init() {
+    super.init()
+    queue.addOperation { self.loadRecords() }
+  }
+
   static func register(binaryMessenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: binaryMessenger)
     shared.channel = channel
-    // 启动即挂上常用的两个会话，让上一个进程的孤儿任务现在就被取消，而不是等到
-    // 用户下一次点下载（手动代理的会话按需建）。
+    // 启动即挂上常用的两个会话与注册表里用到的会话：接回上一个进程的在途任务、取消
+    // 真孤儿，而不是等到 Dart 第一次来问（手动代理的新会话按需建）。
     shared.queue.addOperation {
+      var proxies: [String: ProxyConfig] = [:]
       for mode in ["system", "direct"] {
-        let proxy = ProxyConfig(["proxyMode": mode])
-        _ = shared.session(
-          identifier: "\(identifierPrefix).\(proxy.signature)", proxy: proxy)
+        let proxy = ProxyConfig(mode: mode, host: nil, port: nil)
+        proxies[Self.identifier(for: proxy)] = proxy
       }
+      for record in shared.records.values {
+        proxies[Self.identifier(for: record.proxy)] = record.proxy
+      }
+      for (identifier, proxy) in proxies {
+        _ = shared.session(identifier: identifier, proxy: proxy)
+      }
+      shared.whenScanned {}
     }
     channel.setMethodCallHandler { call, result in
       let args = call.arguments as? [String: Any] ?? [:]
@@ -61,7 +116,9 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
           result(FlutterError(code: "bad_args", message: "id/url/dest required", details: nil))
           return
         }
-        shared.start(id: id, url: url, dest: dest, proxy: ProxyConfig(args), result: result)
+        shared.start(
+          id: id, url: url, dest: dest, meta: args["meta"] as? String,
+          proxy: ProxyConfig(args), result: result)
       case "cancel":
         guard let id = args["id"] as? String else {
           result(FlutterError(code: "bad_args", message: "id required", details: nil))
@@ -69,6 +126,32 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
         }
         shared.queue.addOperation {
           shared.liveTasks[id]?.cancel()
+          DispatchQueue.main.async { result(nil) }
+        }
+      case "recover":
+        shared.whenScanned {
+          let list: [[String: Any]] = shared.records
+            .filter { !shared.startedHere.contains($0.key) }
+            .map { id, record -> [String: Any] in ["id": id, "meta": record.meta] }
+          DispatchQueue.main.async { result(list) }
+        }
+      case "attach":
+        guard let id = args["id"] as? String else {
+          result(FlutterError(code: "bad_args", message: "id required", details: nil))
+          return
+        }
+        shared.whenScanned {
+          let state = shared.attachState(id: id)
+          DispatchQueue.main.async { result(state) }
+        }
+      case "forget", "discard":
+        guard let id = args["id"] as? String else {
+          result(FlutterError(code: "bad_args", message: "id required", details: nil))
+          return
+        }
+        let discard = call.method == "discard"
+        shared.queue.addOperation {
+          shared.releaseRecord(id: id, discard: discard)
           DispatchQueue.main.async { result(nil) }
         }
       default:
@@ -84,7 +167,12 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
     guard identifier.hasPrefix(Self.identifierPrefix) else { return false }
     completionHandlers[identifier] = completionHandler
     // 重新挂上会话，系统才会把积压的委托事件交过来。
-    queue.addOperation { _ = self.session(identifier: identifier, proxy: nil) }
+    queue.addOperation {
+      let proxy = self.records.values.map(\.proxy).first {
+        Self.identifier(for: $0) == identifier
+      }
+      _ = self.session(identifier: identifier, proxy: proxy)
+    }
     return true
   }
 
@@ -99,6 +187,12 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
       mode = args["proxyMode"] as? String ?? "system"
       host = args["proxyHost"] as? String
       port = (args["proxyPort"] as? NSNumber)?.intValue
+    }
+
+    init(mode: String, host: String?, port: Int?) {
+      self.mode = mode
+      self.host = host
+      self.port = port
     }
 
     /// 会话配置建好后不可改，代理不同只能换会话；identifier 带上代理签名。
@@ -134,6 +228,10 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
     }
   }
 
+  private static func identifier(for proxy: ProxyConfig) -> String {
+    "\(identifierPrefix).\(proxy.signature)"
+  }
+
   /// 取（或建）会话。只在 [queue] 上调。同一 identifier 在进程内只能建一次。
   private func session(identifier: String, proxy: ProxyConfig?) -> URLSession {
     if let existing = sessions[identifier] { return existing }
@@ -145,36 +243,158 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
     }
     let created = URLSession(configuration: config, delegate: self, delegateQueue: queue)
     sessions[identifier] = created
+    scanGroup.enter()
     created.getAllTasks { tasks in
       self.queue.addOperation {
-        for task in tasks where !self.isLive(task) {
+        for task in tasks where !self.isTracked(task) {
+          // 注册表里没有：等它的进程已经不在了，没人接得住。
           task.cancel()
         }
+        for case let task as URLSessionDownloadTask in tasks {
+          guard let id = task.taskDescription, self.liveTasks[id] == nil,
+            let record = self.records[id], record.state == State.running
+          else { continue }
+          self.liveTasks[id] = task
+          self.destinations[id] = record.dest
+        }
+        self.scanGroup.leave()
       }
     }
     return created
   }
 
+  /// 所有已建会话的接回扫描完成后，在 [queue] 上跑 [body]。先把「登记为在跑、却没有
+  /// 任务」的记录续上（任务在进程不在时被系统丢了），保证 Dart 看到的 running 都有任务。
+  private func whenScanned(_ body: @escaping () -> Void) {
+    scanGroup.notify(queue: .global()) {
+      self.queue.addOperation {
+        for (id, record) in self.records
+        where record.state == State.running && self.liveTasks[id] == nil {
+          self.restart(id: id)
+        }
+        body()
+      }
+    }
+  }
+
   private func start(
-    id: String, url: URL, dest: String, proxy: ProxyConfig,
+    id: String, url: URL, dest: String, meta: String?, proxy: ProxyConfig,
     result: @escaping FlutterResult
   ) {
     queue.addOperation {
-      let identifier = "\(Self.identifierPrefix).\(proxy.signature)"
-      let session = self.session(identifier: identifier, proxy: proxy)
+      let session = self.session(identifier: Self.identifier(for: proxy), proxy: proxy)
       let task = session.downloadTask(with: url)
       task.taskDescription = id
       self.liveTasks[id] = task
       self.destinations[id] = dest
+      self.startedHere.insert(id)
+      if let meta {
+        self.records[id] = Record(
+          url: url.absoluteString, dest: dest, meta: meta, proxyMode: proxy.mode,
+          proxyHost: proxy.host, proxyPort: proxy.port, state: State.running)
+        self.saveRecords()
+      }
       task.resume()
       DispatchQueue.main.async { result(nil) }
     }
   }
 
-  /// id 由 Dart 按「微秒时间戳 + 进程内序号」生成，上一个进程的 id 不会在本进程复现。
-  private func isLive(_ task: URLSessionTask) -> Bool {
+  /// 续上一条在跑却没有任务的记录：有断点从断点续，没有就从头再下同一个地址。
+  private func restart(id: String) {
+    guard var record = records[id] else { return }
+    let proxy = record.proxy
+    let session = self.session(identifier: Self.identifier(for: proxy), proxy: proxy)
+    let task: URLSessionDownloadTask
+    if let resumeData = record.resumeData {
+      task = session.downloadTask(withResumeData: resumeData)
+    } else if let url = URL(string: record.url) {
+      task = session.downloadTask(with: url)
+    } else {
+      record.state = State.failed
+      record.errorKind = "other"
+      record.errorMessage = "invalid url \(record.url)"
+      records[id] = record
+      saveRecords()
+      return
+    }
+    record.resumeData = nil
+    record.state = State.running
+    records[id] = record
+    saveRecords()
+    task.taskDescription = id
+    liveTasks[id] = task
+    destinations[id] = record.dest
+    task.resume()
+  }
+
+  /// Dart 接手一条记录时它此刻的结局。
+  private func attachState(id: String) -> [String: Any] {
+    guard let record = records[id] else { return ["state": "missing"] }
+    switch record.state {
+    case State.delivered:
+      return ["state": State.delivered]
+    case State.failed:
+      return ["state": State.failed, "error": record.errorDictionary]
+    default:
+      let task = liveTasks[id]
+      let expected = task?.countOfBytesExpectedToReceive ?? NSURLSessionTransferSizeUnknown
+      return [
+        "state": State.running,
+        "received": task?.countOfBytesReceived ?? 0,
+        "total": expected == NSURLSessionTransferSizeUnknown ? -1 : expected,
+      ]
+    }
+  }
+
+  /// 释放一条记录。[discard] = 没人要了：任务还在跑就取消，已交付的文件删掉。
+  private func releaseRecord(id: String, discard: Bool) {
+    guard let record = records.removeValue(forKey: id) else {
+      if discard { liveTasks[id]?.cancel() }
+      return
+    }
+    saveRecords()
+    guard discard else { return }
+    liveTasks[id]?.cancel()
+    if record.state == State.delivered {
+      try? FileManager.default.removeItem(atPath: record.dest)
+    }
+  }
+
+  /// 本进程发起 / 接回的任务，或注册表里登记为在跑的任务（接回扫描完成前委托事件
+  /// 可能先到，不能因为还没进 [liveTasks] 就把交付的文件丢掉）。
+  private func isTracked(_ task: URLSessionTask) -> Bool {
     guard let id = task.taskDescription else { return false }
-    return liveTasks[id] != nil
+    return liveTasks[id] != nil || records[id]?.state == State.running
+  }
+
+  // MARK: - 注册表持久化（都在 queue 上）
+
+  private var registryUrl: URL? {
+    guard
+      let support = FileManager.default.urls(
+        for: .applicationSupportDirectory, in: .userDomainMask
+      ).first
+    else { return nil }
+    return support.appendingPathComponent(Self.registryFileName)
+  }
+
+  private func loadRecords() {
+    guard let registryUrl, let data = try? Data(contentsOf: registryUrl) else { return }
+    records = (try? JSONDecoder().decode([String: Record].self, from: data)) ?? [:]
+  }
+
+  private func saveRecords() {
+    guard let registryUrl else { return }
+    do {
+      try FileManager.default.createDirectory(
+        at: registryUrl.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let data = try JSONEncoder().encode(records)
+      // 系统可能在锁屏时把 app 唤醒到后台交付：首次解锁后即可读写。
+      try data.write(
+        to: registryUrl, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    } catch {
+      NSLog("[BackgroundDownload] save registry failed: \(error.localizedDescription)")
+    }
   }
 
   // MARK: - 委托（都在 queue 上）
@@ -184,7 +404,7 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
     totalBytesExpectedToWrite: Int64
   ) {
-    guard isLive(downloadTask), let id = downloadTask.taskDescription else { return }
+    guard isTracked(downloadTask), let id = downloadTask.taskDescription else { return }
     let now = Date().timeIntervalSince1970
     let finished =
       totalBytesExpectedToWrite > 0 && totalBytesWritten >= totalBytesExpectedToWrite
@@ -201,8 +421,8 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
     didFinishDownloadingTo location: URL
   ) {
     // location 在本方法返回后即被系统删除：要留就得在这里同步挪走。孤儿直接丢弃。
-    guard isLive(downloadTask), let id = downloadTask.taskDescription,
-      let dest = destinations[id]
+    guard isTracked(downloadTask), let id = downloadTask.taskDescription,
+      let dest = destinations[id] ?? records[id]?.dest
     else { return }
     if let http = downloadTask.response as? HTTPURLResponse,
       !(200..<300).contains(http.statusCode)
@@ -227,15 +447,41 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
   func urlSession(
     _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
   ) {
-    guard isLive(task), let id = task.taskDescription else { return }
+    guard isTracked(task), let id = task.taskDescription else { return }
+    // 接回扫描前到达的旧任务事件：本进程已经为同一 id 续了新任务，旧任务的结局作废。
+    if let live = liveTasks[id], live !== task { return }
     var failure = failures[id]
-    if let error = error as NSError? {
-      failure = Self.failure(for: error)
-    }
+    let nsError = error as NSError?
     liveTasks[id] = nil
     destinations[id] = nil
     failures[id] = nil
     lastProgressAt[id] = nil
+    if let nsError {
+      // 系统替我们取消的（用户划掉 app、系统资源不足、后台 app 被停用），不是用户点的
+      // 取消：登记过的就带着断点续上，Dart 那边看到的是同一条任务接着走。
+      if nsError.userInfo[NSURLErrorBackgroundTaskCancelledReasonKey] != nil,
+        var record = records[id]
+      {
+        record.resumeData = nsError.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+        record.state = State.running
+        records[id] = record
+        restart(id: id)
+        return
+      }
+      failure = Self.failure(for: nsError)
+    }
+    if var record = records[id] {
+      if let failure {
+        record.state = State.failed
+        record.errorKind = failure["kind"] as? String
+        record.errorStatus = failure["status"] as? Int
+        record.errorMessage = failure["message"] as? String
+      } else {
+        record.state = State.delivered
+      }
+      records[id] = record
+      saveRecords()
+    }
     send("complete", ["id": id, "error": failure ?? NSNull()])
   }
 
@@ -260,7 +506,9 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
         NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateUntrusted,
         NSURLErrorServerCertificateHasUnknownRoot, NSURLErrorServerCertificateNotYetValid,
         NSURLErrorCannotLoadFromNetwork, NSURLErrorInternationalRoamingOff,
-        NSURLErrorDataNotAllowed:
+        NSURLErrorDataNotAllowed,
+        // nsurlsessiond 中途断开（后台会话特有，-997）：传输层故障，与断网同样换下一个镜像。
+        NSURLErrorBackgroundSessionWasDisconnected:
         kind = "connection"
       default:
         break

@@ -367,14 +367,176 @@ void main() {
       expect(await members(id), titles.reversed.toList());
     });
 
-    test('混了判不出卷号的成员（外传）不自愈，留给 AI 排序', () async {
-      final int id = await db.createMediaCollection('志乃と恋');
-      for (final String t in <String>['志乃と恋 2', '志乃と恋 外伝', '志乃と恋 1']) {
-        await db.addToCollection(id, MediaKind.epub, await addBook(t));
+    // BUG-3923：主系列 + 番外（SS / 外传）的合集以前整张不自愈，阅读器卷 chip 行
+    // 照存储的乱序显示。现在主系列各卷在自己占的位置里按卷号排，番外原位不动。
+    Future<(int, Map<String, String>)> addCollection(
+      String name,
+      List<String> titles, {
+      String format = 'manga',
+    }) async {
+      final int id = await db.createMediaCollection(name);
+      final Map<String, String> uids = <String, String>{};
+      for (final String t in titles) {
+        uids[t] = await addBook(t, format: format);
+        await db.addToCollection(id, MediaKind.epub, uids[t]!);
       }
+      return (id, uids);
+    }
+
+    test('主系列 + 番外：主系列按卷号自愈、番外原位，且幂等', () async {
+      final (int id, _) = await addCollection('安達としまむら', <String>[
+        '安達としまむら5',
+        '安達としまむら8',
+        '安達としまむら7',
+        '安達としまむら6',
+        '安達としまむら4',
+        '安達としまむら3',
+        '安達としまむら2',
+        '安達としまむら',
+        '安達としまむらSS',
+      ], format: 'epub');
+
+      final summary = await grouper.groupAll();
+      expect(summary.updatedCollectionIds, <int>[id]);
+      expect(await members(id), <String>[
+        '安達としまむら',
+        '安達としまむら2',
+        '安達としまむら3',
+        '安達としまむら4',
+        '安達としまむら5',
+        '安達としまむら6',
+        '安達としまむら7',
+        '安達としまむら8',
+        '安達としまむらSS',
+      ]);
+      expect(
+        (await db.getMediaCollectionById(id))!.orderUpdatedAt,
+        0,
+        reason: '自愈是自动整理，不冒充用户手动序',
+      );
+
+      final again = await grouper.groupAll();
+      expect(again.updatedCollectionIds, isEmpty, reason: '顺序已对不再写库');
+    });
+
+    test('番外夹在卷之间（AI 已放好）是自愈的不动点：只排主系列，不挪番外', () async {
+      final (int id, _) = await addCollection('志乃と恋', <String>[
+        '志乃と恋 2',
+        '志乃と恋 外伝',
+        '志乃と恋 1',
+        '志乃と恋 3',
+      ]);
+
+      expect((await grouper.groupAll()).updatedCollectionIds, <int>[id]);
+      expect(await members(id), <String>[
+        '志乃と恋 1',
+        '志乃と恋 外伝',
+        '志乃と恋 2',
+        '志乃と恋 3',
+      ], reason: '外伝留在第 2 个位置，主系列 1/2/3 填其余位置');
+
+      // AI 自动排序把外伝放到第 3 卷后（落盘不置手动标记）：下次归组不冲掉。
+      final List<CollectionMemberKey> aiOrder = <CollectionMemberKey>[];
+      final Map<String, String> uidByTitle = <String, String>{
+        for (final EpubBookRow b in await db.getAllEpubBooks()) b.title: b.uid,
+      };
+      for (final String t in <String>[
+        '志乃と恋 1',
+        '志乃と恋 2',
+        '志乃と恋 3',
+        '志乃と恋 外伝',
+      ]) {
+        aiOrder.add((
+          mediaType: MediaKind.epub.dbValue,
+          entryKey: uidByTitle[t]!,
+        ));
+      }
+      await db.reorderCollectionItemsAutomatically(id, aiOrder);
+      expect((await grouper.groupAll()).updatedCollectionIds, isEmpty);
+      expect(await members(id), <String>[
+        '志乃と恋 1',
+        '志乃と恋 2',
+        '志乃と恋 3',
+        '志乃と恋 外伝',
+      ]);
+    });
+
+    test('用户手动排过的「主系列 + 番外」合集不自愈', () async {
+      final (int id, _) = await addCollection('志乃と恋', <String>[
+        '志乃と恋 2',
+        '志乃と恋 SS',
+        '志乃と恋 1',
+      ]);
+      await db.reorderCollectionItems(id, <CollectionMemberKey>[]);
+      expect((await db.getMediaCollectionById(id))!.orderUpdatedAt, isNot(0));
 
       expect((await grouper.groupAll()).updatedCollectionIds, isEmpty);
-      expect(await members(id), <String>['志乃と恋 2', '志乃と恋 外伝', '志乃と恋 1']);
+      expect(await members(id), <String>['志乃と恋 2', '志乃と恋 SS', '志乃と恋 1']);
+    });
+
+    test('混了别的系列 / 认不出主系列 / 主系列卷号重复时不自愈', () async {
+      // 别的系列（系列键不以主系列键开头）：主题合集，不碰。
+      final (int mixed, _) = await addCollection('百合', <String>[
+        '志乃と恋 2',
+        '超かぐやメシ! 1',
+        '志乃と恋 1',
+      ]);
+      // 两个系列各 2 卷：认不出主系列。
+      final (int tied, _) = await addCollection('並列', <String>[
+        'ABC 2',
+        'ABCD 2',
+        'ABC 1',
+        'ABCD 1',
+      ]);
+      // 主系列两卷都没有卷号（同卷号判据：至多一卷无卷号）。
+      final (int dup, _) = await addCollection('重複', <String>[
+        'XYZ 2',
+        'XYZ (上)',
+        'XYZ',
+        'XYZ 1',
+      ]);
+
+      expect((await grouper.groupAll()).updatedCollectionIds, isEmpty);
+      expect(await members(mixed), <String>['志乃と恋 2', '超かぐやメシ! 1', '志乃と恋 1']);
+      expect(await members(tied), <String>[
+        'ABC 2',
+        'ABCD 2',
+        'ABC 1',
+        'ABCD 1',
+      ]);
+      expect(await members(dup), <String>['XYZ 2', 'XYZ (上)', 'XYZ', 'XYZ 1']);
+    });
+
+    test('BookSeriesOrder.orderOf：番外原位、主系列按卷号；纯系列与输入顺序无关', () async {
+      final String v1 = await addBook('志乃と恋 1');
+      final String v2 = await addBook('志乃と恋 2');
+      final String v3 = await addBook('志乃と恋 3');
+      final String ex = await addBook('志乃と恋 外伝');
+      CollectionMemberKey k(String uid) =>
+          (mediaType: MediaKind.epub.dbValue, entryKey: uid);
+      final BookSeriesOrder order = await BookSeriesOrder.load(db);
+
+      expect(
+        order.orderOf(<CollectionMemberKey>[k(ex), k(v3), k(v1), k(v2)]),
+        <CollectionMemberKey>[k(ex), k(v1), k(v2), k(v3)],
+      );
+      expect(
+        order.orderOf(<CollectionMemberKey>[k(v3), k(ex), k(v2), k(v1)]),
+        <CollectionMemberKey>[k(v1), k(ex), k(v2), k(v3)],
+      );
+      expect(
+        order.orderOf(<CollectionMemberKey>[k(v3), k(v2), k(v1)]),
+        <CollectionMemberKey>[k(v1), k(v2), k(v3)],
+      );
+      expect(
+        order.orderOf(<CollectionMemberKey>[
+          k(v2),
+          (mediaType: MediaKind.epub.dbValue, entryKey: 'remote-only'),
+          k(v1),
+        ]),
+        isNull,
+        reason: '本机没有的书（透传成员）认不全，不定序',
+      );
     });
 
     test('规则卷序是全序：同卷配了两条 SRT 时结果也与输入顺序无关', () async {

@@ -217,6 +217,8 @@ Map<String, Object?> ankiSyncClientStatusJson(
   if (state.lastSyncAt != null) 'lastSyncAt': state.lastSyncAt,
   if (state.lastError != null) 'lastError': state.lastError,
   if (state.message != null) 'message': state.message,
+  if (state.rateLimitedUntil != null)
+    'rateLimitedUntil': state.rateLimitedUntil,
 };
 
 SettingsActionItem _action({

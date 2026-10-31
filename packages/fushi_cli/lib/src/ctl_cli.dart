@@ -25,6 +25,7 @@ import 'ctl_endpoint.dart';
 import 'ctl_launcher.dart';
 import 'ctl_paths.dart';
 import 'ctl_protocol.dart';
+import 'mcp/mcp_stdio_bridge.dart';
 
 /// 退出码：沿用 `fushi_server ctl` 的 sysexits 约定，两个 CLI 在脚本里同一套判断。
 const int kCliExitOk = 0;
@@ -69,6 +70,12 @@ ArgParser _buildParser(List<CtlCommandGroup> groups) {
   parser.addCommand('open');
   parser.addCommand('lookup');
   parser.addCommand('quit');
+  parser.addCommand('mcp')
+    ..addOption(
+      'token',
+      help: '配对令牌（缺省读环境变量 $kMcpTokenEnv；放命令行会出现在进程列表里，优先用环境变量）',
+    )
+    ..addFlag('help', abbr: 'h', negatable: false, help: '显示帮助');
   for (final CtlCommandGroup group in groups) {
     final ArgParser groupParser = parser.addCommand(group.name)
       ..addFlag('help', abbr: 'h', negatable: false, help: '显示帮助');
@@ -118,7 +125,10 @@ void _usage(ArgParser parser, List<CtlCommandGroup> groups, StringSink sink) {
     ..writeln('  start               确保 app 在运行并就绪')
     ..writeln('  open <路径|URL>     打开视频文件 / fushi:// 深链 / 卡片来源 URL')
     ..writeln('  lookup <词>         弹出查词')
-    ..writeln('  quit                落库后退出 app');
+    ..writeln('  quit                落库后退出 app')
+    ..writeln(
+      '  mcp                 MCP server（stdio）：让外部 AI 客户端调用 Fushi 的操作目录',
+    );
   if (groups.isNotEmpty) {
     sink
       ..writeln()
@@ -144,6 +154,7 @@ Future<int> runFushiCli(
   Duration pollInterval = const Duration(milliseconds: 250),
   List<CtlCommandGroup> groups = kCtlCommandGroups,
   Future<String?> Function()? readLine,
+  Stream<List<int>>? input,
 }) async {
   final StringSink stdoutSink = out ?? stdout;
   final StringSink stderrSink = err ?? stderr;
@@ -185,6 +196,7 @@ Future<int> runFushiCli(
     groups: groups,
     parser: parser,
     readLine: readLine ?? _readStdinLine,
+    input: input ?? stdin,
   );
   try {
     return await cli.run(command);
@@ -218,7 +230,11 @@ class _Cli {
     required this.groups,
     required this.parser,
     required this.readLine,
+    required this.input,
   });
+
+  /// `fushi_cli mcp` 读 JSON-RPC 的输入流（默认 stdin）。
+  final Stream<List<int>> input;
 
   final List<CtlCommandGroup> groups;
   final Future<String?> Function() readLine;
@@ -259,6 +275,8 @@ class _Cli {
           return await _lookup(command.rest);
         case 'quit':
           return await _quit();
+        case 'mcp':
+          return await _mcp(command);
       }
       for (final CtlCommandGroup group in groups) {
         if (group.name == command.name) return await _runGroup(group, command);
@@ -381,6 +399,62 @@ class _Cli {
     await _client!.quit();
     _emit(<String, Object?>{'ok': true, 'pid': status.pid}, '已请求 Fushi 退出');
     return kCliExitOk;
+  }
+
+  /// `fushi_cli mcp`：stdio ↔ app 控制通道 `/mcp` 的桥（[McpStdioBridge]）。
+  ///
+  /// 每条消息现读发现文件；app 没在运行时按全局 `--launch` 拉起（并发的消息共用
+  /// 同一次拉起），`--no-launch` 时直接回「Fushi 没有在运行」。
+  Future<int> _mcp(ArgResults command) async {
+    if (command['help'] as bool) {
+      out
+        ..writeln('fushi_cli mcp [--token <令牌>]')
+        ..writeln('  MCP server（stdio）。在 MCP 客户端配置里把它当本地服务器启动，')
+        ..writeln(
+          '  配对令牌放环境变量 $kMcpTokenEnv（Fushi › 设置 › 模型 › LLM › AI 助手里生成）。',
+        )
+        ..writeln()
+        ..writeln(parser.commands['mcp']!.usage);
+      return kCliExitOk;
+    }
+    final String token =
+        ((command['token'] as String?) ?? environment[kMcpTokenEnv] ?? '')
+            .trim();
+    if (token.isEmpty) {
+      throw const _CliFailure(
+        kCliExitUsage,
+        '缺少配对令牌：在 Fushi › 设置 › 模型 › LLM › AI 助手里生成，'
+        '放进 MCP 客户端配置的环境变量 $kMcpTokenEnv',
+      );
+    }
+    final String dir = _requireStateDir();
+    Future<CtlEndpoint?>? launching;
+    Future<CtlEndpoint?> locate() async {
+      final CtlEndpoint? current = await _probe() == null
+          ? null
+          : await readCtlEndpoint(dir);
+      if (current != null || !allowLaunch) return current;
+      final Future<CtlEndpoint?> pending = launching ??= () async {
+        try {
+          await _ensureReady();
+          return await readCtlEndpoint(dir);
+        } on _CliFailure catch (failure) {
+          err.writeln('[fushi_cli mcp] ${failure.message}');
+          return null;
+        } finally {
+          launching = null;
+        }
+      }();
+      return pending;
+    }
+
+    final McpStdioBridge bridge = McpStdioBridge(
+      token: token,
+      endpoint: locate,
+      output: out,
+      log: err,
+    );
+    return bridge.run(input);
   }
 
   String _requireStateDir() {

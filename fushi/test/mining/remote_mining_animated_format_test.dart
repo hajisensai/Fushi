@@ -316,8 +316,17 @@ void main() {
       // 剥注释：否则「解释这个 bug」的散文就能把守卫喂绿。
       final String body = codeOnly(src.substring(start, end));
 
-      expect(body, contains('_appModel.videoMiningAnimatedFormat'),
+      expect(body, contains('_videoMiningAnimatedFormat'),
           reason: '远端制卡（YouTube/Netflix）必须读用户的动图格式偏好。BUG-1330。');
+
+      // 反馈 biLEesNqWb：私有 getter 有扩展所选配置的只读视图时读视图，否则读 AppModel。
+      expect(
+        RegExp(r'get _videoMiningAnimatedFormat =>\s*_view\?\.prefs\.videoMiningAnimatedFormat\s*\?\?\s*'
+                r'_appModel\.videoMiningAnimatedFormat;')
+            .hasMatch(src),
+        isTrue,
+        reason: '_videoMiningAnimatedFormat 必须读用户偏好（视图或 AppModel），不能写死',
+      );
       expect(body, contains('format: animatedFormat'),
           reason: 'MiningMediaCompression.resolve 与 transcodeClipToCapture 都要收 '
               'format —— 不传则顶格档退回 GIF 封顶值。BUG-1330。');

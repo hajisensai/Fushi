@@ -204,10 +204,19 @@ void main() {
           elapsedDays: 5,
           elapsedSeconds: 5 * 86400,
         );
-      expect(await worker.append(today, <int>[77]), isTrue);
+      expect(await worker.append(today, <int>[77], <int>[5000]), isTrue);
       expect(await worker.snapshot(), isNot(before));
       expect(await worker.unappend(76), isFalse);
       expect(await worker.unappend(77), isTrue);
+      expect(await worker.snapshot(), before);
+      // 退到时刻之前：撤掉时刻 ≥ 它的条目；够不着 replay 进来的行时返回 null、什么都不改。
+      expect(await worker.append(today, <int>[78], <int>[6000]), isTrue);
+      expect(await worker.rewindFrom(6000, kRwkvFloorUnknown), isNull);
+      expect(await worker.rewindFrom(6000, 5999), 1);
+      expect(await worker.snapshot(), before);
+      expect(await worker.append(today, <int>[78], <int>[6000]), isTrue);
+      expect(await worker.rewindFrom(6001, kRwkvFloorUnknown), isNull);
+      expect(await worker.unappend(78), isTrue);
       expect(await worker.snapshot(), before);
 
       final RwkvRows q = RwkvRows();

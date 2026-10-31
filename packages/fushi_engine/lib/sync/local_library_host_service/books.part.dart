@@ -383,7 +383,11 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       // 拉 /api/tombstones 读的是 sync_deletion_tombstones——host 不写，「从所有
       // 设备删除」就只删掉了发起端与 host 两份。
       if (deleted > 0) {
-        await _writeHostSyncTombstone(SyncTombstoneKind.book, row.bookKey);
+        await _writeHostSyncTombstone(
+          SyncTombstoneKind.book,
+          row.bookKey,
+          cloudFolderName: sanitizeTtuFilename(row.title),
+        );
       }
 
       // extractDir 磁盘目录：DB 删除后再清理（与 reader_fushi_source 同顺序）。

@@ -194,9 +194,14 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     required bool apple,
     required double mirror,
   }) {
+    // MD3 按偏好选新版 / 经典布局；Apple 不读这项偏好（设置面板在 Apple 下隐藏）。
     final LyricsPlayerDesign design = apple
         ? AppleLyricsPlayerDesign(mirrorProgress: mirror)
-        : Md3LyricsPlayerDesign(mirrorProgress: mirror);
+        : widget.data.controlsStyle == LyricsControlsStyle.classic
+        ? Md3LyricsPlayerDesign(mirrorProgress: mirror)
+        : Md3ModernLyricsPlayerDesign(
+            compactExpanded: widget.data.compactControlsExpanded,
+          );
     final ThemeData base = Theme.of(context);
     final ColorScheme? coverScheme = apple ? null : _coverScheme;
     // 顶边底色：桌面自绘标题栏在 Navigator 外，只认页面上报的颜色。它只是兜底

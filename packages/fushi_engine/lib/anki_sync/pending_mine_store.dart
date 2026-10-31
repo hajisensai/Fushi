@@ -82,9 +82,8 @@ class PendingMineStore {
   Future<File> _payloadFile(String id) async =>
       File(p.join((await _root()).path, '${_checkedId(id)}.json'));
 
-  Future<File> _tombstoneFile(String id) async => File(
-    p.join((await _root()).path, _landedDirName, _checkedId(id)),
-  );
+  Future<File> _tombstoneFile(String id) async =>
+      File(p.join((await _root()).path, _landedDirName, _checkedId(id)));
 
   /// 这张卡（按幂等键 = 记录 id）是否已经在本机落地过。非法 id 按「已落地」处理：
   /// 反正不会收。
@@ -243,7 +242,21 @@ class PendingMineStore {
   static bool _isSendable(PendingMineRow r) =>
       (r.status == PendingMineStatus.pending ||
           r.status == PendingMineStatus.sending) &&
-      !(r.uploaded && r.originDeviceId == null);
+      !_handedToRelay(r);
+
+  /// 用户点「全部发送」时要发的卡：[sendable] 再加上 `failed`——「全部」就是连上次
+  /// 被拒收的一起重试。自动补发仍只用 [sendable]：被拒收的卡原样重发多半还会被拒，
+  /// 不该在用户没开口时反复撞。已交给落地设备的卡同样排除（BUG-2778）。
+  Future<List<PendingMineRow>> sendableIncludingFailed() async => (await rows())
+      .where(
+        (PendingMineRow r) =>
+            _isSendable(r) ||
+            (r.status == PendingMineStatus.failed && !_handedToRelay(r)),
+      )
+      .toList(growable: false);
+
+  static bool _handedToRelay(PendingMineRow r) =>
+      r.uploaded && r.originDeviceId == null;
 
   /// 待发卡张数（与 [all] 同口径）。
   Future<int> count() async => (await all()).length;

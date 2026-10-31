@@ -15,6 +15,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform;
@@ -302,6 +303,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   bool _clickOpen = false;
   bool _sentenceRuby = false;
 
+  /// 「翻译点按显示」开着时，这张卡的翻译是否已点开（换卡复位）。
+  bool _translationRevealed = false;
+
   /// 复习页的片段通道（声明这张卡的陪播例句音频用，见 [_declareSentenceAudio]）。
   late final SrsCardVideoChannel _channel = ref.read(
     srsCardVideoChannelProvider,
@@ -349,6 +353,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       // 内容高度保留上一张的：页面只在高度变化时上报，新卡同高时不会再报。
       _clickOpen = false;
       _sentenceRuby = false;
+      _translationRevealed = false;
       if (_scroll.hasClients) _scroll.jumpTo(0);
     } else if (old.face.showingAnswer != widget.face.showingAnswer) {
       if (_scroll.hasClients) _scroll.jumpTo(0);
@@ -424,9 +429,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SelectionArea(
         focusNode: _selectionFocus,
         // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
-        child: SrsBlankTapRegion(
-          onTapEmpty: widget.face.onTapEmpty,
+        child: SrsCardGestureRegion(
+          onGesture: widget.face.onCardGesture,
+          arming: widget.face.gestureArming,
           tapTookLookup: () => _tapTookLookup,
+          scrollController: _scroll,
           child: SrsNativeLookupRegion(
             key: _lookupRegion,
             child: ColoredBox(
@@ -927,25 +934,76 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                     srsFieldFilled(f['SentenceTranslation']))
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: srsLookupText(
-                      text: srsPlainText(f['SentenceTranslation']!),
-                      child: Text(
-                        srsPlainText(f['SentenceTranslation']!),
-                        key: const ValueKey<String>('srs-fushi-translation'),
-                        style: s.text(
-                          s.tokens.bodySecondary,
-                          scale: s.appearance.textScale,
-                          height: 1.55,
-                          color: s.muted,
-                          ui: true,
-                        ),
-                      ),
+                    child: _translation(
+                      s,
+                      srsPlainText(f['SentenceTranslation']!),
                     ),
                   ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 例句翻译。「模糊到点按」开着（[SrsCardAppearance.blurTranslation]）时默认模糊且不可取词，
+  /// 点一下显示；显示后点在字上 = 查词，点在字外（行内空白）= 再次模糊（与注音同一套规则）。
+  Widget _translation(_SrsCardStyle s, String text) {
+    final Widget body = Text(
+      text,
+      key: const ValueKey<String>('srs-fushi-translation'),
+      style: s.text(
+        s.tokens.bodySecondary,
+        scale: s.appearance.textScale,
+        height: 1.55,
+        color: s.muted,
+        ui: true,
+      ),
+    );
+    if (!s.appearance.blurTranslation) {
+      return srsLookupText(text: text, child: body);
+    }
+    final bool blurred = !_translationRevealed;
+    return Semantics(
+      container: true,
+      onTap: blurred ? () => setState(() => _translationRevealed = true) : null,
+      child: FocusableActionDetector(
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) =>
+                setState(() => _translationRevealed = !_translationRevealed),
+          ),
+        },
+        mouseCursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: const ValueKey<String>('srs-fushi-translation-toggle'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            if (!blurred && _tapTookLookup) return;
+            setState(() => _translationRevealed = !_translationRevealed);
+          },
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: blurred ? 6 : 0),
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              builder: (BuildContext _, double sigma, Widget? child) =>
+                  sigma < 0.05
+                  ? child!
+                  : ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(
+                        sigmaX: sigma,
+                        sigmaY: sigma,
+                        tileMode: TileMode.decal,
+                      ),
+                      child: child,
+                    ),
+              // 模糊期间不标成可取词：第一下点按只负责显示。
+              child: blurred ? body : srsLookupText(text: text, child: body),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1067,8 +1125,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     autoplayMedia: widget.face.autoplayMedia,
     // 释义里的发音按钮同样交给复习页的序列（同一时刻只出一路声音）。
     onPlayAudio: widget.face.onPlayAudio,
-    // 释义区的空白点按由页内取词脚本回报（原生区那一层见 [SrsBlankTapRegion]）。
-    onTapEmpty: widget.face.onTapEmpty,
+    // 释义区的卡面手势由页内指针脚本回报（原生区那一层见 [SrsCardGestureRegion]）。
+    onCardGesture: widget.face.onCardGesture,
+    gestureArming: widget.face.gestureArming,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
@@ -1084,8 +1143,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       key: _defsKey,
       child: KeyedSubtree(
         key: const ValueKey<String>('srs-fushi-definitions'),
-        // 释义 WebView 上的点按归页内脚本判空白，原生区的空白判定跳过这块。
-        child: SrsBlankTapRegion.excluded(
+        // 释义 WebView 上的手势归页内脚本判定，原生区的识别跳过这块。
+        child: SrsCardGestureRegion.excluded(
           child: builder(context, _defsFace(wide: wide)),
         ),
       ),

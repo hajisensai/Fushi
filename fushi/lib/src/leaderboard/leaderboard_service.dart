@@ -515,6 +515,26 @@ class LeaderboardService extends ChangeNotifier {
     return _runExclusive(() => _sync(claim: false));
   }
 
+  /// 本机的私密范围刚变大（来源库打开隐私开关）：已上报过、现在变私密的作品要从
+  /// 服务端撤下。书架里不再有它们，书架同步把「本地已消失」的作品 remove 掉，所以
+  /// 这里只需立即跑一次同步——排在在途同步**之后**新跑一轮（在途那轮的书架是开关
+  /// 之前建的，搭它的便车撤不下）。
+  ///
+  /// 返回 true = 已同步撤下；false = 不需要（没开排行榜 / 上传关着 → 本来就不上传；
+  /// 本机被另一台上传设备挡住 → 本机书架本来就没在上传）。同步失败照常抛给调用方
+  /// （UI 须明说没撤下；后台同步节流照常兜底重试）。
+  Future<bool> syncAfterPrivacyChange() async {
+    await load();
+    final LeaderboardLocalAccount? account = _account;
+    if (account == null ||
+        !account.uploadEnabled ||
+        account.uploadBlockedByOtherDevice) {
+      return false;
+    }
+    await _runExclusive(() => _sync(claim: false));
+    return true;
+  }
+
   /// 由本设备接管本账户的书架上传：清空本机同步状态、清掉「被另一台挡住」标记 →
   /// reset + claim 全量同步。接管即表示要从本机上传，上传开关一并打开。标记在开始时就
   /// 清：接管中途失败（如 429）也不能让后台同步永久停下，下一轮会从断点续传。同意语义
@@ -875,6 +895,19 @@ Uint8List encodeLeaderboardAvatarBytes(Uint8List bytes) {
   }
   return out!;
 }
+
+/// 「本机私密范围刚变大，立即从排行榜撤下」的入口（来源库隐私开关用）：返回
+/// [LeaderboardService.syncAfterPrivacyChange] 的结果。
+///
+/// 只是一层**惰性**转发：读这个 provider 不会构造 [LeaderboardService]（它要
+/// Profile / 平台服务那一整条依赖链），只有真的调用返回的函数时才解析**当时**的
+/// 当前 Profile 服务。来源库页面只需要这一个回调，不该为了它在打开页面时就硬依赖
+/// 排行榜服务。
+final Provider<Future<bool> Function()> leaderboardPrivacyWithdrawProvider =
+    Provider<Future<bool> Function()>(
+      (ref) =>
+          () => ref.read(leaderboardServiceProvider).syncAfterPrivacyChange(),
+    );
 
 /// 当前 Profile 的排行榜服务。Profile 切换时重建（旧实例随之 dispose），换到新
 /// Profile 的账户文件。

@@ -76,6 +76,35 @@
     .hp-update > .msr-slot { color: var(--fushi-warn); margin-top: 1px; }
     .hp-update-title { display: block; font-size: 12px; font-weight: 650; }
     .hp-update-detail { display: block; margin-top: 2px; color: var(--fushi-muted); font-size: 11px; line-height: 1.5; }
+    /* 反馈 biLEesNqWb：Fushi 配置下拉 + 回退 / 改名提示行。提示行出现时沿用全局动效 token 淡入。 */
+    .hp-profile { display: grid; gap: 6px; }
+    .hp-profile-row {
+      display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 8px 4px 12px;
+      border-radius: var(--fushi-shape-item); box-sizing: border-box;
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-profile-row {
+      padding: 6px 8px 6px 16px;
+      background-color: var(--md-sys-color-surface-container-lowest);
+      color: var(--md-sys-color-on-surface);
+    }
+    .hp-profile-row .hp-toggle-label { cursor: default; }
+    .hp-profile-select { flex: 0 1 auto; width: auto; min-width: 0; max-width: 170px; }
+    .hp-profile-status { padding: 0 12px; color: var(--fushi-muted); font-size: 11px; }
+    .hp-profile-status[hidden] { display: none; }
+    .hp-profile-notice {
+      display: grid; grid-template-columns: 18px minmax(0, 1fr) 32px; gap: 8px; align-items: center;
+      padding: 6px 6px 6px 12px;
+      border: 1px solid color-mix(in oklch, var(--fushi-warn) 55%, transparent);
+      border-radius: var(--fushi-shape-item);
+      background: color-mix(in oklch, var(--fushi-warn) 14%, transparent);
+      font-size: 12px; line-height: 1.45;
+      animation: hp-profile-notice-in var(--fushi-dur-medium, 250ms) var(--fushi-ease-spatial, ease) both;
+    }
+    .hp-profile-notice[hidden] { display: none; }
+    .hp-profile-notice > .msr-slot { color: var(--fushi-warn); }
+    .hp-profile-notice .hp-icon-btn { width: 32px; height: 32px; }
+    @keyframes hp-profile-notice-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .hp-profile-notice { animation: none; } }
     /* 快捷开关：整行是一颗 aria-pressed 按钮，左侧图标、右侧画开关（与设置页同一套 .switch 视觉）。 */
     .hp-group { display: grid; }
     .hp-toggle {
@@ -363,6 +392,26 @@
         <span class="hp-update-detail" id="hp-update-detail"></span>
       </span>
     </div>
+    <!-- 反馈 biLEesNqWb：查词 / 制卡用哪个 Fushi 配置（Profile）。「跟随 Fushi」= 不存选择、
+         请求不带配置；选中某个配置 = 存 fushiProfileSelection，请求头带它，app 先切到它再处理。
+         所选配置在 Fushi 里被删 / 改名时下面的提示行说明回退或新名字（fushiProfileNotice）。 -->
+    <section class="hp-profile" id="hp-profile" aria-labelledby="hp-profile-label">
+      <div class="hp-profile-row">
+        <span class="msr-slot hp-tg-icon" data-fushi-icon="layers" data-fushi-icon-size="22" aria-hidden="true"></span>
+        <label class="hp-toggle-label" id="hp-profile-label" for="hp-profile-select" data-i18n="ap_profile_label">Fushi 配置</label>
+        <select class="select-input hp-profile-select" id="hp-profile-select" data-i18n-title="ap_profile_hint" title="浏览器里的查词与制卡使用这个配置">
+          <option value="" data-i18n="ap_profile_follow_app_plain">跟随 Fushi</option>
+        </select>
+      </div>
+      <div class="hp-profile-status" id="hp-profile-status" hidden></div>
+      <div class="hp-profile-notice" id="hp-profile-notice" data-tone="warn" role="status" hidden>
+        <span class="msr-slot" data-fushi-icon="info" data-fushi-icon-size="18" aria-hidden="true"></span>
+        <span class="hp-profile-notice-text" id="hp-profile-notice-text"></span>
+        <button class="hp-icon-btn hp-profile-notice-close" id="hp-profile-notice-close" type="button" data-i18n-title="ap_profile_notice_dismiss" data-i18n-aria-label="ap_profile_notice_dismiss" title="知道了" aria-label="知道了">
+          <span class="msr-slot" data-fushi-icon="close" data-fushi-icon-size="18"></span>
+        </button>
+      </div>
+    </section>
     <!-- 最高频的三个开关（与设置页同键）：Fushi 字幕（subtitleOverlayEnabled，翻开时顺带开总门）、
          隐藏字幕（subtitleHidden，同 Shift+H）、Shift 悬停查词（shiftHoverLookup）。 -->
     <div class="hp-group" role="group">
@@ -430,6 +479,8 @@
   <script src="../icons.js"></script>
   <script src="../connection-diagnostics.js"></script>
   <script src="../popup-size.js"></script>
+  <script src="../profile-selection.js"></script>
+  <script src="../glass-select.js"></script>
   <script src="action-popup.js"></script>
 </body>
 </html>

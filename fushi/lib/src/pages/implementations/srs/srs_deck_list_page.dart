@@ -1350,6 +1350,7 @@ class _DeckRow extends StatelessWidget {
                           newCount: deck.newCount,
                           learnCount: deck.learnCount,
                           reviewCount: deck.reviewCount,
+                          reviewPending: deck.rwkvPending,
                         )
                       : Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1359,6 +1360,7 @@ class _DeckRow extends StatelessWidget {
                               newCount: deck.newCount,
                               learnCount: deck.learnCount,
                               reviewCount: deck.reviewCount,
+                              reviewPending: deck.rwkvPending,
                             ),
                             FushiPopupMenuButton<_DeckAction>(
                               tooltip: t.srs_deck_menu,

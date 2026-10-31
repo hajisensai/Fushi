@@ -41,7 +41,16 @@ void main() {
     // #2477 起远程制卡改走 `_appModel.hostMiningAnkiRepository`（遵守本机挖词目标），
     // 不再直接 `createAnkiRepository()`；锚点随之换，并先断言锚点存在，免得 -1
     // 让顺序比较失去意义。
-    const String repoAnchor = '_appModel.hostMiningAnkiRepository';
+    // 反馈 biLEesNqWb：再改走 `_miningRepository`——无配置视图时就是
+    // hostMiningAnkiRepository，扩展所选配置时按视图的 Anki 设置建。
+    expect(
+      RegExp(r'BaseAnkiRepository get _miningRepository \{[^}]*'
+              r'_appModel\.hostMiningAnkiRepository')
+          .hasMatch(body),
+      isTrue,
+      reason: '无配置视图时制卡仓库仍须是 hostMiningAnkiRepository',
+    );
+    const String repoAnchor = '_miningRepository';
     for (final String methodBody in <String>[entryBody, immersionBody]) {
       final int repoAt = methodBody.indexOf(repoAnchor);
       expect(repoAt, greaterThan(0), reason: '制卡仓库应经 $repoAnchor 取得');

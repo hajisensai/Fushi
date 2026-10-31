@@ -26,9 +26,9 @@ class _RecordingAppModel extends AppModel {
   _RecordingAppModel({
     List<CustomThemeEntry> themes = const <CustomThemeEntry>[],
     String themeKey = 'system-theme',
-  })  : _themes = List<CustomThemeEntry>.from(themes),
-        _themeKey = themeKey,
-        super(testPlatformServices());
+  }) : _themes = List<CustomThemeEntry>.from(themes),
+       _themeKey = themeKey,
+       super(testPlatformServices());
 
   final List<CustomThemeEntry> _themes;
   String _themeKey;
@@ -57,8 +57,9 @@ class _RecordingAppModel extends AppModel {
   @override
   Future<void> upsertCustomTheme(CustomThemeEntry entry) async {
     upserts.add(entry);
-    final int idx =
-        _themes.indexWhere((CustomThemeEntry e) => e.id == entry.id);
+    final int idx = _themes.indexWhere(
+      (CustomThemeEntry e) => e.id == entry.id,
+    );
     if (idx >= 0) {
       _themes[idx] = entry;
     } else {
@@ -170,11 +171,7 @@ final Finder _verticalScrollable = find
 /// 它出现再点。swatch 行不需要滚（已可见时 scrollUntilVisible 立即返回）。
 Future<void> _tapIcon(WidgetTester tester, IconData icon) async {
   final Finder finder = find.byIcon(icon);
-  await tester.scrollUntilVisible(
-    finder,
-    300,
-    scrollable: _verticalScrollable,
-  );
+  await tester.scrollUntilVisible(finder, 300, scrollable: _verticalScrollable);
   expect(finder, findsOneWidget);
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
@@ -184,8 +181,7 @@ Future<void> _tapIcon(WidgetTester tester, IconData icon) async {
 
 /// 滚到「应用主题」并点它。
 Future<void> _tapApply(WidgetTester tester) async {
-  final Finder apply =
-      find.byKey(const ValueKey<String>('custom-theme-apply'));
+  final Finder apply = find.byKey(const ValueKey<String>('custom-theme-apply'));
   await tester.scrollUntilVisible(apply, 300, scrollable: _verticalScrollable);
   await tester.pumpAndSettle();
   await tester.tap(apply);
@@ -198,64 +194,73 @@ void main() {
   });
 
   group('BUG-1841 swatch row entry points open a draft without persisting', () {
-    testWidgets('+new swatch pushes CustomThemePage(themeId: null), no upsert',
-        (WidgetTester tester) async {
-      final _RecordingAppModel appModel =
-          _RecordingAppModel(themes: <CustomThemeEntry>[_existing]);
-      await tester.pumpWidget(_swatchRowHost(appModel));
-      await tester.pumpAndSettle();
+    testWidgets(
+      '+new swatch pushes CustomThemePage(themeId: null), no upsert',
+      (WidgetTester tester) async {
+        final _RecordingAppModel appModel = _RecordingAppModel(
+          themes: <CustomThemeEntry>[_existing],
+        );
+        await tester.pumpWidget(_swatchRowHost(appModel));
+        await tester.pumpAndSettle();
 
-      await _tapIcon(tester, Icons.add);
+        await _tapIcon(tester, Icons.add);
 
-      final CustomThemePage page =
-          tester.widget<CustomThemePage>(find.byType(CustomThemePage));
-      expect(page.themeId, isNull, reason: '+新建必须打开草稿而不是某个已落库 id');
-      expect(appModel.upserts, isEmpty, reason: '打开编辑页不得写主题列表（BUG-1841 原症状）');
-      expect(appModel.customThemes, hasLength(1), reason: '列表不能因为点了 + 就多出一条');
-    });
+        final CustomThemePage page = tester.widget<CustomThemePage>(
+          find.byType(CustomThemePage),
+        );
+        expect(page.themeId, isNull, reason: '+新建必须打开草稿而不是某个已落库 id');
+        expect(appModel.upserts, isEmpty, reason: '打开编辑页不得写主题列表（BUG-1841 原症状）');
+        expect(appModel.customThemes, hasLength(1), reason: '列表不能因为点了 + 就多出一条');
+      },
+    );
 
     // BUG-1894：这条用例以前断言「预设主题上按编辑 → 打开空草稿」。那个回落让
     // 编辑按钮与左邻「+」卡片逐字节等价——同一行两个按钮做同一件事，挂着「编辑」
     // 图标的那个却在新建，和它的 tooltip 自相矛盾。现在没有可编辑对象时按钮直接
     // 禁用；BUG-1841 真正要守的「不得预先落库」由下面的 upserts 断言继续守着。
     testWidgets(
-        'BUG-1894: edit button is disabled on a preset theme (no active custom '
-        'entry) — it no longer duplicates the +new draft entry point',
-        (WidgetTester tester) async {
-      final _RecordingAppModel appModel = _RecordingAppModel(
-        themes: <CustomThemeEntry>[_existing],
-        themeKey: 'light-theme',
-      );
-      await tester.pumpWidget(_swatchRowHost(appModel));
-      await tester.pumpAndSettle();
+      'BUG-1894: edit button is disabled on a preset theme (no active custom '
+      'entry) — it no longer duplicates the +new draft entry point',
+      (WidgetTester tester) async {
+        final _RecordingAppModel appModel = _RecordingAppModel(
+          themes: <CustomThemeEntry>[_existing],
+          themeKey: 'light-theme',
+        );
+        await tester.pumpWidget(_swatchRowHost(appModel));
+        await tester.pumpAndSettle();
 
-      final Finder editIcon = find.byIcon(Icons.edit_outlined);
-      await tester.scrollUntilVisible(
-        editIcon,
-        300,
-        scrollable: _verticalScrollable,
-      );
-      await tester.ensureVisible(editIcon);
-      await tester.pumpAndSettle();
+        final Finder editIcon = find.byIcon(Icons.edit_outlined);
+        await tester.scrollUntilVisible(
+          editIcon,
+          300,
+          scrollable: _verticalScrollable,
+        );
+        await tester.ensureVisible(editIcon);
+        await tester.pumpAndSettle();
 
-      // 按钮仍然渲染（布局稳定、功能可发现），但 FushiIconButton 在 enabled=false
-      // 时把 InkWell.onTap 置空 —— 点不动。
-      final InkWell ink = tester.widget<InkWell>(
-        find.ancestor(of: editIcon, matching: find.byType(InkWell)).first,
-      );
-      expect(ink.onTap, isNull, reason: '没有活跃自定义主题时编辑按钮必须禁用，而不是回落去开空草稿');
+        // 按钮仍然渲染（布局稳定、功能可发现），但 FushiIconButton 在 enabled=false
+        // 时把 InkWell.onTap 置空 —— 点不动。
+        final InkWell ink = tester.widget<InkWell>(
+          find.ancestor(of: editIcon, matching: find.byType(InkWell)).first,
+        );
+        expect(ink.onTap, isNull, reason: '没有活跃自定义主题时编辑按钮必须禁用，而不是回落去开空草稿');
 
-      await tester.tap(editIcon, warnIfMissed: false);
-      await tester.pumpAndSettle();
+        await tester.tap(editIcon, warnIfMissed: false);
+        await tester.pumpAndSettle();
 
-      expect(find.byType(CustomThemePage), findsNothing,
-          reason: '禁用的编辑按钮不得打开编辑页——那正是与「+」重合的旧行为');
-      expect(appModel.upserts, isEmpty, reason: '编辑按钮在预设主题上不得先造一条空主题');
-      expect(appModel.customThemes, hasLength(1));
-    });
+        expect(
+          find.byType(CustomThemePage),
+          findsNothing,
+          reason: '禁用的编辑按钮不得打开编辑页——那正是与「+」重合的旧行为',
+        );
+        expect(appModel.upserts, isEmpty, reason: '编辑按钮在预设主题上不得先造一条空主题');
+        expect(appModel.customThemes, hasLength(1));
+      },
+    );
 
-    testWidgets('edit button on an active custom theme edits that entry',
-        (WidgetTester tester) async {
+    testWidgets('edit button on an active custom theme edits that entry', (
+      WidgetTester tester,
+    ) async {
       final _RecordingAppModel appModel = _RecordingAppModel(
         themes: <CustomThemeEntry>[_existing],
         themeKey: 'custom-theme:${_existing.id}',
@@ -265,8 +270,9 @@ void main() {
 
       await _tapIcon(tester, Icons.edit_outlined);
 
-      final CustomThemePage page =
-          tester.widget<CustomThemePage>(find.byType(CustomThemePage));
+      final CustomThemePage page = tester.widget<CustomThemePage>(
+        find.byType(CustomThemePage),
+      );
       expect(page.themeId, _existing.id);
       expect(appModel.upserts, isEmpty);
     });
@@ -274,47 +280,50 @@ void main() {
 
   group('BUG-1841 CustomThemePage draft mode', () {
     testWidgets(
-        'opening a draft writes nothing; apply upserts exactly once with the '
-        'brand default seed and pins the theme key to the new id',
-        (WidgetTester tester) async {
-      final _RecordingAppModel appModel =
-          _RecordingAppModel(themes: <CustomThemeEntry>[_existing]);
-      await tester.pumpWidget(_host(appModel, const CustomThemePage()));
-      await tester.pumpAndSettle();
+      'opening a draft writes nothing; apply upserts exactly once with the '
+      'brand default seed and pins the theme key to the new id',
+      (WidgetTester tester) async {
+        final _RecordingAppModel appModel = _RecordingAppModel(
+          themes: <CustomThemeEntry>[_existing],
+        );
+        await tester.pumpWidget(_host(appModel, const CustomThemePage()));
+        await tester.pumpAndSettle();
 
-      expect(appModel.upserts, isEmpty, reason: 'initState 不得落库草稿');
-      expect(find.text(t.custom_theme_default_name(n: 2)), findsOneWidget,
-          reason: '草稿默认名 hint 应为「Custom 列表长度+1」');
+        expect(appModel.upserts, isEmpty, reason: 'initState 不得落库草稿');
+        expect(
+          find.text(t.custom_theme_default_name(n: 2)),
+          findsOneWidget,
+          reason: '草稿默认名 hint 应为「Custom 列表长度+1」',
+        );
 
-      // 删除入口在 hero 的「更多」菜单里：打开菜单后才算数。
-      await tester.tap(find.byKey(const ValueKey<String>('custom-theme-more')));
-      await tester.pumpAndSettle();
-      expect(
-        find.text(t.delete_custom_theme, skipOffstage: false),
-        findsNothing,
-        reason: '草稿没有东西可删，删除项不该出现',
-      );
-      await tester.tapAt(const Offset(4, 4));
-      await tester.pumpAndSettle();
+        // 删除按钮与导入 / 分享同级平铺；草稿没有东西可删，不该出现。
+        expect(
+          find.byKey(const ValueKey<String>('custom-theme-delete')),
+          findsNothing,
+          reason: '草稿没有东西可删，删除按钮不该出现',
+        );
+        expect(find.text(t.delete_custom_theme), findsNothing);
 
-      await _tapApply(tester);
+        await _tapApply(tester);
 
-      expect(appModel.upserts, hasLength(1));
-      final CustomThemeEntry saved = appModel.upserts.single;
-      expect(saved.seed, kCustomThemeDefaultSeed);
-      expect(saved.name, '');
-      // 2026-09 重设计：新草稿默认所见即所得——主题色钉死为 primary（与 seed 同值），
-      // 其余角色全部跟随主题（null）。
-      expect(saved.primaryColor, kCustomThemeDefaultSeed);
-      expect(saved.fontColor, isNull);
-      expect(saved.bgColor, isNull);
-      expect(saved.id, isNot(_existing.id));
-      expect(appModel.customThemes, hasLength(2));
-      expect(appModel.themeKeyWrites, <String>['custom-theme:${saved.id}']);
-    });
+        expect(appModel.upserts, hasLength(1));
+        final CustomThemeEntry saved = appModel.upserts.single;
+        expect(saved.seed, kCustomThemeDefaultSeed);
+        expect(saved.name, '');
+        // 2026-09 重设计：新草稿默认所见即所得——主题色钉死为 primary（与 seed 同值），
+        // 其余角色全部跟随主题（null）。
+        expect(saved.primaryColor, kCustomThemeDefaultSeed);
+        expect(saved.fontColor, isNull);
+        expect(saved.bgColor, isNull);
+        expect(saved.id, isNot(_existing.id));
+        expect(appModel.customThemes, hasLength(2));
+        expect(appModel.themeKeyWrites, <String>['custom-theme:${saved.id}']);
+      },
+    );
 
-    testWidgets('leaving a draft without applying persists nothing',
-        (WidgetTester tester) async {
+    testWidgets('leaving a draft without applying persists nothing', (
+      WidgetTester tester,
+    ) async {
       final _RecordingAppModel appModel = _RecordingAppModel();
       await tester.pumpWidget(_host(appModel, const CustomThemePage()));
       await tester.pumpAndSettle();
@@ -328,30 +337,55 @@ void main() {
       expect(appModel.themeKeyWrites, isEmpty);
     });
 
-    testWidgets('an existing entry is editable: prefilled name + delete button',
-        (WidgetTester tester) async {
-      final _RecordingAppModel appModel =
-          _RecordingAppModel(themes: <CustomThemeEntry>[_existing]);
-      await tester.pumpWidget(
-        _host(appModel, CustomThemePage(themeId: _existing.id)),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'an existing entry is editable: prefilled name + delete button',
+      (WidgetTester tester) async {
+        final _RecordingAppModel appModel = _RecordingAppModel(
+          themes: <CustomThemeEntry>[_existing],
+        );
+        await tester.pumpWidget(
+          _host(appModel, CustomThemePage(themeId: _existing.id)),
+        );
+        await tester.pumpAndSettle();
 
-      expect(appModel.upserts, isEmpty);
-      expect(find.text('Mine'), findsOneWidget);
+        expect(appModel.upserts, isEmpty);
+        expect(find.text('Mine'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey<String>('custom-theme-more')));
-      await tester.pumpAndSettle();
-      expect(find.text(t.delete_custom_theme), findsOneWidget);
-      await tester.tapAt(const Offset(4, 4));
-      await tester.pumpAndSettle();
+        // 反馈 cvT5hHWF95：删除与导入 / 分享同级平铺，不再藏在「更多」菜单里。
+        final Finder header = find.byKey(
+          const ValueKey<String>('custom-theme-header'),
+        );
+        final Finder deleteButton = find.descendant(
+          of: header,
+          matching: find.byKey(const ValueKey<String>('custom-theme-delete')),
+        );
+        expect(deleteButton, findsOneWidget);
+        expect(find.text(t.delete_custom_theme), findsOneWidget);
+        final Rect share = tester.getRect(
+          find.byKey(const ValueKey<String>('custom-theme-share')),
+        );
+        final Rect del = tester.getRect(deleteButton);
+        expect(
+          (del.center.dy - share.center.dy).abs(),
+          lessThan(share.height),
+          reason: '删除按钮应与分享按钮同一排',
+        );
 
-      await _tapApply(tester);
+        // 点击先弹确认；取消后不删除。
+        await tester.tap(deleteButton);
+        await tester.pumpAndSettle();
+        expect(find.text(t.delete_custom_theme_confirm), findsOneWidget);
+        await tester.tap(find.text(t.dialog_close));
+        await tester.pumpAndSettle();
+        expect(appModel.customThemes, hasLength(1), reason: '取消确认不得删除');
 
-      expect(appModel.upserts, hasLength(1));
-      expect(appModel.upserts.single.id, _existing.id);
-      expect(appModel.upserts.single.primaryColor, _existing.primaryColor);
-      expect(appModel.customThemes, hasLength(1));
-    });
+        await _tapApply(tester);
+
+        expect(appModel.upserts, hasLength(1));
+        expect(appModel.upserts.single.id, _existing.id);
+        expect(appModel.upserts.single.primaryColor, _existing.primaryColor);
+        expect(appModel.customThemes, hasLength(1));
+      },
+    );
   });
 }
