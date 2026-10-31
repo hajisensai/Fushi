@@ -124,8 +124,51 @@ else {
 & git -C $here config merge.fushi-i18n-json.driver "dart fushi/tool/i18n_merge_driver.dart %O %A %B"
 Write-Host "OK i18n json 合并驱动已注册(merge.fushi-i18n-json)" -ForegroundColor Green
 
+# --- strings.g.dart 不入库：git 钩子 + 生成 -----------------------------------------
+# fushi/lib/i18n/strings.g.dart 由 fushi/tool/gen_i18n.dart 生成、不入库：切分支 / 合并会删掉
+# 或让它过期。tool/git_hooks/install.sh 往仓库级 hooks 目录(git rev-parse --git-path hooks，
+# 主 checkout 与所有 worktree 共用；设了 core.hooksPath 就是那里)的 post-checkout / post-merge
+# 写一段带标记的块(只改标记之间，用户自己的钩子行保留)，切换后调 tool/git_hooks/gen_i18n.sh
+# 重新生成(戳记没变秒退)。硬门在 fushi/tool/heavy.dart：本机每次 analyze / test / build 前都生成。
+function Resolve-SetupBash {
+    [OutputType([string])]
+    param()
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return 'bash' }
+    # git --exec-path = <Git>/mingw64/libexec/git-core；git 钩子本身就由这份 Git 的 sh 执行。
+    $execPath = (& git --exec-path | Out-String).Trim()
+    if ($execPath) {
+        $gitRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $execPath))
+        foreach ($rel in @('bin/bash.exe', 'usr/bin/bash.exe')) {
+            $candidate = Join-Path $gitRoot $rel
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+    }
+    throw "找不到 Git for Windows 的 bash(git --exec-path=$execPath)，装不了 i18n git 钩子。"
+}
+$setupBash = Resolve-SetupBash
+Push-Location $here
+try {
+    & $setupBash tool/git_hooks/install.sh
+    $hookExit = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
+if ($hookExit -ne 0) { throw "tool/git_hooks/install.sh failed (exit $hookExit)." }
+
 # --- bootstrap(pub get + 打补丁) ------------------------------------------
 if ($SkipBootstrap) {
+    # bootstrap 会在 pub get 之后生成；跳过它时也要生成(依赖已解析过的 worktree 约 1~15 秒、
+    # 不联网)。还没 pub get 过的 worktree 由 gen_i18n.sh 说明原因后跳过，失败则让本脚本失败。
+    Push-Location $here
+    try {
+        & $setupBash tool/git_hooks/gen_i18n.sh setup
+        $genExit = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($genExit -ne 0) { throw "tool/git_hooks/gen_i18n.sh setup failed (exit $genExit)." }
     Write-Host "`n已跳过 bootstrap。跑 flutter test 前请先: pwsh -File tool/bootstrap.ps1" -ForegroundColor Cyan
     return
 }

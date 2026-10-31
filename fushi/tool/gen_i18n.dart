@@ -5,8 +5,10 @@
 // strings.g.dart is NOT tracked in git (37 MB, rewritten by every key change);
 // every place that analyzes, tests or builds the app runs this first, after
 // pub get: tool/bootstrap.ps1, tool/bootstrap.sh, the melos bootstrap post
-// hook, fushi/tool/dist_test/worker_prepare.sh and the
-// .github/actions/gen-i18n composite action in each CI job (guard:
+// hook, fushi/tool/dist_test/worker_prepare.sh, the .github/actions/gen-i18n
+// composite action in each CI job that compiles the app, fushi/tool/heavy.dart
+// before a local analyze / test / build in fushi/, and the post-checkout /
+// post-merge git hooks tool/git_hooks/install.sh installs (guard:
 // fushi/test/build/strings_g_dart_untracked_guard_test.dart).
 //
 // Output is `dart run slang` + `dart format` of that one file — byte-identical

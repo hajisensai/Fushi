@@ -106,6 +106,36 @@ void main() {
     );
   });
 
+  test(
+    '切分支 / 合并后重新生成：git 钩子由 setup_worktree / bootstrap.sh 装，-SkipBootstrap 也生成',
+    () {
+      final String setup = stripComments(read('tool/setup_worktree.ps1'));
+      final int install = setup.indexOf('tool/git_hooks/install.sh');
+      final int skip = setup.indexOf(r'if ($SkipBootstrap) {');
+      final int genSetup = setup.indexOf('tool/git_hooks/gen_i18n.sh setup');
+      final int ret = setup.indexOf('return', skip);
+      expect(install, greaterThan(0), reason: 'setup_worktree.ps1 必须装 git 钩子');
+      expect(skip, greaterThan(install), reason: '钩子要在 -SkipBootstrap 提前返回之前装');
+      expect(genSetup, greaterThan(skip), reason: '-SkipBootstrap 分支也要生成');
+      expect(ret, greaterThan(genSetup));
+      expect(
+        stripComments(read('tool/bootstrap.sh')),
+        contains('sh tool/git_hooks/install.sh'),
+      );
+      final String installer = read('tool/git_hooks/install.sh');
+      for (final String hook in <String>['post-checkout', 'post-merge']) {
+        expect(installer, contains(hook));
+      }
+      // 只改标记块：用户自己的钩子行保留，非 sh 钩子不碰。
+      expect(installer, contains('# >>> fushi gen-i18n'));
+      expect(installer, contains('# <<< fushi gen-i18n <<<'));
+      expect(installer, contains('--git-path hooks'));
+      final String hook = stripComments(read('tool/git_hooks/gen_i18n.sh'));
+      expect(hook, contains('fushi/tool/gen_i18n.dart'));
+      expect(hook, contains('.dart_tool/package_config.json'));
+    },
+  );
+
   test('dist worker 的 prepare 每次都生成，且在 Windows 提前退出与预热测试之前', () {
     final String prepare = stripComments(
       read('fushi/tool/dist_test/worker_prepare.sh'),
@@ -232,7 +262,7 @@ jobs:
       }
     }
     expect(problems, isEmpty, reason: problems.join('\n'));
-    // 规模哨兵：解析写错会让本守卫一个 job 都不查。
+    // 规模哨兵：解析写错会让本守卫一个 job 都不查。2026-11-01 实测 13 个 job。
     expect(
       covered.length,
       greaterThanOrEqualTo(12),

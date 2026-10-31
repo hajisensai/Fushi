@@ -25,6 +25,10 @@ bash ci/apply-patches.sh
 echo "==> Generating i18n (fushi/tool/gen_i18n.dart)"
 # The SDK pub get just used (flutter on PATH), not some other dart on PATH.
 "$(dirname "$(command -v flutter)")/dart" fushi/tool/gen_i18n.dart
+# A later branch switch / merge deletes or outdates it again: post-checkout /
+# post-merge hooks regenerate it (marked block, existing hook lines kept).
+echo "==> git hooks (tool/git_hooks/install.sh)"
+sh tool/git_hooks/install.sh
 
 # Rust 原生库 native/fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv / fushi_music / fushi_corpus 是 app 与 flutter test 的硬依赖：
 # CMake / Xcode / Gradle 缺库直接构建失败，测试成片报库不可用。按主机平台各编一次；没有 cargo 就失败。
