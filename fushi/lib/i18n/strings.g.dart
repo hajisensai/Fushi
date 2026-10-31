@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176341 (10373 per locale)
+/// Strings: 176358 (10374 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3249,6 +3249,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Not enough free storage to import this dictionary. Free up some space and try again.';
   String dict_import_success_summary({required Object n}) =>
       'Imported ${n} dictionary(s)';
+  String get dict_keep_alive_title => 'Dictionary download';
   String get dict_language_auto => 'Automatic';
   String get dict_language_description =>
       'Decides which font renders this dictionary\'s text. Automatic uses the language the dictionary declares.';
@@ -20084,6 +20085,8 @@ class _StringsAr extends _StringsEn {
   @override
   String dict_import_success_summary({required Object n}) =>
       'تم استيراد ${n} قاموس';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => 'تلقائي';
   @override
@@ -45290,6 +45293,8 @@ class _StringsDe extends _StringsEn {
   @override
   String dict_import_success_summary({required Object n}) =>
       '${n} Wörterbuch/-bücher importiert';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => 'Automatisch';
   @override
@@ -70832,6 +70837,8 @@ class _StringsEs extends _StringsEn {
   @override
   String dict_import_success_summary({required Object n}) =>
       'Se importaron ${n} diccionario(s)';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => 'Automático';
   @override
@@ -96442,6 +96449,8 @@ class _StringsFr extends _StringsEn {
   String dict_import_success_summary({required Object n}) =>
       '${n} dictionnaire(s) importé(s)';
   @override
+  String get dict_keep_alive_title => 'Dictionary download';
+  @override
   String get dict_language_auto => 'Automatique';
   @override
   String get dict_language_description =>
@@ -122032,6 +122041,8 @@ class _StringsId extends _StringsEn {
   String dict_import_success_summary({required Object n}) =>
       'Mengimpor ${n} kamus';
   @override
+  String get dict_keep_alive_title => 'Dictionary download';
+  @override
   String get dict_language_auto => 'Otomatis';
   @override
   String get dict_language_description =>
@@ -147382,6 +147393,8 @@ class _StringsIt extends _StringsEn {
   String dict_import_success_summary({required Object n}) =>
       'Importati ${n} dizionari';
   @override
+  String get dict_keep_alive_title => 'Dictionary download';
+  @override
   String get dict_language_auto => 'Automatico';
   @override
   String get dict_language_description =>
@@ -172668,6 +172681,8 @@ class _StringsJa extends _StringsEn {
   String dict_import_success_summary({required Object n}) =>
       '辞書を ${n} 件インポートしました';
   @override
+  String get dict_keep_alive_title => 'Dictionary download';
+  @override
   String get dict_language_auto => '自動';
   @override
   String get dict_language_description =>
@@ -197114,6 +197129,8 @@ class _StringsKo extends _StringsEn {
       'Not enough free storage to import this dictionary. Free up some space and try again.';
   @override
   String dict_import_success_summary({required Object n}) => '사전 ${n}개를 가져왔습니다';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => '자동';
   @override
@@ -221821,6 +221838,8 @@ class _StringsNl extends _StringsEn {
   @override
   String dict_import_success_summary({required Object n}) =>
       '${n} woordenboek(en) geïmporteerd';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => 'Automatisch';
   @override
@@ -247268,6 +247287,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String dict_import_success_summary({required Object n}) =>
       '${n} dicionário(s) importado(s)';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => 'Automático';
   @override
@@ -272754,6 +272775,8 @@ class _StringsRu extends _StringsEn {
   String dict_import_success_summary({required Object n}) =>
       'Импортировано словарей: ${n}';
   @override
+  String get dict_keep_alive_title => 'Dictionary download';
+  @override
   String get dict_language_auto => 'Автоматически';
   @override
   String get dict_language_description =>
@@ -298135,6 +298158,8 @@ class _StringsTh extends _StringsEn {
   String dict_import_success_summary({required Object n}) =>
       'นำเข้าพจนานุกรม ${n} เล่มแล้ว';
   @override
+  String get dict_keep_alive_title => 'Dictionary download';
+  @override
   String get dict_language_auto => 'อัตโนมัติ';
   @override
   String get dict_language_description =>
@@ -323305,6 +323330,8 @@ class _StringsTr extends _StringsEn {
   @override
   String dict_import_success_summary({required Object n}) =>
       '${n} sözlük içe aktarıldı';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => 'Otomatik';
   @override
@@ -348622,6 +348649,8 @@ class _StringsVi extends _StringsEn {
   String dict_import_success_summary({required Object n}) =>
       'Đã nhập ${n} từ điển';
   @override
+  String get dict_keep_alive_title => 'Dictionary download';
+  @override
   String get dict_language_auto => 'Tự động';
   @override
   String get dict_language_description =>
@@ -373434,6 +373463,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String dict_import_success_summary({required Object n}) => '已导入 ${n} 本词典';
   @override
+  String get dict_keep_alive_title => '词典下载';
+  @override
   String get dict_language_auto => '自动';
   @override
   String get dict_language_description => '决定这本词典的文字用哪种字体渲染。自动 = 用词典自己声明的语言。';
@@ -396690,6 +396721,8 @@ class _StringsZhHk extends _StringsEn {
       'Not enough free storage to import this dictionary. Free up some space and try again.';
   @override
   String dict_import_success_summary({required Object n}) => '已匯入 ${n} 本詞典';
+  @override
+  String get dict_keep_alive_title => 'Dictionary download';
   @override
   String get dict_language_auto => '自動';
   @override
@@ -419993,6 +420026,8 @@ extension on _StringsEn {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'Imported ${n} dictionary(s)';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Automatic';
       case 'dict_language_description':
@@ -441548,6 +441583,8 @@ extension on _StringsAr {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'تم استيراد ${n} قاموس';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'تلقائي';
       case 'dict_language_description':
@@ -463121,6 +463158,8 @@ extension on _StringsDe {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '${n} Wörterbuch/-bücher importiert';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Automatisch';
       case 'dict_language_description':
@@ -484739,6 +484778,8 @@ extension on _StringsEs {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'Se importaron ${n} diccionario(s)';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Automático';
       case 'dict_language_description':
@@ -506353,6 +506394,8 @@ extension on _StringsFr {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '${n} dictionnaire(s) importé(s)';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Automatique';
       case 'dict_language_description':
@@ -527959,6 +528002,8 @@ extension on _StringsId {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'Mengimpor ${n} kamus';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Otomatis';
       case 'dict_language_description':
@@ -549533,6 +549578,8 @@ extension on _StringsIt {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'Importati ${n} dizionari';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Automatico';
       case 'dict_language_description':
@@ -571103,6 +571150,8 @@ extension on _StringsJa {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '辞書を ${n} 件インポートしました';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return '自動';
       case 'dict_language_description':
@@ -592573,6 +592622,8 @@ extension on _StringsKo {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '사전 ${n}개를 가져왔습니다';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return '자동';
       case 'dict_language_description':
@@ -614093,6 +614144,8 @@ extension on _StringsNl {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '${n} woordenboek(en) geïmporteerd';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Automatisch';
       case 'dict_language_description':
@@ -635691,6 +635744,8 @@ extension on _StringsPtBr {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '${n} dicionário(s) importado(s)';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Automático';
       case 'dict_language_description':
@@ -657286,6 +657341,8 @@ extension on _StringsRu {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'Импортировано словарей: ${n}';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Автоматически';
       case 'dict_language_description':
@@ -678861,6 +678918,8 @@ extension on _StringsTh {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'นำเข้าพจนานุกรม ${n} เล่มแล้ว';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'อัตโนมัติ';
       case 'dict_language_description':
@@ -700429,6 +700488,8 @@ extension on _StringsTr {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '${n} sözlük içe aktarıldı';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Otomatik';
       case 'dict_language_description':
@@ -722004,6 +722065,8 @@ extension on _StringsVi {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => 'Đã nhập ${n} từ điển';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return 'Tự động';
       case 'dict_language_description':
@@ -743500,6 +743563,8 @@ extension on _StringsZhCn {
         return '存储空间不足，无法导入这本词典。请清理出空间后重试。';
       case 'dict_import_success_summary':
         return ({required Object n}) => '已导入 ${n} 本词典';
+      case 'dict_keep_alive_title':
+        return '词典下载';
       case 'dict_language_auto':
         return '自动';
       case 'dict_language_description':
@@ -764814,6 +764879,8 @@ extension on _StringsZhHk {
         return 'Not enough free storage to import this dictionary. Free up some space and try again.';
       case 'dict_import_success_summary':
         return ({required Object n}) => '已匯入 ${n} 本詞典';
+      case 'dict_keep_alive_title':
+        return 'Dictionary download';
       case 'dict_language_auto':
         return '自動';
       case 'dict_language_description':

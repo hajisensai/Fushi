@@ -2026,6 +2026,7 @@
   "dict_import_started": "Mengimpor kamus di latar belakang...",
   "dict_import_storage_full": "Not enough free storage to import this dictionary. Free up some space and try again.",
   "dict_import_success_summary": "Mengimpor $n kamus",
+  "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Otomatis",
   "dict_language_description": "Menentukan font mana yang merender teks kamus ini. Otomatis menggunakan bahasa yang dideklarasikan kamus.",
   "dict_language_title": "Bahasa konten kamus",
