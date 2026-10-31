@@ -1047,7 +1047,7 @@
   "audiobook_transcribe_paused_hint": "Progres disimpan. Pilih file audio yang sama nanti untuk melanjutkan.",
   "audiobook_transcribe_pausing": "Menjeda di titik pemeriksaan berikutnya…",
   "audiobook_transcribe_preparing": "Memuat model…",
-  "audiobook_transcribe_probe_failed": "Deteksi GPU gagal, merencanakan untuk CPU: $reason",
+  "audiobook_transcribe_probe_failed_hint": "Couldn't check this device's GPU acceleration, so transcription runs on the CPU. It's slower, but the result is the same.",
   "audiobook_transcribe_progress": "$done / $total · berkas $file/$files",
   "audiobook_transcribe_proofread": "AI proofread",
   "audiobook_transcribe_proofread_done": "AI proofreading done: $changed lines changed, $skipped blocks kept as is",
