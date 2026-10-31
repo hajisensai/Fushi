@@ -254,6 +254,17 @@ String _presetLabel(PageBackdropPreset preset) => switch (preset) {
 
 /// 横向预设缩略图：每张都是真实的背景层按当前配色缩小画出来；选中项圆角变大 +
 /// 描边 + 勾（M3E 形变）。选「自定义图片」还没有图时直接弹选图。
+/// 预设横排的高度：[_PresetTile] 的缩略图 70 + 间距 6 + 两行 `labelMedium`
+/// （按系统字号缩放后的行高）+ 余量，不低于默认字号下的 112。
+double _presetRowHeight(BuildContext context, ThemeData theme) {
+  final TextStyle? style = theme.textTheme.labelMedium;
+  final double line =
+      MediaQuery.textScalerOf(context).scale(style?.fontSize ?? 12) *
+      (style?.height ?? 1.4);
+  final double needed = 70 + 6 + 2 * line + 4;
+  return needed > 112 ? needed : 112;
+}
+
 class _PageBackdropPresetPicker extends StatelessWidget {
   const _PageBackdropPresetPicker({required this.settingsContext});
 
@@ -273,7 +284,9 @@ class _PageBackdropPresetPicker extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   SizedBox(
-                    height: 112,
+                    // 缩略图 70 + 间距 6 + 两行标签：标签行高随系统字号放大，
+                    // 写死 112 在大字号下两行标签会把格子撑出这一行。
+                    height: _presetRowHeight(context, theme),
                     // 桌面鼠标按住横拖也要能滚（默认 dragDevices 不含鼠标）。
                     child: HorizontalDragScrollable(
                       child: ListView.separated(
