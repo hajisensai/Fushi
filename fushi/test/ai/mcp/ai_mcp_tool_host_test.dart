@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/native.dart';
@@ -7,12 +8,14 @@ import 'package:fushi/src/ai/agent/ai_agent_skills.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/ai/mcp/ai_mcp_access.dart';
 import 'package:fushi/src/ai/mcp/ai_mcp_tool_host.dart';
+import 'package:fushi/src/ai/mcp/ai_mcp_ui.dart';
 import 'package:fushi/src/ops/op_catalog_assembly.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:material_ui/material_ui.dart';
 
 class _UnusedRef implements WidgetRef {
   @override
@@ -21,11 +24,14 @@ class _UnusedRef implements WidgetRef {
 }
 
 /// 小目录：可撤销写（与真实 settings.set 同一撤销形态）、不可逆删文件（带表态
-/// 参数）、装扩展（write + confirm，带表态参数）。
+/// 参数）、装扩展（write + confirm，带表态参数）、所在模块可被关掉的写
+/// （[moduleOn] 为 false 时不可用）。
 OpInvoker _invoker(
   Map<String, Object?> store,
   List<String> deleted,
   List<String> installed,
+  List<String> renamed,
+  bool Function() moduleOn,
 ) {
   final List<CtlRoute> routes = <CtlRoute>[
     CtlRoute.get(
@@ -51,6 +57,10 @@ OpInvoker _invoker(
       }
       installed.add(call.requireString('pkg'));
       return <String, Object?>{'installed': call.requireString('pkg')};
+    }),
+    CtlRoute.put('/api/admin/video/files/:name', (CtlCall call) async {
+      renamed.add('${call.params['name']}->${call.body['title']}');
+      return null;
     }),
   ];
   return OpInvoker(
@@ -134,6 +144,28 @@ OpInvoker _invoker(
           },
         ),
       ),
+      OpDescription(
+        id: 'video.file.rename',
+        method: 'PUT',
+        pattern: '/api/admin/video/files/:name',
+        summary: 'Rename a video file title.',
+        risk: OpRisk.write,
+        params: const <OpParam>[
+          OpParam.string(
+            'name',
+            description: 'n',
+            required: true,
+            inPath: true,
+          ),
+          OpParam.string('title', description: 't', required: true),
+        ],
+        availability: () => moduleOn()
+            ? const OpAvailability.available()
+            : const OpAvailability.unavailable(
+                'module_disabled',
+                'The video module is turned off.',
+              ),
+      ),
     ]),
   );
 }
@@ -142,6 +174,36 @@ const McpCallContext _ctx = McpCallContext(
   sessionId: 's1',
   client: McpClientInfo(name: 'Claude Desktop', version: '1.0'),
 );
+
+const McpCallContext _otherCtx = McpCallContext(
+  sessionId: 's2',
+  client: McpClientInfo(name: 'Cursor'),
+);
+
+const McpCallContext _anonCtx = McpCallContext(
+  sessionId: kMcpAnonymousSessionId,
+  client: McpClientInfo.unknown,
+);
+
+McpCallContext _cancellable(McpCancellationSource source) => McpCallContext(
+  sessionId: 's1',
+  client: const McpClientInfo(name: 'Claude Desktop', version: '1.0'),
+  cancellation: source,
+);
+
+AiMcpConfirmRequest _confirmRequest(McpCancellation cancellation) =>
+    AiMcpConfirmRequest(
+      client: const McpClientInfo(name: 'Claude Desktop'),
+      op: const FushiOpSpec(
+        id: 'files.delete',
+        summary: 'Delete a file from disk.',
+        method: 'POST',
+        pattern: '/api/admin/files/:name/delete',
+        risk: OpRisk.irreversible,
+      ),
+      arguments: const <String, Object?>{'name': 'a.mkv'},
+      cancellation: cancellation,
+    );
 
 Map<String, Object?> _structured(McpToolResult r) =>
     r.toJson()['structuredContent']! as Map<String, Object?>;
@@ -225,8 +287,11 @@ void main() {
     late Map<String, Object?> store;
     late List<String> deleted;
     late List<String> installed;
+    late List<String> renamed;
+    late bool moduleOn;
     late List<AiMcpConfirmRequest> asked;
     late AiMcpConfirmOutcome answer;
+    late Future<AiMcpConfirmOutcome> Function(AiMcpConfirmRequest)? answerWith;
     late bool ready;
     late AiMcpToolHost host;
     late AiAgentToolbox toolbox;
@@ -236,11 +301,14 @@ void main() {
       store = <String, Object?>{'subtitle.size': '20'};
       deleted = <String>[];
       installed = <String>[];
+      renamed = <String>[];
+      moduleOn = true;
       asked = <AiMcpConfirmRequest>[];
       answer = AiMcpConfirmOutcome.approved;
+      answerWith = null;
       ready = true;
       toolbox = AiAgentToolbox(
-        invoker: _invoker(store, deleted, installed),
+        invoker: _invoker(store, deleted, installed, renamed, () => moduleOn),
         database: db,
         skills: const <AiAgentAppSkill>[],
         clock: () => DateTime.fromMillisecondsSinceEpoch(1700000000000),
@@ -250,7 +318,7 @@ void main() {
         isReady: () => ready,
         confirm: (AiMcpConfirmRequest request) async {
           asked.add(request);
-          return answer;
+          return answerWith?.call(request) ?? answer;
         },
       );
     });
@@ -266,8 +334,103 @@ void main() {
         'online__extension__install',
         'settings__get',
         'settings__set',
+        'video__file__rename',
         kAiMcpUndoTool,
       ]);
+    });
+
+    test('不可用的操作：清单里没有，按名字硬调也被拒，不执行、不记账', () async {
+      moduleOn = false;
+      expect(
+        host.listTools().map((McpTool t) => t.name),
+        isNot(contains('video__file__rename')),
+      );
+      final McpToolResult viaMcp = await host.callTool(
+        'video__file__rename',
+        <String, Object?>{'name': 'a.mkv', 'title': 'x'},
+        _ctx,
+      );
+      expect(viaMcp.errorCode, 'rejected');
+      expect(viaMcp.errorMessage, startsWith('module_disabled'));
+      // 工具箱本身就按同一判据拒：app 内 AI 助手等其它入口也调不动。
+      final AgentToolResult direct = await toolbox.execute(
+        const AgentToolInvocation(
+          sessionId: 'app-session',
+          name: 'video.file.rename',
+          arguments: <String, Object?>{'name': 'a.mkv', 'title': 'x'},
+        ),
+      );
+      expect(direct.errorCode, 'rejected');
+      expect(toolbox.describeTool('video.file.rename'), isNull);
+      expect(renamed, isEmpty);
+      expect(await db.listAiAgentActions(), isEmpty, reason: '没执行的不进操作记录');
+
+      moduleOn = true;
+      final McpToolResult ok = await host.callTool(
+        'video__file__rename',
+        <String, Object?>{'name': 'a.mkv', 'title': 'x'},
+        _ctx,
+      );
+      expect(ok.isError, isFalse);
+      expect(renamed, <String>['a.mkv->x']);
+    });
+
+    test('客户端取消：确认期间取消 → 不执行、不记账，结论是 cancelled', () async {
+      final McpCancellationSource source = McpCancellationSource();
+      final Completer<AiMcpConfirmOutcome> pending =
+          Completer<AiMcpConfirmOutcome>();
+      answerWith = (AiMcpConfirmRequest request) {
+        // 确认框拿到的就是这次调用的取消信号。
+        expect(request.cancellation, same(source));
+        return pending.future;
+      };
+      final Future<McpToolResult> call = host.callTool(
+        'files__delete',
+        <String, Object?>{'name': 'a.mkv'},
+        _cancellable(source),
+      );
+      await pumpEventQueue();
+      expect(asked, hasLength(1));
+      source.cancel('client timeout');
+      pending.complete(AiMcpConfirmOutcome.cancelled);
+      expect((await call).errorCode, 'cancelled');
+      expect(deleted, isEmpty);
+      expect(await db.listAiAgentActions(), isEmpty);
+    });
+
+    test('客户端取消与用户同意撞车：取消在先就不执行（重试不做两遍）', () async {
+      final McpCancellationSource source = McpCancellationSource();
+      answerWith = (AiMcpConfirmRequest request) async {
+        source.cancel();
+        return AiMcpConfirmOutcome.approved;
+      };
+      final McpToolResult result = await host.callTool(
+        'files__delete',
+        <String, Object?>{'name': 'a.mkv'},
+        _cancellable(source),
+      );
+      expect(result.errorCode, 'cancelled');
+      expect(deleted, isEmpty);
+      expect(await db.listAiAgentActions(), isEmpty);
+    });
+
+    test('已取消的调用：不弹确认、可撤销写也不执行', () async {
+      final McpCancellationSource source = McpCancellationSource()..cancel();
+      final McpToolResult a = await host.callTool(
+        'files__delete',
+        <String, Object?>{'name': 'a.mkv'},
+        _cancellable(source),
+      );
+      final McpToolResult b = await host.callTool(
+        'settings__set',
+        <String, Object?>{'key': 'subtitle.size', 'value': '28'},
+        _cancellable(source),
+      );
+      expect((a.errorCode, b.errorCode), ('cancelled', 'cancelled'));
+      expect(asked, isEmpty);
+      expect(deleted, isEmpty);
+      expect(store['subtitle.size'], '20');
+      expect(await db.listAiAgentActions(), isEmpty);
     });
 
     test('可撤销写：直接执行、不弹确认、进操作记录（mcp: 会话）、undo_action 撤回', () async {
@@ -442,6 +605,58 @@ void main() {
       expect(result.errorCode, 'not_found');
     });
 
+    test('undo_action 只撤这条连接（同一 MCP 会话）自己的记录', () async {
+      final McpToolResult mine = await host.callTool(
+        'settings__set',
+        <String, Object?>{'key': 'subtitle.size', 'value': '28'},
+        _ctx,
+      );
+      final String actionId = _structured(mine)['actionId']! as String;
+      for (final McpCallContext other in <McpCallContext>[
+        _otherCtx,
+        _anonCtx,
+      ]) {
+        final McpToolResult denied = await host.callTool(
+          kAiMcpUndoTool,
+          <String, Object?>{'actionId': actionId},
+          other,
+        );
+        expect(denied.errorCode, 'not_found', reason: other.sessionId);
+      }
+      expect(store['subtitle.size'], '28');
+      final McpToolResult undo = await host.callTool(
+        kAiMcpUndoTool,
+        <String, Object?>{'actionId': actionId},
+        _ctx,
+      );
+      expect(_structured(undo)['status'], 'done');
+      expect(store['subtitle.size'], '20');
+    });
+
+    test('匿名调用（无会话 / 会话失效）共用 mcp:anonymous：只能撤匿名名下的', () async {
+      final McpToolResult anon = await host.callTool(
+        'settings__set',
+        <String, Object?>{'key': 'subtitle.size', 'value': '30'},
+        _anonCtx,
+      );
+      final AiAgentActionRow row = (await db.listAiAgentActions()).single;
+      expect(row.sessionId, '${kAiMcpSessionPrefix}anonymous');
+      final String actionId = _structured(anon)['actionId']! as String;
+      final McpToolResult denied = await host.callTool(
+        kAiMcpUndoTool,
+        <String, Object?>{'actionId': actionId},
+        _ctx,
+      );
+      expect(denied.errorCode, 'not_found', reason: '有会话的连接撤不了匿名的');
+      final McpToolResult undo = await host.callTool(
+        kAiMcpUndoTool,
+        <String, Object?>{'actionId': actionId},
+        _anonCtx,
+      );
+      expect(_structured(undo)['status'], 'done');
+      expect(store['subtitle.size'], '20');
+    });
+
     test('不认识的工具 / 未初始化', () async {
       await expectLater(
         host.callTool('nope__x', const <String, Object?>{}, _ctx),
@@ -449,6 +664,108 @@ void main() {
       );
       ready = false;
       expect(host.listTools, throwsStateError);
+    });
+  });
+
+  group('确认排队与取消', () {
+    test('排队中被取消：立即以 cancelled 结束，轮到时不弹', () async {
+      final Completer<AiMcpConfirmOutcome> first =
+          Completer<AiMcpConfirmOutcome>();
+      int shown = 0;
+      final Future<AiMcpConfirmOutcome> a = enqueueAiMcpConfirmation(
+        _confirmRequest(const McpCancellation.never()),
+        () {
+          shown++;
+          return first.future;
+        },
+      );
+      final McpCancellationSource source = McpCancellationSource();
+      final Future<AiMcpConfirmOutcome> b = enqueueAiMcpConfirmation(
+        _confirmRequest(source),
+        () async {
+          shown++;
+          return AiMcpConfirmOutcome.approved;
+        },
+      );
+      await pumpEventQueue();
+      expect(shown, 1);
+      source.cancel();
+      expect(await b, AiMcpConfirmOutcome.cancelled);
+      first.complete(AiMcpConfirmOutcome.declined);
+      expect(await a, AiMcpConfirmOutcome.declined);
+      await pumpEventQueue();
+      expect(shown, 1, reason: '已取消的确认轮到时不再弹');
+    });
+
+    testWidgets('已弹出的确认框：客户端取消就关掉，结论 cancelled', (WidgetTester tester) async {
+      late BuildContext host;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext context) {
+                host = context;
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      );
+      final McpCancellationSource source = McpCancellationSource();
+      const Duration timeout = Duration(seconds: 30);
+      AiMcpConfirmOutcome? outcome;
+      unawaited(
+        showAiMcpConfirmDialog(
+          host,
+          _confirmRequest(source),
+          timeout: timeout,
+        ).then((AiMcpConfirmOutcome o) => outcome = o),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Delete a file from disk.'), findsOneWidget);
+
+      source.cancel();
+      await tester.pumpAndSettle();
+      expect(find.text('Delete a file from disk.'), findsNothing);
+      expect(outcome, AiMcpConfirmOutcome.cancelled);
+      // 走完兜底计时器，别留悬挂的 Timer。
+      await tester.pump(timeout + const Duration(seconds: 2));
+    });
+
+    testWidgets('被别的路由盖住的确认框：取消时也从栈里摘掉', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: nav,
+          home: const Scaffold(body: SizedBox.expand()),
+        ),
+      );
+      final McpCancellationSource source = McpCancellationSource();
+      const Duration timeout = Duration(seconds: 30);
+      AiMcpConfirmOutcome? outcome;
+      unawaited(
+        showAiMcpConfirmDialog(
+          nav.currentContext!,
+          _confirmRequest(source),
+          timeout: timeout,
+        ).then((AiMcpConfirmOutcome o) => outcome = o),
+      );
+      await tester.pumpAndSettle();
+      unawaited(
+        nav.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('covering page')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      source.cancel();
+      await tester.pumpAndSettle();
+      expect(outcome, AiMcpConfirmOutcome.cancelled);
+      nav.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Delete a file from disk.'), findsNothing);
+      await tester.pump(timeout + const Duration(seconds: 2));
     });
   });
 

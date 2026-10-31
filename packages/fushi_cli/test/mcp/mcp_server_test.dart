@@ -133,6 +133,40 @@ class _CatalogHost implements McpToolHost {
   }
 }
 
+/// 每次调用都挂起，直到测试放行或调用被取消；放行时只执行没被取消的。
+class _BlockingHost implements McpToolHost {
+  final List<McpCallContext> contexts = <McpCallContext>[];
+  final List<String> executed = <String>[];
+  final Completer<void> release = Completer<void>();
+
+  @override
+  List<McpTool> listTools() => const <McpTool>[];
+
+  @override
+  Future<McpToolResult> callTool(
+    String name,
+    Map<String, Object?> arguments,
+    McpCallContext context,
+  ) async {
+    contexts.add(context);
+    await Future.any(<Future<void>>[
+      release.future,
+      context.cancellation.whenCancelled,
+    ]);
+    if (context.cancellation.isCancelled) {
+      return const McpToolResult.error('cancelled');
+    }
+    executed.add(name);
+    return const McpToolResult.ok(null);
+  }
+}
+
+Map<String, Object?> _cancelled(Object? requestId) => <String, Object?>{
+  'jsonrpc': '2.0',
+  'method': 'notifications/cancelled',
+  'params': <String, Object?>{'requestId': requestId, 'reason': 'timeout'},
+};
+
 Map<String, Object?> _req(int id, String method, [Object? params]) =>
     <String, Object?>{
       'jsonrpc': '2.0',
@@ -359,6 +393,89 @@ void main() {
         _req(2, 'ping'),
       ]);
       expect((reply.body! as List<Object?>).length, 2);
+    });
+  });
+
+  group('取消（notifications/cancelled）', () {
+    late _BlockingHost blocking;
+    late McpServer cancellable;
+
+    setUp(() {
+      blocking = _BlockingHost();
+      cancellable = McpServer(
+        host: blocking,
+        serverName: 'fushi',
+        serverVersion: () => '1.2.3',
+      );
+    });
+
+    Future<McpReply> call(Object? id, {String? session}) =>
+        cancellable.handle(<String, Object?>{
+          'jsonrpc': '2.0',
+          'id': id,
+          'method': 'tools/call',
+          'params': <String, Object?>{'name': 'things__rename'},
+        }, sessionId: session);
+
+    test('取消在途调用：宿主拿到取消信号、不执行，被取消的请求不再应答', () async {
+      final Future<McpReply> pending = call(9, session: 'S');
+      await pumpEventQueue();
+      expect(blocking.contexts.single.cancellation.isCancelled, isFalse);
+      final McpReply ack = await cancellable.handle(
+        _cancelled(9),
+        sessionId: 'S',
+      );
+      expect(ack.body, isNull);
+      expect(blocking.contexts.single.cancellation.isCancelled, isTrue);
+      expect((await pending).body, isNull);
+      expect(blocking.executed, isEmpty);
+    });
+
+    test('只取消同一会话、同一 id 的请求（1 与 "1" 是两个）', () async {
+      final Future<McpReply> a = call(1, session: 'S');
+      final Future<McpReply> b = call('1', session: 'S');
+      final Future<McpReply> c = call(1, session: 'T');
+      await pumpEventQueue();
+      await cancellable.handle(_cancelled(1), sessionId: 'T');
+      await cancellable.handle(_cancelled(1), sessionId: 'other');
+      await cancellable.handle(_cancelled(404), sessionId: 'S');
+      blocking.release.complete();
+      expect((await c).body, isNull, reason: 'T 会话的 1 被取消');
+      expect((await a).body, isNotNull);
+      expect((await b).body, isNotNull);
+      expect(blocking.executed, hasLength(2));
+    });
+
+    test('调用结束后再来的取消通知静默忽略；同 id 可再次使用', () async {
+      blocking.release.complete();
+      expect((await call(5, session: 'S')).body, isNotNull);
+      expect(
+        (await cancellable.handle(_cancelled(5), sessionId: 'S')).body,
+        isNull,
+      );
+      expect((await call(5, session: 'S')).body, isNotNull);
+      expect(blocking.executed, hasLength(2));
+    });
+
+    test('没带会话 id 的调用用没带会话 id 的取消通知取消', () async {
+      final Future<McpReply> pending = call(3);
+      await pumpEventQueue();
+      await cancellable.handle(_cancelled(3), sessionId: 'S');
+      expect(blocking.contexts.single.cancellation.isCancelled, isFalse);
+      await cancellable.handle(_cancelled(3));
+      expect((await pending).body, isNull);
+      expect(blocking.contexts.single.sessionId, kMcpAnonymousSessionId);
+    });
+
+    test('DELETE /mcp 结束会话：它在途的调用一并取消', () async {
+      final Future<McpReply> pending = call(7, session: 'S');
+      final Future<McpReply> other = call(7, session: 'T');
+      await pumpEventQueue();
+      cancellable.endSession('S');
+      expect((await pending).body, isNull);
+      blocking.release.complete();
+      expect((await other).body, isNotNull);
+      expect(blocking.executed, hasLength(1));
     });
   });
 

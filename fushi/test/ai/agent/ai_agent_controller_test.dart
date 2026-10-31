@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
+import 'package:fushi/src/ai/agent/ai_agent_session_archive.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi_cli/fushi_cli.dart';
@@ -343,6 +344,36 @@ void main() {
       expect(c.currentSessionId, isNull);
       expect(await db.getAiAgentSession(first), isNull);
       expect(ids(await c.listSessions()), <String>[second]);
+    });
+
+    test('互联 host 替远端跑的会话（remote 场景）不进本机会话列表，操作记录页照列', () async {
+      final AiAgentController c = controller(const <AiChatTurn>[], clock: tick);
+      addTearDown(c.dispose);
+      await c.send('本机的会话');
+      final String local = c.currentSessionId!;
+      // 与 host 的远端会话同一个写入口、同一个 Profile 归属，只是场景不同。
+      await db.saveAiAgentSessionSnapshot(
+        id: 'remote-1',
+        title: '对端的会话',
+        scene: kAiAgentRemoteScene,
+        payloadJson: '{}',
+        totalTokens: 0,
+        createdAt: 1,
+        updatedAt: now + 60000,
+      );
+      expect(ids(await c.listSessions()), <String>[local]);
+      expect(ids(await db.listAiAgentSessionSummaries()), <String>[
+        'remote-1',
+        local,
+      ], reason: '操作记录页按全部会话配标题，远端会话照列');
+      expect(
+        await db.listAiAgentSessionSummaries(
+          excludeScenes: kAiAgentLocalLibraryExcludedScenes,
+          limit: 1,
+        ),
+        hasLength(1),
+        reason: 'limit 按过滤后的行计，远端会话不挤占名额',
+      );
     });
 
     test('删掉正在跑的会话：收尾存档不把它写回，操作记录保留', () async {
