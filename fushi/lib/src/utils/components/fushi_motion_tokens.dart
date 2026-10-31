@@ -415,6 +415,18 @@ class _SpringExit extends Curve {
       1 - FushiSpringCurve.effects.transform(1 - t);
 }
 
+/// 环境动效的往返形状：半周期余弦（两端速度为零）。
+///
+/// 「缓慢漂移」是 `repeat(reverse: true)` 的往返动画，掉头点在 t = 0 和 t = 1
+/// 两端；只有两端导数都为零才不会在掉头时出现速度突变（弹簧形状 [FushiMotion.enter]
+/// 起点速度最大，掉头会顿一下）。这不是交互动效，不从弹簧推导。
+class _AmbientSine extends Curve {
+  const _AmbientSine();
+
+  @override
+  double transformInternal(double t) => 0.5 - 0.5 * math.cos(math.pi * t);
+}
+
 /// Fushi 动效的兼容常量（2026-10 动效重做时的时长 / 曲线体系，2026-10-05
 /// 起全部由 M3E 弹簧 token 推导）。
 ///
@@ -454,6 +466,16 @@ abstract final class FushiMotion {
   /// 20 字 ≈ 0.6s，像一笔划过而不是一下闪现。正文（WebView SMIL）与设置页预览
   /// 共用，见 `highlightStrokeSweepLineDuration`。
   static const Duration strokeSweepPerEm = Duration(milliseconds: 26);
+
+  /// 环境动效（页面背景「缓慢漂移」）：一次往返的单程时长。慢到察觉不到在动，
+  /// 只让页面底有一点「活」的感觉；不是弹簧推导的交互动效。
+  static const Duration ambientDrift = Duration(seconds: 40);
+
+  /// 环境动效：背景大形状自转一圈的时长。
+  static const Duration ambientSpin = Duration(seconds: 120);
+
+  /// 环境动效（[ambientDrift] 往返）的曲线：两端速度为零，掉头处无顿挫。
+  static const Curve ambient = _AmbientSine();
 
   /// 进入：临界阻尼弹簧形状（快起步、柔落点，不过冲，可驱动透明度）。
   static const Curve enter = FushiSpringCurve.effects;

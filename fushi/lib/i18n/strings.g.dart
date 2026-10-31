@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 178296 (10488 per locale)
+/// Strings: 178959 (10527 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -8996,6 +8996,50 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Give the app-external pop-out lookup window its own max size instead of following the in-app popup';
   String get overlay_lookup_max_height => 'Pop-out lookup max height';
   String get overlay_lookup_max_width => 'Pop-out lookup max width';
+  String get page_backdrop_accent_candidates => 'Theme color';
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  String get page_backdrop_blur => 'Blur';
+  String get page_backdrop_blur_heavy => 'Strong';
+  String get page_backdrop_blur_light => 'Light';
+  String get page_backdrop_blur_none => 'None';
+  String get page_backdrop_follow_accent => 'Colors from image';
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  String get page_backdrop_image => 'Image';
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  String get page_backdrop_image_set => 'Tap to change';
+  String get page_backdrop_motion => 'Slow drift';
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  String get page_backdrop_portrait_image => 'Portrait image';
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  String get page_backdrop_preset_arc => 'Big arc';
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  String get page_backdrop_preset_custom => 'Custom image';
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  String get page_backdrop_preset_plain => 'Plain';
+  String get page_backdrop_preset_sunny => 'Sun';
+  String get page_backdrop_preset_wave => 'Waves';
+  String get page_backdrop_scrim => 'Overlay';
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  String get page_backdrop_strength => 'Intensity';
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  String get page_backdrop_strength_standard => 'Standard';
+  String get page_backdrop_strength_strong => 'Bold';
+  String get page_backdrop_strength_subtle => 'Subtle';
+  String get page_backdrop_style => 'Style';
+  String get page_backdrop_title => 'Page background';
   String page_progress({required Object current, required Object total}) =>
       'Page ${current} / ${total}';
   String get page_turn_animation => 'Page turn animation';
@@ -30036,6 +30080,86 @@ class _StringsAr extends _StringsEn {
   String get overlay_lookup_max_height => 'الارتفاع الأقصى للنافذة المنبثقة';
   @override
   String get overlay_lookup_max_width => 'العرض الأقصى للنافذة المنبثقة';
+  @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
   @override
   String page_progress({required Object current, required Object total}) =>
       'صفحة ${current} / ${total}';
@@ -55732,6 +55856,86 @@ class _StringsDe extends _StringsEn {
   @override
   String get overlay_lookup_max_width =>
       'Max. Breite des externen Nachschlage-Fensters';
+  @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Seite ${current} / ${total}';
@@ -81575,6 +81779,86 @@ class _StringsEs extends _StringsEn {
   String get overlay_lookup_max_height => 'Altura máxima de búsqueda emergente';
   @override
   String get overlay_lookup_max_width => 'Ancho máximo de búsqueda emergente';
+  @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Página ${current} / ${total}';
@@ -107512,6 +107796,86 @@ class _StringsFr extends _StringsEn {
   @override
   String get overlay_lookup_max_width => 'Largeur max de la recherche pop-out';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       'Page ${current} / ${total}';
   @override
@@ -133255,6 +133619,86 @@ class _StringsId extends _StringsEn {
   @override
   String get overlay_lookup_max_width => 'Lebar maks pencarian pop-out';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       'Halaman ${current} / ${total}';
   @override
@@ -158974,6 +159418,86 @@ class _StringsIt extends _StringsEn {
   @override
   String get overlay_lookup_max_width => 'Larghezza max ricerca pop-out';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       'Pagina ${current} / ${total}';
   @override
@@ -184120,6 +184644,86 @@ class _StringsJa extends _StringsEn {
   @override
   String get overlay_lookup_max_width => 'ポップアウト辞書の最大幅';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       'ページ ${current} / ${total}';
   @override
@@ -208886,6 +209490,86 @@ class _StringsKo extends _StringsEn {
   String get overlay_lookup_max_height => '팝아웃 검색 최대 높이';
   @override
   String get overlay_lookup_max_width => '팝아웃 검색 최대 너비';
+  @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
   @override
   String page_progress({required Object current, required Object total}) =>
       '페이지 ${current} / ${total}';
@@ -234271,6 +234955,86 @@ class _StringsNl extends _StringsEn {
   String get overlay_lookup_max_height => 'Uitklapopzoeker max. hoogte';
   @override
   String get overlay_lookup_max_width => 'Uitklapopzoeker max. breedte';
+  @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Pagina ${current} / ${total}';
@@ -260049,6 +260813,86 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get overlay_lookup_max_width => 'Largura máxima da consulta pop-out';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       'Página ${current} / ${total}';
   @override
@@ -285807,6 +286651,86 @@ class _StringsRu extends _StringsEn {
   String get overlay_lookup_max_width =>
       'Макс. ширина всплывающего окна поиска';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       'Страница ${current} / ${total}';
   @override
@@ -311345,6 +312269,86 @@ class _StringsTh extends _StringsEn {
   String get overlay_lookup_max_height => 'ความสูงสูงสุดของหน้าต่างค้นหาลอย';
   @override
   String get overlay_lookup_max_width => 'ความกว้างสูงสุดของหน้าต่างค้นหาลอย';
+  @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
   @override
   String page_progress({required Object current, required Object total}) =>
       'หน้า ${current} / ${total}';
@@ -336906,6 +337910,86 @@ class _StringsTr extends _StringsEn {
   String get overlay_lookup_max_height => 'Açılır arama maks yükseklik';
   @override
   String get overlay_lookup_max_width => 'Açılır arama maks genişlik';
+  @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
   @override
   String page_progress({required Object current, required Object total}) =>
       'Sayfa ${current} / ${total}';
@@ -362482,6 +363566,86 @@ class _StringsVi extends _StringsEn {
   @override
   String get overlay_lookup_max_width => 'Chiều rộng tối đa cửa sổ tra cứu nổi';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       'Trang ${current} / ${total}';
   @override
@@ -386770,6 +387934,79 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get overlay_lookup_max_width => '弹出查词窗最大宽度';
   @override
+  String get page_backdrop_accent_candidates => '主题色';
+  @override
+  String get page_backdrop_accent_candidates_hint => '从图片里找到的颜色';
+  @override
+  String get page_backdrop_apple_hint =>
+      '形状类样式只在 Material 设计下显示；自定义图片在所有设计下都显示';
+  @override
+  String get page_backdrop_blur => '模糊';
+  @override
+  String get page_backdrop_blur_heavy => '重';
+  @override
+  String get page_backdrop_blur_light => '轻';
+  @override
+  String get page_backdrop_blur_none => '无';
+  @override
+  String get page_backdrop_follow_accent => '从图片取色';
+  @override
+  String get page_backdrop_follow_accent_hint => '用图片的主色作为整个应用的配色';
+  @override
+  String get page_backdrop_hint => '每一页底下的装饰：形状、光晕或你自己的图片';
+  @override
+  String get page_backdrop_image => '图片';
+  @override
+  String get page_backdrop_image_empty => '从这台设备里选一张图片';
+  @override
+  String get page_backdrop_image_import_failed => '无法使用这张图片';
+  @override
+  String get page_backdrop_image_set => '点按更换';
+  @override
+  String get page_backdrop_motion => '缓慢漂移';
+  @override
+  String get page_backdrop_motion_hint => '背景极慢地平移或自转；系统开启减弱动态效果时不动';
+  @override
+  String get page_backdrop_portrait_image => '竖屏图片';
+  @override
+  String get page_backdrop_portrait_image_clear => '竖屏改回共用横屏图片';
+  @override
+  String get page_backdrop_portrait_image_shared => '与横屏共用；点按单独选一张';
+  @override
+  String get page_backdrop_preset_arc => '大圆弧';
+  @override
+  String get page_backdrop_preset_confetti => '形状散落';
+  @override
+  String get page_backdrop_preset_corner => '角落形状';
+  @override
+  String get page_backdrop_preset_custom => '自定义图片';
+  @override
+  String get page_backdrop_preset_mesh => '柔光晕染';
+  @override
+  String get page_backdrop_preset_plain => '纯色';
+  @override
+  String get page_backdrop_preset_sunny => '旋转太阳';
+  @override
+  String get page_backdrop_preset_wave => '波纹';
+  @override
+  String get page_backdrop_scrim => '遮罩浓度';
+  @override
+  String get page_backdrop_scrim_hint => '给图片盖一层底色，保证文字看得清';
+  @override
+  String get page_backdrop_strength => '强度';
+  @override
+  String get page_backdrop_strength_hint => '装饰的浓淡';
+  @override
+  String get page_backdrop_strength_standard => '标准';
+  @override
+  String get page_backdrop_strength_strong => '浓';
+  @override
+  String get page_backdrop_strength_subtle => '淡';
+  @override
+  String get page_backdrop_style => '样式';
+  @override
+  String get page_backdrop_title => '页面背景';
+  @override
   String page_progress({required Object current, required Object total}) =>
       '第 ${current} / ${total} 页';
   @override
@@ -410520,6 +411757,86 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get overlay_lookup_max_width => '彈出查詞窗最大寬度';
   @override
+  String get page_backdrop_accent_candidates => 'Theme color';
+  @override
+  String get page_backdrop_accent_candidates_hint =>
+      'Colors found in the image';
+  @override
+  String get page_backdrop_apple_hint =>
+      'Shape styles only show in the Material design; a custom image shows in every design';
+  @override
+  String get page_backdrop_blur => 'Blur';
+  @override
+  String get page_backdrop_blur_heavy => 'Strong';
+  @override
+  String get page_backdrop_blur_light => 'Light';
+  @override
+  String get page_backdrop_blur_none => 'None';
+  @override
+  String get page_backdrop_follow_accent => 'Colors from image';
+  @override
+  String get page_backdrop_follow_accent_hint =>
+      'Use the image\'s colors as the app theme';
+  @override
+  String get page_backdrop_hint =>
+      'Decoration behind every page: shapes, glows or your own image';
+  @override
+  String get page_backdrop_image => 'Image';
+  @override
+  String get page_backdrop_image_empty => 'Pick an image from this device';
+  @override
+  String get page_backdrop_image_import_failed => 'Couldn\'t use that image';
+  @override
+  String get page_backdrop_image_set => 'Tap to change';
+  @override
+  String get page_backdrop_motion => 'Slow drift';
+  @override
+  String get page_backdrop_motion_hint =>
+      'The background drifts or turns very slowly; stays still when reduce motion is on';
+  @override
+  String get page_backdrop_portrait_image => 'Portrait image';
+  @override
+  String get page_backdrop_portrait_image_clear =>
+      'Use the landscape image in portrait';
+  @override
+  String get page_backdrop_portrait_image_shared =>
+      'Same as the landscape image; tap to pick a separate one';
+  @override
+  String get page_backdrop_preset_arc => 'Big arc';
+  @override
+  String get page_backdrop_preset_confetti => 'Scattered shapes';
+  @override
+  String get page_backdrop_preset_corner => 'Corner shapes';
+  @override
+  String get page_backdrop_preset_custom => 'Custom image';
+  @override
+  String get page_backdrop_preset_mesh => 'Soft glow';
+  @override
+  String get page_backdrop_preset_plain => 'Plain';
+  @override
+  String get page_backdrop_preset_sunny => 'Sun';
+  @override
+  String get page_backdrop_preset_wave => 'Waves';
+  @override
+  String get page_backdrop_scrim => 'Overlay';
+  @override
+  String get page_backdrop_scrim_hint =>
+      'Tints the image so text stays readable';
+  @override
+  String get page_backdrop_strength => 'Intensity';
+  @override
+  String get page_backdrop_strength_hint => 'How bold the decoration is';
+  @override
+  String get page_backdrop_strength_standard => 'Standard';
+  @override
+  String get page_backdrop_strength_strong => 'Bold';
+  @override
+  String get page_backdrop_strength_subtle => 'Subtle';
+  @override
+  String get page_backdrop_style => 'Style';
+  @override
+  String get page_backdrop_title => 'Page background';
+  @override
   String page_progress({required Object current, required Object total}) =>
       '第 ${current} / ${total} 頁';
   @override
@@ -433279,6 +434596,78 @@ extension on _StringsEn {
         return 'Pop-out lookup max height';
       case 'overlay_lookup_max_width':
         return 'Pop-out lookup max width';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Page ${current} / ${total}';
@@ -455077,6 +456466,78 @@ extension on _StringsAr {
         return 'الارتفاع الأقصى للنافذة المنبثقة';
       case 'overlay_lookup_max_width':
         return 'العرض الأقصى للنافذة المنبثقة';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'صفحة ${current} / ${total}';
@@ -476929,6 +478390,78 @@ extension on _StringsDe {
         return 'Max. Höhe des externen Nachschlage-Fensters';
       case 'overlay_lookup_max_width':
         return 'Max. Breite des externen Nachschlage-Fensters';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Seite ${current} / ${total}';
@@ -498785,6 +500318,78 @@ extension on _StringsEs {
         return 'Altura máxima de búsqueda emergente';
       case 'overlay_lookup_max_width':
         return 'Ancho máximo de búsqueda emergente';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Página ${current} / ${total}';
@@ -520655,6 +522260,78 @@ extension on _StringsFr {
         return 'Hauteur max de la recherche pop-out';
       case 'overlay_lookup_max_width':
         return 'Largeur max de la recherche pop-out';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Page ${current} / ${total}';
@@ -542487,6 +544164,78 @@ extension on _StringsId {
         return 'Tinggi maks pencarian pop-out';
       case 'overlay_lookup_max_width':
         return 'Lebar maks pencarian pop-out';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Halaman ${current} / ${total}';
@@ -564323,6 +566072,78 @@ extension on _StringsIt {
         return 'Altezza max ricerca pop-out';
       case 'overlay_lookup_max_width':
         return 'Larghezza max ricerca pop-out';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Pagina ${current} / ${total}';
@@ -586099,6 +587920,78 @@ extension on _StringsJa {
         return 'ポップアウト辞書の最大高さ';
       case 'overlay_lookup_max_width':
         return 'ポップアウト辞書の最大幅';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'ページ ${current} / ${total}';
@@ -607819,6 +609712,78 @@ extension on _StringsKo {
         return '팝아웃 검색 최대 높이';
       case 'overlay_lookup_max_width':
         return '팝아웃 검색 최대 너비';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '페이지 ${current} / ${total}';
@@ -629627,6 +631592,78 @@ extension on _StringsNl {
         return 'Uitklapopzoeker max. hoogte';
       case 'overlay_lookup_max_width':
         return 'Uitklapopzoeker max. breedte';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Pagina ${current} / ${total}';
@@ -651469,6 +653506,78 @@ extension on _StringsPtBr {
         return 'Altura máxima da consulta pop-out';
       case 'overlay_lookup_max_width':
         return 'Largura máxima da consulta pop-out';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Página ${current} / ${total}';
@@ -673315,6 +675424,78 @@ extension on _StringsRu {
         return 'Макс. высота всплывающего окна поиска';
       case 'overlay_lookup_max_width':
         return 'Макс. ширина всплывающего окна поиска';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Страница ${current} / ${total}';
@@ -695123,6 +697304,78 @@ extension on _StringsTh {
         return 'ความสูงสูงสุดของหน้าต่างค้นหาลอย';
       case 'overlay_lookup_max_width':
         return 'ความกว้างสูงสุดของหน้าต่างค้นหาลอย';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'หน้า ${current} / ${total}';
@@ -716947,6 +719200,78 @@ extension on _StringsTr {
         return 'Açılır arama maks yükseklik';
       case 'overlay_lookup_max_width':
         return 'Açılır arama maks genişlik';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Sayfa ${current} / ${total}';
@@ -738764,6 +741089,78 @@ extension on _StringsVi {
         return 'Chiều cao tối đa cửa sổ tra cứu nổi';
       case 'overlay_lookup_max_width':
         return 'Chiều rộng tối đa cửa sổ tra cứu nổi';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Trang ${current} / ${total}';
@@ -760416,6 +762813,78 @@ extension on _StringsZhCn {
         return '弹出查词窗最大高度';
       case 'overlay_lookup_max_width':
         return '弹出查词窗最大宽度';
+      case 'page_backdrop_accent_candidates':
+        return '主题色';
+      case 'page_backdrop_accent_candidates_hint':
+        return '从图片里找到的颜色';
+      case 'page_backdrop_apple_hint':
+        return '形状类样式只在 Material 设计下显示；自定义图片在所有设计下都显示';
+      case 'page_backdrop_blur':
+        return '模糊';
+      case 'page_backdrop_blur_heavy':
+        return '重';
+      case 'page_backdrop_blur_light':
+        return '轻';
+      case 'page_backdrop_blur_none':
+        return '无';
+      case 'page_backdrop_follow_accent':
+        return '从图片取色';
+      case 'page_backdrop_follow_accent_hint':
+        return '用图片的主色作为整个应用的配色';
+      case 'page_backdrop_hint':
+        return '每一页底下的装饰：形状、光晕或你自己的图片';
+      case 'page_backdrop_image':
+        return '图片';
+      case 'page_backdrop_image_empty':
+        return '从这台设备里选一张图片';
+      case 'page_backdrop_image_import_failed':
+        return '无法使用这张图片';
+      case 'page_backdrop_image_set':
+        return '点按更换';
+      case 'page_backdrop_motion':
+        return '缓慢漂移';
+      case 'page_backdrop_motion_hint':
+        return '背景极慢地平移或自转；系统开启减弱动态效果时不动';
+      case 'page_backdrop_portrait_image':
+        return '竖屏图片';
+      case 'page_backdrop_portrait_image_clear':
+        return '竖屏改回共用横屏图片';
+      case 'page_backdrop_portrait_image_shared':
+        return '与横屏共用；点按单独选一张';
+      case 'page_backdrop_preset_arc':
+        return '大圆弧';
+      case 'page_backdrop_preset_confetti':
+        return '形状散落';
+      case 'page_backdrop_preset_corner':
+        return '角落形状';
+      case 'page_backdrop_preset_custom':
+        return '自定义图片';
+      case 'page_backdrop_preset_mesh':
+        return '柔光晕染';
+      case 'page_backdrop_preset_plain':
+        return '纯色';
+      case 'page_backdrop_preset_sunny':
+        return '旋转太阳';
+      case 'page_backdrop_preset_wave':
+        return '波纹';
+      case 'page_backdrop_scrim':
+        return '遮罩浓度';
+      case 'page_backdrop_scrim_hint':
+        return '给图片盖一层底色，保证文字看得清';
+      case 'page_backdrop_strength':
+        return '强度';
+      case 'page_backdrop_strength_hint':
+        return '装饰的浓淡';
+      case 'page_backdrop_strength_standard':
+        return '标准';
+      case 'page_backdrop_strength_strong':
+        return '浓';
+      case 'page_backdrop_strength_subtle':
+        return '淡';
+      case 'page_backdrop_style':
+        return '样式';
+      case 'page_backdrop_title':
+        return '页面背景';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '第 ${current} / ${total} 页';
@@ -782020,6 +784489,78 @@ extension on _StringsZhHk {
         return '彈出查詞窗最大高度';
       case 'overlay_lookup_max_width':
         return '彈出查詞窗最大寬度';
+      case 'page_backdrop_accent_candidates':
+        return 'Theme color';
+      case 'page_backdrop_accent_candidates_hint':
+        return 'Colors found in the image';
+      case 'page_backdrop_apple_hint':
+        return 'Shape styles only show in the Material design; a custom image shows in every design';
+      case 'page_backdrop_blur':
+        return 'Blur';
+      case 'page_backdrop_blur_heavy':
+        return 'Strong';
+      case 'page_backdrop_blur_light':
+        return 'Light';
+      case 'page_backdrop_blur_none':
+        return 'None';
+      case 'page_backdrop_follow_accent':
+        return 'Colors from image';
+      case 'page_backdrop_follow_accent_hint':
+        return 'Use the image\'s colors as the app theme';
+      case 'page_backdrop_hint':
+        return 'Decoration behind every page: shapes, glows or your own image';
+      case 'page_backdrop_image':
+        return 'Image';
+      case 'page_backdrop_image_empty':
+        return 'Pick an image from this device';
+      case 'page_backdrop_image_import_failed':
+        return 'Couldn\'t use that image';
+      case 'page_backdrop_image_set':
+        return 'Tap to change';
+      case 'page_backdrop_motion':
+        return 'Slow drift';
+      case 'page_backdrop_motion_hint':
+        return 'The background drifts or turns very slowly; stays still when reduce motion is on';
+      case 'page_backdrop_portrait_image':
+        return 'Portrait image';
+      case 'page_backdrop_portrait_image_clear':
+        return 'Use the landscape image in portrait';
+      case 'page_backdrop_portrait_image_shared':
+        return 'Same as the landscape image; tap to pick a separate one';
+      case 'page_backdrop_preset_arc':
+        return 'Big arc';
+      case 'page_backdrop_preset_confetti':
+        return 'Scattered shapes';
+      case 'page_backdrop_preset_corner':
+        return 'Corner shapes';
+      case 'page_backdrop_preset_custom':
+        return 'Custom image';
+      case 'page_backdrop_preset_mesh':
+        return 'Soft glow';
+      case 'page_backdrop_preset_plain':
+        return 'Plain';
+      case 'page_backdrop_preset_sunny':
+        return 'Sun';
+      case 'page_backdrop_preset_wave':
+        return 'Waves';
+      case 'page_backdrop_scrim':
+        return 'Overlay';
+      case 'page_backdrop_scrim_hint':
+        return 'Tints the image so text stays readable';
+      case 'page_backdrop_strength':
+        return 'Intensity';
+      case 'page_backdrop_strength_hint':
+        return 'How bold the decoration is';
+      case 'page_backdrop_strength_standard':
+        return 'Standard';
+      case 'page_backdrop_strength_strong':
+        return 'Bold';
+      case 'page_backdrop_strength_subtle':
+        return 'Subtle';
+      case 'page_backdrop_style':
+        return 'Style';
+      case 'page_backdrop_title':
+        return 'Page background';
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '第 ${current} / ${total} 頁';
