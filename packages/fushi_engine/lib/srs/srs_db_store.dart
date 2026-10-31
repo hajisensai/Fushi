@@ -497,14 +497,17 @@ class SrsDbStore implements SrsSync2Host {
     }
   });
 
-  /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间暂停这条连接的 WAL 自动 checkpoint，结束后
-  /// checkpoint 一次再恢复原值。
+  /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间把这条连接的 WAL 自动 checkpoint 阈值调到
+  /// [_bulkWalAutocheckpointPages]，结束后 checkpoint 一次再恢复原值。
   ///
   /// 自动 checkpoint 在 WAL 超过阈值（缺省 1000 页）后的每次提交时跑；导入的每个批次
   /// 事务都远超阈值，于是每次提交都把同一批热页（索引、缓存表）拷回主库一遍——实测迁移
-  /// 1.5 万笔记时 COMMIT 合计 37 秒，暂停后 6 秒。WAL 在导入期间会长大，结束时一次并回；
-  /// 中途崩溃也无妨：下次打开时 SQLite 照常回放 WAL。可嵌套；按数据库连接计数（几个
-  /// profile 的副本共用一条连接），只有最外层恢复。
+  /// 1.5 万笔记时 COMMIT 合计 37 秒，调大后 6 秒。中途崩溃也无妨：下次打开时 SQLite 照常回放
+  /// WAL。可嵌套；按数据库连接计数（几个 profile 的副本共用一条连接），只有最外层恢复。
+  ///
+  /// 不能整个关掉（以前设 0）：WAL 里每读一页都要从新到旧逐段查 wal-index 的哈希段（每段 4096 帧），
+  /// WAL 不并回就一直长，每次读页越来越慢——5 万笔记的包每批写约 12 MB，导入后段 WAL 到几 GB，
+  /// 纯插入一批从 8 ms 涨到 99 ms，整体随规模平方增长。封顶后 WAL 最多几个哈希段，各阶段每批耗时持平。
   ///
   /// 收尾的 checkpoint 在内核另开的连接上做（`wal_checkpoint`，native/fushi_fsrs/src/store/mod.rs），不在写
   /// 连接上：并回一份几十 MB 的 WAL 要几百毫秒，在写连接上做那期间本机作答全排在它后面。并完才恢复自动
@@ -518,7 +521,9 @@ class SrsDbStore implements SrsSync2Host {
       state.restore = rows.isEmpty
           ? 1000
           : (rows.first.data.values.first as int?) ?? 1000;
-      await db.customStatement('PRAGMA wal_autocheckpoint = 0');
+      await db.customStatement(
+        'PRAGMA wal_autocheckpoint = $_bulkWalAutocheckpointPages',
+      );
     }
     try {
       return await body();
@@ -536,6 +541,10 @@ class SrsDbStore implements SrsSync2Host {
       }
     }
   }
+
+  /// 大批量写入期间的 WAL 自动 checkpoint 阈值（页，缺省页大小 4 KB 下约 64 MB）：远大于一个导入批次的
+  /// 写入量（同一批热页不每批并回一次），又把 WAL 限在 4 个 wal-index 哈希段以内（见 [bulkWrites]）。
+  static const int _bulkWalAutocheckpointPages = 16384;
 
   static final Expando<_BulkWriteState> _bulkWrites =
       Expando<_BulkWriteState>();
