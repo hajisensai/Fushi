@@ -1,6 +1,8 @@
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
+    show DownloadConfirmedIdentityResolver;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
@@ -92,6 +94,7 @@ class CtlVideoSubtitleFetchHandlers {
           database: database(),
           service: _requireService(),
           videoId: bookUid,
+          confirmedIdentities: DownloadConfirmedIdentityResolver(database()),
           language: call.optString('language'),
           seriesLanguage: seriesLanguage,
         );
@@ -113,6 +116,7 @@ class CtlVideoSubtitleFetchHandlers {
         await libraryVideoSubtitleTarget(
           db,
           book,
+          confirmedIdentities: DownloadConfirmedIdentityResolver(db),
           explicitLanguage: call.optString('language'),
           seriesLanguage: seriesLanguage,
         );
