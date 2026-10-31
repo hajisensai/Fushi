@@ -10,6 +10,13 @@
 /// 3. 其它设备不会把它拉回来：持有旧副本的设备下一轮云同步**不**重建书文件夹（书阶段
 ///    之前先读墓碑做推送否决），并收到「其他设备已删除」确认候选；删除之后才重新加入
 ///    的书照常同步。
+/// 4. 「从所有设备删除」本机有副本时，云通道发布墓碑的同时删掉云盘上的书文件夹
+///    （所有者 2026-10-31 拍板），删失败不标「已发布」、下一轮重试。
+/// 5. **删了再重新导入不会被自动删掉**（所有者问「删了我重新导入以后不会自动给我删除
+///    吧」）：墓碑按「键 + deletedAt」只管 deletedAt 之前就在的那份；重新导入（同名、
+///    同 bookKey、同文件夹名）的 `localAddedAt` 是导入时刻，本机与其它设备都把它当新
+///    书——不弹删除确认、照常上传、别的设备看得见也下得到；只有删除前就有旧副本的设备
+///    仍收到（只针对旧那份的）删除确认。
 library;
 
 import 'dart:io';
@@ -19,6 +26,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
+import 'package:fushi/src/sync/remote_deletion_filter.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -382,6 +391,266 @@ void main() {
       expect(report.errors.where((String e) => e.startsWith('books')), isEmpty);
       expect(backend.ensuredBookFolders, <String>['Book A']);
       expect(report.deletionCandidates, isEmpty);
+    });
+  });
+
+  group('「从所有设备删除」本机有副本：发布墓碑时一并删掉云盘书文件夹', () {
+    late Directory tmp;
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('cloud_delete_everywhere');
+    });
+    tearDown(() async {
+      if (tmp.existsSync()) await tmp.delete(recursive: true);
+    });
+
+    SyncOrchestrator device(FushiDatabase deviceDb) => SyncOrchestrator(
+      db: deviceDb,
+      backend: backend,
+      dictionaryResourceRoot: tmp,
+      audioDatabaseRoot: tmp,
+      tempDir: tmp,
+      syncStats: false,
+      syncAudioBookPosition: false,
+      syncContent: false,
+      syncMangaContent: false,
+      syncAudioBookFiles: false,
+      syncDictionary: false,
+    );
+
+    /// 本机导入一本书。[localAddedAt] 省略 = 生产导入路径的默认值（导入时刻，
+    /// `insertEpubBook` 填 now）。
+    Future<void> importBook(
+      FushiDatabase deviceDb,
+      String title, {
+      int? localAddedAt,
+    }) async {
+      await deviceDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: sanitizeTtuFilename(title),
+          title: title,
+          epubPath: '${tmp.path}/$title.epub',
+          extractDir: '${tmp.path}/$title',
+          chapterCount: 1,
+          chaptersJson: '["c"]',
+          importedAt: 1,
+          localAddedAt: localAddedAt == null
+              ? const Value<int?>.absent()
+              : Value<int?>(localAddedAt),
+        ),
+      );
+    }
+
+    /// 书架「从所有设备删除」落到库里的两步（`ReaderFushiSource.deleteBook`，
+    /// scope = syncEverywhere）：删行（带备份墓碑）+ 记同步删除墓碑。
+    Future<int> deleteEverywhere(FushiDatabase deviceDb, String title) async {
+      final String key = sanitizeTtuFilename(title);
+      expect(await deviceDb.deleteEpubBook(key, tombstone: true), 1);
+      final int deletedAt = DateTime.now().millisecondsSinceEpoch;
+      await deviceDb.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue,
+        key,
+        deletedAt,
+      );
+      return deletedAt;
+    }
+
+    Future<Set<String>> cloudFolders() async => <String>{
+      for (final AssetEntry e in await store.listChildren('root'))
+        if (e.isFolder && !isReservedSyncFolderName(e.name)) e.name,
+    };
+
+    Future<Set<String>> hiddenOnShelf(FushiDatabase deviceDb) =>
+        loadPendingRemoteDeletionKeys(
+          deviceDb,
+          SyncTombstoneKind.book,
+          remoteLibrarySourceId: cloudRemoteLibrarySourceId(
+            SyncBackendType.webDav.name,
+          ),
+        );
+
+    Iterable<String> candidateKeys(SyncRunReport r) => <String>[
+      for (final DeletionPropagationCandidate c in r.deletionCandidates)
+        if (c.mediaType == SyncTombstoneKind.book.dbValue) c.itemKey,
+    ];
+
+    test('同步一轮：先写墓碑、再删书文件夹，标为已发布；别的书不动', () async {
+      await _seedCloudBook(store, 'Book A');
+      await _seedCloudBook(store, 'Book C');
+      await importBook(db, 'Book A', localAddedAt: 1000);
+      await importBook(db, 'Book C', localAddedAt: 1000);
+      final int deletedAt = await deleteEverywhere(db, 'Book A');
+      expect(await hiddenOnShelf(db), <String>{'Book A'}, reason: '残留还在，先藏着');
+
+      final SyncRunReport report = await device(db).run();
+
+      expect(
+        report.errors.where((String e) => e.contains('tombstone')),
+        isEmpty,
+      );
+      expect(await cloudFolders(), <String>{'Book C'});
+      expect(
+        parseDeletionTombstoneJson(await cloudMarker('Book A'))?.deletedAt,
+        deletedAt,
+      );
+      expect(
+        (await db.getSyncDeletionTombstones()).single.remotePublishedAt,
+        greaterThan(0),
+      );
+      expect(await hiddenOnShelf(db), isEmpty, reason: '文件夹已删，不再需要藏');
+    });
+
+    test('删文件夹失败：墓碑已写、不标已发布、残留继续藏；下一轮重试删掉', () async {
+      await _seedCloudBook(store, 'Book A');
+      await importBook(db, 'Book A', localAddedAt: 1000);
+      await deleteEverywhere(db, 'Book A');
+      backend.deleteError = SyncBackendError('403');
+
+      final SyncRunReport first = await device(db).run();
+      expect(
+        first.errors.where((String e) => e.contains('cloud book folder')),
+        hasLength(1),
+        reason: '删失败要如实记错，不能假装删成功',
+      );
+      expect(await cloudMarker('Book A'), isNotNull);
+      expect(await cloudFolders(), contains('Book A'));
+      expect(
+        (await db.getSyncDeletionTombstones()).single.remotePublishedAt,
+        0,
+      );
+      expect(await hiddenOnShelf(db), <String>{'Book A'});
+
+      backend.deleteError = null;
+      await device(db).run();
+      expect(await cloudFolders(), isNot(contains('Book A')));
+      expect(
+        (await db.getSyncDeletionTombstones()).single.remotePublishedAt,
+        greaterThan(0),
+      );
+    });
+
+    test('删除 → 重新导入 → 本机与另一台设备各同步一轮：书仍在且已上传；旧副本设备只对旧那份弹确认', () async {
+      await _seedCloudBook(store, 'Book A');
+      await importBook(db, 'Book A', localAddedAt: 1000);
+      final FushiDatabase oldCopy = _memDb();
+      addTearDown(oldCopy.close);
+      await importBook(oldCopy, 'Book A', localAddedAt: 1000);
+
+      // 本机「从所有设备删除」并同步：墓碑发布、书文件夹删掉。
+      final int deletedAt = await deleteEverywhere(db, 'Book A');
+      await device(db).run();
+      expect(await cloudFolders(), isNot(contains('Book A')));
+
+      // 本机重新导入同一本（同名 → 同 bookKey、同文件夹名）。
+      await importBook(db, 'Book A');
+      final EpubBookRow reimported = (await db.getAllEpubBooks()).single;
+      expect(reimported.localAddedAt, greaterThanOrEqualTo(deletedAt));
+      expect(
+        await db.getSyncDeletionTombstones(),
+        isEmpty,
+        reason: '重新入库清掉本机墓碑，不再发布',
+      );
+
+      // 本机同步一轮：不弹删除确认、照常上传（推送否决不拦重新导入的书）。
+      backend.ensuredBookFolders.clear();
+      final SyncRunReport mine = await device(db).run();
+      expect(mine.errors.where((String e) => e.startsWith('books')), isEmpty);
+      expect(candidateKeys(mine), isEmpty);
+      expect(backend.ensuredBookFolders, <String>['Book A']);
+      expect(await cloudFolders(), contains('Book A'));
+      expect(await db.getAllEpubBooks(), hasLength(1), reason: '本机书仍在');
+      expect(
+        await cloudMarker('Book A'),
+        isNotNull,
+        reason: '云盘上旧墓碑仍在——旧副本设备还要靠它收到删除确认',
+      );
+
+      // 另一台从没有过这本的设备：书架上看得见（不被藏），下载后同步也不被删。
+      final FushiDatabase fresh = _memDb();
+      addTearDown(fresh.close);
+      expect(await hiddenOnShelf(fresh), isEmpty);
+      expect(
+        (await client(
+          database: fresh,
+        ).listRemoteBooks()).map((RemoteBookInfo b) => b.title),
+        contains('Book A'),
+      );
+      await importBook(fresh, 'Book A');
+      backend.ensuredBookFolders.clear();
+      final SyncRunReport theirs = await device(fresh).run();
+      expect(theirs.errors.where((String e) => e.startsWith('books')), isEmpty);
+      expect(candidateKeys(theirs), isEmpty);
+      expect(backend.ensuredBookFolders, <String>['Book A']);
+      expect(await fresh.getAllEpubBooks(), hasLength(1));
+
+      // 删除之前就有旧副本的设备：仍收到删除确认（只针对它那份旧的），也不把旧的推上去。
+      backend.ensuredBookFolders.clear();
+      final SyncRunReport old = await device(oldCopy).run();
+      expect(candidateKeys(old), <String>['Book A']);
+      expect(backend.ensuredBookFolders, isEmpty);
+
+      // 再同步一轮本机：仍然不弹、仍在。
+      final SyncRunReport again = await device(db).run();
+      expect(candidateKeys(again), isEmpty);
+      expect(await db.getAllEpubBooks(), hasLength(1));
+      expect(await cloudFolders(), contains('Book A'));
+    });
+
+    test('别的设备删后重新导入并上传：删除方书架上看得见这本新书（已发布的墓碑不再藏）', () async {
+      await _seedCloudBook(store, 'Book A');
+      await importBook(db, 'Book A', localAddedAt: 1000);
+      await deleteEverywhere(db, 'Book A');
+      await device(db).run();
+
+      final FushiDatabase other = _memDb();
+      addTearDown(other.close);
+      await importBook(other, 'Book A');
+      await device(other).run();
+      expect(await cloudFolders(), contains('Book A'));
+
+      expect(await hiddenOnShelf(db), isEmpty);
+      expect(
+        (await client().listRemoteBooks()).map((RemoteBookInfo b) => b.title),
+        contains('Book A'),
+      );
+      // 删除方自己下载这本新书后同步：不弹确认。
+      await importBook(db, 'Book A');
+      final SyncRunReport r = await device(db).run();
+      expect(candidateKeys(r), isEmpty);
+    });
+
+    test('书架「同时从远端删除」后重新导入：同样当新书', () async {
+      await _seedCloudBook(store, 'Book A');
+      final CloudRemoteBookClient c = client();
+      await c.deleteRemoteBook(await listed(c, 'Book A'));
+      expect(await hiddenOnShelf(db), isEmpty, reason: '文件夹已删、墓碑已发布');
+
+      await importBook(db, 'Book A');
+      backend.ensuredBookFolders.clear();
+      final SyncRunReport r = await device(db).run();
+      expect(candidateKeys(r), isEmpty);
+      expect(backend.ensuredBookFolders, <String>['Book A']);
+      expect(await db.getAllEpubBooks(), hasLength(1));
+    });
+
+    test('媒体服务器等不执行删除的来源：墓碑在就一直藏（行为不变）', () async {
+      await db.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue,
+        'K',
+        5,
+      );
+      await db.markSyncDeletionPublished(
+        SyncTombstoneKind.book.dbValue,
+        'K',
+        6,
+      );
+      expect(
+        await loadPendingRemoteDeletionKeys(
+          db,
+          SyncTombstoneKind.book,
+          remoteLibrarySourceId: 'jellyfin:x',
+        ),
+        <String>{'K'},
+      );
     });
   });
 }
