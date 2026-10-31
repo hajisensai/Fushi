@@ -180,18 +180,6 @@ class RemoteVideoMetadataUnsupported implements Exception {
   String toString() => 'RemoteVideoMetadataUnsupported';
 }
 
-/// [InterconnectSyncBackend.probeHostReachability] 的结论：已配对 host 此刻能否连上。
-enum InterconnectHostReachability {
-  /// 至少一条地址可达且接受本机的配对凭据。
-  reachable,
-
-  /// 所有候选地址都探不到（对端没运行 Fushi、睡眠、不在同一网络）。
-  unreachable,
-
-  /// 对端在线但拒绝了本机的配对凭据（被移除配对 / token 被吊销），需要重新配对。
-  credentialRejected,
-}
-
 /// [InterconnectSyncBackend.putRemoteVideoSubtitleAsDefault] 的结果。
 enum RemoteSubtitleDefaultUpload {
   /// host 已按新语义落盘并设为这一集的默认字幕（旧 sidecar 已备份让位）。
@@ -1662,16 +1650,16 @@ class InterconnectSyncBackend extends SyncBackend
   /// 置脏再走一遍与所有网络操作相同的选路（[_ensureResolved]：组内并发 ping、核对
   /// hostId、按候选凭据探测），所以结论与随后那次删除请求打到的是同一台 host。
   /// 选中的地址没变时不重建连接句柄、不清目录缓存，对正在进行的下载无副作用。
-  Future<InterconnectHostReachability> probeHostReachability() async {
+  Future<RemoteSourceReachability> probeHostReachability() async {
     _sessionResolved = false;
     try {
       await _ensureResolved();
-      return InterconnectHostReachability.reachable;
+      return RemoteSourceReachability.reachable;
     } on SyncAuthError {
-      return InterconnectHostReachability.credentialRejected;
+      return RemoteSourceReachability.credentialRejected;
     } on SyncBackendError {
       // 含 [SyncPeerUnreachableError]：所有候选地址都探不到。
-      return InterconnectHostReachability.unreachable;
+      return RemoteSourceReachability.unreachable;
     }
   }
 

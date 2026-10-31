@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179384 (10552 per locale)
+/// Strings: 179452 (10556 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -9676,6 +9676,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Re-download audiobook from peer';
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
   String get remote_book_delete_everywhere => 'Also delete on host';
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -9727,6 +9732,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'TMDB episode ordering on host…';
   String get remote_delete_audiobook_partial =>
       'Book deleted, but its audiobook could not be removed on the paired device';
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   String get remote_delete_failed => 'Could not delete it on the paired device';
   String get remote_delete_host_checking =>
       'Checking whether the host is online…';
@@ -31327,6 +31338,12 @@ class _StringsAr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -31407,6 +31424,15 @@ class _StringsAr extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'تم حذف الكتاب، لكن تعذّرت إزالة الكتاب الصوتي على الجهاز المقترن';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed => 'تعذر الحذف على الجهاز المقترن';
   @override
@@ -57181,6 +57207,12 @@ class _StringsDe extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -57262,6 +57294,15 @@ class _StringsDe extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Buch gelöscht, aber das Hörbuch konnte auf dem gekoppelten Gerät nicht entfernt werden';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'Konnte auf dem gekoppelten Gerät nicht gelöscht werden';
@@ -83166,6 +83207,12 @@ class _StringsEs extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -83248,6 +83295,15 @@ class _StringsEs extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Libro eliminado, pero su audiolibro no pudo eliminarse en el dispositivo emparejado';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'No se pudo eliminar en el dispositivo emparejado';
@@ -109251,6 +109307,12 @@ class _StringsFr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -109334,6 +109396,15 @@ class _StringsFr extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Livre supprimé, mais son livre audio n\'a pas pu être retiré sur l\'appareil apparié';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'Impossible de supprimer sur l\'appareil apparié';
@@ -135127,6 +135198,12 @@ class _StringsId extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -135207,6 +135284,15 @@ class _StringsId extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Buku dihapus, tetapi buku audionya tidak bisa dihapus di perangkat pasangan';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'Tidak bisa menghapus di perangkat pasangan';
@@ -160993,6 +161079,12 @@ class _StringsIt extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -161074,6 +161166,15 @@ class _StringsIt extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Libro eliminato, ma il suo audiolibro non è stato rimosso sul dispositivo accoppiato';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'Impossibile eliminarlo sul dispositivo accoppiato';
@@ -186250,6 +186351,12 @@ class _StringsJa extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -186324,6 +186431,15 @@ class _StringsJa extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       '書籍は削除されましたが、ペアリングされたデバイス上のオーディオブックを削除できませんでした';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed => 'ペアリングされたデバイスで削除できませんでした';
   @override
@@ -211165,6 +211281,12 @@ class _StringsKo extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -211239,6 +211361,15 @@ class _StringsKo extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       '책은 삭제되었으나, 페어링된 기기에서 오디오북을 제거할 수 없습니다';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed => '페어링된 기기에서 삭제할 수 없습니다';
   @override
@@ -236726,6 +236857,12 @@ class _StringsNl extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -236806,6 +236943,15 @@ class _StringsNl extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Boek verwijderd, maar het luisterboek kon niet worden verwijderd op het gekoppelde apparaat';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'Kon het niet verwijderen op het gekoppelde apparaat';
@@ -262645,6 +262791,12 @@ class _StringsPtBr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -262725,6 +262877,15 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Livro excluído, mas seu audiobook não pôde ser removido no dispositivo pareado';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'Não foi possível excluir no dispositivo pareado';
@@ -288542,6 +288703,12 @@ class _StringsRu extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -288623,6 +288790,15 @@ class _StringsRu extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Книга удалена, но аудиокнигу не удалось удалить на сопряжённом устройстве';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed =>
       'Не удалось удалить на сопряжённом устройстве';
@@ -314218,6 +314394,12 @@ class _StringsTh extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -314297,6 +314479,15 @@ class _StringsTh extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'ลบหนังสือแล้ว แต่ไม่สามารถลบหนังสือเสียงบนอุปกรณ์ที่จับคู่ได้';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed => 'ไม่สามารถลบบนอุปกรณ์ที่จับคู่ได้';
   @override
@@ -339927,6 +340118,12 @@ class _StringsTr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -340006,6 +340203,15 @@ class _StringsTr extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Kitap silindi, ancak sesli kitabı eşleştirilmiş cihazdan kaldırılamadı';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed => 'Eşleştirilmiş cihazda silinemedi';
   @override
@@ -365640,6 +365846,12 @@ class _StringsVi extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
   String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -365720,6 +365932,15 @@ class _StringsVi extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial =>
       'Đã xóa sách, nhưng sách nói không thể được gỡ trên thiết bị đã ghép nối';
+  @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   @override
   String get remote_delete_failed => 'Không thể xóa trên thiết bị đã ghép nối';
   @override
@@ -389986,6 +390207,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get remote_book_audiobook_redownloaded => '已从互联对端重新下载有声书';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object backend,
+    required Object name,
+  }) =>
+      '确定从云盘「${backend}」删除「${name}」吗？云盘上这本书的文件、封面、进度和有声书会被永久删除，本机没有副本，此操作不可撤销。其他设备下次同步时会确认是否一并删除。';
+  @override
   String get remote_book_delete_everywhere => '同时从远端删除';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -390056,6 +390283,12 @@ class _StringsZhCn extends _StringsEn {
   String get remote_collection_tmdb_ordering_on_host => '在 host 上选择 TMDB 集编排…';
   @override
   String get remote_delete_audiobook_partial => '书已在对端删除，但它的有声书没能删掉';
+  @override
+  String get remote_delete_cloud_checking => '正在检查云盘能否连上…';
+  @override
+  String get remote_delete_cloud_offline => '连不上云盘，连上后才能从远端删除';
+  @override
+  String get remote_delete_cloud_signed_out => '云盘登录已失效，重新登录后才能从远端删除';
   @override
   String get remote_delete_failed => '无法在对端设备上删除';
   @override
@@ -413906,6 +414139,12 @@ class _StringsZhHk extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
+  String remote_book_delete_cloud_confirm({
+    required Object backend,
+    required Object name,
+  }) =>
+      '確定從雲端硬碟「${backend}」刪除「${name}」嗎？雲端上這本書的檔案、封面、進度和有聲書會被永久刪除，本機沒有副本，此操作無法復原。其他設備下次同步時會確認是否一併刪除。';
+  @override
   String get remote_book_delete_everywhere => '同時從遠端刪除';
   @override
   String remote_book_delete_everywhere_confirm({
@@ -413976,6 +414215,12 @@ class _StringsZhHk extends _StringsEn {
   String get remote_collection_tmdb_ordering_on_host => '在 host 上選擇 TMDB 集編排…';
   @override
   String get remote_delete_audiobook_partial => '書已在對端刪除，但它的有聲書沒能刪掉';
+  @override
+  String get remote_delete_cloud_checking => '正在檢查雲端硬碟能否連上…';
+  @override
+  String get remote_delete_cloud_offline => '連不上雲端硬碟，連上後才能從遠端刪除';
+  @override
+  String get remote_delete_cloud_signed_out => '雲端硬碟登入已失效，重新登入後才能從遠端刪除';
   @override
   String get remote_delete_failed => '無法在對端設備上刪除';
   @override
@@ -436722,6 +436967,9 @@ extension on _StringsEn {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -436784,6 +437032,12 @@ extension on _StringsEn {
         return 'TMDB episode ordering on host…';
       case 'remote_delete_audiobook_partial':
         return 'Book deleted, but its audiobook could not be removed on the paired device';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
       case 'remote_delete_host_checking':
@@ -458644,6 +458898,9 @@ extension on _StringsAr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -458706,6 +458963,12 @@ extension on _StringsAr {
         return 'ترتيب حلقات TMDB على المضيف…';
       case 'remote_delete_audiobook_partial':
         return 'تم حذف الكتاب، لكن تعذّرت إزالة الكتاب الصوتي على الجهاز المقترن';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'تعذر الحذف على الجهاز المقترن';
       case 'remote_delete_host_checking':
@@ -480622,6 +480885,9 @@ extension on _StringsDe {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -480684,6 +480950,12 @@ extension on _StringsDe {
         return 'TMDB-Folgenreihenfolge auf dem Host…';
       case 'remote_delete_audiobook_partial':
         return 'Buch gelöscht, aber das Hörbuch konnte auf dem gekoppelten Gerät nicht entfernt werden';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Konnte auf dem gekoppelten Gerät nicht gelöscht werden';
       case 'remote_delete_host_checking':
@@ -502604,6 +502876,9 @@ extension on _StringsEs {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -502666,6 +502941,12 @@ extension on _StringsEs {
         return 'Orden de episodios de TMDB en el anfitrión…';
       case 'remote_delete_audiobook_partial':
         return 'Libro eliminado, pero su audiolibro no pudo eliminarse en el dispositivo emparejado';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'No se pudo eliminar en el dispositivo emparejado';
       case 'remote_delete_host_checking':
@@ -524597,6 +524878,9 @@ extension on _StringsFr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -524659,6 +524943,12 @@ extension on _StringsFr {
         return 'Ordre des épisodes TMDB sur l\'hôte…';
       case 'remote_delete_audiobook_partial':
         return 'Livre supprimé, mais son livre audio n\'a pas pu être retiré sur l\'appareil apparié';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Impossible de supprimer sur l\'appareil apparié';
       case 'remote_delete_host_checking':
@@ -546550,6 +546840,9 @@ extension on _StringsId {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -546612,6 +546905,12 @@ extension on _StringsId {
         return 'Urutan episode TMDB di host…';
       case 'remote_delete_audiobook_partial':
         return 'Buku dihapus, tetapi buku audionya tidak bisa dihapus di perangkat pasangan';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Tidak bisa menghapus di perangkat pasangan';
       case 'remote_delete_host_checking':
@@ -568512,6 +568811,9 @@ extension on _StringsIt {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -568574,6 +568876,12 @@ extension on _StringsIt {
         return 'Ordinamento episodi TMDB sull\'host…';
       case 'remote_delete_audiobook_partial':
         return 'Libro eliminato, ma il suo audiolibro non è stato rimosso sul dispositivo accoppiato';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Impossibile eliminarlo sul dispositivo accoppiato';
       case 'remote_delete_host_checking':
@@ -590409,6 +590717,9 @@ extension on _StringsJa {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -590471,6 +590782,12 @@ extension on _StringsJa {
         return 'ホストで TMDB のエピソード順を選択…';
       case 'remote_delete_audiobook_partial':
         return '書籍は削除されましたが、ペアリングされたデバイス上のオーディオブックを削除できませんでした';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'ペアリングされたデバイスで削除できませんでした';
       case 'remote_delete_host_checking':
@@ -612253,6 +612570,9 @@ extension on _StringsKo {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -612315,6 +612635,12 @@ extension on _StringsKo {
         return '호스트의 TMDB 에피소드 순서…';
       case 'remote_delete_audiobook_partial':
         return '책은 삭제되었으나, 페어링된 기기에서 오디오북을 제거할 수 없습니다';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return '페어링된 기기에서 삭제할 수 없습니다';
       case 'remote_delete_host_checking':
@@ -634188,6 +634514,9 @@ extension on _StringsNl {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -634250,6 +634579,12 @@ extension on _StringsNl {
         return 'TMDB-afleveringsvolgorde op host…';
       case 'remote_delete_audiobook_partial':
         return 'Boek verwijderd, maar het luisterboek kon niet worden verwijderd op het gekoppelde apparaat';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Kon het niet verwijderen op het gekoppelde apparaat';
       case 'remote_delete_host_checking':
@@ -656154,6 +656489,9 @@ extension on _StringsPtBr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -656216,6 +656554,12 @@ extension on _StringsPtBr {
         return 'Ordenação de episódios do TMDB no host…';
       case 'remote_delete_audiobook_partial':
         return 'Livro excluído, mas seu audiobook não pôde ser removido no dispositivo pareado';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Não foi possível excluir no dispositivo pareado';
       case 'remote_delete_host_checking':
@@ -678124,6 +678468,9 @@ extension on _StringsRu {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -678186,6 +678533,12 @@ extension on _StringsRu {
         return 'Порядок серий TMDB на хосте…';
       case 'remote_delete_audiobook_partial':
         return 'Книга удалена, но аудиокнигу не удалось удалить на сопряжённом устройстве';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Не удалось удалить на сопряжённом устройстве';
       case 'remote_delete_host_checking':
@@ -700054,6 +700407,9 @@ extension on _StringsTh {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -700116,6 +700472,12 @@ extension on _StringsTh {
         return 'ลำดับตอนของ TMDB บนโฮสต์…';
       case 'remote_delete_audiobook_partial':
         return 'ลบหนังสือแล้ว แต่ไม่สามารถลบหนังสือเสียงบนอุปกรณ์ที่จับคู่ได้';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'ไม่สามารถลบบนอุปกรณ์ที่จับคู่ได้';
       case 'remote_delete_host_checking':
@@ -722002,6 +722364,9 @@ extension on _StringsTr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -722064,6 +722429,12 @@ extension on _StringsTr {
         return 'Ana makinede TMDB bölüm sıralaması…';
       case 'remote_delete_audiobook_partial':
         return 'Kitap silindi, ancak sesli kitabı eşleştirilmiş cihazdan kaldırılamadı';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Eşleştirilmiş cihazda silinemedi';
       case 'remote_delete_host_checking':
@@ -743945,6 +744316,9 @@ extension on _StringsVi {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
         return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
@@ -744007,6 +744381,12 @@ extension on _StringsVi {
         return 'Thứ tự tập TMDB trên máy chủ…';
       case 'remote_delete_audiobook_partial':
         return 'Đã xóa sách, nhưng sách nói không thể được gỡ trên thiết bị đã ghép nối';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Không thể xóa trên thiết bị đã ghép nối';
       case 'remote_delete_host_checking':
@@ -765715,6 +766095,9 @@ extension on _StringsZhCn {
         return '从互联对端重新下载有声书';
       case 'remote_book_audiobook_redownloaded':
         return '已从互联对端重新下载有声书';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object backend, required Object name}) =>
+            '确定从云盘「${backend}」删除「${name}」吗？云盘上这本书的文件、封面、进度和有声书会被永久删除，本机没有副本，此操作不可撤销。其他设备下次同步时会确认是否一并删除。';
       case 'remote_book_delete_everywhere':
         return '同时从远端删除';
       case 'remote_book_delete_everywhere_confirm':
@@ -765776,6 +766159,12 @@ extension on _StringsZhCn {
         return '在 host 上选择 TMDB 集编排…';
       case 'remote_delete_audiobook_partial':
         return '书已在对端删除，但它的有声书没能删掉';
+      case 'remote_delete_cloud_checking':
+        return '正在检查云盘能否连上…';
+      case 'remote_delete_cloud_offline':
+        return '连不上云盘，连上后才能从远端删除';
+      case 'remote_delete_cloud_signed_out':
+        return '云盘登录已失效，重新登录后才能从远端删除';
       case 'remote_delete_failed':
         return '无法在对端设备上删除';
       case 'remote_delete_host_checking':
@@ -787445,6 +787834,9 @@ extension on _StringsZhHk {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object backend, required Object name}) =>
+            '確定從雲端硬碟「${backend}」刪除「${name}」嗎？雲端上這本書的檔案、封面、進度和有聲書會被永久刪除，本機沒有副本，此操作無法復原。其他設備下次同步時會確認是否一併刪除。';
       case 'remote_book_delete_everywhere':
         return '同時從遠端刪除';
       case 'remote_book_delete_everywhere_confirm':
@@ -787506,6 +787898,12 @@ extension on _StringsZhHk {
         return '在 host 上選擇 TMDB 集編排…';
       case 'remote_delete_audiobook_partial':
         return '書已在對端刪除，但它的有聲書沒能刪掉';
+      case 'remote_delete_cloud_checking':
+        return '正在檢查雲端硬碟能否連上…';
+      case 'remote_delete_cloud_offline':
+        return '連不上雲端硬碟，連上後才能從遠端刪除';
+      case 'remote_delete_cloud_signed_out':
+        return '雲端硬碟登入已失效，重新登入後才能從遠端刪除';
       case 'remote_delete_failed':
         return '無法在對端設備上刪除';
       case 'remote_delete_host_checking':
