@@ -90,9 +90,11 @@ class DevStore {
   }
   save() {
     // 凭据明文落盘：目录与文件都只给所有者读写；已存在的旧文件也收紧（mode 只对新建生效）。
-    fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
+    const dir = path.dirname(this.file);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2), { mode: 0o600 });
     try {
+      fs.chmodSync(dir, 0o700);
       fs.chmodSync(this.file, 0o600);
     } catch {
       // Windows 上 chmod 只影响只读位，失败不影响写入结果
