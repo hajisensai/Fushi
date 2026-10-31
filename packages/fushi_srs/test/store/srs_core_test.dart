@@ -160,6 +160,45 @@ void main() {
     File(path).deleteSync();
   });
 
+  // ID 列存 16 字节 BLOB（schema v17）：Dart 原生 SQL 里拼 / 绑 ID 必须过 `srs_id()`，漏了查不到也写错形状。
+  // 审计只在 `--features id_audit` 构建的库里装（native/fushi_fsrs/src/store/ids.rs `audit`）；CI 的 Dart 单测
+  // 库就是这么编的，并设 FUSHI_FSRS_ID_AUDIT=1——这条金丝雀钉住「审计真的开着」，库被换成不带审计的构建就红，
+  // 否则整套 SRS 测试会在没有审计的情况下静默变绿。
+  test(
+    'the id audit is live in audited builds',
+    () {
+      final SrsCore core = SrsCore.open(
+        '${dir.path}${Platform.pathSeparator}srs.db',
+      );
+      addTearDown(core.close);
+      const String uuid = '0193a1b2-0005-7000-8000-00000000ffff';
+      expect(
+        () => core.execQuery(
+          "SELECT COUNT(*) FROM srs_review_logs WHERE id = '$uuid'",
+          const <Object?>[],
+        ),
+        throwsA(
+          isA<SrsCoreException>().having(
+            (SrsCoreException e) => e.message,
+            'message',
+            contains('id audit'),
+          ),
+        ),
+      );
+      final (int _, List<List<Object?>> rows) = srsDecodeRows(
+        core.execQuery(
+          'SELECT COUNT(*) AS n FROM srs_review_logs WHERE id = srs_id(?)',
+          const <Object?>[uuid],
+        ),
+      );
+      expect(rows[1], <Object?>[0]);
+    },
+    skip: Platform.environment['FUSHI_FSRS_ID_AUDIT'] == '1'
+        ? false
+        : 'needs a fushi_fsrs built with --features id_audit '
+              '(FUSHI_FSRS_ID_AUDIT=1)',
+  );
+
   test('an upgrade refused for disk space surfaces as a typed, readable error', () {
     // 与 Rust 侧同一份契约：状态码 store/ffi.rs STORE_NO_SPACE、前缀 store/schema.rs UPGRADE_NO_SPACE。
     final String ffi = File(
