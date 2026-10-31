@@ -154,6 +154,11 @@ class MusicLyricsTrackRef {
   final int? cueStartMs;
 
   bool get isCueTrack => cueStartMs != null;
+
+  /// 这一首认不认同目录 sidecar / 文件内嵌歌词：CUE 虚拟曲目（那些属于整张镜像）与在线音源
+  /// 插件曲目（[path] 是 `fushi-plugin` URI，不是本地文件）都不认。解析与选来源面板共用。
+  bool get readsLocalLyrics =>
+      !isCueTrack && parseMusicPluginTrackPath(path) == null;
 }
 
 /// 解析结果：生效的时间轴（已带该来源的偏移）+ 它来自哪个来源。
@@ -397,7 +402,7 @@ class MusicLyricsService {
         parseMusicPluginTrackPath(track.path);
 
     // ② sidecar（每次重读：本地文件可能被用户换掉；Rust 解析远小于 IO 开销）。
-    if (!track.isCueTrack && plugin == null) {
+    if (track.readsLocalLyrics) {
       final _Sidecar? side = await _readSidecars(track);
       if (side != null) {
         final MusicLyricRow? prev = rowOf(MusicLyricsSource.sidecar);
@@ -421,7 +426,7 @@ class MusicLyricsService {
     }
 
     // ③ 内嵌（读文件头在后台 isolate）。
-    if (!track.isCueTrack && plugin == null) {
+    if (track.readsLocalLyrics) {
       final MusicLyricRow? prev = rowOf(MusicLyricsSource.embedded);
       final EmbeddedLyrics? emb = await _bestEmbedded(track);
       if (emb != null) {
@@ -811,7 +816,7 @@ class MusicLyricsService {
     MusicLyricsTrackRef track,
   ) async {
     final List<MusicLyricsCandidate> out = <MusicLyricsCandidate>[];
-    if (!track.isCueTrack) {
+    if (track.readsLocalLyrics) {
       final _Sidecar? side = await _readSidecars(track);
       if (side != null) {
         out.add(
